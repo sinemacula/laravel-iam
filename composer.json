@@ -1,7 +1,7 @@
 {
     "name": "sinemacula/laravel-iam",
     "type": "library",
-    "description": "Identity and access management for Laravel 12 and 13: installs the authentication, authorization, MFA, SSO and audit log packages and binds each one's contracts to the others.",
+    "description": "Bundled identity and access management for Laravel - authentication, MFA, SSO, authorization, and audit logging in one install",
     "keywords": [
         "sine macula",
         "laravel",
