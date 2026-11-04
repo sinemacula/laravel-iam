@@ -14,8 +14,8 @@
 
 </div>
 
-Identity and access management for Laravel in one install. Brings together five packages that each work alone, and
-provides the glue between them: it binds each one's contracts to the others' services, translates between their shapes,
+Identity and access management for Laravel: installs the authentication, authorization, MFA, SSO and audit log
+packages and binds them together. Each of the five works alone; this package provides the glue between them: it binds each one's contracts to the others' services, translates between their shapes,
 maps their events to the audit trail and checks that the whole is configured safely.
 
 | Package                             | Owns                                                                                        |
