@@ -14,8 +14,7 @@ use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\PolicyStore;
-use SineMacula\Laravel\Authorization\Contracts\PrincipalResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
@@ -89,8 +88,7 @@ final readonly class WorkerReset
         LastDecisionStore::class,
         PolicyEvaluator::class,
         'authorization',
-        self::AUTHORIZATION_DEFAULT . PrincipalResolver::class,
-        self::AUTHORIZATION_DEFAULT . TenantResolver::class,
+        self::AUTHORIZATION_DEFAULT . SubjectResolver::class,
         self::AUTHORIZATION_DEFAULT . PolicyStore::class,
         self::AUTHORIZATION_DEFAULT . PolicyResolver::class,
     ];

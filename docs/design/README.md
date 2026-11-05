@@ -27,6 +27,12 @@ The current note set is:
 - `long-running-processes.md`: the combined worker reset that flushes every member's request state, the session that
   holds MFA's proofs among it, what it flushes before each Octane request and each queued job, why a job keeps its
   scoped instances and the application keeps its own instances, and how another long-lived process calls it.
+- `authentication-and-mfa.md`: the twelve seams between `laravel-authentication` and `laravel-mfa` and the default
+  each replaces; how an MFA application and sign-in are resolved to a guard and its current session, and refused when
+  they cannot be; how proofs, channels, requirements, levels and changes are translated, `external_reauthentication`
+  and `unclassified` among them; what each adapter answers and how it refuses; the evaluation a further proof is
+  recorded with; and the lock order, identity state and factors before the session row, with what each isolation level
+  does to a change that waited and why MFA's changes are never wrapped in another transaction.
 
 A note is added here with the code it describes.
 

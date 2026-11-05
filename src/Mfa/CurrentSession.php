@@ -1,0 +1,270 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace SineMacula\Laravel\Iam\Mfa;
+
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Contracts\Config\Repository;
+use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Guards\JwtGuard;
+use SineMacula\Laravel\Authentication\Sessions\SessionService;
+use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
+use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+
+/**
+ * Resolves the sign-in MFA names to `laravel-authentication`'s session: the
+ * current session of the guard the MFA application is, held by the identity MFA
+ * asks about.
+ *
+ * MFA names a sign-in by its application and a string; an application is the
+ * guard of the same name, and the sign-in is the key of the guard's current
+ * session. Nothing is guessed (IAM-8.2): an application that is no session
+ * guard (no declared guard of `laravel-authentication`'s `jwt` driver, an
+ * `api_key` guard included) throws `UnresolvedReferenceException` of the kind
+ * `guard` from every method that resolves a guard alike, a guard holding no
+ * session, or one holding another identity's, throws it of the kind `session`,
+ * and a guard holding another of the identity's sessions than the one named
+ * throws `SessionMismatchException`, each inside whatever transaction the
+ * member opened, so the change it was making rolls back.
+ *
+ * It is also where every MFA adapter finds the guard it acts on: the default
+ * guard, which MFA names its application after when nothing else names one
+ * (`defaultGuard()`), the guard an application names (`guard()`), the identity
+ * it serves (`caller()`), `laravel-authentication`'s session service for it
+ * (`sessions()`), and the session service a change to the identity as a whole
+ * goes through, which names no guard (`identitySessions()`), so every adapter
+ * refuses the same misconfiguration the same way.
+ *
+ * It reads the guard's state on every call and keeps nothing, so it holds no
+ * request state between calls (IAM-8.1).
+ *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
+ * @copyright   2026 Sine Macula Limited
+ *
+ * @internal
+ */
+final readonly class CurrentSession
+{
+    /** @var string The guard driver `laravel-authentication` keeps sessions for. */
+    private const string SESSION_DRIVER = 'jwt';
+
+    /**
+     * Constructor.
+     *
+     * @param  \Illuminate\Contracts\Auth\Factory  $auth
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     */
+    public function __construct(
+
+        /** Resolves the guards. */
+        private AuthFactory $auth,
+
+        /** The configuration the guards are declared in. */
+        private Repository $config,
+    ) {}
+
+    /**
+     * The guard's current session, when it is the identity's and the sign-in
+     * MFA names.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $session
+     * @return \SineMacula\Laravel\Authentication\Contracts\Session
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\SessionMismatchException
+     */
+    public function of(MultiFactorAuthenticatable $identity, string $application, string $session): Session
+    {
+        $current = $this->current($identity, $application);
+
+        self::assertIsTheSignIn(SignIn::reference($current, $application), $application, $session);
+
+        return $current;
+    }
+
+    /**
+     * The guard's current session, whichever sign-in it is, when it is the
+     * identity's.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @return \SineMacula\Laravel\Authentication\Contracts\Session
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function current(MultiFactorAuthenticatable $identity, string $application): Session
+    {
+        $guard   = $this->guard($application);
+        $session = $guard->session();
+        $owner   = $guard->identity();
+
+        if ($session === null || $owner === null || !IdentityReference::of($owner)->is(IdentityReference::of($identity))) {
+            throw UnresolvedReferenceException::forSession($application);
+        }
+
+        return $session;
+    }
+
+    /**
+     * The identity MFA asks about, as `laravel-authentication`'s identity.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @return \SineMacula\Laravel\Authentication\Contracts\Identity
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function identity(MultiFactorAuthenticatable $identity): Identity
+    {
+        if (!$identity instanceof Identity) {
+            throw UnresolvedReferenceException::forIdentity($identity::class);
+        }
+
+        return $identity;
+    }
+
+    /**
+     * The identity the application's guard serves, when it is one MFA can hold
+     * factors for.
+     *
+     * @param  string  $application
+     * @return \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function caller(string $application): Identity&MultiFactorAuthenticatable
+    {
+        $identity = $this->guard($application)->identity();
+
+        return $identity instanceof MultiFactorAuthenticatable ? $identity : throw UnresolvedReferenceException::forSession($application);
+    }
+
+    /**
+     * The name of the default guard, as `Auth::shouldUse()` leaves it: the
+     * application MFA names when no application resolver names another, and the
+     * one it makes a change on when it names none.
+     *
+     * @return string
+     */
+    public function defaultGuard(): string
+    {
+        $guard = $this->config->get('auth.defaults.guard');
+
+        return is_string($guard) ? $guard : '';
+    }
+
+    /**
+     * The guard the application names, when one is declared under its name and
+     * it is one of `laravel-authentication`'s guards of the `jwt` driver, the
+     * one kind that holds sessions. Any other, an `api_key` guard included, is
+     * a misconfiguration, so every question about a sign-in on it throws the
+     * same way, never answered as a guard that holds no session now.
+     *
+     * @param  string  $application
+     * @return \SineMacula\Laravel\Authentication\Guards\JwtGuard
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function guard(string $application): JwtGuard
+    {
+        $guard = is_array($this->config->get('auth.guards.' . $application)) ? $this->auth->guard($application) : null;
+
+        if (!$guard instanceof JwtGuard) {
+            throw UnresolvedReferenceException::forGuard($application);
+        }
+
+        return $guard;
+    }
+
+    /**
+     * `laravel-authentication`'s session service for the application's guard,
+     * when it is a declared guard of the `jwt` driver, the one kind that holds
+     * sessions.
+     *
+     * @param  string  $application
+     * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function sessions(string $application): SessionService
+    {
+        $auth = $this->auth;
+
+        if (!$auth instanceof AuthManager) {
+            throw UnresolvedReferenceException::forGuard($application);
+        }
+
+        $this->guard($application);
+
+        return $auth->sessions($application);
+    }
+
+    /**
+     * `laravel-authentication`'s session service for a change to the identity
+     * as a whole, which names no session and so no guard: the default guard's
+     * when it is a declared guard of the `jwt` driver, and otherwise the first
+     * such guard declared, so a change made where the default guard holds no
+     * sessions (an admin panel's session guard, a console command, a queued
+     * job) still reaches the identity's sessions.
+     *
+     * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function identitySessions(): SessionService
+    {
+        $default  = $this->defaultGuard();
+        $declared = $this->sessionGuards();
+
+        return $this->sessions(in_array($default, $declared, true) ? $default : ($declared[0] ?? $default));
+    }
+
+    /**
+     * The names of the guards declared with the `jwt` driver, the one kind that
+     * holds sessions, in the order they are declared.
+     *
+     * @return list<string>
+     */
+    private function sessionGuards(): array
+    {
+        $guards = $this->config->get('auth.guards');
+        $named  = [];
+
+        foreach (is_array($guards) ? $guards : [] as $name => $guard) {
+
+            if (!is_array($guard) || ($guard['driver'] ?? null) !== self::SESSION_DRIVER) {
+                continue;
+            }
+
+            $named[] = (string) $name;
+        }
+
+        return $named;
+    }
+
+    /**
+     * Refuse the guard's current session when it is not the sign-in named.
+     *
+     * @param  string  $current
+     * @param  string  $application
+     * @param  string  $session
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\SessionMismatchException
+     */
+    private static function assertIsTheSignIn(string $current, string $application, string $session): void
+    {
+        if ($current === $session) {
+            return;
+        }
+
+        throw SessionMismatchException::forGuard($application);
+    }
+}

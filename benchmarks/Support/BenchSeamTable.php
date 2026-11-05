@@ -36,8 +36,8 @@ use SineMacula\Laravel\Authentication\Tenancy\OwnTenantOnly;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
-use SineMacula\Laravel\Authorization\Contracts\PrincipalResolver as AuthorizationPrincipalResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantResolver as AuthorizationTenantResolver;
+use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
+use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -142,8 +142,8 @@ final class BenchSeamTable implements ProvidesSeams
         [TenantMembership::class, [NoTenantMembership::class], Lifetime::TRANSIENT, 'sso'],
         [EvidencePolicy::class, [SsoInsufficientEvidence::class], Lifetime::TRANSIENT, 'sso'],
         [Freshness::class, [RefusingFreshness::class], Lifetime::TRANSIENT, 'sso'],
-        [AuthorizationPrincipalResolver::class, [AuthorizationServiceProvider::class], Lifetime::TRANSIENT, 'authorization'],
-        [AuthorizationTenantResolver::class, [AuthorizationServiceProvider::class], Lifetime::SCOPED, 'authorization'],
+        [SubjectResolver::class, [AuthorizationServiceProvider::class], Lifetime::TRANSIENT, 'authorization'],
+        [PolicyResolver::class, [AuthorizationServiceProvider::class], Lifetime::SCOPED, 'authorization'],
         [AuditAccessPolicy::class, [DenyAllPolicy::class], Lifetime::SHARED, 'audit'],
         [CheckpointAnchor::class, [AuditLogServiceProvider::class], Lifetime::TRANSIENT, 'audit'],
     ];

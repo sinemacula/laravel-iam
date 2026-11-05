@@ -12,6 +12,7 @@ use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
@@ -412,6 +413,8 @@ final class IamServiceProvider extends ServiceProvider
      */
     private static function seamProviders(): array
     {
-        return [];
+        return [
+            MfaSeams::class,
+        ];
     }
 }

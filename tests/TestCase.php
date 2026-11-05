@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests;
 
 use Illuminate\Config\Repository as ConfigRepository;
+use Illuminate\Contracts\Foundation\Application;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
@@ -12,16 +13,19 @@ use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
+use Tests\Fixtures\Models\Person;
 
 /**
  * Shared base test case for the package's feature and integration tests.
  *
  * Boots a minimal Testbench application with every member's service provider
  * registered, then this package's, and the database `DB_CONNECTION` names
- * (in-memory SQLite when unset). Subclasses may override `defineEnvironment` to
- * add per-test config and `defineDatabaseMigrations` (or use `setUp`) to create
- * tables, and may boot the application again with the providers in another
- * order through `reorderProviders`.
+ * (in-memory SQLite when unset), with a `jwt` guard people sign in on with a
+ * password (`api`, the default guard, over the fixtures' `Person`) and the MFA
+ * application of the same name. Subclasses may override `defineEnvironment` to
+ * add per-test config and `defineDatabaseMigrations` (or use `setUp`, or
+ * `Concerns\MigratesMembers`) to create tables, and may boot the application
+ * again with the providers in another order through `reorderProviders`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,6 +45,12 @@ abstract class TestCase extends OrchestraTestCase
         SsoServiceProvider::class,
         AuditLogServiceProvider::class,
     ];
+
+    /** @var string The guard people sign in on, and the MFA application of the same name. */
+    protected const string GUARD = 'api';
+
+    /** @var string The password every person the tests create signs in with. */
+    protected const string PASSWORD = 'correct horse battery staple';
 
     /** @var list<string> The process's arguments while an Artisan command runs that the storage check does not stand aside for. */
     protected const array CHECKED_COMMAND = ['artisan', 'migrate'];
@@ -138,7 +148,8 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
-     * Seed the database connection.
+     * Seed the database connection, and the guard and MFA application people
+     * sign in on.
      *
      * Reads `DB_CONNECTION` from the environment to select the driver. Defaults
      * to in-memory SQLite when unset, so local development needs no extra
@@ -156,6 +167,92 @@ abstract class TestCase extends OrchestraTestCase
         $config->set('app.key', 'base64:' . base64_encode('laravel-iam test key!!!!!!!!!!!!'));
         $config->set('database.default', self::CONNECTION);
         $config->set('database.connections.' . self::CONNECTION, $this->databaseConnection());
+    }
+
+    /**
+     * Load the application's configuration, then the guard and the MFA
+     * application people sign in on, before any provider registers, as an
+     * application's own configuration files would hold them.
+     *
+     * @param  mixed  $app
+     * @return void
+     */
+    #[\Override]
+    protected function resolveApplicationConfiguration(mixed $app): void
+    {
+        parent::resolveApplicationConfiguration($app);
+
+        assert($app instanceof Application);
+
+        self::defineSignIn($app->make(ConfigRepository::class));
+    }
+
+    /**
+     * Configure the guard people sign in on: a `jwt` guard of
+     * `laravel-authentication`'s, the default, over the fixtures' people,
+     * signing in with a password, and the MFA application of the same name,
+     * which offers TOTP to anyone who enrols and declares the password its
+     * first factor. Hashing and the credential timebox are cut to the least, so
+     * a sign-in costs a test next to nothing.
+     *
+     * A member merges its packaged configuration one level deep beneath the
+     * application's as it registers, so each member block set here is set
+     * whole, the packaged values it does not change included, and reads the
+     * same before the member registers and after.
+     *
+     * @param  \Illuminate\Config\Repository  $config
+     * @return void
+     */
+    private static function defineSignIn(ConfigRepository $config): void
+    {
+        $config->set('auth.defaults.guard', self::GUARD);
+        $config->set('auth.guards.' . self::GUARD, [
+            'driver'      => 'jwt',
+            'provider'    => 'people',
+            'application' => ['methods' => ['password']],
+        ]);
+        $config->set('auth.providers.people', ['driver' => 'model', 'model' => Person::class]);
+        $config->set('hashing.bcrypt.rounds', 4);
+
+        /** @var array<string, mixed> $jwt */
+        $jwt = self::packagedConfiguration(AuthenticationServiceProvider::class, 'authentication')['jwt'];
+
+        $config->set('authentication.jwt', [
+            ...$jwt,
+            'keys'     => ['default' => base64_encode('laravel-iam test signing key, 48 bytes long!!!!')],
+            'issuer'   => 'https://iam.test',
+            'audience' => 'https://iam.test/api',
+        ]);
+        $config->set('authentication.timebox', ['credentials_microseconds' => 1]);
+
+        $config->set('mfa.applications', [
+            self::GUARD => [
+                'types'        => ['totp'],
+                'requirement'  => 'enrolled',
+                'first_factor' => ['method' => 'password', 'channel' => 'password'],
+            ],
+        ]);
+    }
+
+    /**
+     * Return the configuration a member packages under the given key, read from
+     * the file its provider merges.
+     *
+     * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
+     * @param  string  $key
+     * @return array<array-key, mixed>
+     */
+    private static function packagedConfiguration(string $provider, string $key): array
+    {
+        $file = (new \ReflectionClass($provider))->getFileName();
+
+        assert(is_string($file));
+
+        $configuration = require dirname($file, 2) . '/config/' . $key . '.php';
+
+        assert(is_array($configuration));
+
+        return $configuration;
     }
 
     /**
