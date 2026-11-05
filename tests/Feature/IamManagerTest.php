@@ -14,8 +14,7 @@ use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
-use SineMacula\Laravel\Authorization\Contracts\PrincipalResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Evaluation\EvaluationResult;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
@@ -124,8 +123,7 @@ final class IamManagerTest extends TestCase
             LastDecisionStore::class,
             PolicyEvaluator::class,
             'authorization',
-            PrincipalResolver::class,
-            TenantResolver::class,
+            SubjectResolver::class,
             PolicyResolver::class,
         ];
         $before = array_map(fn (string $abstract): mixed => $this->app?->make($abstract), $abstracts);

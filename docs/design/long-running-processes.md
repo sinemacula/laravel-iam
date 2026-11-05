@@ -31,7 +31,7 @@ process calls it.
     scope has ended) and `laravel-authorization` keep request state in, listed in `WorkerReset::SCOPED_STATE`.
     Authorization is installed and active from M1, binding its request state with `scoped()`: its `ResolvedTenant`
     holder, `ResolutionCache`, `LastDecisionStore`, `PolicyEvaluator` and `authorization` manager, and the defaults
-    behind its principal and tenant resolvers, policy store and policy resolver under its own `authorization.default:`
+    behind its subject resolver, policy store and policy resolver under its own `authorization.default:`
     keys (the contracts themselves resolve through those keys with a plain `bind()`, so an application's own binding of
     a contract is never scoped, and is kept). Forgetting them needs no authorization API; without it a long-running
     command that resets between tenants would keep the first tenant's `ResolvedTenant`, decision and resolutions, and an

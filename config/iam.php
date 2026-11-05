@@ -26,6 +26,28 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Adapters
+    |---------------------------------------------------------------------------
+    |
+    | Which members this package binds together. `mfa` binds
+    | `laravel-authentication` and MFA through each other's seams: the
+    | additional-factor requirement and the requirement check, pending sessions,
+    | step-up, reauthentication and freshness, factor changes, revocation on
+    | factor removal and reset, the return to pending, and the proof store. Each
+    | adapter replaces only the member's own default, never a binding of the
+    | application's. Turn it off (`false`, `0`, `off`) only to bind every one of
+    | those seams yourself: revocation on factor removal is mandatory, and the
+    | members' defaults leave it undone. A value it does not recognise leaves it
+    | on.
+    |
+    */
+
+    'adapters' => [
+        'mfa' => env('IAM_ADAPTERS_MFA', true),
+    ],
+
+    /*
+    |---------------------------------------------------------------------------
     | Transactions
     |---------------------------------------------------------------------------
     |

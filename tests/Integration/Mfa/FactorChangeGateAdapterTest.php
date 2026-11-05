@@ -1,0 +1,697 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Tests\Integration\Mfa;
+
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Connection;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Auth\User;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Orchestra\Testbench\Attributes\WithConfig;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Models\Session;
+use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
+use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
+use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
+use SineMacula\Laravel\Mfa\Concerns\HasFactors;
+use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
+use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
+use SineMacula\Laravel\Mfa\Enums\FactorChange;
+use SineMacula\Laravel\Mfa\Enums\FailureReason;
+use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
+use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
+use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FactorChangeGateTests;
+use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RunsAtIsolationLevels;
+use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
+use Tests\Fixtures\Models\Person;
+use Tests\TestCase;
+
+/**
+ * Integration tests for MFA's factor-change gate through
+ * `laravel-authentication`'s (IAM-3.6): MFA's contract kit, asked inside a
+ * transaction on the storage connection; the requirement MFA's application
+ * configures crossing as `laravel-authentication`'s freshness requirement, the
+ * stricter applying; every refusal, a session no longer live included, thrown
+ * as MFA's `not_fresh`; the session's row held until the caller's transaction
+ * ends; and a change from another sign-in, or none, refused by throwing so the
+ * change rolls back (IAM-8.2).
+ *
+ * MFA's own flow is run too: enrolling a further factor, with this package's
+ * factor-change adapters bound alone, is gated after MFA's locks, on MySQL and
+ * PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
+ * @copyright   2026 Sine Macula Limited
+ *
+ * @internal
+ */
+#[CoversClass(FactorChangeGateAdapter::class)]
+#[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+final class FactorChangeGateAdapterTest extends TestCase
+{
+    use ArrangesFactorChanges, FactorChangeGateTests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+
+    /** @var int How long `laravel-authentication`'s factor changes stay fresh after a step-up by default, in seconds. */
+    private const int FACTOR_CHANGE_SECONDS = 900;
+
+    /** @var string The factor a removal names. */
+    private const string REMOVED = 'factor-removed';
+
+    /** @var string The factor a step-up is made with. */
+    private const string STEPPED_UP = 'factor-stepped-up';
+
+    /**
+     * An allowed change lasts until the session stops being fresh for it: the
+     * step-up's time and the shorter of `laravel-authentication`'s age and the
+     * age MFA's application configures.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnAllowedChangeLastsUntilTheSessionStopsBeingFresh(): void
+    {
+        $now = CarbonImmutable::now()->startOfSecond();
+
+        CarbonImmutable::setTestNow($now);
+
+        $configured = $this->steppedUpChange(FactorChange::ADD_FACTOR, self::configuredRequirement());
+
+        self::assertEquals($now->addSeconds(self::FACTOR_CHANGE_SECONDS), $this->gate()->authorize($configured));
+
+        $shorter = $this->steppedUpChange(FactorChange::ADD_FACTOR, Requirement::none()->withAdditionalVerification(60));
+
+        self::assertEquals($now->addSeconds(60), $this->gate()->authorize($shorter));
+    }
+
+    /**
+     * Rows of `[MFA's requirement, whether a step-up with a TOTP code reported
+     * multifactor allows a further factor under it]`.
+     *
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: bool}>
+     */
+    public static function provideRequirements(): iterable
+    {
+        yield 'asks for nothing' => [Requirement::none(), true];
+
+        yield 'an additional verification' => [Requirement::none()->withAdditionalVerification(600), true];
+
+        yield 'multifactor' => [Requirement::none()->withMultifactor(600), true];
+
+        yield 'multifactor of any age' => [Requirement::none()->withMultifactor(), true];
+
+        yield 'multifactor within longer than a day' => [Requirement::none()->withMultifactor(200000), true];
+
+        yield 'phishing resistance' => [Requirement::none()->withPhishingResistance(600), false];
+
+        yield 'an additional verification, and phishing resistance' => [Requirement::none()->withAdditionalVerification(600)->withPhishingResistance(600), false];
+    }
+
+    /**
+     * MFA's requirement crosses as what a stored proof can show: its parts'
+     * kinds and flags, within the shortest of their ages and never longer than
+     * a day.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
+     * @param  bool  $allowed
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideRequirements')]
+    public function testMfasRequirementIsHeldToWhatAStoredProofCanShow(Requirement $requirement, bool $allowed): void
+    {
+        $change = $this->steppedUpChange(FactorChange::ADD_FACTOR, $requirement);
+
+        self::assertSame($allowed, $this->isAllowed($change));
+    }
+
+    /**
+     * A part's age is the shortest of all of them: a step-up older than one
+     * part's age is refused even within another's.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheShortestAgeOfTheRequirementsPartsBinds(): void
+    {
+        $change = $this->steppedUpChange(FactorChange::ADD_FACTOR, Requirement::none()->withAdditionalVerification(600)->withMultifactor(60));
+
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->addSeconds(120));
+
+        self::assertFalse($this->isAllowed($change));
+    }
+
+    /**
+     * An additional verification is a further factor or a recovery code, so a
+     * first additional factor, which a reauthentication with the first factor
+     * allows, is refused under it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnAdditionalVerificationTakesOnlyAFurtherFactorOrARecoveryCode(): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        $this->reauthenticate($person, $session);
+
+        self::assertTrue($this->isAllowed($this->request($person, $session, FactorChange::ADD_FIRST_ADDITIONAL_FACTOR)));
+        self::assertFalse($this->isAllowed($this->request($person, $session, FactorChange::ADD_FIRST_ADDITIONAL_FACTOR, Requirement::none()->withAdditionalVerification(600))));
+    }
+
+    /**
+     * A minimum assurance level cannot be shown by a stored proof's freshness,
+     * so a requirement asking for one is refused as a misconfiguration.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMinimumLevelIsRefusedAsAMisconfiguration(): void
+    {
+        $change = $this->steppedUpChange(FactorChange::ADD_FACTOR, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 600));
+
+        $message = 'laravel-authentication\'s freshness cannot hold a session to a minimum assurance level, which its proofs do not record:'
+            . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.';
+
+        $this->expectExceptionObject(new \InvalidArgumentException($message));
+
+        $this->gate()->authorize($change);
+    }
+
+    /**
+     * A session that is no longer live is refused as not fresh, with
+     * `laravel-authentication`'s reason in the refusal's detail.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASessionNoLongerLiveIsNotFresh(): void
+    {
+        $change = $this->steppedUpChange(FactorChange::GENERATE_RECOVERY_CODES, null);
+
+        Session::query()->whereKey($change->session)->update(['revoked_at' => CarbonImmutable::now()]);
+
+        try {
+            $this->gate()->authorize($change);
+
+            self::fail('A change was allowed from a revoked session.');
+        } catch (OperationRefusedException $exception) {
+            self::assertSame(FailureReason::NOT_FRESH, $exception->reason);
+            self::assertFalse($exception->byPackage);
+            self::assertSame('laravel-authentication refused the change [mfa.generate_recovery_codes] from the session: [session_revoked].', $exception->getMessage());
+        }
+    }
+
+    /**
+     * A change is allowed only while the fresh proof `laravel-authentication`
+     * allowed it on is among the session's counting proofs read back current:
+     * one behind more newer proofs of its kind than one read returns (here
+     * step-ups made with the factor the removal names, which never count for
+     * it) is refused as not fresh rather than guessed to count.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAChangeIsRefusedUnlessItsProofIsReadBackCurrent(): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $change  = $this->request($person, $session, FactorChange::REMOVE_FACTOR, self::configuredRequirement());
+
+        $this->stepUpWith($person, $session, self::STEPPED_UP);
+
+        for ($stepUp = 1; $stepUp < RequirementSubject::MAX_LIMIT; $stepUp++) {
+            $this->stepUpWith($person, $session, self::REMOVED);
+        }
+
+        self::assertTrue($this->isAllowed($change));
+
+        $this->stepUpWith($person, $session, self::REMOVED);
+
+        try {
+            $this->gate()->authorize($change);
+
+            self::fail('A change was allowed on a proof not read back.');
+        } catch (OperationRefusedException $exception) {
+            self::assertSame(FailureReason::NOT_FRESH, $exception->reason);
+            self::assertFalse($exception->byPackage);
+            self::assertSame(
+                'The proof laravel-authentication allowed the change on is not among the session\'s counting proofs read current, so it is not taken to count.',
+                $exception->getMessage(),
+            );
+        }
+    }
+
+    /**
+     * A change from another of the identity's sign-ins than the guard's
+     * session, or with no session on the guard, or by an identity
+     * `laravel-authentication` does not sign in, is refused inside the change's
+     * transaction, which rolls back.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAChangeWithoutTheGuardsSessionIsRefusedAndRollsBack(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $other   = $this->signIn($person)->record;
+        $current = $this->signInAndActOnSession($person);
+
+        $this->stepUpWith($person, $current, self::STEPPED_UP);
+
+        $stranger = new class extends User implements MultiFactorAuthenticatable {
+            use HasFactors;
+        };
+
+        $refusals = [
+            [SessionMismatchException::class, $this->request($person, $other, FactorChange::ADD_FACTOR)],
+            [UnresolvedReferenceException::class, new FactorChangeRequest($stranger, self::GUARD, 'sign-in', FactorChange::ADD_FACTOR, new Collection)],
+            [UnresolvedReferenceException::class, new FactorChangeRequest($person, 'web', $this->signInReference($current), FactorChange::ADD_FACTOR, new Collection)],
+        ];
+
+        foreach ($refusals as [$refusal, $request]) {
+            $this->assertRolledBack($person, $refusal, $request);
+        }
+
+        $this->stopActing(self::GUARD);
+
+        $this->assertRolledBack($person, UnresolvedReferenceException::class, $this->request($person, $current, FactorChange::ADD_FACTOR));
+    }
+
+    /**
+     * The session's row is locked in the caller's transaction and held until it
+     * ends, so a revocation waits for the change, or commits first and the
+     * change is refused.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testTheSessionsRowIsHeldUntilTheCallersTransactionEnds(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $change = $this->steppedUpChange(FactorChange::GENERATE_RECOVERY_CODES, null);
+        $other  = $this->otherConnection();
+
+        self::storage()->transaction(function () use ($change, $other): void {
+
+            $this->gate()->authorize($change);
+
+            self::assertFalse(self::canLock($other, $change->session), 'The session\'s row was not held by the caller\'s transaction.');
+        });
+
+        self::assertTrue(self::canLock($other, $change->session), 'The session\'s row was held once the caller\'s transaction ended.');
+    }
+
+    /**
+     * Enrolling a further factor through MFA, with the factor-change adapters
+     * bound, is gated by `laravel-authentication` after MFA's locks on the
+     * identity's state and factors, the session's row taken last of them:
+     * refused on a session never stepped up, with nothing started, and allowed
+     * once it is.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testEnrollingAFurtherFactorThroughMfaIsGatedAfterMfasLocks(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $factor  = $this->confirmedFactor($person);
+
+        $this->bindTheFactorChangeAdapters();
+        $this->nameTheSignIn($person, $session);
+
+        self::assertSame(FailureReason::NOT_FRESH, Mfa::startEnrollment(EnrollmentRequest::totp('ada@example.test'))->reason);
+        self::assertSame(1, Factor::query()->count());
+
+        $this->stepUpWith($person, $session, $factor->id);
+
+        DB::enableQueryLog();
+
+        $start = Mfa::startEnrollment(EnrollmentRequest::totp('ada@example.test'));
+
+        $locks = array_values(array_filter(
+            array_column(DB::getQueryLog(), 'query'),
+            static fn (string $query): bool => str_contains($query, 'for update'),
+        ));
+
+        $sessions = array_keys(array_filter($locks, static fn (string $query): bool => str_contains($query, 'authentication_sessions')));
+        $members  = array_keys(array_filter($locks, static fn (string $query): bool => str_contains($query, 'mfa_identity_states') || str_contains($query, 'mfa_factors')));
+
+        self::assertTrue($start->hasStarted(), $start->reason->value ?? '');
+        self::assertSame(2, Factor::query()->count());
+        self::assertNotSame([], $members);
+        self::assertNotSame([], $sessions);
+        self::assertGreaterThan(max($members), min($sessions));
+    }
+
+    /**
+     * The storage connection MFA's transactions run on, for the gate the kit
+     * asks.
+     *
+     * @return \Illuminate\Database\Connection
+     */
+    public static function storageConnection(): Connection
+    {
+        return self::storage();
+    }
+
+    /**
+     * The gate under test, asked inside a transaction on the storage
+     * connection, as MFA asks it.
+     *
+     * @return \SineMacula\Laravel\Mfa\Contracts\FactorChangeGate
+     */
+    #[\Override]
+    protected function factorChangeGate(): FactorChangeGate
+    {
+        $gate = $this->gate();
+
+        return new readonly class ($gate) implements FactorChangeGate {
+            /**
+             * Constructor.
+             *
+             * @param  \SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter  $gate
+             */
+            public function __construct(
+
+                /** The gate asked inside the transaction. */
+                private FactorChangeGateAdapter $gate,
+            ) {}
+
+            /**
+             * Ask the gate inside a transaction on the storage connection.
+             *
+             * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $request
+             * @return ?\Carbon\CarbonImmutable
+             *
+             * @throws \Throwable
+             */
+            #[\Override]
+            public function authorize(FactorChangeRequest $request): ?CarbonImmutable
+            {
+                return FactorChangeGateAdapterTest::storageConnection()->transaction(fn (): ?CarbonImmutable => $this->gate->authorize($request));
+            }
+        };
+    }
+
+    /**
+     * The change from a session fresh enough for it: reauthenticated with the
+     * first factor for a first additional factor, stepped up with another
+     * factor than the one a removal names for every other change, carrying
+     * MFA's default requirement for the change's operation.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function freshChange(FactorChange $change): FactorChangeRequest
+    {
+        if ($change === FactorChange::ADD_FIRST_ADDITIONAL_FACTOR) {
+
+            $person  = $this->createPerson();
+            $session = $this->signInAndActOnSession($person);
+
+            $this->reauthenticate($person, $session);
+
+            return $this->request($person, $session, $change);
+        }
+
+        return $this->steppedUpChange($change, self::configuredRequirement());
+    }
+
+    /**
+     * The change from a session only signed in, with neither a step-up nor a
+     * reauthentication since.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function staleChange(FactorChange $change): FactorChangeRequest
+    {
+        $person = $this->createPerson();
+
+        $requirement = $change->operation() === null ? null : self::configuredRequirement();
+
+        return $this->request($person, $this->signInAndActOnSession($person), $change, $requirement);
+    }
+
+    /**
+     * The removal of a factor from a session stepped up only with it, while the
+     * person has another confirmed factor.
+     *
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function removalSteppedUpOnlyWithTheFactor(): FactorChangeRequest
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $removed = $this->confirmedFactor($person);
+
+        $this->confirmedFactor($person);
+        $this->stepUpWith($person, $session, $removed->id);
+
+        return new FactorChangeRequest(
+            $person,
+            self::GUARD,
+            $this->signInReference($session),
+            FactorChange::REMOVE_FACTOR,
+            $this->factorsOf($person),
+            $removed->id,
+            self::configuredRequirement(),
+        );
+    }
+
+    /**
+     * A change from a session fresh by `laravel-authentication`'s own policy,
+     * carrying a configured requirement for phishing resistance, which a
+     * step-up with a TOTP code never shows.
+     *
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function changeBeyondTheConfiguredRequirement(): FactorChangeRequest
+    {
+        return $this->steppedUpChange(FactorChange::GENERATE_RECOVERY_CODES, Requirement::none()->withPhishingResistance(self::FACTOR_CHANGE_SECONDS));
+    }
+
+    /**
+     * The requirement MFA configures for every operation a factor change is
+     * judged for by default: an additional verification within its default age,
+     * as `laravel-authentication` asks too.
+     *
+     * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
+     */
+    private static function configuredRequirement(): Requirement
+    {
+        return Requirement::none()->withAdditionalVerification(self::FACTOR_CHANGE_SECONDS);
+    }
+
+    /**
+     * The change, carrying the requirement given, from a session of a new
+     * person's stepped up just now with a factor other than the one a removal
+     * names.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
+     * @param  ?\SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     *
+     * @throws \Throwable
+     */
+    private function steppedUpChange(FactorChange $change, ?Requirement $requirement): FactorChangeRequest
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        $this->stepUpWith($person, $session, self::STEPPED_UP);
+
+        return $this->request($person, $session, $change, $requirement);
+    }
+
+    /**
+     * The change, carrying the requirement given, from the session, naming the
+     * removed factor when the change names one.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
+     * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
+     * @param  ?\SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
+     * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
+     */
+    private function request(Person $person, EloquentSession&Model $session, FactorChange $change, ?Requirement $requirement = null): FactorChangeRequest
+    {
+        $factorId = $change->namesFactor() ? self::REMOVED : null;
+
+        return new FactorChangeRequest($person, self::GUARD, $this->signInReference($session), $change, $this->factorsOf($person), $factorId, $requirement);
+    }
+
+    /**
+     * The person's factors, as MFA hands them to the gate.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @return \Illuminate\Database\Eloquent\Collection<int, \SineMacula\Laravel\Mfa\Models\Factor>
+     */
+    private function factorsOf(Person $person): Collection
+    {
+        return Factor::query()->where('authenticatable_id', (string) $person->id)->get();
+    }
+
+    /**
+     * Whether the gate allows the change, asked inside a transaction on the
+     * storage connection.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $change
+     * @return bool
+     *
+     * @throws \Throwable
+     */
+    private function isAllowed(FactorChangeRequest $change): bool
+    {
+        try {
+            $this->factorChangeGate()->authorize($change);
+        } catch (OperationRefusedException $exception) {
+            self::assertSame(FailureReason::NOT_FRESH, $exception->reason);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Assert the change, asked in a transaction on the storage connection after
+     * the person's name was changed there, is refused with the exception given,
+     * and that the change rolled back with it.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  class-string<\RuntimeException>  $refusal
+     * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $request
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    private function assertRolledBack(Person $person, string $refusal, FactorChangeRequest $request): void
+    {
+        try {
+            self::storage()->transaction(function () use ($person, $request): void {
+
+                $person->forceFill(['name' => 'Changed'])->save();
+
+                $this->gate()->authorize($request);
+            });
+
+            self::fail('A change was allowed without the guard\'s session.');
+        } catch (\RuntimeException $exception) {
+            self::assertInstanceOf($refusal, $exception);
+        }
+
+        self::assertSame('Ada Lovelace', $person->refresh()->name);
+    }
+
+    /**
+     * Open a second connection, of the test's own, to the database the storage
+     * connection is on.
+     *
+     * @return \PDO
+     */
+    private function otherConnection(): \PDO
+    {
+        /** @var array{driver: string, host: string, port: string, database: string, username: string, password: string} $config */
+        $config = Config::get('database.connections.' . self::CONNECTION);
+
+        return new \PDO(
+            sprintf('%s:host=%s;port=%s;dbname=%s', $config['driver'], $config['host'], $config['port'], $config['database']),
+            $config['username'],
+            $config['password'],
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION],
+        );
+    }
+
+    /**
+     * Whether the other connection can lock the session's row at once, without
+     * waiting for another transaction.
+     *
+     * @param  \PDO  $other
+     * @param  string  $session
+     * @return bool
+     */
+    private static function canLock(\PDO $other, string $session): bool
+    {
+        $other->beginTransaction();
+
+        try {
+            $statement = $other->prepare('select id from authentication_sessions where id = ? for update nowait');
+
+            $statement->execute([$session]);
+
+            return $statement->fetchColumn() !== false;
+        } catch (\PDOException) {
+            return false;
+        } finally {
+            $other->rollBack();
+        }
+    }
+
+    /**
+     * Resolve the gate under test from the container.
+     *
+     * @return \SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter
+     */
+    private function gate(): FactorChangeGateAdapter
+    {
+        $gate = $this->app?->make(FactorChangeGateAdapter::class);
+
+        self::assertInstanceOf(FactorChangeGateAdapter::class, $gate);
+
+        return $gate;
+    }
+}

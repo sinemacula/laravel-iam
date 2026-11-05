@@ -15,10 +15,12 @@ use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\IamServiceProvider;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
@@ -448,8 +450,9 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The binding rule's outcome is kept in the container for the checks; with
-     * no capability declaring a seam yet, it bound and kept nothing.
+     * The binding rule's outcome is kept in the container for the checks: it
+     * bound every capability's seams over the members' defaults, and kept none,
+     * the application binding nothing of its own.
      *
      * @return void
      *
@@ -458,9 +461,10 @@ final class IamServiceProviderTest extends TestCase
     public function testTheBindingRulesOutcomeIsKeptForTheChecks(): void
     {
         $outcome = $this->app?->make(BindingOutcome::class);
+        $seams   = array_map(static fn (SeamBinding $binding): string => $binding->abstract, (new MfaSeams)->seams(new Repository));
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
-        self::assertSame([], $outcome->bound);
+        self::assertSame($seams, $outcome->bound);
         self::assertSame([], $outcome->kept);
         self::assertSame($outcome, $this->app?->make(BindingOutcome::class));
     }
