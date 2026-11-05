@@ -9,6 +9,7 @@ use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
+use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 
@@ -16,9 +17,11 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * Shared base test case for the package's feature and integration tests.
  *
  * Boots a minimal Testbench application with every member's service provider
- * registered and the database `DB_CONNECTION` names (in-memory SQLite when
- * unset). Subclasses may override `defineEnvironment` to add per-test config
- * and `defineDatabaseMigrations` (or use `setUp`) to create tables.
+ * registered, then this package's, and the database `DB_CONNECTION` names
+ * (in-memory SQLite when unset). Subclasses may override `defineEnvironment` to
+ * add per-test config and `defineDatabaseMigrations` (or use `setUp`) to create
+ * tables, and may boot the application again with the providers in another
+ * order through `reorderProviders`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,11 +33,23 @@ abstract class TestCase extends OrchestraTestCase
     /** @var string The connection each test runs on, in its worker's database. */
     protected const string CONNECTION = 'testing';
 
+    /** @var list<class-string<\Illuminate\Support\ServiceProvider>> Every member's service provider, in the order the tests register them by default. */
+    protected const array MEMBER_PROVIDERS = [
+        AuthenticationServiceProvider::class,
+        AuthorizationServiceProvider::class,
+        MfaServiceProvider::class,
+        SsoServiceProvider::class,
+        AuditLogServiceProvider::class,
+    ];
+
     /** @var string The database every worker database is named after. */
     private const string DATABASE = 'laravel_iam_test';
 
     /** @var array<string, true> Worker databases this process has created. */
     private static array $workerDatabases = [];
+
+    /** @var ?list<class-string<\Illuminate\Support\ServiceProvider>> The providers in the order the test asked for; `null` for the members, then this package. */
+    private ?array $providerOrder = null;
 
     /**
      * Destroy the application, then close its database connections.
@@ -64,7 +79,8 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
-     * Register every member's service provider.
+     * Register every member's service provider, then this package's, unless the
+     * test asked for another order.
      *
      * @param  mixed  $app
      * @return array<int, class-string<\Illuminate\Support\ServiceProvider>>
@@ -72,13 +88,22 @@ abstract class TestCase extends OrchestraTestCase
     #[\Override]
     protected function getPackageProviders(mixed $app): array
     {
-        return [
-            AuthenticationServiceProvider::class,
-            AuthorizationServiceProvider::class,
-            MfaServiceProvider::class,
-            SsoServiceProvider::class,
-            AuditLogServiceProvider::class,
-        ];
+        return $this->providerOrder ?? [...self::MEMBER_PROVIDERS, IamServiceProvider::class];
+    }
+
+    /**
+     * Destroy the application and boot a new one with the given providers
+     * registered in the given order, as package discovery or an application's
+     * own provider list might register them.
+     *
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     */
+    protected function reorderProviders(array $providers): void
+    {
+        $this->providerOrder = $providers;
+
+        $this->reloadApplication();
     }
 
     /**

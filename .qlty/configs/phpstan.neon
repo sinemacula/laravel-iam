@@ -7,13 +7,11 @@ parameters:
     scanDirectories:
         - %currentWorkingDirectory%/src
         - %currentWorkingDirectory%/benchmarks
-        - %currentWorkingDirectory%/database
         - %currentWorkingDirectory%/tests
 
     paths:
         - src
         - benchmarks
-        - database
         - tests
 
     # Analyse against the supported PHP range (composer.json and the CI matrix)
