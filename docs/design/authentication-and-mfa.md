@@ -56,7 +56,9 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
     service) and `identitySessions()` (the session service a change to the identity as a whole goes through: the
     default guard's when it is a `jwt` guard, otherwise the first `jwt` guard declared);
   - `current()` (the guard's current session, when it is the identity's), `of()` (that session, when it is also the
-    sign-in MFA named) and `identity()` (MFA's identity as `laravel-authentication`'s).
+    sign-in MFA named) and `identity()` (MFA's identity as `laravel-authentication`'s);
+  - `isInTransaction()`: whether a transaction is open on `laravel-authentication`'s storage connection, the one its
+    session model must live on, which decides how an adapter asks the freshness policy (see below).
   - An application that is no declared `jwt` guard on `laravel-authentication`'s auth manager (an `api_key` guard
     included) throws `Exceptions\UnresolvedReferenceException` of kind `guard` from `guard()`, and so from every method
     that resolves a guard: a misconfiguration, told apart from a guard that holds no session of the identity now (kind
@@ -123,17 +125,32 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   - `StepUpAdapter` (IAM-3.4) checks the proof names the guard's identity and current session, reads the session's
     first factor (locking its row, after MFA's locks), and calls `stepUp()` with the proof's own evaluation after it;
     the `AccessTokenResult` is MFA's completion.
-  - `ReauthenticatorAdapter` (IAM-3.5) locks the session row through `firstFactor()` and answers the newest
-    reauthentication `FreshnessPolicy::freshProof()` finds for `first_additional_factor` within MFA's five minutes; a
-    session no longer live answers none.
+  - `ReauthenticatorAdapter` (IAM-3.5) checks the session is live through `firstFactor()` (locking its row inside a
+    transaction) and answers the newest reauthentication `FreshnessPolicy::freshProof()` finds for
+    `first_additional_factor` within MFA's five minutes; a session no longer live answers none.
   - `FreshnessGateAdapter` (IAM-3.5) asks `FreshnessPolicy::freshUntil()` about the default guard's current session for
     each part of the caller's requirement, each made stricter by the application's own setting in
-    `laravel-authentication`, and answers the earliest end. It takes no lock.
+    `laravel-authentication`, and answers the earliest end. `requirement()` reads no proof.
+  - The read mode of both (`freshProof()` and `freshUntil()`'s `$current`) follows where MFA asks them, through
+    `CurrentSession::isInTransaction()`:
+    - Outside a transaction on the session model's connection (MFA's route gate and `Mfa::isFresh()` for the freshness
+      gate; MFA's contract kits, or a caller of the application's, for either) nothing acts on the answer atomically, so
+      they ask plainly: no lock, and the policy, which throws a `LogicException` for a current judgement outside a
+      transaction, answers.
+    - Inside one (MFA's own `ConfiguredFactorChangeGate`, which an application may bind back in place of this
+      package's gate, asks both inside MFA's transaction, after its locks, and grants the change on the answer, its end
+      from `freshUntil()`) they ask current: the policy locks the session's row until the transaction ends and reads its
+      proofs as committed, so a proof voided before the call never counts and one recorded before it does, whatever
+      the transaction read first.
+    - It is the line `laravel-authentication`'s own reads of a session's proofs and first factor draw too, so every
+      adapter that reads a session's proofs reads them the same way. An application that asks `Mfa::isFresh()` inside
+      a transaction of its own gets the current answer, and the session's row stays locked until it ends.
   - `FactorChangeGateAdapter` (IAM-3.6) calls `factorChange()` on the sign-in MFA names, with MFA's configured
-    requirement as a whole, in place of MFA's own freshness check, and answers until when the session stays fresh. It
-    then reads the fresh proof the verdict names back among the session's counting proofs, current (the session's row
-    locked, the proofs under a shared lock), and refuses the change as `not_fresh` unless it is there: a proof voided
-    while the change waited, or one behind more newer proofs of its kind than one read returns, never allows it.
+    requirement as a whole, in place of MFA's own freshness check, and answers until when the session stays fresh.
+    `laravel-authentication`'s gate judges the session under its lock on its proofs as committed (it asks its freshness
+    policy current), so a step-up voided before the gate never allows a change and one recorded before it does,
+    whatever MFA's transaction, or a transaction it runs inside, read first; the adapter takes the verdict as it is and
+    reads no proof of its own.
   - `SessionRevokerAdapter` (IAM-3.7) calls `factorRemoved()` with the default guard's current session and returns
     `RemovalRevocation::judged()` carrying the `FactorRemoval` (its new pending credential included) as MFA's
     completion. A reset names no sign-in, so `revokeAll()` calls `factorReset()`, which ends the identity's sessions on
@@ -165,17 +182,29 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   - MFA takes the identity's state first and its factors second, in one transaction, for a verification, a factor
     change, a removal and a reset.
   - The session row is taken after both: by the proof store's read inside MFA's transaction, by the factor-change
-    gate, by the step-up and the pending completion, which write it last, and by the revoker.
+    gate, by the reauthenticator and by the freshness gate when MFA's own factor-change gate asks them there, by the
+    step-up and the pending completion, which write it last, and by the revoker. A current read takes the session's
+    row, then its proofs (on MySQL and MariaDB under a shared lock, which at REPEATABLE READ also holds the gaps on
+    either side of them). A removal goes on from there: the current session's row, then its proofs, then, in the
+    revoker's `factorRemoved()`, the rows of the identity's other sessions, which it ends. That is
+    `laravel-authentication`'s chosen order, and it takes another session's row after the current session's, not
+    before.
   - Every other row of MFA's taken in the same transaction (the challenge a verification consumes, an enrolment, a
     passkey association) is the identity's own, which nothing takes without the identity's state; MFA's counters of
     attempts are kept outside the transaction.
   - `laravel-authentication` alone (a step-up, a refresh, a bulk revocation) takes the session row and nothing of
     MFA's.
-  - So no two transactions can each hold a row the other waits on. In a verification the proof read takes the session
-    row before the challenge is consumed, which is safe for the same reason: a transaction that holds a challenge holds
-    the identity's state.
-  - The adapters that only read (the policy, the requirement check, the freshness gate, the pending session resolver)
-    take no lock of their own.
+  - So no two transactions can each hold a row the other waits on, but for one case `laravel-authentication` keeps by
+    design: on MySQL and MariaDB at REPEATABLE READ, a removal holding the gaps around the current session's proofs
+    while it waits on a neighbouring session's row, and a step-up or reauthentication of that session holding its row
+    while its proof waits on one of those gaps, deadlock. The database fails one side, and the caller rolls back its
+    whole transaction and retries, as the Concurrency case under [Failure / Edge Cases](#failure--edge-cases) sets
+    out. In a verification the proof read takes the session row before the challenge is consumed, which is safe for
+    the same reason as the rest: a transaction that holds a challenge holds the identity's state.
+  - The adapters that only read (the policy, the requirement check, the pending session resolver) take no lock of their
+    own, and nor does the freshness gate asked outside a transaction; asked inside one, its current read takes the
+    session's row after MFA's locks, and a removal through MFA's own gate then goes on to take the identity's other
+    sessions' rows.
 
 ## Success Path
 
@@ -261,18 +290,39 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
 - Concurrency:
   - MFA opens the transaction of each of its changes itself (a verification, a factor change, a removal, a reset), so
     those flows cannot be wrapped (IAM-11.2): never run one inside `Iam::transaction()` or any transaction the
-    application opens. The caller retries the request instead.
+    application opens. MFA's own transaction never retries, and only the outermost transaction can be retried, so the
+    caller retries the request instead.
   - At REPEATABLE READ on PostgreSQL a change that waited on a row another transaction changed fails to serialise. MFA's
     own transaction never retries, so the failure reaches the caller as Laravel's `DeadlockException`, and the request
     made again resumes against what the other committed.
   - At REPEATABLE READ on MySQL MFA's own transaction fixes its snapshot only once it holds the identity's state, so it
     reads what was committed while it waited. Wrapped in another transaction, it would not: the plain read MFA makes
-    before it takes its locks fixes the enclosing transaction's snapshot before the wait, and
-    `laravel-authentication`'s freshness read in `factorChange()`, which is not a locking read, would still see a
-    step-up voided while the change waited. The factor-change gate's read of that proof back, current, refuses such a
-    change as `not_fresh`, so even a wrapped change fails closed rather than going ahead on a voided step-up; it is
-    still unsupported. `factorChange()` reading the session's proofs current under the session's lock, as `proofs()`
-    and `firstFactor()` do, is a change still needed in `laravel-authentication`.
+    before it takes its locks fixes the enclosing transaction's snapshot before the wait. The freshness judgements that
+    decide a change no longer read that snapshot: `factorChange()` judges the session's proofs as committed under the
+    session's lock, as `proofs()` and `firstFactor()` read them, and so do the freshness gate and the reauthenticator
+    asked inside MFA's transaction. So a step-up voided while a wrapped change waited never allows it:
+    `laravel-authentication`'s gate refuses it (`step_up_required`), and this package's gate passes that refusal on as
+    MFA's `not_fresh`. Wrapping stays unsupported, for the reasons above, not because a wrapped change could go ahead
+    on a voided step-up.
+  - On MySQL and MariaDB at REPEATABLE READ the gate's current read holds the gaps on either side of the session's
+    proofs until MFA's transaction ends, and a removal then ends the identity's other sessions (`factorRemoved()`). A
+    step-up or reauthentication of a neighbouring session of the same identity (one whose proofs border these) that
+    holds that session's row while its proof waits on a gap, and the removal waiting on that row, deadlock. The
+    database fails one side, with nothing half-written: usually the neighbour's, the smaller transaction, and the
+    other goes ahead. What the failed side throws depends on where its statement ran. Inside a transaction someone
+    else opened it is Laravel's `DeadlockException`: MFA's change (`factorRemoved()` runs in a savepoint inside MFA's
+    transaction), or a step-up or reauthentication the application makes inside a transaction of its own. Made
+    directly through `Auth::sessions()` (`reauthenticate()`, `stepUp()`) with no transaction open,
+    `laravel-authentication`'s own transaction is the outermost, and Laravel rethrows the database's `QueryException`
+    (SQLSTATE 40001, MySQL error 1213), which its concurrency detection recognises all the same. So a caller detects a
+    concurrency failure rather than catching one exception class: with Laravel's `ConcurrencyErrorDetector` (as
+    `DetectsConcurrencyErrors` asks it), walking the exception's previous ones as `Iam::transaction()` does, or by
+    making the step-up or reauthentication inside `Iam::transaction()`, which retries it whole, against the removal
+    that ended the session. It then rolls back its whole transaction and retries (the request, for MFA's change).
+    `laravel-authentication` keeps that order by design, as two removals from two sessions of one identity could
+    already deadlock on their rows the same way. A password reset run inside a caller's transaction likewise surfaces
+    a deadlock as `DeadlockException`, with the caller's level restored, a concurrency failure `Iam::transaction()`
+    retries whole when it opened the outermost transaction.
   - At READ COMMITTED, on both engines, the waiting side resumes against what the other committed.
 - One requirement judgement reads the generation and nothing else (the proofs are the subject's, read by
   `laravel-authentication` in its one bounded query); one policy question reads the generation and what MFA composes
@@ -284,16 +334,16 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
 - `src/Mfa/MfaSeams.php`: `seams()`, `SWITCH`; `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`:
   `adapters.mfa`.
 - `src/Mfa/CurrentSession.php`: `of()`, `current()`, `identity()`, `caller()`, `defaultGuard()`, `guard()`,
-  `sessions()`, `identitySessions()`.
+  `sessions()`, `identitySessions()`, `isInTransaction()`.
 - `src/Mfa/Translation/SignIn.php` (`UNNAMED`, `reference()`, `binding()`), `IdentityReference.php`,
   `ChannelTranslator.php`, `ProofTranslator.php` (`toMfa()`, `toResult()`), `RequirementTranslator.php` (`toMfa()`,
   `toAuthentication()`, `evaluation()`, `toFreshnessParts()`, `toFreshness()`, `fromFreshness()`),
   `ChangeTranslator.php`.
 - `src/Mfa/AdditionalFactorPolicyAdapter.php`, `RequirementCheckAdapter.php`, `PendingSessionResolverAdapter.php`
   (`credential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
-  `FreshnessGateAdapter.php`, `FactorChangeGateAdapter.php` (`allowedOn()`), `SessionRevokerAdapter.php`,
-  `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`, `firstFactorOf()`, `held()`),
-  `FirstFactorResolverAdapter.php`, `ProofEvaluator.php` (`evaluate()`).
+  `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
+  `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`,
+  `firstFactorOf()`, `held()`), `FirstFactorResolverAdapter.php`, `ProofEvaluator.php` (`evaluate()`).
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
   (`verify()`).
 - `src/Exceptions/UnresolvedReferenceException.php` (`forGuard()`, `forSession()`, `forIdentity()`, `forMfaIdentity()`),
@@ -318,6 +368,7 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   `FirstFactorResolverTests`; two `ProofStoreTests` checks are skipped, see above), with their own cases on MySQL and
   PostgreSQL at READ COMMITTED and REPEATABLE READ:
   - lock order: `StepUpAdapterTest` and `ReauthenticatorAdapterTest` (`testTheSessionRowIsTheOnlyLockItTakes`),
+    `FreshnessGateAdapterTest` (`testInsideMfasTransactionItLocksTheSessionRowLast`),
     `PendingCompletionAdapterTest` (`testTheSessionIsLockedAfterMfasLocks`), `FactorChangeGateAdapterTest`
     (`testTheSessionsRowIsHeldUntilTheCallersTransactionEnds`,
     `testEnrollingAFurtherFactorThroughMfaIsGatedAfterMfasLocks`), `SessionRevokerAdapterTest`
@@ -326,8 +377,24 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
     (`testRecordingLocksTheSessionRowLastInTheCallersTransaction`, `testASessionRevokedConcurrentlyIsReadCurrent`),
     `FirstFactorResolverAdapterTest` (`testResolvingLocksTheSessionRowLastInTheCallersTransaction`);
   - no lock taken: `RequirementCheckAdapterTest` (`testJudgingTheSessionTakesNoMfaLock`),
-    `PendingSessionResolverAdapterTest` (`testResolvingTakesNoLockAndWritesNothing`), `FreshnessGateAdapterTest`
-    (`testItTakesNoLock`);
+    `PendingSessionResolverAdapterTest` (`testResolvingTakesNoLockAndWritesNothing`), `FreshnessGateAdapterTest` and
+    `ReauthenticatorAdapterTest` (`testOutsideATransactionItAsksPlainlyAndTakesNoLock`);
+  - read mode: `FreshnessGateAdapterTest` and `ReauthenticatorAdapterTest`
+    (`testOutsideATransactionItAsksPlainlyAndTakesNoLock`, `testInsideATransactionItAsksCurrent`), and
+    `FreshnessReadModeTest` from where MFA asks each, every adapter bound: plainly from its route gate
+    (`testMfasRouteGateAsksTheFreshnessGatePlainly`) and `Mfa::isFresh()`
+    (`testMfasFreshnessQuestionAsksTheFreshnessGatePlainly`), current from its own factor-change gate inside its
+    transaction (`testMfasOwnFactorChangeGateAsksTheFreshnessGateCurrent`,
+    `testMfasOwnFactorChangeGateAsksTheReauthenticatorCurrent`), each judgement asked by the adapter named, for MFA's
+    operation (or `first_additional_factor`), never by `laravel-authentication`'s own gate behind this package's,
+    which asks current too, and no `LogicException` on either path;
+  - current reads, inside a caller's transaction that read before another connection committed a change, at READ
+    COMMITTED and REPEATABLE READ (on PostgreSQL's REPEATABLE READ after a failure to serialise and a retry):
+    `FreshnessGateAdapterTest` (`testAStepUpVoidedAfterTheTransactionsFirstReadIsNotFresh`,
+    `testAStepUpMadeAfterTheTransactionsFirstReadIsFresh`), `ReauthenticatorAdapterTest`
+    (`testAReauthenticationMadeAfterTheTransactionsFirstReadIsAnswered`), `FactorChangeGateAdapterTest`
+    (`testAStepUpVoidedAfterTheTransactionsFirstReadNeverAllowsAChange`,
+    `testAStepUpMadeAfterTheTransactionsFirstReadAllowsAChange`);
   - rollback: `AdditionalFactorPolicyAdapterTest` (`testARefusalRollsBackTheProofAtEachIsolationLevel`),
     `PendingCompletionAdapterTest` (`testARollbackLeavesTheSessionPending`, `testAFailedCommitNeverAnswersTheSignIn`),
     `FactorChangeGateAdapterTest` (`testAChangeWithoutTheGuardsSessionIsRefusedAndRollsBack`),
@@ -346,8 +413,15 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   `testARemovalWaitingOnAStepUpResumesAgainstIt`, `testAFactorChangeWaitingOnARemovalResumesAgainstIt`,
   `testARemovalThatFailsToSerialiseIsMadeWhenTheCallerRetriesTheRequest`,
   `testAWrappedRemovalIsNeverAllowedOnAStepUpVoidedWhileItWaited`,
-  `testEachChangeTakesTheIdentityStateAndFactorsBeforeTheSessionRow`, every adapter bound by the binding rule;
-  `FactorChangeGateAdapterTest` `testAChangeIsRefusedUnlessItsProofIsReadBackCurrent`
+  `testEachChangeTakesTheIdentityStateAndFactorsBeforeTheSessionRow`,
+  `testARemovalTakesTheCurrentSessionAndItsProofsBeforeTheIdentitysOtherSessions` (the identity's other sessions'
+  rows taken after the current session's row and its proofs), every adapter bound by the binding rule (the
+  wrapped removal refused by `laravel-authentication`'s own gate, `step_up_required`, on MySQL and PostgreSQL at READ
+  COMMITTED and REPEATABLE READ); `testANeighbouringProofDeadlockedWithARemovalFailsAsAConcurrencyFailure` (on MySQL
+  at REPEATABLE READ, a neighbouring session's step-up or reauthentication fails with nothing of it written, as a
+  `QueryException` made directly, a `DeadlockException` inside the caller's transaction, both recognised as
+  concurrency failures, and retried by `Iam::transaction()` against the removal); `FactorChangeGateAdapterTest`
+  `testAChangeIsJudgedOnLaravelAuthenticationsVerdictAlone` (one read of the session's proofs, the verdict's)
 - `tests/Unit/Mfa/ProofEvaluatorTest.php` `testAFreshEmailCodeAfterAnOldAuthenticatorAppCodeIsNotMultifactor`,
   `testTheProofIsMultifactorOnlyOnItsOwnEvidence`; `tests/Integration/Mfa/MultifactorEvidenceTest.php`
   `testAFreshWeakerProofNeverRefreshesAnOldMultifactorOne` (a fresh email code after an old authenticator app code is
@@ -376,6 +450,9 @@ Update this note when:
 - `laravel-authentication`'s freshness requirement gains an additional verification or a level, or the mapping of
   refusals to MFA's failure reasons is decided differently;
 - IAM-5.1 (whether a provider's authentication counts) is settled, which may change what the requirement check reads;
-- `laravel-authentication`'s `factorChange()` reads the session's proofs current under the session's lock (the gate's
-  read back then guards nothing more), or its freshness starts to read a first factor's evaluation;
+- `laravel-authentication`'s `factorChange()` stops judging the session's proofs as committed under the session's lock
+  (the gate would need its own current read back), its freshness policy changes where it may be asked current, what a
+  current read locks or in what order, or its freshness starts to read a first factor's evaluation;
+- MFA asks the freshness gate or the reauthenticator inside a transaction where it does not act on the answer, or acts
+  on it atomically outside one (the read mode `CurrentSession::isInTransaction()` decides would then be wrong);
 - MFA's `VerificationResult` gains an evaluation of the new proof on its own, which `ProofEvaluator` would then take.
