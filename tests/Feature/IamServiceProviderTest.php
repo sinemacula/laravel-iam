@@ -15,6 +15,7 @@ use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
+use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\IamServiceProvider;
@@ -22,20 +23,30 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
+use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
+use Tests\Fixtures\Providers\RecordsBindingOutcome;
 use Tests\Fixtures\Providers\RecordsSettlementWhileBooting;
 use Tests\Fixtures\Providers\RegistersIamWhileBooting;
+use Tests\Fixtures\Providers\RegistersSsoOnceBooted;
+use Tests\Fixtures\Providers\RegistersSsoWhileBooting;
 use Tests\Fixtures\Storage\ChangesTheSharedConnection;
+use Tests\Fixtures\Storage\ChangesTheSharedConnectionWhileBooting;
+use Tests\Fixtures\Storage\PointsMfaElsewhereWhileBooting;
+use Tests\Fixtures\Storage\PublishesSsoConfigurationWithoutStorage;
 use Tests\Fixtures\Storage\RecordsMemberConnections;
 use Tests\TestCase;
 
 /**
  * Feature tests for the package service provider: the configuration and the
- * `iam` manager it registers, the storage connection it aligns as it registers
- * and again as the application boots, the binding rule's outcome it keeps, a
- * late registration settling at once, a registration while the application
- * boots settling from the provider's own `boot()`, the configuration commands a
- * mismatch does not refuse, the worker reset listeners and the publishing tag.
+ * `iam` manager it registers, the storage connection it aligns as it registers,
+ * as the application boots and once it has booted, a member registered while it
+ * boots or only after, the binding rule it applies as it registers and the
+ * outcome it keeps, a late registration settling at once, a registration while
+ * the application boots settling from the provider's own `boot()`, the
+ * configuration commands a mismatch does not refuse, the worker reset listeners
+ * and the publishing tag.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,12 +64,9 @@ final class IamServiceProviderTest extends TestCase
     /** @var list<string> The environment variables this test set, cleared once its application is destroyed. */
     private array $environment = [];
 
-    /** @var ?list<string> The process's arguments before the test replaced them, restored once its application is destroyed. */
-    private ?array $argv = null;
-
     /**
      * Destroy the application, then clear the environment variables the test
-     * set and restore the process's arguments.
+     * set.
      *
      * @return void
      */
@@ -70,12 +78,6 @@ final class IamServiceProviderTest extends TestCase
         foreach ($this->environment as $name) {
             Env::forget($name);
         }
-
-        if ($this->argv === null) {
-            return;
-        }
-
-        $_SERVER['argv'] = $this->argv;
     }
 
     /**
@@ -154,6 +156,8 @@ final class IamServiceProviderTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testAMemberKeyNamingAnotherConnectionRefusesBoot(array $providers): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'MFA_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -185,16 +189,75 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Rows of `[command]`: each console command that lists, describes,
-     * discovers, caches or clears configuration.
+     * Every member key this package wrote, as it registered or in the booting
+     * phase, follows a shared connection the application names in a `boot()`,
+     * once the application has booted, in every provider order.
      *
-     * @return iterable<string, array{0: string}>
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     */
+    #[DataProvider('provideProviderOrders')]
+    #[DefineEnvironment('defineAnotherConnection')]
+    public function testAKeyThisPackageWroteFollowsASharedConnectionChangedWhileBooting(array $providers): void
+    {
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::ELSEWHERE]);
+
+        $this->bootInOrder([...$providers, ChangesTheSharedConnectionWhileBooting::class]);
+
+        $config = $this->config();
+
+        foreach (StorageConnection::MEMBER_KEYS as $key) {
+            self::assertSame(ChangesTheSharedConnectionWhileBooting::CONNECTION, $config->get($key), $key . ' did not follow the shared connection.');
+        }
+    }
+
+    /**
+     * A member key the application points at another connection in a `boot()`,
+     * once the booting phase has checked the keys, is refused once the
+     * application has booted.
+     *
+     * @return void
+     */
+    #[DefineEnvironment('defineAnotherConnection')]
+    public function testAMemberKeyChangedWhileBootingRefusesBoot(): void
+    {
+        $this->withArguments(self::CHECKED_COMMAND);
+
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION]);
+
+        $this->expectException(StorageConnectionMismatchException::class);
+        $this->expectExceptionMessage('mfa.storage.connection names [elsewhere], but iam.storage.connection names [testing]');
+
+        $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, PointsMfaElsewhereWhileBooting::class]);
+    }
+
+    /**
+     * Rows of `[arguments]`: the process's arguments for each console command
+     * that lists, describes, discovers, caches or clears configuration, after
+     * an option, and as the console finds the command when none is named
+     * (`list`) or the environment is given after a space.
+     *
+     * @return iterable<string, array{0: list<string>}>
      */
     public static function provideUncheckedCommands(): iterable
     {
         foreach (['config:cache', 'config:clear', 'config:show', 'help', 'list', 'optimize:clear', 'package:discover'] as $command) {
-            yield $command => [$command];
+            yield $command => [['artisan', '-v', $command]];
         }
+
+        yield 'no command' => [['artisan']];
+
+        yield 'no command from another directory' => [['/var/www/artisan']];
+
+        yield 'only options' => [['artisan', '-v', '--no-interaction']];
+
+        yield 'the environment after a space' => [['artisan', '--env', 'production', 'config:clear']];
+
+        yield 'the environment after an equals sign' => [['artisan', '--env=production', 'config:clear']];
+
+        yield 'the environment named twice' => [['artisan', '--env', '--env', 'production', 'config:clear']];
+
+        yield 'the environment without a value' => [['artisan', '-v', '--env']];
     }
 
     /**
@@ -203,13 +266,13 @@ final class IamServiceProviderTest extends TestCase
      * inspected and cleared; the unset keys are still aligned and the binding
      * rule still applied.
      *
-     * @param  string  $command
+     * @param  list<string>  $arguments
      * @return void
      */
     #[DataProvider('provideUncheckedCommands')]
-    public function testAMismatchIsNotRefusedWhileAConfigurationCommandRuns(string $command): void
+    public function testAMismatchIsNotRefusedWhileAConfigurationCommandRuns(array $arguments): void
     {
-        $this->withArguments(['artisan', '-v', $command]);
+        $this->withArguments($arguments);
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class]);
@@ -266,7 +329,7 @@ final class IamServiceProviderTest extends TestCase
     #[DataProvider('provideConnectionKeys')]
     public function testAConnectionKeyThatIsNotANameRefusesBootWhileAnotherCommandRuns(string $variable, string $key): void
     {
-        $this->withArguments(['artisan', 'migrate']);
+        $this->withArguments(self::CHECKED_COMMAND);
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, $variable => 'false']);
 
         $this->expectException(\InvalidArgumentException::class);
@@ -296,11 +359,12 @@ final class IamServiceProviderTest extends TestCase
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[DataProvider('provideConnectionKeyNames')]
     public function testAConnectionKeyThatIsNotANameIsRefusedAsThePackageRegisters(string $key): void
     {
-        $this->withArguments(['artisan', 'migrate']);
+        $this->withArguments(self::CHECKED_COMMAND);
 
         $this->application()->make('config')->set($key, false);
 
@@ -311,13 +375,55 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Any other console command refuses a mismatch.
+     * Rows of `[arguments]`: the process's arguments for another console
+     * command, alone, after an option, after the environment given after a
+     * space, and after an environment that names a configuration command; and
+     * for a process that is not Artisan and names no command, which runs no
+     * console command, `list` among them: a test runner, alone or given only
+     * options, and a long-lived worker script, with no arguments at all or none
+     * but its own name.
      *
+     * @return iterable<string, array{0: list<string>}>
+     */
+    public static function provideCheckedCommands(): iterable
+    {
+        yield 'a command' => [['artisan', 'migrate']];
+
+        yield 'a test runner' => [['vendor/bin/phpunit']];
+
+        yield 'a test runner given an option and its value together' => [['vendor/bin/phpunit', '--filter=x']];
+
+        yield 'a test runner given only options' => [['vendor/bin/phpunit', '--configuration=phpunit.xml', '--colors=always']];
+
+        yield 'a worker script' => [['worker.php']];
+
+        yield 'a worker script named after Artisan' => [['artisan-worker']];
+
+        yield 'a worker binary' => [['vendor/bin/roadrunner-worker']];
+
+        yield 'no arguments' => [[]];
+
+        yield 'after an option' => [['artisan', '-v', 'migrate']];
+
+        yield 'after the environment' => [['artisan', '--env', 'production', 'migrate']];
+
+        yield 'after an environment named as a configuration command' => [['artisan', '--env', 'config:clear', 'migrate']];
+
+        yield 'after the environment without a value' => [['artisan', '--env', '-v', 'migrate']];
+    }
+
+    /**
+     * Any other console command refuses a mismatch, the value of an environment
+     * given after a space never being taken for the command, and so does any
+     * process other than Artisan that names no command.
+     *
+     * @param  list<string>  $arguments
      * @return void
      */
-    public function testAMismatchIsRefusedWhileAnotherCommandRuns(): void
+    #[DataProvider('provideCheckedCommands')]
+    public function testAMismatchIsRefusedWhileAnotherCommandRuns(array $arguments): void
     {
-        $this->withArguments(['artisan', 'migrate']);
+        $this->withArguments($arguments);
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -360,6 +466,25 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
+     * The binding rule runs as the package registers, so its outcome is kept
+     * before the next provider registers, in every provider order.
+     *
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[DataProvider('provideProviderOrders')]
+    public function testTheBindingRuleAppliesAsThePackageRegisters(array $providers): void
+    {
+        $at = (int) array_search(IamServiceProvider::class, $providers, true);
+
+        $this->bootInOrder([...array_slice($providers, 0, $at + 1), RecordsBindingOutcome::class, ...array_slice($providers, $at + 1)]);
+
+        self::assertTrue($this->application()->make(RecordsBindingOutcome::RECORDED));
+    }
+
+    /**
      * Registered once the application has booted, the package settles at once,
      * since a booting callback registered then would never run: a member key
      * naming another connection is refused there and then.
@@ -368,6 +493,8 @@ final class IamServiceProviderTest extends TestCase
      */
     public function testALateRegistrationRefusesAMismatchAtOnce(): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $app = $this->application();
 
         $app->make('config')->set(StorageConnection::KEY, self::CONNECTION);
@@ -401,9 +528,10 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package settles in the booting phase, before the first provider
-     * boots, in every provider order, so a binding made in any `boot()` comes
-     * after the binding rule.
+     * The package settles the storage connections in the booting phase, before
+     * the first provider boots, in every provider order, so every member key, a
+     * key of a member registered after this package included, is aligned before
+     * any provider boots.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -413,21 +541,23 @@ final class IamServiceProviderTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testThePackageSettlesBeforeAnyProviderBoots(array $providers): void
     {
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION]);
+
         $this->bootInOrder([RecordsSettlementWhileBooting::class, ...$providers]);
 
-        self::assertTrue($this->application()->make(RecordsSettlementWhileBooting::RECORDED));
+        self::assertSame(array_fill_keys(StorageConnection::MEMBER_KEYS, self::CONNECTION), $this->application()->make(RecordsSettlementWhileBooting::RECORDED));
     }
 
     /**
      * Registered from another provider's `boot()`, once the booting callbacks
-     * have run, the package settles from its own `boot()`: the binding rule's
-     * outcome is kept.
+     * have run, the package still applies the binding rule as it registers, and
+     * its outcome is kept.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testARegistrationWhileTheApplicationBootsSettlesFromItsOwnBoot(): void
+    public function testARegistrationWhileTheApplicationBootsAppliesTheBindingRule(): void
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, RegistersIamWhileBooting::class]);
 
@@ -445,6 +575,8 @@ final class IamServiceProviderTest extends TestCase
      */
     public function testARegistrationWhileTheApplicationBootsRefusesAMismatch(): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'MFA_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -454,8 +586,9 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package settles once: booting its provider again keeps the outcome
-     * the booting phase kept.
+     * The package settles once: booting its provider again, after a member key
+     * has been pointed at another connection, neither checks nor aligns the
+     * storage connections again, and keeps the binding rule's outcome.
      *
      * @return void
      *
@@ -469,9 +602,126 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertInstanceOf(IamServiceProvider::class, $provider);
 
+        $this->config()->set(StorageConnection::KEY, self::CONNECTION);
+        $this->config()->set('sso.storage.connection', self::ELSEWHERE);
+        $this->config()->set('mfa.storage.connection', null);
+
         $provider->boot();
 
+        self::assertSame(self::ELSEWHERE, $this->config()->get('sso.storage.connection'));
+        self::assertNull($this->config()->get('mfa.storage.connection'));
         self::assertSame($outcome, $app->make(BindingOutcome::class));
+    }
+
+    /**
+     * A member registered from another provider's `boot()`, once the booting
+     * callbacks have run, merges its configuration only then, and is still
+     * given the shared connection once the application has booted.
+     *
+     * @return void
+     */
+    #[DefineEnvironment('defineAnotherConnection')]
+    public function testAMemberRegisteredWhileTheApplicationBootsIsAligned(): void
+    {
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::ELSEWHERE]);
+
+        $this->bootInOrder([...self::membersWithoutSso(), IamServiceProvider::class, RegistersSsoWhileBooting::class]);
+
+        self::assertSame(self::ELSEWHERE, $this->config()->get('sso.storage.connection'));
+        self::assertSame(self::ELSEWHERE, SsoStorageConnection::name());
+    }
+
+    /**
+     * A member registered while the application boots still has a key naming
+     * another connection refused.
+     *
+     * @return void
+     */
+    public function testAMemberRegisteredWhileTheApplicationBootsRefusesAMismatch(): void
+    {
+        $this->withArguments(self::CHECKED_COMMAND);
+
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
+
+        $this->expectException(StorageConnectionMismatchException::class);
+        $this->expectExceptionMessage('sso.storage.connection names [elsewhere], but iam.storage.connection names [testing]');
+
+        $this->bootInOrder([...self::membersWithoutSso(), IamServiceProvider::class, RegistersSsoWhileBooting::class]);
+    }
+
+    /**
+     * A member registered while the application boots, whose configuration the
+     * application has published without the `storage` block, keeps its own
+     * connection from its environment, which is then refused: nothing is
+     * written into the published configuration before the member has merged its
+     * own over it.
+     *
+     * @return void
+     */
+    public function testAMemberRegisteredWhileTheApplicationBootsKeepsItsOwnConnectionUntilItMerges(): void
+    {
+        $this->withArguments(self::CHECKED_COMMAND);
+
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
+
+        $this->expectException(StorageConnectionMismatchException::class);
+        $this->expectExceptionMessage('sso.storage.connection names [elsewhere], but iam.storage.connection names [testing]');
+
+        $this->bootInOrder([PublishesSsoConfigurationWithoutStorage::class, ...self::membersWithoutSso(), IamServiceProvider::class, RegistersSsoWhileBooting::class]);
+    }
+
+    /**
+     * A member registered only once the application has booted could not be
+     * given the shared connection in time, so the application refuses to finish
+     * booting without it, naming the member.
+     *
+     * @return void
+     */
+    public function testAMemberRegisteredOnceTheApplicationHasBootedRefusesBoot(): void
+    {
+        $this->withArguments(self::CHECKED_COMMAND);
+
+        $this->expectException(MemberNotRegisteredException::class);
+        $this->expectExceptionMessage(SsoServiceProvider::class . ' had not registered when the application finished booting');
+
+        $this->bootInOrder([...self::membersWithoutSso(), IamServiceProvider::class, RegistersSsoOnceBooted::class]);
+    }
+
+    /**
+     * Registered once the application has booted without a member, the package
+     * refuses the missing member at once.
+     *
+     * @return void
+     */
+    public function testALateRegistrationRefusesAMissingMemberAtOnce(): void
+    {
+        $this->withArguments(self::CHECKED_COMMAND);
+
+        $this->bootInOrder(self::membersWithoutSso());
+
+        $this->expectException(MemberNotRegisteredException::class);
+        $this->expectExceptionMessage(SsoServiceProvider::class . ' had not registered when the application finished booting');
+
+        $this->application()->register(IamServiceProvider::class, true);
+    }
+
+    /**
+     * While a console command that lists, describes, discovers, caches or
+     * clears configuration runs, a missing member is not refused either, and
+     * the members present are still aligned.
+     *
+     * @return void
+     */
+    #[DefineEnvironment('defineAnotherConnection')]
+    public function testAMissingMemberIsNotRefusedWhileAConfigurationCommandRuns(): void
+    {
+        $this->withArguments(['artisan', 'config:clear']);
+        $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::ELSEWHERE]);
+
+        $this->bootInOrder([...self::membersWithoutSso(), IamServiceProvider::class]);
+
+        self::assertTrue($this->application()->isBooted());
+        self::assertSame(self::ELSEWHERE, $this->config()->get('mfa.storage.connection'));
     }
 
     /**
@@ -624,6 +874,20 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
+     * Configure a second connection beside the default one, as an application
+     * names for its shared storage connection.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    protected function defineAnotherConnection(Application $app): void
+    {
+        $app->make('config')->set('database.connections.' . self::ELSEWHERE, ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
+    }
+
+    /**
      * Turn the worker reset off.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
@@ -647,6 +911,17 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
+     * Return every member's provider but `laravel-sso`'s, in the order the test
+     * case registers them.
+     *
+     * @return list<class-string<\Illuminate\Support\ServiceProvider>>
+     */
+    private static function membersWithoutSso(): array
+    {
+        return array_values(array_diff(self::MEMBER_PROVIDERS, [SsoServiceProvider::class]));
+    }
+
+    /**
      * Set environment variables for the next application, to be cleared once
      * the test ends.
      *
@@ -660,22 +935,6 @@ final class IamServiceProviderTest extends TestCase
 
             $this->environment[] = $name;
         }
-    }
-
-    /**
-     * Replace the process's arguments, as the console reads them, until the
-     * test ends.
-     *
-     * @param  list<string>  $arguments
-     * @return void
-     */
-    private function withArguments(array $arguments): void
-    {
-        /** @var list<string> $argv */
-        $argv = $_SERVER['argv'] ?? [];
-
-        $this->argv ??= $argv;
-        $_SERVER['argv'] = $arguments;
     }
 
     /**

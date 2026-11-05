@@ -12,6 +12,15 @@ use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
+use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
+use SineMacula\Laravel\Authorization\Contracts\PrincipalResolver;
+use SineMacula\Laravel\Authorization\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\Evaluation\EvaluationResult;
+use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
+use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
+use SineMacula\Laravel\Authorization\Facades\Authorization;
+use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
@@ -85,7 +94,8 @@ final class IamManagerTest extends TestCase
     public function testResettingTheWorkerStateFlushesEveryMembersRequestState(): void
     {
         $auth = \Mockery::mock(AuthManager::class);
-        $auth->shouldReceive('forgetGuardState')->once();
+        $auth->shouldReceive('setApplication')->once()->with($this->app)->ordered()->andReturnSelf();
+        $auth->shouldReceive('forgetGuardState')->once()->ordered();
 
         $this->app?->instance('auth', $auth);
 
@@ -94,6 +104,60 @@ final class IamManagerTest extends TestCase
         $this->manager()->resetWorkerState();
 
         self::assertNotSame($before, $this->app?->make(DriverScope::class));
+    }
+
+    /**
+     * Resetting the worker state forgets `laravel-authorization`'s request
+     * state as the member binds it: the resolved tenant, the resolution cache,
+     * the last decision, the policy evaluator, the manager and the defaults
+     * behind its resolvers are each built afresh for the next unit of work.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testResettingTheWorkerStateForgetsTheAuthorizationRequestState(): void
+    {
+        $abstracts = [
+            ResolvedTenant::class,
+            ResolutionCache::class,
+            LastDecisionStore::class,
+            PolicyEvaluator::class,
+            'authorization',
+            PrincipalResolver::class,
+            TenantResolver::class,
+            PolicyResolver::class,
+        ];
+        $before = array_map(fn (string $abstract): mixed => $this->app?->make($abstract), $abstracts);
+
+        $this->manager()->resetWorkerState();
+
+        foreach ($abstracts as $index => $abstract) {
+            self::assertNotSame($before[$index], $this->app?->make($abstract), $abstract . ' was kept.');
+        }
+    }
+
+    /**
+     * Resetting the worker state forgets the last decision read through
+     * `laravel-authorization`'s `Authorization` facade, which keeps the manager
+     * it first resolved, as well as the one the container holds.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testResettingTheWorkerStateForgetsTheDecisionTheAuthorizationFacadeHolds(): void
+    {
+        Authorization::getFacadeRoot();
+
+        $this->app?->make(LastDecisionStore::class)->put(EvaluationResult::implicitlyDenied());
+
+        self::assertNotNull(Authorization::lastDecision());
+
+        $this->manager()->resetWorkerState();
+
+        self::assertNull($this->app?->make('authorization')->lastDecision());
+        self::assertNull(Authorization::lastDecision());
     }
 
     /**

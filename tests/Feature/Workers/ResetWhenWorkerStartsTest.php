@@ -10,8 +10,11 @@ use Illuminate\Support\Facades\Event;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Sso\Contracts\Fetcher;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
+use Tests\Concerns\PermutesProviderOrder;
 use Tests\Fixtures\Workers\WorkerStartingStandIn;
 use Tests\TestCase;
 
@@ -29,6 +32,8 @@ use Tests\TestCase;
 #[CoversClass(ResetWhenWorkerStarts::class)]
 final class ResetWhenWorkerStartsTest extends TestCase
 {
+    use PermutesProviderOrder;
+
     /**
      * The listener is registered for Octane's event by its name, with Octane
      * not installed.
@@ -99,6 +104,27 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
+     * An instance the application binds over a member's scoped seam before the
+     * member registers, which the member's `scopedIf()` then leaves alone,
+     * outlives the worker's start, so every sandbox cloned from the worker can
+     * still resolve it.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testAnInstanceTheApplicationBindsBeforeSsoRegistersOutlivesTheWorkersStart(): void
+    {
+        $fetcher = \Mockery::mock(Fetcher::class);
+
+        $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class], before: [Fetcher::class => $fetcher]);
+
+        Event::dispatch(ResetWhenWorkerStarts::EVENT, [new WorkerStartingStandIn($this->app)]);
+
+        self::assertSame($fetcher, $this->resolve(Fetcher::class));
+    }
+
+    /**
      * With the reset turned off, no listener is registered.
      *
      * @return void
@@ -127,6 +153,20 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
+     * Resolve the abstract from the application, as whatever the application
+     * holds for it, not as the member binds it.
+     *
+     * @param  string  $abstract
+     * @return mixed
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function resolve(string $abstract): mixed
+    {
+        return $this->app?->make($abstract);
+    }
+
+    /**
      * Bind a `laravel-authentication` auth manager expecting its guard state
      * forgotten once, and return the application's instance of a member's
      * scoped seam.
@@ -137,7 +177,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
      */
     private function scopedInstanceOfTheApplication(): object
     {
-        $this->app?->instance('auth', $this->managerForgettingOnce());
+        $this->app?->instance('auth', $this->managerForgettingOnce($this->app));
         $instance = $this->app?->make(DriverScope::class);
 
         self::assertIsObject($instance);
@@ -147,14 +187,21 @@ final class ResetWhenWorkerStartsTest extends TestCase
 
     /**
      * Return a `laravel-authentication` auth manager that expects its guard
-     * state forgotten exactly once.
+     * state forgotten exactly once, first pointed at the given application when
+     * one is given, and never pointed at any other.
      *
+     * @param  \Illuminate\Contracts\Foundation\Application|null  $app
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */
-    private function managerForgettingOnce(): AuthManager
+    private function managerForgettingOnce(?Application $app = null): AuthManager
     {
         $manager = \Mockery::mock(AuthManager::class);
-        $manager->shouldReceive('forgetGuardState')->once();
+
+        if ($app !== null) {
+            $manager->shouldReceive('setApplication')->once()->with($app)->ordered()->andReturnSelf();
+        }
+
+        $manager->shouldReceive('forgetGuardState')->once()->ordered();
 
         return $manager;
     }

@@ -4,13 +4,14 @@ declare(strict_types = 1);
 
 namespace Tests\Fixtures\Providers;
 
+use Illuminate\Contracts\Config\Repository;
 use Illuminate\Support\ServiceProvider;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
+use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * Records, as it boots, whether this package has settled yet, so a test that
- * registers it before every package provider can tell the package settled
- * before the first provider booted.
+ * Records, as it boots, every member's storage connection, so a test that
+ * registers it before every package provider can tell this package settled the
+ * storage connections before the first provider booted.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,12 +24,19 @@ final class RecordsSettlementWhileBooting extends ServiceProvider
     public const string RECORDED = 'tests.providers.settled-before-boot';
 
     /**
-     * Record whether the binding rule's outcome is kept yet.
+     * Record each member key's value, keyed by the member key.
      *
      * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     public function boot(): void
     {
-        $this->app->instance(self::RECORDED, $this->app->bound(BindingOutcome::class));
+        $config = $this->app->make(Repository::class);
+
+        $this->app->instance(self::RECORDED, array_combine(
+            StorageConnection::MEMBER_KEYS,
+            array_map(static fn (string $key): mixed => $config->get($key), StorageConnection::MEMBER_KEYS),
+        ));
     }
 }

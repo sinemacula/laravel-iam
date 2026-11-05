@@ -11,40 +11,64 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
-use Symfony\Component\Console\Input\ArgvInput;
 
 /**
  * Package service provider: registers the package's configuration, the `iam`
- * manager, the storage connection's alignment, the binding rule's booting
- * callback, the worker reset listeners and the publishing tag.
+ * manager, the storage connection's alignment, the seam bindings, the storage
+ * check's booting and booted callbacks, the worker reset listeners and the
+ * publishing tag.
  *
- * Everything this package binds over a member's seam is bound once, from one
- * `booting()` callback: after every service provider has registered, so a
- * member that binds its defaults with a plain `bind()` has done so whatever
- * order the providers register in, and before any provider boots. A seam is
- * bound only where it is unbound or still bound to the member's own default, so
- * an application binding made in any `register()` is kept and one made in a
- * `boot()` replaces the adapter (IAM-8.4). A provider registered while the
- * application boots, once the booting callbacks have run, or after it has
- * booted applies the same rule from its own `boot()`, which Laravel runs for it
- * at once; only the providers that boot after it can still replace an adapter.
+ * Everything this package binds over a member's seam is bound once, in
+ * `register()`, where the seam is unbound or still bound to the member's own
+ * default (IAM-8.4). Every member binds its defaults only where nothing is
+ * bound yet, so a member registering after this package keeps the adapter, and
+ * one registered before it is recognised as the member's default and replaced;
+ * an application binding made in a `register()` before this package's is kept,
+ * and one made in a later `register()` or in any `boot()` replaces the adapter.
+ * The bindings' switches are read with every member's packaged configuration
+ * beneath the application's, so a member that has not merged its configuration
+ * yet switches them as it will once it has.
  *
- * A storage connection mismatch, or a connection key that is not a name,
- * refuses boot, except while one of the console commands that list, describe,
- * discover, cache or clear configuration runs, so the problem (a cached one
- * included) can still be inspected and cleared, as `laravel-mfa` skips its own
- * boot check for them.
+ * One step still waits for the booting phase, from a `booting()` callback that
+ * runs once every provider has registered and before any boots: the storage
+ * connection. It is not there for any member's bindings. A member key can be
+ * written only once its member has merged its configuration, which a member
+ * registering after this package does only then, since a key written before
+ * would replace the member's whole `storage` block; and an application provider
+ * registered later may name another shared connection. So the member keys are
+ * aligned again and checked there, before any provider boots. A provider
+ * registered once the booting callbacks have run settles from its own `boot()`,
+ * which Laravel runs for it at once.
+ *
+ * The step runs once more when the application has booted, from a `booted()`
+ * callback the settling queues, because a provider's `boot()` can still change
+ * what the booting phase settled: it can register a member, which merges its
+ * configuration only then, or name another shared connection, or point a member
+ * key elsewhere. Once booted, a member whose provider has still not registered
+ * refuses boot (every member is required, IAM-1.3), since its key could never
+ * be aligned; one registered later would read a connection this package never
+ * checked.
+ *
+ * A storage connection mismatch, a member that has not registered, or a
+ * connection key that is not a name, refuses boot, except while one of the
+ * console commands that list, describe, discover, cache or clear configuration
+ * runs, so the problem (a cached one included) can still be inspected and
+ * cleared, as `laravel-mfa` skips its own boot check for them. The command is
+ * read from the process's arguments; a process that names none runs `list` only
+ * when it is Artisan, so any other script started without a command (a test
+ * runner, a long-lived worker) is checked.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  */
 final class IamServiceProvider extends ServiceProvider
 {
-    /** @var list<string> The console commands a storage connection mismatch does not refuse. */
+    /** @var list<string> The console commands neither a storage connection mismatch nor a missing member refuses. */
     private const array UNCHECKED_COMMANDS = [
         'config:cache',
         'config:clear',
@@ -55,22 +79,33 @@ final class IamServiceProvider extends ServiceProvider
         'package:discover',
     ];
 
-    /** @var array<string, ?string> The member keys this provider wrote as it registered, with what it wrote. */
+    /** @var string The console command Artisan runs when the process's arguments name none. */
+    private const string DEFAULT_COMMAND = 'list';
+
+    /** @var string The script whose process runs the default command when its arguments name none. */
+    private const string ARTISAN = 'artisan';
+
+    /** @var string The console's only global option that takes a value, which may follow it after a space. */
+    private const string ENVIRONMENT_OPTION = '--env';
+
+    /** @var array<string, ?string> The member keys this provider wrote, as it registered and as it settled, with what it wrote last. */
     private array $written = [];
 
-    /** @var bool Whether the storage connections and the seam bindings have been settled. */
+    /** @var bool Whether the storage connections have been settled, and their check once the application has booted queued. */
     private bool $settled = false;
 
     /**
      * Register the configuration and the manager, write the shared storage
      * connection into every member key that is unset and whose member has
-     * registered, and register the callback that checks the storage connections
-     * and applies the binding rule once every provider has registered.
+     * registered, apply the binding rule to every seam binding, and register
+     * the callback that aligns and checks the storage connections once every
+     * provider has registered.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[\Override]
     public function register(): void
@@ -81,19 +116,21 @@ final class IamServiceProvider extends ServiceProvider
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
-        $this->registerBindingRule();
+        $this->registerSeams();
+        $this->registerStorageCheck();
     }
 
     /**
-     * Settle the storage connections and the seam bindings if the booting phase
-     * passed before this provider registered (it was registered while the
-     * application booted, or after), then bootstrap the worker reset listeners
-     * and the publishing tag.
+     * Settle the storage connections if the booting phase passed before this
+     * provider registered (it was registered while the application booted, or
+     * after), then bootstrap the worker reset listeners and the publishing tag.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
      */
     public function boot(): void
     {
@@ -114,14 +151,36 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the callback that settles the storage connections and the seam
-     * bindings in the booting phase. When the application has already booted,
-     * the callback would never run, and none is registered: Laravel boots a
-     * provider registered then at once, and `boot()` settles.
+     * Apply the binding rule to every capability's seam bindings, and keep its
+     * outcome for the checks.
+     *
+     * The rule reads the bindings and their switches from the configuration
+     * every member will hold once registered, whichever of them has not
+     * registered yet, so every provider order, and a cached configuration, bind
+     * the same.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    protected function registerSeams(): void
+    {
+        $app          = $this->app;
+        $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), self::seamProviders());
+
+        $app->instance(BindingOutcome::class, $app->make(BindingRule::class)->apply($app, ...$capabilities));
+    }
+
+    /**
+     * Register the callback that settles the storage connections in the booting
+     * phase. When the application has already booted, the callback would never
+     * run, and none is registered: Laravel boots a provider registered then at
+     * once, and `boot()` settles.
      *
      * @return void
      */
-    protected function registerBindingRule(): void
+    protected function registerStorageCheck(): void
     {
         /** @var \Illuminate\Foundation\Application $app */
         $app = $this->app;
@@ -174,19 +233,25 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Align the storage connections, refuse a mismatch, and apply every seam
-     * binding the binding rule allows, keeping its outcome for the checks;
-     * once only, whichever phase reaches it first.
+     * Align the storage connections again and refuse a mismatch, once only,
+     * whichever phase reaches it first, and queue the same once more for when
+     * the application has booted, refusing then a member that has still not
+     * registered.
      *
-     * The alignment runs again here because a member that registers after this
-     * package merges its configuration only then, and the application may have
-     * changed the shared connection since this package registered; every member
-     * has registered by now.
+     * Neither can be done in `register()` alone: a member that registers after
+     * this package merges its configuration only then, so its key can be
+     * neither written nor checked before, and an application provider that
+     * registers later may name another shared connection. Every member the
+     * application registers with the other providers has registered by now; one
+     * a provider registers from its `boot()` has not, and is left, as is its
+     * key, for the callback that runs once the application has booted. A
+     * callback queued once the application has booted runs at once.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
      */
     private function settle(): void
@@ -195,41 +260,68 @@ final class IamServiceProvider extends ServiceProvider
             return;
         }
 
+        $this->checkStorage(false);
+
+        $this->settled = true;
+
+        $this->app->booted(function (): void {
+
+            $this->checkStorage(true);
+        });
+    }
+
+    /**
+     * Write the shared connection into every member key whose member has
+     * registered, refuse a key naming another connection, and, once the
+     * application has booted, refuse a member that has not registered; none is
+     * refused while a configuration command runs.
+     *
+     * @param  bool  $booted
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
+     */
+    private function checkStorage(bool $booted): void
+    {
         $app       = $this->app;
         $config    = $app->make(ConfigRepository::class);
         $alignment = $app->make(ConnectionAlignment::class);
 
-        $this->alignStorage($alignment, $config);
+        $this->written = array_replace($this->written, $this->alignStorage($alignment, $config, $app));
 
-        if (!self::isRunningUncheckedCommand($app)) {
-            $alignment->assertAligned($config);
+        if (self::isRunningUncheckedCommand($app)) {
+            return;
         }
 
-        $bindings = array_merge(...array_map(static fn (string $provider): array => $app->make($provider)->seams($config), self::seamProviders()));
+        if ($booted) {
+            $alignment->assertRegistered($app);
+        }
 
-        $app->instance(BindingOutcome::class, $app->make(BindingRule::class)->apply($app, ...$bindings));
-
-        $this->settled = true;
+        $alignment->assertAligned($config, $app);
     }
 
     /**
      * Write the shared connection into every member key the alignment allows,
-     * and return what was written. While a console command that lists,
-     * describes, discovers, caches or clears configuration runs, a connection
-     * key that is not a name is left as it is, and nothing more is aligned, so
-     * the command can still clear or replace it; anywhere else it fails closed.
+     * leaving a member whose provider has not registered yet, and return what
+     * was written. While a console command that lists, describes, discovers,
+     * caches or clears configuration runs, a connection key that is not a name
+     * is left as it is, and nothing more is aligned, so the command can still
+     * clear or replace it; anywhere else it fails closed.
      *
      * @param  \SineMacula\Laravel\Iam\Storage\ConnectionAlignment  $alignment
      * @param  \Illuminate\Config\Repository  $config
-     * @param  ?\Illuminate\Contracts\Foundation\Application  $registering
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return array<string, ?string>
      *
      * @throws \InvalidArgumentException
      */
-    private function alignStorage(ConnectionAlignment $alignment, ConfigRepository $config, ?Application $registering = null): array
+    private function alignStorage(ConnectionAlignment $alignment, ConfigRepository $config, Application $app): array
     {
         try {
-            return $alignment->align($config, $this->written, $registering);
+            return $alignment->align($config, $this->written, $app);
         } catch (\InvalidArgumentException $exception) {
 
             if (!self::isRunningUncheckedCommand($this->app)) {
@@ -260,15 +352,56 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Whether the console command running is one a storage connection mismatch
-     * does not refuse, found as the console finds it: the first argument that
-     * is not an option, so `artisan -v config:clear` is `config:clear` too.
+     * does not refuse.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return bool
      */
     private static function isRunningUncheckedCommand(Application $app): bool
     {
-        return $app->runningInConsole() && in_array((new ArgvInput)->getFirstArgument(), self::UNCHECKED_COMMANDS, true);
+        return $app->runningInConsole() && in_array(self::commandName(), self::UNCHECKED_COMMANDS, true);
+    }
+
+    /**
+     * Return the console command the process's arguments name, found as the
+     * console finds it: the first argument that is neither an option nor the
+     * value of `--env` given after a space, the only global option that takes a
+     * value (so `artisan -v config:clear` and `artisan --env production
+     * config:clear` are both `config:clear`).
+     *
+     * When there is none, the command is `list`, the console's default, only
+     * when the process is Artisan (a bare `artisan`, or `artisan -v`); any
+     * other process that names no command (a test runner given only options, a
+     * long-lived worker script) runs no console command at all, and `null` is
+     * returned, so it is checked, as `laravel-mfa`'s own boot check, which
+     * reads the first argument, checks it.
+     *
+     * @return ?string
+     */
+    private static function commandName(): ?string
+    {
+        /** @var list<string> $arguments */
+        $arguments = $_SERVER['argv'] ?? [];
+        $value     = false;
+
+        foreach (array_slice($arguments, 1) as $argument) {
+
+            if (str_starts_with($argument, '-')) {
+                $value = $argument === self::ENVIRONMENT_OPTION;
+
+                continue;
+            }
+
+            if ($value) {
+                $value = false;
+
+                continue;
+            }
+
+            return $argument;
+        }
+
+        return basename($arguments[0] ?? '') === self::ARTISAN ? self::DEFAULT_COMMAND : null;
     }
 
     /**

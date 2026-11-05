@@ -17,6 +17,13 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * member class that declares the closure. A binding whose switch is off binds
  * nothing, so a feature the application leaves off changes nothing.
  *
+ * The switch reads the configuration as every member will hold it once
+ * registered: the application's, with each member's packaged configuration
+ * beneath it, so a switch on a member's feature (`sso.features`, MFA's factor
+ * types) reads the same whatever order the providers register in, and whether
+ * the configuration is cached or not. A value a provider sets after this
+ * package registers, or in a `boot()`, is read too late.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *

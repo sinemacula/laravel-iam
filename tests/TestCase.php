@@ -42,6 +42,9 @@ abstract class TestCase extends OrchestraTestCase
         AuditLogServiceProvider::class,
     ];
 
+    /** @var list<string> The process's arguments while an Artisan command runs that the storage check does not stand aside for. */
+    protected const array CHECKED_COMMAND = ['artisan', 'migrate'];
+
     /** @var string The database every worker database is named after. */
     private const string DATABASE = 'laravel_iam_test';
 
@@ -51,8 +54,12 @@ abstract class TestCase extends OrchestraTestCase
     /** @var ?list<class-string<\Illuminate\Support\ServiceProvider>> The providers in the order the test asked for; `null` for the members, then this package. */
     private ?array $providerOrder = null;
 
+    /** @var ?list<string> The process's arguments before the test replaced them, restored once its application is destroyed. */
+    private ?array $argv = null;
+
     /**
-     * Destroy the application, then close its database connections.
+     * Destroy the application, then close its database connections and restore
+     * the process's arguments.
      *
      * The application's objects reference each other, so a destroyed
      * application's PDO is only closed once the cycles are collected. Without
@@ -76,6 +83,12 @@ abstract class TestCase extends OrchestraTestCase
         }
 
         gc_collect_cycles();
+
+        if ($this->argv === null) {
+            return;
+        }
+
+        $_SERVER['argv'] = $this->argv;
     }
 
     /**
@@ -104,6 +117,24 @@ abstract class TestCase extends OrchestraTestCase
         $this->providerOrder = $providers;
 
         $this->reloadApplication();
+    }
+
+    /**
+     * Replace the process's arguments, as the console and this package's
+     * storage check read them, until the test ends, so a test that expects the
+     * check to refuse or to stand aside never depends on how the test runner
+     * itself was invoked.
+     *
+     * @param  list<string>  $arguments
+     * @return void
+     */
+    protected function withArguments(array $arguments): void
+    {
+        /** @var list<string> $argv */
+        $argv = $_SERVER['argv'] ?? [];
+
+        $this->argv ??= $argv;
+        $_SERVER['argv'] = $arguments;
     }
 
     /**

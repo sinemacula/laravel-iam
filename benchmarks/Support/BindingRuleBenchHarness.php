@@ -19,13 +19,17 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
 /**
  * Binding rule benchmark fixtures: applications with every member's provider
  * registered, not booted, so the rule reads the binding table the members
- * really leave, and the seam table of `BenchSeamTable` to apply over it.
+ * really leave when this package registers after them, and the seam table of
+ * `BenchSeamTable` to apply over it.
  *
  * Three paths are timed: every seam still unbound or bound to its member's
  * default, so every adapter is bound; every seam bound by the application, so
  * every binding is kept; and every switch off, so nothing is read. Binding over
  * a default changes the table, so that path takes a fresh copy of the
  * application from a pool made in advance, keeping the copy out of the time.
+ * The applications' configuration is not cached, so every path includes reading
+ * each member's packaged configuration beneath the application's for the
+ * switches, as the rule does whenever the configuration is not cached.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +51,8 @@ final class BindingRuleBenchHarness
     /** @var \SineMacula\Laravel\Iam\Bindings\BindingRule */
     private readonly BindingRule $rule;
 
-    /** @var list<\SineMacula\Laravel\Iam\Bindings\SeamBinding> */
-    private readonly array $bindings;
+    /** @var \Benchmarks\Support\BenchSeamTable The capability whose seam table is applied. */
+    private readonly BenchSeamTable $table;
 
     /** @var \Illuminate\Foundation\Application Every seam bound by the application in a `register()`. */
     private readonly Application $applicationBound;
@@ -68,6 +72,7 @@ final class BindingRuleBenchHarness
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function __construct()
     {
@@ -75,12 +80,12 @@ final class BindingRuleBenchHarness
         $applicationBound = self::application([]);
         $switchedOff      = self::application(['iam' => ['adapters' => array_fill_keys(BenchSeamTable::switches(), false)]]);
 
-        foreach (BenchSeamTable::seams() as $seam) {
+        foreach (BenchSeamTable::abstracts() as $seam) {
             $applicationBound->bind($seam, \stdClass::class);
         }
 
         $this->rule             = $memberDefaults->make(BindingRule::class);
-        $this->bindings         = BenchSeamTable::bindings();
+        $this->table            = new BenchSeamTable;
         $this->applicationBound = $applicationBound;
         $this->switchedOff      = $switchedOff;
 
@@ -98,10 +103,11 @@ final class BindingRuleBenchHarness
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function runOverMemberDefaults(): void
     {
-        $this->rule->apply($this->nextMemberDefaults(), ...$this->bindings);
+        $this->rule->apply($this->nextMemberDefaults(), $this->table);
     }
 
     /**
@@ -110,10 +116,11 @@ final class BindingRuleBenchHarness
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function runOverApplicationBindings(): void
     {
-        $this->rule->apply($this->applicationBound, ...$this->bindings);
+        $this->rule->apply($this->applicationBound, $this->table);
     }
 
     /**
@@ -122,10 +129,11 @@ final class BindingRuleBenchHarness
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function runSwitchedOff(): void
     {
-        $this->rule->apply($this->switchedOff, ...$this->bindings);
+        $this->rule->apply($this->switchedOff, $this->table);
     }
 
     /**
@@ -140,14 +148,15 @@ final class BindingRuleBenchHarness
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     private function assertEachPathReachesItsOutcome(Application $memberDefaults): void
     {
-        $seams = BenchSeamTable::seams();
+        $seams = BenchSeamTable::abstracts();
 
-        self::assertOutcome('member defaults', $this->rule->apply($memberDefaults, ...$this->bindings), $seams, []);
-        self::assertOutcome('application bindings', $this->rule->apply($this->applicationBound, ...$this->bindings), [], $seams);
-        self::assertOutcome('switched off', $this->rule->apply($this->switchedOff, ...$this->bindings), [], []);
+        self::assertOutcome('member defaults', $this->rule->apply($memberDefaults, $this->table), $seams, []);
+        self::assertOutcome('application bindings', $this->rule->apply($this->applicationBound, $this->table), [], $seams);
+        self::assertOutcome('switched off', $this->rule->apply($this->switchedOff, $this->table), [], []);
     }
 
     /**
@@ -188,7 +197,8 @@ final class BindingRuleBenchHarness
 
     /**
      * Build an application over the configuration given, with every member's
-     * provider registered and none booted, as the binding rule finds it.
+     * provider registered and none booted, as the binding rule finds it when
+     * this package registers after them.
      *
      * @param  array<string, mixed>  $config
      * @return \Illuminate\Foundation\Application

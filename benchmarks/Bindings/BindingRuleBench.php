@@ -13,9 +13,9 @@ use PhpBench\Attributes\Warmup;
  * PHPBench suite for the binding rule (IAM-8.4).
  *
  * Applies a seam table the size of the package's full one over the members'
- * real binding table, on the three paths the booting phase can take: binding
- * over the members' defaults, keeping the application's bindings, and a table
- * whose every switch is off.
+ * real binding table, on the three paths the rule can take as this package
+ * registers: binding over the members' defaults, keeping the application's
+ * bindings, and a table whose every switch is off.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,6 +33,7 @@ final class BindingRuleBench
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[Iterations(5)]
     #[Revs(25)]
@@ -48,6 +49,7 @@ final class BindingRuleBench
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[Iterations(5)]
     #[Revs(25)]
@@ -63,6 +65,7 @@ final class BindingRuleBench
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[Iterations(5)]
     #[Revs(25)]
@@ -78,6 +81,7 @@ final class BindingRuleBench
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     private function harness(): BindingRuleBenchHarness
     {

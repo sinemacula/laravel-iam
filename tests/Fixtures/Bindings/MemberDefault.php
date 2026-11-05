@@ -6,7 +6,9 @@ namespace Tests\Fixtures\Bindings;
 
 use Tests\Fixtures\Bindings\Contracts\ClosureSeam;
 use Tests\Fixtures\Bindings\Contracts\PlainSeam;
+use Tests\Fixtures\Bindings\Contracts\ScopedSeam;
 use Tests\Fixtures\Bindings\Contracts\SharedSeam;
+use Tests\Fixtures\Bindings\Contracts\TransientSeam;
 
 /**
  * The member's own default implementation of every fixture seam.
@@ -16,4 +18,4 @@ use Tests\Fixtures\Bindings\Contracts\SharedSeam;
  *
  * @internal
  */
-final class MemberDefault implements ClosureSeam, PlainSeam, SharedSeam {}
+final class MemberDefault implements ClosureSeam, PlainSeam, ScopedSeam, SharedSeam, TransientSeam {}

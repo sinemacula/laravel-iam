@@ -15,13 +15,19 @@ use Illuminate\Contracts\Container\Container as ContainerContract;
  * current application, so the reset reaches the sandbox; the event's own
  * `sandbox` is preferred where it carries one.
  *
+ * Octane registers its own listeners as its provider boots, so they run before
+ * or after this one as the providers' boot order falls, and the reset relies on
+ * neither: the auth manager, shared across the worker's requests, still holds
+ * the last request's sandbox until Octane's `FlushAuthenticationState` moves it
+ * on, so the reset points it at this request's sandbox itself before resetting
+ * its guards.
+ *
  * The scoped instances are left where they are. Every sandbox is a fresh clone
  * of the worker's application, whose scoped instances Octane forgets once each
  * operation ends and this package forgets as the worker starts, so none is left
- * from the last request; and by the time this listener runs, Octane's
- * listeners, the application's own among them, have already filled some for
- * this request (its `Context`, its deferred callbacks), which a second flush
- * would discard.
+ * from the last request; and any listener that runs before this one, Octane's
+ * or the application's, may already have filled some for this request (its
+ * `Context`, its deferred callbacks), which a second flush would discard.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

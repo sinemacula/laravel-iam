@@ -35,10 +35,10 @@ use SineMacula\Laravel\Authentication\Resolvers\DefaultPrincipalResolver;
 use SineMacula\Laravel\Authentication\Tenancy\OwnTenantOnly;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Authorization\Contracts\PrincipalResolver as AuthorizationPrincipalResolver;
 use SineMacula\Laravel\Authorization\Contracts\TenantResolver as AuthorizationTenantResolver;
-use SineMacula\Laravel\Authorization\Resolvers\NullPrincipalResolver;
-use SineMacula\Laravel\Authorization\Resolvers\NullTenantResolver;
+use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Mfa\Applications\DeclaredFirstFactorResolver;
@@ -87,11 +87,12 @@ use SineMacula\Laravel\Sso\Links\NoLinks;
 use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 
 /**
- * A seam table the size of the one the package binds once every capability has
- * its adapters, over real member seams and the defaults the members bind them
- * to: class-string defaults, plain `singleton()`, `bindIf()` and
- * `singletonIf()` alike, two defaults the members bind with a closure, and two
- * seams no member binds.
+ * A capability declaring a seam table the size of the one the package binds
+ * once every capability has its adapters, over real member seams and the
+ * defaults the members bind them to: class-string defaults bound with
+ * `bindIf()` and `singletonIf()`, four defaults the members bind with a
+ * closure, two of them with a plain `bind()` as laravel-authorization binds its
+ * resolvers, and two seams no member binds.
  *
  * Every row binds the same adapter, `BenchSeamAdapter`, and is switched by the
  * `iam.adapters` key of the member pair it joins, on unless the configuration
@@ -101,7 +102,7 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  */
-final class BenchSeamTable
+final class BenchSeamTable implements ProvidesSeams
 {
     /** @var list<array{class-string, list<class-string>, \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime, string}> Seam, member defaults, lifetime and switch. */
     private const array ROWS = [
@@ -141,23 +142,21 @@ final class BenchSeamTable
         [TenantMembership::class, [NoTenantMembership::class], Lifetime::TRANSIENT, 'sso'],
         [EvidencePolicy::class, [SsoInsufficientEvidence::class], Lifetime::TRANSIENT, 'sso'],
         [Freshness::class, [RefusingFreshness::class], Lifetime::TRANSIENT, 'sso'],
-        [AuthorizationPrincipalResolver::class, [NullPrincipalResolver::class], Lifetime::TRANSIENT, 'authorization'],
-        [AuthorizationTenantResolver::class, [NullTenantResolver::class], Lifetime::SCOPED, 'authorization'],
+        [AuthorizationPrincipalResolver::class, [AuthorizationServiceProvider::class], Lifetime::TRANSIENT, 'authorization'],
+        [AuthorizationTenantResolver::class, [AuthorizationServiceProvider::class], Lifetime::SCOPED, 'authorization'],
         [AuditAccessPolicy::class, [DenyAllPolicy::class], Lifetime::SHARED, 'audit'],
         [CheckpointAnchor::class, [AuditLogServiceProvider::class], Lifetime::TRANSIENT, 'audit'],
     ];
 
     /**
-     * Disallow instantiation; utility container only.
-     */
-    private function __construct() {}
-
-    /**
-     * Return the table's bindings, in its order.
+     * Return the table's bindings, in its order, whatever the configuration:
+     * each row's switch reads it.
      *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
      */
-    public static function bindings(): array
+    #[\Override]
+    public function seams(Repository $config): array
     {
         return array_map(static fn (array $row): SeamBinding => new SeamBinding(
             $row[0],
@@ -173,7 +172,7 @@ final class BenchSeamTable
      *
      * @return list<class-string>
      */
-    public static function seams(): array
+    public static function abstracts(): array
     {
         return array_column(self::ROWS, 0);
     }

@@ -3,8 +3,9 @@
 ## Purpose
 
 This note describes how the package binds its adapters over the members' seams without ever replacing a binding the
-application made, whatever order the service providers register in (IAM-8.4), why the rule runs from a `booting()`
-callback rather than from `register()`, and how a member's own default is told apart from the application's binding.
+application made, whatever order the service providers register in (IAM-8.4), why the rule runs in `register()`, how a
+member's own default is told apart from the application's binding, how the switches read a member's configuration
+before that member has merged it, and why the storage connection alone still waits for a `booting()` callback.
 
 ## Invariants
 
@@ -12,18 +13,18 @@ callback rather than from `register()`, and how a member's own default is told a
   member's contract, the package's adapter, the member's own defaults, a `Bindings\Enums\Lifetime`, an optional switch
   and whether the seam is mandatory. Each capability lists its rows in a `*Seams` class implementing
   `Bindings\Contracts\ProvidesSeams`, named in `IamServiceProvider::seamProviders()`, and one `Bindings\BindingRule`
-  applies them all. Nothing is bound over a member from a `register()` or a `boot()`. M1 lists no capability: it ships
-  the rule, and each later milestone adds its rows.
-- The rule runs once, from a `booting()` callback that `IamServiceProvider::register()` registers: after every
-  provider's `register()` and before any provider's `boot()`, since Laravel fires the application's booting callbacks
-  before it boots the first provider, whichever provider registered them. Composer discovers providers sorted by
-  package name, so this package registers after `laravel-audit-log`, `laravel-authentication` and
-  `laravel-authorization` and before `laravel-mfa` and `laravel-sso`. `laravel-mfa` bound its defaults with a plain
-  `bind()` until laravel-mfa#90, which would have overwritten a binding made in this package's `register()` in that
-  order and in no other; the `dev-master` installed now binds them with `bindIf()`. The rule stays in the booting
-  phase until IAM-13.11 is recorded done and the members' constraint pins a release that includes #90, and waiting
-  for it still makes the order irrelevant against any member or third-party provider that binds over a seam with a
-  plain `bind()` or `singleton()` (`laravel-authorization` binds its resolvers with a plain `singleton()`).
+  collects every capability's rows (`apply()`) and applies them all. Nothing else in the package binds over a member.
+  M1 lists no capability: it ships the rule, and each later milestone adds its rows.
+- The rule runs once, in `IamServiceProvider::register()` (`registerSeams()`), whenever the provider registers: with
+  the other package providers, while the application boots, or after it has booted.
+- Every member binds its defaults only where nothing is bound yet, with `bindIf()`, `singletonIf()` or `scopedIf()`
+  (`laravel-mfa` since laravel-mfa#92, IAM-13.11), so the order the providers register in decides nothing:
+  - A member that registers before this package has bound its default by then; the rule recognises it from the
+    container's binding table and binds the adapter over it.
+  - A member that registers after this package finds the adapter bound and leaves it in place.
+  - Composer discovers providers sorted by package name, so this package registers after `laravel-audit-log`,
+    `laravel-authentication` and `laravel-authorization` and before `laravel-mfa` and `laravel-sso`; both cases occur
+    in a default installation.
 - A seam is bound only where `Bindings\MemberDefaults::isReplaceable()` allows it: the seam is unbound, or the
   container's binding table shows it still bound to one of the member's defaults the row declares. No member exposes
   its defaults as data, so the table (`Container::getBindings()`) is the only public source:
@@ -39,77 +40,170 @@ callback rather than from `register()`, and how a member's own default is told a
   checked before the table is read), a shared default something has already resolved (whatever resolved it holds that
   instance, which a new binding would not replace), a closure the application declares, a class-string binding to any
   class the row does not name, and every binding in a container without a table to read.
-- An allowed seam is bound with its row's lifetime: `TRANSIENT` with `bind()`, `SHARED` with `singleton()`, `SCOPED`
-  with `scoped()`. Adapters are transient unless a requirement names a lifetime; one that holds request state is
-  scoped, never shared (IAM-8.1).
+- An application binding made after the rule runs, in a later `register()` or in any `boot()`, replaces the adapter as
+  any later binding does. So the application's binding wins whether it is made before this package registers (kept)
+  or after (replacing).
+- An allowed seam is bound with its row's lifetime: `TRANSIENT` with `bind()`, `SHARED` with `singleton()`. Adapters
+  are transient unless a requirement names a lifetime; one that holds request state is scoped, never shared (IAM-8.1).
+- A `SCOPED` adapter is never scoped under the member's seam itself (`BindingRule::bindScoped()`):
+  - Laravel's `scoped()` adds the abstract to the container's list of scoped instances for good, and the queue worker
+    (before each job) and Octane (after each request) forget every instance held under an abstract on that list. An
+    instance or a singleton the application bound over the seam after the rule ran would be dropped, and the adapter
+    would resolve again from the second job or request on, so a later application binding would not win.
+  - So the adapter is scoped under a key this package owns, `iam.scoped:` followed by the seam
+    (`BindingRule::SCOPED_PREFIX`), and the seam is bound with a transient closure that resolves that key, as
+    `laravel-authorization` scopes its own defaults (`scoped($default)` with `bind($contract, fn => make($default))`).
+    The adapter is still built once per request or job, and a binding the application makes over the seam later is
+    never on the scoped list (`testAnInstanceMadeOverAScopedAdapterOutlivesTheScopedInstances`,
+    `testASingletonMadeOverAScopedAdapterStaysShared`).
+  - A member that registers before this package and binds its default with `scopedIf()`, as `laravel-sso` does, has
+    put the seam on that list already, and binding over it leaves it there. So, whatever the row's lifetime, the rule
+    takes the seam off the list before binding over it (`BindingRule::unscope()`, which reads the container's protected
+    `scopedInstances` as `WorkerReset` does). Otherwise a shared adapter would be built again for every request and
+    job, and an application instance made later would still be dropped in that provider order
+    (`testASharedAdapterBoundOverAScopedDefaultStaysShared`). The list is filtered by strict comparison, never with
+    `array_diff()`: for a binding scoped by its closure's return type (`scoped(fn (): Foo => ...)`), Laravel lists the
+    closure itself, which `array_diff()` cannot convert to a string, and any provider that registers before this
+    package can make one. Such an entry is kept on the list
+    (`testAScopedBindingKeyedByItsClosureStaysScoped`).
 - A row whose switch (`appliesWhen`, a closure over the configuration repository) answers `false` binds nothing and
-  checks nothing (IAM-1.3), and the outcome lists it neither as bound nor as kept. The switch is read once, in the
-  booting phase, like the rest of the rule.
+  checks nothing (IAM-1.3), and the outcome lists it neither as bound nor as kept. The switch is read once, as the rule
+  runs in `register()`, and so is each capability's `seams()`, both from the configuration every member will hold once
+  registered (`BindingRule::switches()`), so a switch on a member's own feature (`sso.features`, MFA's factor types,
+  as the Seam Readiness row for IAM-1.3 places them) reads the same in every provider order:
+  - Laravel loads the application's configuration files and environment before any provider registers, but a member
+    merges its packaged configuration, the defaults and its own `env()` values among it, only in its own `register()`.
+    Composer registers `laravel-mfa` and `laravel-sso` after this package, so their keys would read as unset here in a
+    default installation, and the same application would bind otherwise with its configuration cached (where every
+    member's keys are present from the start) and not.
+  - So the rule reads a copy of the application's configuration with the packaged file of each member that has not
+    registered yet (`config/<key>.php` beside the member's provider) merged beneath it one level deep, exactly as that
+    member's `mergeConfigFrom()` will merge it: the application's own values win, and the file's `env()` calls read the
+    same environment. A member that has registered has merged its file already and is not read again. The
+    application's configuration is never written.
+  - A cached configuration is read as it is: it holds what every member merged when it was cached, and Laravel merges
+    nothing over it, so nothing is filled in that the members themselves would not see.
+  - A value a provider registered after this package sets, or any `boot()` sets, is still read too late; set switches
+    in configuration files or the environment.
 - What the rule did is a `Bindings\BindingOutcome`, the seams bound and the seams kept in the order of the rows, which
-  `IamServiceProvider::settle()` keeps in the container for `iam:check` to report (M8).
-- `settle()` runs once per provider, whichever phase reaches it first: the booting callback, or the provider's own
-  `boot()` when it was registered after the booting callbacks have run.
+  `IamServiceProvider::registerSeams()` keeps in the container for `iam:check` to report (M8). It records the rule's
+  own decision as it ran; a binding made afterwards replaces the adapter without changing it, so the check reads the
+  live binding of each mandatory seam as well.
+- One step still waits for the booting phase: the storage connection (`storage-and-transactions.md`). It is not there
+  for any member's bindings (the callback that once applied the rule there, while `laravel-mfa` still bound its
+  defaults unconditionally, is gone), and nothing in it binds anything. It stays for reasons of its own:
+  - A member key is written, unlike a switch, which is only read, and it can be written only once the member has merged
+    its configuration: a key written before would make the member's `mergeConfigFrom()` keep the application's
+    `storage` block whole, dropping the member's other storage keys and their environment values. A member that
+    registers after this package merges only then.
+  - An application provider registered after this package may name another shared connection, which the member keys
+    must follow, and `assertAligned()` can refuse a mismatch only once no `register()` can change a key any more.
+  - So `register()` aligns what it can and queues one `booting()` callback, which Laravel fires once every provider
+    registered with the others has registered and before the first boots; `settle()` aligns the rest and checks, once
+    per provider, from that callback or from the provider's own `boot()` when it registered after the callbacks had
+    run.
+  - A `boot()` can still register a member (which merges its configuration only then), name another shared connection
+    or point a member key elsewhere, so the booting phase is not the end of it: `settle()` queues one `booted()`
+    callback that aligns and checks once more when the application has booted, and refuses a member whose provider has
+    still not registered (`MemberNotRegisteredException`), since its key could never be aligned and the package
+    requires every member (IAM-1.3). A member registered while the application boots is left, key and check, for that
+    callback; one registered once it has booted is refused, its key never having been checked.
 
 ## Success Path
 
 - An application binds nothing: every seam whose switch is on gets the package's adapter with its lifetime.
 - An application binds a seam in a `register()` of its own: Laravel registers the application's providers after every
-  package's, so in whatever order the packages register, the rule finds the application's binding and keeps it.
-- An application binds a seam in a `boot()`: the binding lands after the rule and replaces the adapter, as any later
-  binding does.
-- An application aliases a seam to a binding of its own in a `register()`: the alias is kept, though the member's
-  default stays beneath it in the binding table.
-- A provider that registers this package after the application has booted (`$app->register()` late) gets the same
-  rule at once: a booting callback registered then would never run, so `registerBindingRule()` registers none, and
-  Laravel boots the provider at once, whose `boot()` settles.
-- A provider that registers this package from its own `boot()` registers it after Laravel has fired the booting
-  callbacks but before the application has booted, so the callback it queues would never run either. Laravel still
-  boots the provider, and its `boot()` settles: the rule applies there, and bindings made in the `boot()` of providers
-  that booted earlier are treated as the application's and kept.
+  package's, so the binding lands after the rule and replaces the adapter, and the members, binding only what is
+  unbound, leave it in place.
+- An application binds a seam in a provider that registers before this package's: the rule finds the application's
+  binding and keeps it, and the members leave it in place.
+- An application binds a seam in a `boot()`: the binding lands after the rule and replaces the adapter.
+- An application aliases a seam or binds an instance: before this package registers, it is kept; after, it wins.
+- A provider that registers this package while the application boots, or after it has booted, gets the same rule as
+  it registers, and settles the storage connection from its own `boot()`, which Laravel runs for it then: a booting
+  callback queued at that point would never run, so `registerStorageCheck()` queues none once the application has
+  booted. The `booted()` callback `settle()` queues then runs once the application has booted, or at once when it
+  already has.
+- A provider that registers a member from its own `boot()` has the member's binding defaults yield to the adapters
+  (every member binds with `bindIf()`, `singletonIf()` or `scopedIf()`), and the member's storage key aligned and
+  checked once the application has booted.
 
 ## Failure / Edge Cases
 
+- A provider that binds a seam unconditionally (`bind()`, `singleton()`) after this package registers replaces the
+  adapter, member or not, though the outcome lists the seam as bound. `laravel-authorization` still binds its resolvers
+  unconditionally (IAM-13.7; since laravel-authorization#72 with a plain `bind()` of a closure its provider declares,
+  over a scoped `authorization.default:` binding), which is that member's defect for M11 to resolve, not something this
+  package works around; no authorization seam is bound before then. One that binds unconditionally before this package
+  registers replaces any application binding made before it, and the rule then binds the adapter over that member
+  default.
 - A member renaming a default's class, or moving a closure binding to another class, makes the rule treat the new
   default as the application's and keep it. That fails closed: no adapter is bound over a binding the rule cannot
   recognise, and `iam:check` (M8) reports a mandatory seam left on its permissive default at deploy. The tests pin the
   members' defaults, in every provider order, on every supported Laravel version.
-- An application that binds a seam to the member's own default class by name is indistinguishable from the member and
-  gets the adapter. To keep the member's default deliberately, turn the row's switch off, or bind the default with a
-  closure or an instance.
-- A provider that registers before the members (one listed ahead of the package manifest) keeps its binding of a seam
-  the member binds conditionally, but a member that binds with a plain `bind()` or `singleton()` replaces it first.
-  That seam is then the member's default again, and the rule binds the adapter over it. Bind seams from a provider
-  Laravel registers after the packages, as it registers the application's own.
-- Resolving a shared member seam while providers are still registering keeps the member's default, since the resolved
-  instance is kept. Resolve nothing while registering.
+- An application that binds a seam to the member's own default class by name, before this package registers, is
+  indistinguishable from the member and gets the adapter. To keep the member's default deliberately, turn the row's
+  switch off, or bind the default with a closure or an instance.
+- A switch the application sets from a provider's `register()` after this package's, or from any `boot()`, is read too
+  late to change what the rule bound. Set switches in configuration files or the environment.
+- A member that never registers (left out of package discovery and never registered by hand) still has its packaged
+  configuration read for the switches, as if it would; the package requires all five members (IAM-1.3), so this only
+  happens to an application that removes one deliberately. One whose storage this package aligns
+  (`laravel-authentication`, `laravel-mfa`, `laravel-sso`) refuses boot once the application has booted, and so does
+  one registered only after that, except while a configuration command runs (`storage-and-transactions.md`).
+- A configuration cached while a member's block was missing reads that block as missing, as the member itself then
+  does; caching it again once every member is installed fills it.
+- Resolving a shared member seam before this package registers keeps the member's default, since the resolved instance
+  is kept. Resolve nothing while registering.
 - The detection depends on the shape of Laravel's `getClosure()` closure (`use ($abstract, $concrete)`), identical from
   Laravel 12 to 13; a Laravel version that changes it would make every class-string default look like the
   application's, and the rule would keep them all, failing closed, until the detection is updated.
-- The storage connection is aligned and checked in the same booting callback, before the rule applies; see
-  `storage-and-transactions.md`.
 
 ## Implementation Anchors
 
-- `src/IamServiceProvider.php`: `register()`, `boot()`, `registerBindingRule()`, `settle()`, `seamProviders()`.
-- `src/Bindings/BindingRule.php`: `apply()`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`.
+- `src/IamServiceProvider.php`: `register()`, `registerSeams()`, `seamProviders()`; `registerStorageCheck()`,
+  `settle()`, `checkStorage()` and `boot()` for the storage step that waits for the booting phase and runs again once
+  the application has booted.
+- `src/Bindings/BindingRule.php`: `apply()`, `switches()`, `MEMBER_CONFIGURATION`; `src/Bindings/MemberDefaults.php`:
+  `isReplaceable()`.
 - `src/Bindings/SeamBinding.php`, `src/Bindings/Enums/Lifetime.php`, `src/Bindings/BindingOutcome.php`,
   `src/Bindings/Contracts/ProvidesSeams.php`.
 - `benchmarks/Bindings/BindingRuleBench.php`: the rule over a 40-seam table on the members' real binding table, binding
-  over their defaults, keeping the application's bindings, and with every switch off.
+  over their defaults, keeping the application's bindings, and with every switch off, the switches read from an
+  uncached configuration.
 
 ## Authoritative Tests
 
-- `tests/Feature/Bindings/BindingRuleTest.php` (through `tests/Concerns/PermutesProviderOrder.php`)
+- `tests/Feature/Bindings/BindingRuleTest.php` (through `tests/Concerns/PermutesProviderOrder.php`, with fixture
+  members binding with `bindIf()`, `singletonIf()` and `scopedIf()`, and a fixture seam switched by
+  `sso.features.metadata_refresh`, which only `laravel-sso`'s own packaged file and `SSO_METADATA_REFRESH` fill)
   `testTheAdapterIsBoundOverEveryMemberDefaultInEveryProviderOrder`,
-  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredIsKept`,
-  `testAnApplicationProviderRegisteredAfterThePackagesIsKept`,
-  `testAnApplicationProviderRegisteredBeforeThePackagesIsKeptWhereTheMemberLeavesIt`,
-  `testAnApplicationBindingMadeInBootReplacesTheAdapter`, `testAnInstanceIsKept`, `testAnApplicationAliasIsKept`,
-  `testEachAdapterIsBoundWithItsLifetime`, `testTheRuleAppliesAtOnceWhenRegisteredAfterBoot`,
-  `testTheRuleAppliesWhenRegisteredWhileTheApplicationBoots`, `testABindingWhoseSwitchIsOffBindsNothing`,
-  `testTheOutcomeListsTheSeamsBoundAndKeptInOrder`
-- `tests/Feature/IamServiceProviderTest.php` `testARegistrationWhileTheApplicationBootsSettlesFromItsOwnBoot`,
-  `testALateRegistrationSettlesAtOnceAndLeavesNoBootingCallback`, `testThePackageSettlesOnlyOnce`
+  `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
+  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`,
+  `testAnApplicationProviderRegisteredBeforeThePackagesIsKept`,
+  `testAnApplicationProviderRegisteredStraightBeforeThisPackageIsKept`,
+  `testAnApplicationProviderRegisteredStraightAfterThisPackageWins`,
+  `testAnApplicationProviderRegisteredAfterThePackagesWins`, `testAnApplicationBindingMadeInBootWins`,
+  `testAnInstanceMadeBeforeAnyProviderRegistersIsKept`, `testAnInstanceMadeOnceEveryProviderHasRegisteredWins`,
+  `testAnApplicationAliasMadeBeforeThePackagesIsKept`, `testAnApplicationAliasMadeAfterThePackagesWins`,
+  `testASwitchTheConfigurationTurnsOffBindsNothing`, `testASwitchTurnedOffOnceEveryProviderHasRegisteredIsNotRead`,
+  `testAPlainDefaultBoundBeforeThisPackageRegistersIsReplaced`,
+  `testAPlainDefaultBoundAfterThisPackageRegistersReplacesTheAdapter`,
+  `testAPlainDefaultReplacesAnApplicationBindingMadeBeforeIt`, `testEachAdapterIsBoundWithItsLifetime`,
+  `testASharedAdapterBoundOverAScopedDefaultStaysShared`, `testAScopedBindingKeyedByItsClosureStaysScoped`,
+  `testTheRuleAppliesAtOnceWhenRegisteredAfterBoot`, `testTheRuleKeepsASharedDefaultResolvedBeforeItApplies`,
+  `testABindingWhoseSwitchIsOffBindsNothing`, `testTheOutcomeListsTheSeamsBoundAndKeptInOrder`,
+  `testAMembersSwitchItsPackagedConfigurationTurnsOnBindsInEveryProviderOrder`,
+  `testAMembersSwitchItsEnvironmentTurnsOffBindsNothingInEveryProviderOrder`,
+  `testAMembersSwitchTheApplicationsConfigurationTurnsOffBindsNothingInEveryProviderOrder`,
+  `testTheSwitchesReadEveryMembersConfigurationAsTheBootedApplicationHoldsIt` (each in every provider order, the
+  first, second and fourth with the configuration cached too), `testACachedConfigurationIsReadAsItIs`,
+  `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`
+- `tests/Feature/IamServiceProviderTest.php` `testTheBindingRuleAppliesAsThePackageRegisters`,
+  `testThePackageSettlesBeforeAnyProviderBoots`, `testARegistrationWhileTheApplicationBootsAppliesTheBindingRule`,
+  `testALateRegistrationSettlesAtOnceAndLeavesNoBootingCallback`, `testThePackageSettlesOnlyOnce`,
+  `testAMemberRegisteredWhileTheApplicationBootsIsAligned`,
+  `testAMemberRegisteredOnceTheApplicationHasBootedRefusesBoot`, `testALateRegistrationRefusesAMissingMemberAtOnce`
 - `tests/Unit/Bindings/MemberDefaultsTest.php`
 - `tests/Unit/Bindings/SeamBindingTest.php`, `tests/Unit/Bindings/BindingOutcomeTest.php`,
   `tests/Unit/Bindings/Enums/LifetimeTest.php`
@@ -118,8 +212,14 @@ callback rather than from `register()`, and how a member's own default is told a
 
 - A new seam binding: its row in a capability's `*Seams` class, with every default the member binds it to, and its
   capability named in `seamProviders()`.
-- A member changing how it binds a seam (a new default class, a closure moved to another class, plain `bind()` turning
-  into `bindIf()`), and in particular a tagged `laravel-mfa` release that includes laravel-mfa#90 (its `bindIf()`
-  defaults) being pinned by the members' constraint and IAM-13.11 recorded done, which lets the rule run in
-  `register()`.
-- A new supported Laravel version, or any change to `getClosure()`, `getBindings()`, `bound()` or the booting order.
+- A member changing how it binds a seam (a new default class, a closure moved to another class, a conditional binding
+  turning unconditional), and in particular `laravel-authorization` moving its resolvers to a conditional binding
+  (IAM-13.7) before M11 binds over them.
+- A member whose configuration stops being merged in its own `register()`, or that starts reading its storage
+  connection eagerly (before the application has booted, when a member registered while it boots is aligned), which
+  changes what the storage step in the booting phase must do.
+- A member moving its packaged configuration file, merging it under another key, merging more than one file, or a new
+  member: `BindingRule::MEMBER_CONFIGURATION` follows. Laravel changing how `mergeConfigFrom()` merges (one level
+  deep, skipped with a cached configuration): `BindingRule::switches()` follows.
+- A new supported Laravel version, or any change to `getClosure()`, `getBindings()`, `bound()` or the order Laravel
+  registers and boots providers in.

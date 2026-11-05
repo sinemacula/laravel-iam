@@ -7,6 +7,7 @@ namespace Tests\Feature\Workers;
 use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\Job;
+use Illuminate\Contracts\Session\Session;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\Event;
@@ -30,6 +31,9 @@ use Tests\TestCase;
 #[CoversClass(ResetBeforeJob::class)]
 final class ResetBeforeJobTest extends TestCase
 {
+    /** @var string The session key the tests keep a proof record under. */
+    private const string PROOFS = 'mfa-proofs';
+
     /**
      * The listener is registered for the queue's `JobProcessing` event.
      *
@@ -50,7 +54,8 @@ final class ResetBeforeJobTest extends TestCase
     public function testEachJobResetsTheGuards(): void
     {
         $manager = \Mockery::mock(AuthManager::class);
-        $manager->shouldReceive('forgetGuardState')->once();
+        $manager->shouldReceive('setApplication')->once()->with($this->app)->ordered()->andReturnSelf();
+        $manager->shouldReceive('forgetGuardState')->once()->ordered();
 
         $this->app?->instance('auth', $manager);
 
@@ -75,6 +80,41 @@ final class ResetBeforeJobTest extends TestCase
         $job = new SyncJob(app(), '{}', 'sync', 'default');
 
         (new ResetBeforeJob)(new JobProcessing('sync', $job));
+    }
+
+    /**
+     * Each queued job starts with the worker's session flushed, so it reads
+     * none of the proofs `laravel-mfa`'s default proof store kept there for an
+     * earlier job.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testEachJobFlushesTheSession(): void
+    {
+        $session = $this->sessionHoldingProofs();
+
+        (new ResetBeforeJob)(new JobProcessing('database', \Mockery::mock(Job::class)));
+
+        self::assertSame([], $session->all());
+    }
+
+    /**
+     * A job run on the `sync` connection keeps the session of the request or
+     * command that dispatched it.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testASyncJobKeepsTheSession(): void
+    {
+        $session = $this->sessionHoldingProofs();
+
+        (new ResetBeforeJob)(new JobProcessing('sync', new SyncJob(app(), '{}', 'sync', 'default')));
+
+        self::assertSame(['proof'], $session->get(self::PROOFS));
     }
 
     /**
@@ -153,5 +193,24 @@ final class ResetBeforeJobTest extends TestCase
     protected function turnTheResetOff(Application $app): void
     {
         $app->make('config')->set('iam.workers.reset', false);
+    }
+
+    /**
+     * Return the application's session, holding a proof record, as
+     * `laravel-mfa`'s default proof store leaves one.
+     *
+     * @return \Illuminate\Contracts\Session\Session
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function sessionHoldingProofs(): Session
+    {
+        $session = $this->app?->make('session.store');
+
+        self::assertInstanceOf(Session::class, $session);
+
+        $session->put(self::PROOFS, ['proof']);
+
+        return $session;
     }
 }

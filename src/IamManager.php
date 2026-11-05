@@ -53,10 +53,12 @@ final readonly class IamManager
     /**
      * Flush every member's request state between the units of work of a
      * long-lived process other than Octane's workers and the queue's, which
-     * reset it themselves: every guard already resolved, and the scoped
-     * instances the members keep request state in. What the process holds for
-     * itself (Laravel's `Context`, the callbacks queued with `defer()`, the
-     * audit log's execution frames) is kept.
+     * reset it themselves: every guard already resolved, the session already
+     * resolved, the scoped instances the members keep request state in, and the
+     * roots the facades resolved, so a facade such as `Authorization` reads the
+     * next unit's state too. What the process holds for itself (Laravel's
+     * `Context`, the callbacks queued with `defer()`, the audit log's execution
+     * frames) is kept.
      *
      * @return void
      *

@@ -10,6 +10,7 @@ use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
@@ -183,8 +184,8 @@ final class ConnectionAlignmentTest extends TestCase
     /**
      * Given the application, a member whose service provider has not registered
      * yet is left alone even when its configuration is present, as an
-     * application's published configuration is before any provider registers;
-     * a member whose provider has registered is aligned.
+     * application's published configuration is before any provider registers; a
+     * member whose provider has registered is aligned.
      *
      * @return void
      */
@@ -378,6 +379,89 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
+     * Given the application, a member whose service provider has not registered
+     * yet is not checked, even when its configuration is present; the members
+     * whose providers have registered still are.
+     *
+     * @return void
+     */
+    public function testAssertAlignedSkipsAMemberWhoseProviderHasNotRegistered(): void
+    {
+        $config = self::configured('pgsql', ['pgsql', null, 'pgsql']);
+
+        (new ConnectionAlignment)->assertAligned($config, self::applicationWithout('mfa'));
+
+        $this->expectException(StorageConnectionMismatchException::class);
+        $this->expectExceptionMessage('mfa.storage.connection names [default]');
+
+        (new ConnectionAlignment)->assertAligned($config, self::applicationWithout());
+    }
+
+    /**
+     * Given the application, the members after one whose provider has not
+     * registered are still checked.
+     *
+     * @return void
+     */
+    public function testAssertAlignedChecksTheMembersAfterAnUnregisteredOne(): void
+    {
+        $config = self::configured('pgsql', ['pgsql', null, 'mysql']);
+
+        $this->expectException(StorageConnectionMismatchException::class);
+        $this->expectExceptionMessage('sso.storage.connection names [mysql]');
+
+        (new ConnectionAlignment)->assertAligned($config, self::applicationWithout('mfa'));
+    }
+
+    /**
+     * Rows of `[root, provider]`: each member whose storage is aligned, and its
+     * service provider.
+     *
+     * @return iterable<string, array{0: string, 1: class-string<\Illuminate\Support\ServiceProvider>}>
+     */
+    public static function provideMembers(): iterable
+    {
+        foreach (self::MEMBERS as $root => $provider) {
+            yield $root => [$root, $provider];
+        }
+    }
+
+    /**
+     * A member whose service provider has not registered is refused, naming the
+     * provider and the member's key.
+     *
+     * @param  string  $root
+     * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
+     * @return void
+     */
+    #[DataProvider('provideMembers')]
+    public function testAssertRegisteredRefusesAMemberWhoseProviderHasNotRegistered(string $root, string $provider): void
+    {
+        try {
+            (new ConnectionAlignment)->assertRegistered(self::applicationWithout($root));
+        } catch (MemberNotRegisteredException $exception) {
+            self::assertSame($root . '.storage.connection', $exception->key);
+            self::assertSame($provider, $exception->provider);
+
+            return;
+        }
+
+        self::fail('A member whose provider has not registered was accepted.');
+    }
+
+    /**
+     * Every member's service provider registered, nothing is refused.
+     *
+     * @return void
+     */
+    public function testAssertRegisteredAcceptsEveryMemberRegistered(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        (new ConnectionAlignment)->assertRegistered(self::applicationWithout());
+    }
+
+    /**
      * A malformed member key fails closed rather than counting as the default
      * connection.
      *
@@ -466,6 +550,8 @@ final class ConnectionAlignmentTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testAMemberKeyNamingAnotherConnectionRefusesBoot(array $providers): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -486,6 +572,8 @@ final class ConnectionAlignmentTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testAPublishedConfigurationWithoutStorageKeepsTheMembersOwnConnection(array $providers): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $this->withEnvironment(['IAM_STORAGE_CONNECTION' => self::CONNECTION, 'SSO_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -517,6 +605,8 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testWithNoSharedConnectionAMemberKeyOffTheDefaultRefusesBoot(): void
     {
+        $this->withArguments(self::CHECKED_COMMAND);
+
         $this->withEnvironment(['MFA_STORAGE_CONNECTION' => self::ELSEWHERE]);
 
         $this->expectException(StorageConnectionMismatchException::class);
@@ -553,6 +643,24 @@ final class ConnectionAlignmentTest extends TestCase
         }
 
         return $config;
+    }
+
+    /**
+     * Return an application on which every member's service provider has
+     * registered but the given member's.
+     *
+     * @param  ?string  $missing
+     * @return \Illuminate\Contracts\Foundation\Application
+     */
+    private static function applicationWithout(?string $missing = null): Application
+    {
+        $app = \Mockery::mock(Application::class);
+
+        foreach (self::MEMBERS as $root => $provider) {
+            $app->shouldReceive('getProviders')->with($provider)->andReturn($root === $missing ? [] : [new \stdClass]);
+        }
+
+        return $app;
     }
 
     /**

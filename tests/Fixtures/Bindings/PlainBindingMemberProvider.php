@@ -9,8 +9,10 @@ use Tests\Fixtures\Bindings\Contracts\PlainSeam;
 
 /**
  * A member's provider that binds its default with a plain `bind()` of a class
- * name, as laravel-mfa did before laravel-mfa#90 and as any provider may,
- * replacing whatever was bound before it.
+ * name, replacing whatever was bound before it, as laravel-mfa did before
+ * laravel-mfa#92 and laravel-authorization still binds its resolvers
+ * (IAM-13.7). Registered after this package, it replaces the adapter: that is
+ * the member's defect, which this package does not work around.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

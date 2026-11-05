@@ -16,33 +16,52 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `authentication.storage.connection`, `mfa.storage.connection` and `sso.storage.connection`.
   `laravel-authorization`'s key joins them with AUTHZ-13.7 (M11).
 - `Storage\ConnectionAlignment::align()` writes the shared connection into every member key that is unset (`null` or
-  empty), from `IamServiceProvider::register()` and again from the booting callback. Members read their connection
-  lazily, so a key aligned before boot is the one every model, migration and transaction of the member uses:
+  empty), from `IamServiceProvider::register()`, again from the booting callback, and once more from a `booted()`
+  callback when the application has booted; both callbacks exist for this and the checks below alone (the seam
+  bindings are applied in `register()`; see `binding-precedence.md`). Members read their connection lazily, so a key
+  aligned before it is first used is the one every model, migration and transaction of the member uses:
   - Only the leaf key is written. Laravel merges a package's configuration one level deep, so a whole `storage` array
     written before a member registers would replace the member's other storage keys, and their environment values.
-  - At `register()`, a member whose service provider has not registered yet is left for the second call, and in the
-    booting phase so is a member whose configuration is not merged. Composer discovers this package before
+  - At every call, a member whose service provider has not registered yet, or whose configuration is not merged, is
+    left for a later one. Composer discovers this package before
     `laravel-mfa` and `laravel-sso`, so at this package's `register()` they have not merged their configuration, and
     writing their keys then would mask their own environment values (`MFA_STORAGE_CONNECTION`,
     `SSO_STORAGE_CONNECTION`). That holds even when the application has published the member's configuration: a
     published file without the `storage` block would gain one holding only the shared connection, and the member's
-    one-level merge would keep it over the member's own. By the booting phase every member has merged.
-  - `align()` returns what it wrote, and the provider passes what its `register()` wrote to the second call. A key that
+    one-level merge would keep it over the member's own. By the booting phase every member registered with the other
+    providers has merged; one a provider registers from its own `boot()` merges only then, and is aligned by the
+    `booted()` callback.
+  - `align()` returns what it wrote, and the provider passes everything it has written to each later call. A key that
     still holds what this package wrote is this package's, not the application's, so it follows the shared connection
-    when an application provider registered later names another one (back to unset when that is unset), rather than
-    being refused as a mismatch the application never made.
+    when an application provider registered later, or any `boot()`, names another one (back to unset when that is
+    unset), rather than being refused as a mismatch the application never made.
   - With `iam.storage.connection` unset, nothing is written: every unset member key already means the default.
-- `ConnectionAlignment::assertAligned()` runs in the booting callback (or wherever the provider settles; see
-  `binding-precedence.md`), after the second alignment and before the binding rule, and refuses boot with
-  `Exceptions\StorageConnectionMismatchException` when a member key names another connection. Connections are compared
-  by the name they resolve to, `database.default` for one unset, so a member key that names the default connection
-  agrees with an unset shared one; no connection is opened. The exception names the key and both connections
-  (`[default]` for `null`), and carries them as `key`, `member` and `storage`. It is skipped while one of the console
-  commands that list, describe, discover, cache or clear configuration runs (`config:cache`, `config:clear`,
-  `config:show`, `help`, `list`, `optimize:clear`, `package:discover`), as `laravel-mfa` skips its own boot check for
-  them, so a mismatch, a cached one included, can still be inspected and cleared, and Composer's `package:discover`
-  still runs; the keys are still aligned and the binding rule still applied. While one of those commands runs, a
-  shared or member key that is not a name is left as it is too, and nothing more is aligned
+- `ConnectionAlignment::assertAligned()` runs in the booting callback (or from the provider's own `boot()` when it
+  registered after the booting callbacks ran; see `binding-precedence.md`) and again in the `booted()` callback, each
+  time after the alignment, and refuses boot with `Exceptions\StorageConnectionMismatchException` when the key of a
+  member that has registered names another connection. It cannot run in `register()`: a member registered after this
+  package has not merged its configuration yet, and an application provider registered later may still name another
+  shared connection. It runs again once the application has booted because a `boot()` can register a member, name
+  another shared connection or point a member key elsewhere after the booting phase checked; in the `booted()`
+  callback, `ConnectionAlignment::assertRegistered()` first refuses a member whose service provider has still not
+  registered with `Exceptions\MemberNotRegisteredException`, naming the provider and its key, since that key was never
+  aligned and the member, once registered, would read a connection nothing checked (every member is required,
+  IAM-1.3). Connections are compared by the name they
+  resolve to, `database.default` for one unset, so a member key that names the default connection agrees with an unset
+  shared one; no connection is opened. The exception names the key and both connections (`[default]` for `null`), and
+  carries them as `key`, `member` and `storage`. It is skipped while one of the console commands that list, describe,
+  discover, cache or clear configuration runs (`config:cache`, `config:clear`, `config:show`, `help`, `list`,
+  `optimize:clear`, `package:discover`), as `laravel-mfa` skips its own boot check for them, so a mismatch, a cached
+  one included, can still be inspected and cleared, and Composer's `package:discover` still runs; the keys are still
+  aligned, and the binding rule has already been applied in `register()`. A missing member is not refused then either.
+  The command is found as the console finds it (`IamServiceProvider::commandName()`): the first argument that is
+  neither an option nor the value of `--env` given after a space, the console's only global option that takes a
+  value, and `list`, the console's default, when the arguments name none and the process is Artisan, so `artisan`,
+  `artisan -v config:clear` and `artisan --env production config:clear` are all unchecked. Any other process that names
+  no command (a test runner given only options, a long-lived worker script that calls `Iam::resetWorkerState()`) runs
+  no console command and is checked, as `laravel-mfa`'s own boot check, which reads the first argument, checks it.
+  While one of those commands runs, a shared
+  or member key that is not a name is left as it is too, and nothing more is aligned
   (`IamServiceProvider::alignStorage()`), so a malformed value baked into a cached configuration can still be cleared.
 - A change that spans members runs through `Transactions\CrossMemberTransaction::run()` (or `Iam::transaction()`), in
   one transaction on the storage connection; each member's own transaction inside it is a savepoint, so the members'
@@ -56,6 +75,17 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   - Inside a transaction already open on the storage connection, the closure runs once, in a savepoint inside it, and
     every failure is rethrown for the transaction's owner to retry. A transaction open on another connection does not
     count.
+  - Whatever the closure wrote is rolled back to that savepoint whenever it fails, so an owner that catches the failure
+    and commits keeps none of it (IAM-11.1). Laravel's nested `transaction()` rolls back to the savepoint after any
+    failure but a concurrency failure; after one of those it throws a `DeadlockException` (exactly when its detector
+    recognises the failure), and before Laravel 13.40 it only lowers the level first. Where the database rolled back
+    the failed statement alone (a MySQL lock wait timeout with `innodb_rollback_on_timeout` off, its default; SQLite's
+    `database is locked`; MariaDB's changed record), the closure's earlier writes would otherwise stay in the owner's
+    transaction. So `runInside()` records the level before it starts and, on a `DeadlockException`, runs the grammar's
+    `ROLLBACK TO SAVEPOINT trans<level + 1>` itself, as 13.40 does, on every supported version; where the database has
+    already discarded the savepoint (MySQL rolls back the whole transaction after a deadlock), the rollback's failure
+    is ignored and the closure's failure is thrown on. Any other failure is left to Laravel's own rollback: a savepoint
+    of that name might be an earlier one, when the nested transaction failed to open its own.
   - A failure rethrown to that owner is handed on in a form its retry recognises
     (`Transactions\ConcurrencyFailures::forCaller()`). Laravel rethrows a concurrency failure met in a savepoint as a
     `DeadlockException` that keeps the message but loses the SQLSTATE, and PostgreSQL's serialisation failure says
@@ -106,6 +136,10 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   phase, except while a configuration maintenance command runs.
 - A mismatch while a configuration maintenance command runs does not refuse boot; the next other command, request or
   job refuses it.
+- A member registered from another provider's `boot()` is aligned and checked once the application has booted, not in
+  the booting phase; until then its key is not the shared connection, so nothing should read it from a `boot()`. A
+  member registered only once the application has booted, or never, refuses boot when it has: register every member
+  with the other providers, as package discovery does.
 - The whole closure runs again on a retry: its database work is rolled back, but anything else it did (a dispatched
   job, a request to a provider, a mutated object) is repeated. Keep the closure to database work, and dispatch what
   must happen once after the commit.
@@ -121,11 +155,14 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
 ## Implementation Anchors
 
 - `src/Storage/StorageConnection.php`: `name()`, `read()`, `MEMBER_KEYS`.
-- `src/Storage/ConnectionAlignment.php`: `align()`, `assertAligned()`;
-  `src/Exceptions/StorageConnectionMismatchException.php`: `forKey()`.
-- `src/IamServiceProvider.php`: `register()`, `settle()`, `alignStorage()`, `isRunningUncheckedCommand()`;
+- `src/Storage/ConnectionAlignment.php`: `align()`, `assertAligned()`, `assertRegistered()`;
+  `src/Exceptions/StorageConnectionMismatchException.php`: `forKey()`;
+  `src/Exceptions/MemberNotRegisteredException.php`: `forStorage()`.
+- `src/IamServiceProvider.php`: `register()`, `settle()`, `checkStorage()`, `alignStorage()`,
+  `isRunningUncheckedCommand()`, `commandName()`;
   `config/iam.php`: `storage`, `transactions`.
-- `src/Transactions/CrossMemberTransaction.php`: `run()`, `runInside()`, `isCommitted()`, `rolledBack()`;
+- `src/Transactions/CrossMemberTransaction.php`: `run()`, `runInside()`, `rollBackToSavepoint()`, `isCommitted()`,
+  `rolledBack()`;
   `src/Transactions/ConcurrencyFailures.php`: `isRetryable()`, `forCaller()`;
   `src/Transactions/RetrySettings.php`: `attempts()`; `src/IamManager.php`: `transaction()`.
 
@@ -136,12 +173,22 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `testUnsetMemberKeysReceiveTheSharedConnectionInAnyOrder`, `testAlignLeavesAMemberWhoseConfigurationIsNotMerged`,
   `testAlignLeavesAMemberWhoseProviderHasNotRegistered`, `testAKeyAnEarlierCallWroteFollowsTheSharedConnection`,
   `testAPublishedConfigurationWithoutStorageKeepsTheMembersOwnConnection`,
-  `testAMemberKeyNamingAnotherConnectionRefusesBoot`, `testWithNoSharedConnectionAMemberKeyOffTheDefaultRefusesBoot`
+  `testAMemberKeyNamingAnotherConnectionRefusesBoot`, `testWithNoSharedConnectionAMemberKeyOffTheDefaultRefusesBoot`,
+  `testAssertAlignedSkipsAMemberWhoseProviderHasNotRegistered`,
+  `testAssertRegisteredRefusesAMemberWhoseProviderHasNotRegistered`, `testAssertRegisteredAcceptsEveryMemberRegistered`
 - `tests/Feature/IamServiceProviderTest.php` `testAKeyThisPackageWroteFollowsASharedConnectionChangedLater`,
-  `testAMismatchIsNotRefusedWhileAConfigurationCommandRuns`, `testAMismatchIsRefusedOutsideTheConsole`,
+  `testAKeyThisPackageWroteFollowsASharedConnectionChangedWhileBooting`, `testAMemberKeyChangedWhileBootingRefusesBoot`,
+  `testAMismatchIsNotRefusedWhileAConfigurationCommandRuns`, `testAMismatchIsRefusedWhileAnotherCommandRuns`,
+  `testAMismatchIsRefusedOutsideTheConsole`,
   `testAConnectionKeyThatIsNotANameIsNotRefusedWhileAConfigurationCommandRuns`,
-  `testAConnectionKeyThatIsNotANameRefusesBootWhileAnotherCommandRuns`
-- `tests/Unit/Exceptions/StorageConnectionMismatchExceptionTest.php`
+  `testAConnectionKeyThatIsNotANameRefusesBootWhileAnotherCommandRuns`,
+  `testAMemberRegisteredWhileTheApplicationBootsIsAligned`,
+  `testAMemberRegisteredWhileTheApplicationBootsRefusesAMismatch`,
+  `testAMemberRegisteredWhileTheApplicationBootsKeepsItsOwnConnectionUntilItMerges`,
+  `testAMemberRegisteredOnceTheApplicationHasBootedRefusesBoot`, `testALateRegistrationRefusesAMissingMemberAtOnce`,
+  `testAMissingMemberIsNotRefusedWhileAConfigurationCommandRuns`
+- `tests/Unit/Exceptions/StorageConnectionMismatchExceptionTest.php`,
+  `tests/Unit/Exceptions/MemberNotRegisteredExceptionTest.php`
 - `tests/Unit/Transactions/ConcurrencyFailuresTest.php`, `tests/Unit/Transactions/RetrySettingsTest.php`
 - `tests/Integration/Transactions/CrossMemberTransactionTest.php` (through
   `tests/Concerns/RunsAtIsolationLevels.php`) `testARealSerialisationFailureIsRetriedFromTheOutermostTransaction`
@@ -158,14 +205,24 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `testInsideACallersTransactionTheWorkRunsOnceAndItsFailureIsRethrown`,
   `testInsideACallersTransactionADeadlockIsThrownOnAsLaravelWrapsIt`,
   `testInsideACallersTransactionAFailureLaravelCannotRecogniseWrappedIsThrownOnUnwrapped`,
-  `testInsideACallersRetryingTransactionASerialisationFailureIsRetriedByTheCaller`
+  `testInsideACallersRetryingTransactionASerialisationFailureIsRetriedByTheCaller`,
+  `testInsideACallersTransactionTheWorksWritesAreUndoneAfterAConcurrencyFailure` and
+  `testARealLockWaitTimeoutInsideACallersTransactionLeavesNoneOfTheWorksWrites` (MySQL), each as the installed Laravel
+  handles the failure and as Laravel before 13.40 does (`tests/Fixtures/Transactions/SavepointLeavingConnections.php`),
+  `testASavepointTheDatabaseHasAlreadyDiscardedLeavesTheWorksFailureThrownOn`,
+  `testAConnectionWithoutSavepointsRollsNothingBack`, `testAFailureThatIsNotAConcurrencyFailureIsLeftToLaravelsRollback`
 - `tests/Performance/Transactions/CrossMemberTransactionQueryBudgetTest.php`: one transaction or savepoint per
   attempt, counted by what became of it, and no query of the package's own.
 
 ## Change Triggers
 
-- A member adding a storage key, or `laravel-authorization` shipping AUTHZ-13.7: its key joins `MEMBER_KEYS`.
+- A member adding a storage key, or `laravel-authorization` shipping AUTHZ-13.7: its key joins `MEMBER_KEYS`, and its
+  provider `ConnectionAlignment::MEMBER_PROVIDERS`.
 - Any change to how connections are compared, to when the keys are written, or to Laravel's configuration merge.
+- A change to the console's global options (another that takes a value) or its default command:
+  `IamServiceProvider::commandName()` follows, and so should `laravel-mfa`'s own detection of the same commands.
 - A new failure a cross-member transaction should be retried after, or a change to Laravel's concurrency detector or to
-  how it wraps a failure inside a nested transaction.
+  how it wraps a failure inside a nested transaction, rolls back to its savepoint or names it.
+- The floor moving to Laravel 13.40 or later, where the nested transaction rolls back to its savepoint itself:
+  `rollBackToSavepoint()` can go.
 - Any use case that writes two members' tables outside `CrossMemberTransaction`.

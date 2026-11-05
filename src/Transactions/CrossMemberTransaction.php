@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Transactions;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\DeadlockException;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
@@ -16,7 +17,9 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
  * It retries only when it opened the outermost transaction: nothing can be
  * retried from inside a savepoint, so inside a transaction the caller opened,
  * the work runs in that transaction and every failure is rethrown for the
- * transaction's owner to retry, in a form that owner's retry recognises.
+ * transaction's owner to retry, in a form that owner's retry recognises. The
+ * work runs there in a savepoint that is rolled back whenever it fails, so a
+ * caller that catches the failure and commits keeps none of the work's writes.
  *
  * Each attempt it opens is begun, committed and rolled back through the
  * connection's own transaction methods, so a failure at commit, which leaves
@@ -109,7 +112,17 @@ final readonly class CrossMemberTransaction
 
     /**
      * Run the work once, in a savepoint inside the caller's transaction, and
-     * rethrow its failure as the caller's transaction should see it.
+     * rethrow its failure as the caller's transaction should see it, with
+     * everything the work wrote rolled back.
+     *
+     * Laravel's nested transaction rolls back to its savepoint after any other
+     * failure, but after a concurrency failure it throws its
+     * `DeadlockException`, which it throws exactly when its detector sees one,
+     * having only lowered the transaction level before 13.40. Where the
+     * database rolled back the failed statement alone (a lock wait timeout on
+     * MySQL, `database is locked` on SQLite, a changed record on MariaDB), the
+     * work's earlier writes would stay in the caller's transaction, so the work
+     * is rolled back to its savepoint here, on every supported version.
      *
      * @template T
      *
@@ -121,10 +134,44 @@ final readonly class CrossMemberTransaction
      */
     private function runInside(Connection $connection, \Closure $work): mixed
     {
+        $level = $connection->transactionLevel();
+
         try {
             return $connection->transaction($work);
         } catch (\Throwable $exception) {
+
+            if ($exception instanceof DeadlockException) {
+                self::rollBackToSavepoint($connection, $level);
+            }
+
             throw $this->failures->forCaller($exception);
+        }
+    }
+
+    /**
+     * Roll back to the savepoint the work's nested transaction opened above the
+     * caller's level, named as Laravel names it, where the connection's grammar
+     * has savepoints, as Laravel 13.40 does itself. A rollback that fails is
+     * left as it is: the database has discarded the savepoint already, as MySQL
+     * does with the whole transaction after a deadlock, or the connection is
+     * lost, and the work's own failure is the one to throw on.
+     *
+     * @param  \Illuminate\Database\Connection  $connection
+     * @param  int  $level
+     * @return void
+     */
+    private static function rollBackToSavepoint(Connection $connection, int $level): void
+    {
+        $grammar = $connection->getQueryGrammar();
+
+        if (!$grammar->supportsSavepoints()) {
+            return;
+        }
+
+        try {
+            $connection->getPdo()->exec($grammar->compileSavepointRollBack('trans' . ($level + 1)));
+        } catch (\Throwable) {
+            // The savepoint is gone already, with whatever the work wrote.
         }
     }
 

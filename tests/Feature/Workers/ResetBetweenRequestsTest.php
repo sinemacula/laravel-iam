@@ -4,8 +4,10 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Workers;
 
+use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\Application as FoundationApplication;
 use Illuminate\Support\Facades\Event;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -66,6 +68,35 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
+     * Each request resets the guards against its own sandbox even when the auth
+     * manager still holds the last request's sandbox, which Octane has already
+     * flushed, as it does whenever this listener runs before Octane's own
+     * `FlushAuthenticationState` moves the manager on.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testEachRequestResetsTheGuardsWhateverSandboxTheAuthManagerLastHeld(): void
+    {
+        $app  = $this->application();
+        $auth = $app->make('auth');
+
+        self::assertInstanceOf(AuthManager::class, $auth);
+
+        $previous = clone $app;
+
+        $auth->setApplication($previous);
+        $previous->flush();
+
+        $sandbox = clone $app;
+
+        Event::dispatch(ResetBetweenRequests::EVENT, [new RequestReceivedStandIn($sandbox)]);
+
+        self::assertSame($sandbox, \Closure::bind(fn (): mixed => $this->app, $auth, IlluminateAuthManager::class)());
+    }
+
+    /**
      * A scoped instance an earlier listener of the same event filled for the
      * request, as an application's Octane listener fills its `Context`,
      * outlives the reset.
@@ -80,7 +111,7 @@ final class ResetBetweenRequestsTest extends TestCase
 
         self::assertNotNull($app);
 
-        $app->instance('auth', $this->managerForgettingOnce());
+        $app->instance('auth', $this->managerForgettingOnce($app));
         $app->scoped('request-trace', static fn (): \stdClass => new \stdClass);
 
         $trace  = null;
@@ -105,7 +136,7 @@ final class ResetBetweenRequestsTest extends TestCase
      */
     public function testAnEventWithoutASandboxResetsTheCurrentApplication(): void
     {
-        $this->app?->instance('auth', $this->managerForgettingOnce());
+        $this->app?->instance('auth', $this->managerForgettingOnce($this->application()));
 
         Event::dispatch(ResetBetweenRequests::EVENT, [new \stdClass]);
     }
@@ -118,7 +149,7 @@ final class ResetBetweenRequestsTest extends TestCase
      */
     public function testASandboxThatIsNotAContainerResetsTheCurrentApplication(): void
     {
-        $this->app?->instance('auth', $this->managerForgettingOnce());
+        $this->app?->instance('auth', $this->managerForgettingOnce($this->application()));
 
         Event::dispatch(ResetBetweenRequests::EVENT, [new RequestReceivedStandIn('sandbox')]);
     }
@@ -153,15 +184,34 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state forgotten exactly once.
+     * Return the booted application.
      *
+     * @return \Illuminate\Foundation\Application
+     */
+    private function application(): FoundationApplication
+    {
+        self::assertNotNull($this->app);
+
+        return $this->app;
+    }
+
+    /**
+     * Return a `laravel-authentication` auth manager that expects its guard
+     * state forgotten exactly once, first pointed at the given application when
+     * one is given, and never pointed at any other.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application|null  $app
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */
-    private function managerForgettingOnce(): AuthManager
+    private function managerForgettingOnce(?Application $app = null): AuthManager
     {
         $manager = \Mockery::mock(AuthManager::class);
-        $manager->shouldReceive('forgetGuardState')->once();
+
+        if ($app !== null) {
+            $manager->shouldReceive('setApplication')->once()->with($app)->ordered()->andReturnSelf();
+        }
+
+        $manager->shouldReceive('forgetGuardState')->once()->ordered();
 
         return $manager;
     }

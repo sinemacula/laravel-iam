@@ -9,9 +9,10 @@ use Illuminate\Contracts\Config\Repository;
 /**
  * Declares the member seams one capability binds its adapters over.
  *
- * Each capability's `*Seams` class implements it; the service provider collects
- * every implementation's bindings once, in the booting phase, and hands them to
- * the binding rule.
+ * Each capability's `*Seams` class implements it; the binding rule collects
+ * every implementation's bindings once, as the service provider registers,
+ * under the configuration every member will hold once registered (the
+ * application's, with each member's packaged configuration beneath it).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

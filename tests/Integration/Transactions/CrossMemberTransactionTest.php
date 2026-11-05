@@ -9,6 +9,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionCommitting;
+use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
@@ -23,6 +24,7 @@ use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Iam\Transactions\RetrySettings;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use Tests\Concerns\RunsAtIsolationLevels;
+use Tests\Fixtures\Transactions\SavepointLeavingConnections;
 use Tests\TestCase;
 
 /**
@@ -30,14 +32,15 @@ use Tests\TestCase;
  * on the storage connection: the whole of it is retried after a concurrency
  * failure when the transaction is the outermost one, up to the configured
  * attempts, and run once with every failure rethrown inside a transaction the
- * caller opened, in a form the caller's own retry recognises. A failed attempt
- * is rolled back with the after-commit callbacks it queued.
+ * caller opened, in a form the caller's own retry recognises, with the work's
+ * savepoint rolled back on every supported Laravel version. A failed attempt is
+ * rolled back with the after-commit callbacks it queued.
  *
  * The retry rules run on every connection. A real serialisation failure, on
  * PostgreSQL at REPEATABLE READ, and a real deadlock, on MySQL and PostgreSQL
  * at READ COMMITTED and REPEATABLE READ, each provoked through a second
  * connection of the test's own, are skipped on SQLite, which serialises every
- * transaction.
+ * transaction; a real lock wait timeout runs on MySQL alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -75,6 +78,12 @@ final class CrossMemberTransactionTest extends TestCase
 
     /** @var int How long the locking connection waits for a lock before failing, in milliseconds. */
     private const int LOCKING_BUSY_TIMEOUT = 50;
+
+    /** @var string The message MySQL fails a statement that waited too long for a row lock with. */
+    private const string LOCK_WAIT_TIMEOUT = 'SQLSTATE[HY000]: General error: 1205 Lock wait timeout exceeded; try restarting transaction';
+
+    /** @var int How long the work waits for the row the other side locks on MySQL, in seconds. */
+    private const int LOCK_WAIT_TIMEOUT_SECONDS = 1;
 
     /** @var ?string The file the locking connection's database is kept in, removed after the test. */
     private ?string $lockingFile = null;
@@ -272,6 +281,176 @@ final class CrossMemberTransactionTest extends TestCase
         self::assertSame(1, DB::transactionLevel());
 
         DB::rollBack();
+    }
+
+    /**
+     * Rows of `[leavesTheSavepoint]`: the connection as the installed Laravel
+     * handles a concurrency failure in a nested transaction, and as Laravel
+     * before 13.40 does, lowering the level without rolling back to the nested
+     * transaction's savepoint.
+     *
+     * @return iterable<string, array{0: bool}>
+     */
+    public static function provideSavepointHandling(): iterable
+    {
+        yield 'as the installed Laravel handles it' => [false];
+
+        yield 'as Laravel before 13.40 handles it' => [true];
+    }
+
+    /**
+     * Inside a caller's transaction, a concurrency failure that the database
+     * met on one statement alone, as a lock wait timeout on MySQL or `database
+     * is locked` on SQLite, undoes everything the work wrote before it, on
+     * every supported Laravel version: a caller that catches the failure and
+     * commits keeps its own writes and none of the work's.
+     *
+     * @param  bool  $leavesTheSavepoint
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideSavepointHandling')]
+    public function testInsideACallersTransactionTheWorksWritesAreUndoneAfterAConcurrencyFailure(bool $leavesTheSavepoint): void
+    {
+        $this->handleTheSavepoint($leavesTheSavepoint);
+
+        DB::beginTransaction();
+        DB::table(self::TABLE)->insert(['id' => 100, 'value' => 100]);
+
+        $thrown = null;
+
+        try {
+            $this->transaction()->run(static function (): void {
+
+                DB::table(self::TABLE)->insert(['id' => 200, 'value' => 200]);
+
+                throw new \RuntimeException(self::LOCK_WAIT_TIMEOUT);
+            });
+        } catch (DeadlockException $thrown) {
+            // Asserted below, beside what the caller's transaction kept.
+        }
+
+        self::assertInstanceOf(DeadlockException::class, $thrown);
+        self::assertSame(1, DB::transactionLevel());
+
+        DB::commit();
+
+        self::assertSame([100], DB::table(self::TABLE)->pluck('id')->all());
+    }
+
+    /**
+     * A real lock wait timeout on MySQL, which rolls back only the statement
+     * that waited, met by the work inside a caller's transaction that catches
+     * it and commits, leaves none of the work's writes, on every supported
+     * Laravel version.
+     *
+     * @param  bool  $leavesTheSavepoint
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideSavepointHandling')]
+    public function testARealLockWaitTimeoutInsideACallersTransactionLeavesNoneOfTheWorksWrites(bool $leavesTheSavepoint): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            self::markTestSkipped('A lock wait timeout that rolls back its statement alone is provoked on MySQL.');
+        }
+
+        if (!in_array(DB::scalar('select @@innodb_rollback_on_timeout'), [0, '0'], true)) {
+            self::markTestSkipped('The server rolls back the whole transaction on a lock wait timeout.');
+        }
+
+        DB::table(self::TABLE)->insert(['id' => 1, 'value' => 1]);
+
+        $this->handleTheSavepoint($leavesTheSavepoint);
+
+        $other = self::otherConnection();
+
+        $other->beginTransaction();
+        $other->query('select * from ' . self::TABLE . ' where id = 1 for update');
+
+        DB::statement('set session innodb_lock_wait_timeout = ' . self::LOCK_WAIT_TIMEOUT_SECONDS);
+        DB::beginTransaction();
+        DB::table(self::TABLE)->insert(['id' => 10, 'value' => 10]);
+
+        $thrown = null;
+
+        try {
+            $this->transaction()->run(static function (): void {
+
+                DB::table(self::TABLE)->insert(['id' => 20, 'value' => 20]);
+                DB::table(self::TABLE)->where('id', 1)->update(['value' => 2]);
+            });
+        } catch (DeadlockException $thrown) {
+            // Asserted below, beside what the caller's transaction kept.
+        } finally {
+            $other->rollBack();
+        }
+
+        self::assertInstanceOf(DeadlockException::class, $thrown);
+        self::assertStringContainsString('Lock wait timeout exceeded', $thrown->getMessage());
+
+        DB::commit();
+
+        self::assertSame([1, 10], DB::table(self::TABLE)->orderBy('id')->pluck('id')->all());
+    }
+
+    /**
+     * Rolling back to the work's savepoint after a concurrency failure, when
+     * the database has already discarded it, as MySQL does with the whole
+     * transaction after a deadlock, fails quietly, and the work's own failure
+     * is thrown on; the savepoint is the one opened above the caller's level.
+     *
+     * @return void
+     */
+    public function testASavepointTheDatabaseHasAlreadyDiscardedLeavesTheWorksFailureThrownOn(): void
+    {
+        $failure    = new DeadlockException(self::LOCK_WAIT_TIMEOUT, 0, new \RuntimeException(self::LOCK_WAIT_TIMEOUT));
+        $connection = $this->connectionFailingInside($failure, true);
+        $pdo        = \Mockery::mock(\PDO::class);
+        $gone       = new \PDOException('SQLSTATE[42000]: Syntax error or access violation: 1305 SAVEPOINT trans3 does not exist');
+
+        $pdo->shouldReceive('exec')->once()->with('rollback to trans3')->andThrow($gone);
+        $connection->shouldReceive('getPdo')->andReturn($pdo);
+
+        self::assertSame($failure, $this->failureOfMockedRun($connection, static function (): void {}, 3));
+    }
+
+    /**
+     * A connection whose grammar has no savepoints has none to roll back to.
+     *
+     * @return void
+     */
+    public function testAConnectionWithoutSavepointsRollsNothingBack(): void
+    {
+        $failure    = new DeadlockException(self::LOCK_WAIT_TIMEOUT, 0, new \RuntimeException(self::LOCK_WAIT_TIMEOUT));
+        $connection = $this->connectionFailingInside($failure, false);
+
+        $connection->shouldNotReceive('getPdo');
+
+        self::assertSame($failure, $this->failureOfMockedRun($connection, static function (): void {}, 3));
+    }
+
+    /**
+     * A failure Laravel's nested transaction did not take for a concurrency
+     * failure is one Laravel has rolled back to the savepoint itself, so it is
+     * not rolled back again: a savepoint of that name might be an earlier one,
+     * when the nested transaction failed to open its own.
+     *
+     * @return void
+     */
+    public function testAFailureThatIsNotAConcurrencyFailureIsLeftToLaravelsRollback(): void
+    {
+        $failure    = new \RuntimeException('Something went wrong.');
+        $connection = \Mockery::mock(Connection::class);
+
+        $connection->shouldReceive('transactionLevel')->andReturn(2);
+        $connection->shouldReceive('transaction')->once()->andThrow($failure);
+        $connection->shouldNotReceive('getQueryGrammar');
+        $connection->shouldNotReceive('getPdo');
+
+        self::assertSame($failure, $this->failureOfMockedRun($connection, static function (): void {}, 3));
     }
 
     /**
@@ -900,6 +1079,53 @@ final class CrossMemberTransactionTest extends TestCase
         }
 
         self::fail('The mocked run did not fail.');
+    }
+
+    /**
+     * Return a mocked connection, inside a caller's transaction two levels
+     * deep, whose nested transaction fails with the given failure, and whose
+     * grammar has savepoints or not.
+     *
+     * @param  \Throwable  $failure
+     * @param  bool  $savepoints
+     * @return \Illuminate\Database\Connection&\Mockery\MockInterface
+     */
+    private function connectionFailingInside(\Throwable $failure, bool $savepoints): Connection
+    {
+        $grammar    = \Mockery::mock(Grammar::class);
+        $connection = \Mockery::mock(Connection::class);
+
+        $grammar->shouldReceive('supportsSavepoints')->andReturn($savepoints);
+        $grammar->shouldReceive('compileSavepointRollBack')->with('trans3')->andReturn('rollback to trans3');
+
+        $connection->shouldReceive('transactionLevel')->andReturn(2);
+        $connection->shouldReceive('transaction')->once()->andThrow($failure);
+        $connection->shouldReceive('getQueryGrammar')->andReturn($grammar);
+
+        return $connection;
+    }
+
+    /**
+     * Make the storage connection one that leaves a nested transaction's
+     * savepoint in place after a concurrency failure, as Laravel before 13.40
+     * does, or leave it as the installed Laravel handles it.
+     *
+     * @param  bool  $leavesTheSavepoint
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function handleTheSavepoint(bool $leavesTheSavepoint): void
+    {
+        if (!$leavesTheSavepoint) {
+            return;
+        }
+
+        $database = $this->app?->make(DatabaseManager::class);
+
+        self::assertInstanceOf(DatabaseManager::class, $database);
+
+        SavepointLeavingConnections::replace($database, self::CONNECTION);
     }
 
     /**

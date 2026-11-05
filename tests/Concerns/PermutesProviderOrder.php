@@ -14,10 +14,13 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
  * Boots the application with this package's provider first, last and between
- * the members', and with the application's own bindings made once every
- * provider has registered, as an application's provider does in `register()`,
- * for the binding rule's tests (IAM-8.4). A binding made in `boot()` comes from
- * a provider of the test's own, registered in the order the test gives.
+ * the members', and with the application's own bindings made before any
+ * provider registers, as a provider registered ahead of the packages makes
+ * them, or once every provider has registered, as an application provider's
+ * `register()` makes them, Laravel registering the application's providers
+ * after the packages'. The binding rule's tests prove IAM-8.4 through it. A
+ * binding made in a provider of the test's own, in `register()` or `boot()`,
+ * lands where the test puts that provider in the order.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -28,8 +31,11 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  */
 trait PermutesProviderOrder
 {
+    /** @var array<string, \Closure|object|string> The bindings the application makes before any provider registers. */
+    private array $bindingsBefore = [];
+
     /** @var array<string, \Closure|object|string> The bindings the application makes once every provider has registered. */
-    private array $registerBindings = [];
+    private array $bindingsAfter = [];
 
     /**
      * Rows of `[providers]`: this package first, last, where package discovery
@@ -78,26 +84,48 @@ trait PermutesProviderOrder
     }
 
     /**
-     * Boot a new application with the providers in the given order and the
-     * application's own bindings in `$inRegister`, made once every provider has
-     * registered, before the binding rule runs. A closure or class name is
-     * bound; any other object is bound as an instance.
+     * Boot a new application with the providers in the given order, and the
+     * application's own bindings in `$before`, made before any provider
+     * registers, and in `$after`, made once every provider has registered and
+     * before any boots. A closure or class name is bound; any other object is
+     * bound as an instance.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
-     * @param  array<string, \Closure|object|string>  $inRegister
+     * @param  array<string, \Closure|object|string>  $before
+     * @param  array<string, \Closure|object|string>  $after
      * @return void
      */
-    protected function bootInOrder(array $providers, array $inRegister = []): void
+    protected function bootInOrder(array $providers, array $before = [], array $after = []): void
     {
-        $this->registerBindings = $inRegister;
+        $this->bindingsBefore = $before;
+        $this->bindingsAfter  = $after;
 
         $this->reorderProviders($providers);
     }
 
     /**
-     * Seed the environment, then make the application's own bindings: Testbench
-     * defines the environment once every provider has registered and before any
-     * boots, where an application provider's `register()` would bind.
+     * Prepare the application's core, then make the application's bindings that
+     * come first: Testbench prepares the core before it loads the configuration
+     * and registers any provider.
+     *
+     * @param  mixed  $app
+     * @return void
+     */
+    #[\Override]
+    protected function resolveApplicationCore(mixed $app): void
+    {
+        parent::resolveApplicationCore($app);
+
+        assert($app instanceof Application);
+
+        self::bindForApplication($app, $this->bindingsBefore);
+    }
+
+    /**
+     * Seed the environment, then make the application's bindings that come
+     * last: Testbench defines the environment once every provider has
+     * registered and before any boots, where an application provider's
+     * `register()` would bind.
      *
      * @param  mixed  $app
      * @return void
@@ -109,7 +137,7 @@ trait PermutesProviderOrder
 
         assert($app instanceof Application);
 
-        self::bindForApplication($app, $this->registerBindings);
+        self::bindForApplication($app, $this->bindingsAfter);
     }
 
     /**

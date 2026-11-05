@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Storage;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
@@ -18,16 +19,18 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * Members read their connection lazily, so aligning their keys before the
  * application boots is enough. A member key left unset is given the shared
  * connection; a member key naming another connection refuses boot, since a
- * change that spans members could not then run in one transaction.
+ * change that spans members could not then run in one transaction, and so does
+ * a member whose service provider has not registered once the application has
+ * booted, since its key could never be aligned.
  *
- * A key is written only once its member has merged its configuration, and,
- * while providers are still registering, only once its member's provider has
- * registered: an application's published member configuration can be present
- * before then, and a key written into it would replace the member's whole
- * `storage` block, the member's own value from its environment included, when
- * the member merges its configuration. A key a previous call wrote, and that
- * still holds what it wrote, is the package's rather than the application's, so
- * it follows the shared connection if that has changed since.
+ * A key is written only once its member has merged its configuration, and, when
+ * the application is given, only once its member's provider has registered: an
+ * application's published member configuration can be present before then, and
+ * a key written into it would replace the member's whole `storage` block, the
+ * member's own value from its environment included, when the member merges its
+ * configuration. A key a previous call wrote, and that still holds what it
+ * wrote, is the package's rather than the application's, so it follows the
+ * shared connection if that has changed since.
  *
  * With `iam.storage.connection` unset, the shared connection is the default
  * one, and so is every member's whose key is unset: nothing is written, and a
@@ -76,7 +79,7 @@ final readonly class ConnectionAlignment
 
         foreach (self::MEMBER_PROVIDERS as $key => $provider) {
 
-            if (!self::isMerged($config, $key) || $app?->getProviders($provider) === []) {
+            if (self::isPending($config, $key, $provider, $app)) {
                 continue;
             }
 
@@ -97,24 +100,49 @@ final readonly class ConnectionAlignment
     /**
      * Refuse a member key that names a connection other than the shared one.
      *
+     * A member whose configuration is not merged, or, when the application is
+     * given, whose service provider has not registered yet, is left for a later
+     * call, as `align()` leaves it: a key read before the member has merged its
+     * configuration is not the one the member will read.
+     *
      * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  ?\Illuminate\Contracts\Foundation\Application  $app
      * @return void
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
      */
-    public function assertAligned(Repository $config): void
+    public function assertAligned(Repository $config, ?Application $app = null): void
     {
         $storage = (new StorageConnection($config))->name();
         $default = $config->get(self::DEFAULT_KEY);
 
-        foreach (StorageConnection::MEMBER_KEYS as $key) {
+        foreach (self::MEMBER_PROVIDERS as $key => $provider) {
 
-            if (!self::isMerged($config, $key)) {
+            if (self::isPending($config, $key, $provider, $app)) {
                 continue;
             }
 
             self::assertSameConnection($key, StorageConnection::read($config, $key), $storage, $default);
+        }
+    }
+
+    /**
+     * Refuse a member whose service provider has not registered, naming the
+     * first: its key could never be aligned, nor checked.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
+     */
+    public function assertRegistered(Application $app): void
+    {
+        foreach (self::MEMBER_PROVIDERS as $key => $provider) {
+
+            if ($app->getProviders($provider) === []) {
+                throw MemberNotRegisteredException::forStorage($key, $provider);
+            }
         }
     }
 
@@ -137,6 +165,22 @@ final readonly class ConnectionAlignment
         }
 
         throw StorageConnectionMismatchException::forKey($key, $member, $storage);
+    }
+
+    /**
+     * Tell whether a member key is left for a later call: its member has not
+     * merged its configuration, or, when the application is given, its service
+     * provider has not registered yet.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  string  $key
+     * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
+     * @param  ?\Illuminate\Contracts\Foundation\Application  $app
+     * @return bool
+     */
+    private static function isPending(Repository $config, string $key, string $provider, ?Application $app): bool
+    {
+        return !self::isMerged($config, $key) || $app?->getProviders($provider) === [];
     }
 
     /**
