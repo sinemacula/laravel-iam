@@ -409,6 +409,10 @@ final class CodeTranslatorTest extends TestCase
 
         yield 'invalid' => [FactorCodeOutcome::INVALID, FailureReason::INVALID_CODE, CodeTranslator::INVALID, true];
 
+        yield 'not found' => [FactorCodeOutcome::NOT_FOUND, FailureReason::NOT_FOUND, CodeTranslator::NOT_FOUND, false];
+
+        yield 'used' => [FactorCodeOutcome::USED, FailureReason::REPLAYED, CodeTranslator::USED, false];
+
         yield 'expired' => [FactorCodeOutcome::EXPIRED, FailureReason::EXPIRED, CodeTranslator::EXPIRED, false];
 
         yield 'exhausted' => [FactorCodeOutcome::EXHAUSTED, FailureReason::EXPIRED, CodeTranslator::EXPIRED, false];

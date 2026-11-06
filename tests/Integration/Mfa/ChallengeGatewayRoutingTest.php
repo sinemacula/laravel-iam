@@ -193,7 +193,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
 
         $person = $this->signedInPerson();
         $factor = $this->deliveredFactor($person, $type);
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertCount(1, $sender->sent(), 'The application\'s own sender must deliver the code.');
@@ -201,7 +201,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
 
         $code = $sender->lastCodeTo(self::deliveredDestination($person, $type)) ?? self::fail('No code reached the sender.');
 
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -221,7 +221,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
         $sender = $type === 'sms' ? FakeSmsSender::fake($this->app) : FakeEmailSender::fake($this->app);
         $person = $this->signedInPerson();
         $factor = $this->deliveredFactor($person, $type);
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertCount(1, $sender->sent());
@@ -229,7 +229,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
 
         $code = $sender->lastCodeTo(self::deliveredDestination($person, $type)) ?? self::fail('No code reached the sender.');
 
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -250,7 +250,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
 
         $person  = $this->signedInPerson();
         $factor  = $this->deliveredFactor($person, 'voice');
-        $sent    = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent    = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
         $message = $this->gatewayOf(Channel::SMS)->sent()[0] ?? self::fail('No code reached the SMS gateway.');
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
@@ -258,7 +258,9 @@ final class ChallengeGatewayRoutingTest extends TestCase
         self::assertSame('voice', $message->type);
         self::assertSame($factor->id, $message->factor?->id);
         self::assertSame(0, $this->runDeliveries(), 'No code waits for a delivery job.');
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -281,14 +283,16 @@ final class ChallengeGatewayRoutingTest extends TestCase
 
         $person  = $this->signedInPerson();
         $factor  = $this->deliveredFactor($person);
-        $sent    = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent    = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
         $message = $this->gatewayOf(Channel::SMS)->sent()[0] ?? self::fail('No code reached the SMS gateway.');
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertSame(Source::MFA, $message->source);
         self::assertSame(Purpose::ADDITIONAL_FACTOR, $message->purpose);
         self::assertSame(0, DB::table('one_time_codes')->count());
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -306,7 +310,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
     {
         $person = $this->signedInPerson();
         $factor = $this->deliveredFactor($person, $type);
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertSame(1, DB::table('one_time_codes')->count());
@@ -316,7 +320,9 @@ final class ChallengeGatewayRoutingTest extends TestCase
         $message = $this->gatewayOf(Channel::from($type))->sent()[0] ?? self::fail('No code reached the gateway.');
 
         self::assertSame(Source::AUTHENTICATION, $message->source);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -371,7 +377,7 @@ final class ChallengeGatewayRoutingTest extends TestCase
         Mfa::extend($type, static fn (): RecordingCodeDriver => $driver);
 
         $factor = $this->deliveredFactor($this->signedInPerson(), $type, $destination);
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertCount(1, $driver->messages(), 'The application\'s driver must deliver the code.');
@@ -380,7 +386,9 @@ final class ChallengeGatewayRoutingTest extends TestCase
         $message = $driver->messages()[0];
 
         self::assertSame($type, $message->type);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
 
         return $depth ?? self::fail('The driver delivered nothing.');
     }

@@ -26,11 +26,22 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
+use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
+use SineMacula\Laravel\Mfa\Assurance\ObservedProperties as MfaObservedProperties;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
+use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\FreshnessGate;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
+use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
+use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
+use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
+use SineMacula\Laravel\Mfa\Proofs\Proof as MfaProof;
+use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FreshnessGateTests;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\ChangesSessionsElsewhere;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RecordsFreshnessReadModes;
@@ -67,7 +78,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class FreshnessGateAdapterTest extends TestCase
 {
-    use ChangesSessionsElsewhere, FreshnessGateTests, MigratesMembers, RecordsFreshnessReadModes, RunsAtIsolationLevels, SignsInPeople;
+    use BindsStrayRequests, ChangesSessionsElsewhere, FreshnessGateTests, MigratesMembers, RecordsFreshnessReadModes, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string The factor the tests' step-ups are made with. */
     private const string FACTOR = 'factor-1';
@@ -98,17 +109,17 @@ final class FreshnessGateAdapterTest extends TestCase
         $asked     = Requirement::none()->withAdditionalVerification(300);
         $steppedUp = CarbonImmutable::now();
 
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $asked));
-        self::assertNull($this->adapter()->freshUntil(self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
+        self::assertNull($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked));
 
         $this->stepSessionUp($person, $session);
 
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
-        self::assertTrue($steppedUp->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::OPERATION, $asked)));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
+        self::assertTrue($steppedUp->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked)));
 
         $this->travel(300)->seconds();
 
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
     }
 
     /**
@@ -130,18 +141,18 @@ final class FreshnessGateAdapterTest extends TestCase
 
         $this->stepSessionUp($person, $session, multifactor: false);
 
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $verification));
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $multifactor));
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $phishing));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $verification));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $multifactor));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $phishing));
 
         $this->stepSessionUp($person, $session);
 
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $multifactor));
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $phishing));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $multifactor));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $phishing));
 
         $this->stepSessionUp($person, $session, phishingResistant: true);
 
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $phishing));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $phishing));
     }
 
     /**
@@ -165,13 +176,13 @@ final class FreshnessGateAdapterTest extends TestCase
         $this->travel(100)->seconds();
         $this->stepSessionUp($person, $session, multifactor: false);
 
-        self::assertTrue($first->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::OPERATION, $asked)));
+        self::assertTrue($first->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked)));
 
         $this->travel(200)->seconds();
 
-        self::assertNull($this->adapter()->freshUntil(self::OPERATION, $asked));
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $asked));
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, Requirement::none()->withAdditionalVerification(600)));
+        self::assertNull($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withAdditionalVerification(600)));
     }
 
     /**
@@ -189,20 +200,20 @@ final class FreshnessGateAdapterTest extends TestCase
         $session = $this->signInAndActOnSession($person);
         $asked   = Requirement::none()->withAdditionalVerification(600);
 
-        self::assertTrue($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE));
-        self::assertTrue($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE, Requirement::none()));
-        self::assertFalse($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE, Requirement::none()));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $asked));
 
         $this->stepSessionUp($person, $session);
 
         Config::set('authentication.freshness.' . Operations::IDENTIFIER_CHANGE . '.max_age_seconds', 60);
 
-        self::assertTrue($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $asked));
 
         $this->travel(60)->seconds();
 
-        self::assertFalse($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE, $asked));
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
     }
 
     /**
@@ -233,13 +244,11 @@ final class FreshnessGateAdapterTest extends TestCase
     #[DataProvider('provideRequirementsThePolicyCannotJudge')]
     public function testARequirementThePolicyCannotJudgeIsRefused(Requirement $requirement, string $message): void
     {
-        Config::set('auth.defaults.guard', 'not-a-guard');
-
         foreach (
             [
-                fn (): mixed => $this->adapter()->isFresh(self::OPERATION, $requirement),
-                fn (): mixed => $this->adapter()->freshUntil(self::OPERATION, $requirement),
-                fn (): mixed => $this->adapter()->requirement(self::OPERATION, $requirement),
+                fn (): mixed => $this->adapter()->isFresh(CallerContext::nobody('not-a-guard'), self::OPERATION, $requirement),
+                fn (): mixed => $this->adapter()->freshUntil(CallerContext::nobody('not-a-guard'), self::OPERATION, $requirement),
+                fn (): mixed => $this->adapter()->requirement(CallerContext::nobody('not-a-guard'), self::OPERATION, $requirement),
             ] as $question
         ) {
             self::assertSame($message, self::assertRefused($question)->getMessage());
@@ -261,9 +270,9 @@ final class FreshnessGateAdapterTest extends TestCase
 
         $unbounded = Requirement::none()->withAdditionalVerification();
 
-        self::assertFalse($this->adapter()->isFresh('Not An Operation', $unbounded));
-        self::assertNull($this->adapter()->freshUntil('Not An Operation', $unbounded));
-        self::assertNull($this->adapter()->requirement('Not An Operation', Requirement::none()->withAdditionalVerification(300)));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), 'Not An Operation', $unbounded));
+        self::assertNull($this->adapter()->freshUntil(self::servedCaller(), 'Not An Operation', $unbounded));
+        self::assertNull($this->adapter()->requirement(self::servedCaller(), 'Not An Operation', Requirement::none()->withAdditionalVerification(300)));
     }
 
     /**
@@ -274,55 +283,106 @@ final class FreshnessGateAdapterTest extends TestCase
      */
     public function testACallerWithNoSessionIsNotFresh(): void
     {
-        self::assertFalse($this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE));
-        self::assertNull($this->adapter()->freshUntil(Operations::IDENTIFIER_CHANGE));
-        self::assertNotNull($this->adapter()->requirement(Operations::FACTOR_CHANGE));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), Operations::IDENTIFIER_CHANGE));
+        self::assertNull($this->adapter()->freshUntil(self::servedCaller(), Operations::IDENTIFIER_CHANGE));
+        self::assertNotNull($this->adapter()->requirement(self::servedCaller(), Operations::FACTOR_CHANGE));
     }
 
     /**
-     * Rows of `[default guard]` that are no guard of
-     * `laravel-authentication`'s: a name no guard is declared under, Laravel's
-     * own session guard, and none.
+     * Rows of `[application]` that are no guard of `laravel-authentication`'s:
+     * a name no guard is declared under, and Laravel's own session guard.
      *
-     * @return iterable<string, array{0: ?string, 1: string}>
+     * @return iterable<string, array{0: string}>
      */
-    public static function provideDefaultGuardsThatAreNoAuthenticationGuard(): iterable
+    public static function provideApplicationsThatAreNoAuthenticationGuard(): iterable
     {
-        yield 'no guard' => ['not-a-guard', 'not-a-guard'];
+        yield 'no guard' => ['not-a-guard'];
 
-        yield 'another kind of guard' => ['web', 'web'];
-
-        yield 'none' => [null, ''];
+        yield 'another kind of guard' => ['web'];
     }
 
     /**
-     * A default guard that is not one of `laravel-authentication`'s cannot be
-     * resolved, and every question throws.
+     * A caller's application that is not one of `laravel-authentication`'s
+     * guards cannot be resolved, and every question throws, whoever the caller
+     * is.
      *
-     * @param  ?string  $guard
-     * @param  string  $named
+     * @param  string  $application
      * @return void
+     *
+     * @throws \Throwable
      */
-    #[DataProvider('provideDefaultGuardsThatAreNoAuthenticationGuard')]
-    public function testADefaultGuardThatIsNoAuthenticationGuardIsUnresolved(?string $guard, string $named): void
+    #[DataProvider('provideApplicationsThatAreNoAuthenticationGuard')]
+    public function testAnApplicationThatIsNoAuthenticationGuardIsUnresolved(string $application): void
     {
-        Config::set('auth.defaults.guard', $guard);
+        $person = $this->createPerson();
 
-        foreach (
-            [
-                fn (): mixed => $this->adapter()->isFresh(Operations::IDENTIFIER_CHANGE),
-                fn (): mixed => $this->adapter()->requirement(Operations::IDENTIFIER_CHANGE),
-            ] as $question
-        ) {
+        foreach ([CallerContext::nobody($application), self::callerOf($person, $application)] as $caller) {
+            foreach (
+                [
+                    fn (): mixed => $this->adapter()->isFresh($caller, Operations::IDENTIFIER_CHANGE),
+                    fn (): mixed => $this->adapter()->requirement($caller, Operations::IDENTIFIER_CHANGE),
+                ] as $question
+            ) {
 
-            try {
-                $question();
+                try {
+                    $question();
 
-                self::fail('A guard that is not laravel-authentication\'s was asked.');
-            } catch (UnresolvedReferenceException $exception) {
-                self::assertSame(ReferenceKind::GUARD, $exception->kind);
-                self::assertSame($named, $exception->application);
+                    self::fail('A guard that is not laravel-authentication\'s was asked.');
+                } catch (UnresolvedReferenceException $exception) {
+                    self::assertSame(ReferenceKind::GUARD, $exception->kind);
+                    self::assertSame($application, $exception->application);
+                }
             }
+        }
+    }
+
+    /**
+     * The caller's own application is asked, never the default guard: the
+     * guard's session of the caller's is judged, and its setting read, while
+     * the default guard is another.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheCallersApplicationIsAsked(): void
+    {
+        $person = $this->createPerson();
+
+        $this->signInAndActOnSession($person);
+
+        Config::set('auth.defaults.guard', 'web');
+
+        self::assertTrue($this->adapter()->isFresh(self::callerOf($person), Operations::IDENTIFIER_CHANGE));
+        self::assertNotNull($this->adapter()->requirement(self::callerOf($person), Operations::FACTOR_CHANGE));
+    }
+
+    /**
+     * Only an active caller whose guard holds a session of its own can be
+     * fresh: a caller the guard holds no session of (another identity than the
+     * one it serves), a pending caller and nobody are not, though the
+     * requirement for each is answered, and a request bound in the container
+     * never stands in for the caller handed in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOnlyAnActiveCallersOwnSessionCanBeFresh(): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $signIn  = $this->signInReference($session);
+        $pending = CallerContext::forPending(self::pendingOf($person, $signIn));
+
+        $this->bindStrayRequest();
+
+        self::assertTrue($this->adapter()->isFresh(self::callerOf($person), Operations::IDENTIFIER_CHANGE));
+
+        foreach ([self::callerOf($this->createPerson()), $pending, CallerContext::nobody(self::GUARD)] as $caller) {
+            self::assertFalse($this->adapter()->isFresh($caller, Operations::IDENTIFIER_CHANGE));
+            self::assertNull($this->adapter()->freshUntil($caller, Operations::IDENTIFIER_CHANGE));
+            self::assertNotNull($this->adapter()->requirement($caller, Operations::FACTOR_CHANGE));
         }
     }
 
@@ -340,18 +400,20 @@ final class FreshnessGateAdapterTest extends TestCase
         $multifactor  = Requirement::none()->withMultifactor(300);
         $verification = Requirement::none()->withAdditionalVerification(900);
 
-        self::assertSame($verification->toArray(), $this->adapter()->requirement(Operations::FACTOR_CHANGE)?->toArray());
-        self::assertSame($verification->withMultifactor(300)->toArray(), $this->adapter()->requirement(Operations::FACTOR_CHANGE, $multifactor)?->toArray());
+        self::assertSame($verification->toArray(), $this->adapter()->requirement(self::servedCaller(), Operations::FACTOR_CHANGE)?->toArray());
+        self::assertSame($verification->withMultifactor(300)->toArray(), $this->adapter()->requirement(self::servedCaller(), Operations::FACTOR_CHANGE, $multifactor)?->toArray());
 
-        self::assertNull($this->adapter()->requirement(Operations::IDENTIFIER_CHANGE));
-        self::assertNull($this->adapter()->requirement(Operations::IDENTIFIER_CHANGE, Requirement::none()));
-        self::assertSame($multifactor->toArray(), $this->adapter()->requirement(Operations::IDENTIFIER_CHANGE, $multifactor)?->toArray());
+        self::assertNull($this->adapter()->requirement(self::servedCaller(), Operations::IDENTIFIER_CHANGE));
+        self::assertNull($this->adapter()->requirement(self::servedCaller(), Operations::IDENTIFIER_CHANGE, Requirement::none()));
+        self::assertSame($multifactor->toArray(), $this->adapter()->requirement(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $multifactor)?->toArray());
 
         Config::set('auth.guards.' . self::GUARD . '.freshness', [
             self::PAYOUTS => ['max_age_seconds' => 120, 'proofs' => ['first_factor', 'additional_factor'], 'multifactor' => true, 'phishing_resistant' => true],
         ]);
 
-        self::assertSame(Requirement::none()->withMultifactor(120)->withPhishingResistance(120)->toArray(), $this->adapter()->requirement(self::PAYOUTS)?->toArray());
+        $payouts = Requirement::none()->withMultifactor(120)->withPhishingResistance(120);
+
+        self::assertSame($payouts->toArray(), $this->adapter()->requirement(self::servedCaller(), self::PAYOUTS)?->toArray());
     }
 
     /**
@@ -372,7 +434,7 @@ final class FreshnessGateAdapterTest extends TestCase
 
             VerificationGeneration::advance($person);
 
-            return $this->adapter()->isFresh(self::OPERATION, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 300));
+            return $this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 300));
         }));
 
         self::assertSame(0, VerificationGeneration::current($person));
@@ -402,8 +464,8 @@ final class FreshnessGateAdapterTest extends TestCase
         });
 
         self::assertSame(0, DB::transactionLevel());
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
-        self::assertNotNull($this->adapter()->freshUntil(self::OPERATION, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
+        self::assertNotNull($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked));
         self::assertAskedOnlyIn($recorder, false);
         self::assertNotSame([], $queries);
         self::assertSame([], self::lockingReads($queries));
@@ -428,7 +490,10 @@ final class FreshnessGateAdapterTest extends TestCase
 
         $this->stepSessionUp($person, $session);
 
-        [$fresh, $until] = DB::transaction(fn (): array => [$this->adapter()->isFresh(self::OPERATION, $asked), $this->adapter()->freshUntil(self::OPERATION, $asked)]);
+        [$fresh, $until] = DB::transaction(fn (): array => [
+            $this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked),
+            $this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked),
+        ]);
 
         self::assertTrue($fresh);
         self::assertNotNull($until);
@@ -466,7 +531,7 @@ final class FreshnessGateAdapterTest extends TestCase
                 $queries[] = $query->sql;
             });
 
-            self::assertTrue($this->adapter()->isFresh(self::OPERATION, Requirement::none()->withAdditionalVerification(300)->withMultifactor(300)));
+            self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withAdditionalVerification(300)->withMultifactor(300)));
         });
 
         $locks = self::lockingReads($queries);
@@ -503,12 +568,12 @@ final class FreshnessGateAdapterTest extends TestCase
 
         $this->stepSessionUp($person, $session);
 
-        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
+        self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
 
         $answers = $this->askedAfter(
             $level,
             fn () => $this->removeElsewhere($person, $session, self::FACTOR),
-            fn (): array => [$this->adapter()->isFresh(self::OPERATION, $asked), $this->adapter()->freshUntil(self::OPERATION, $asked)],
+            fn (): array => [$this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked), $this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked)],
         );
 
         self::assertSame([false, null], $answers);
@@ -537,12 +602,12 @@ final class FreshnessGateAdapterTest extends TestCase
         $session = $this->signInAndActOnSession($person);
         $asked   = Requirement::none()->withAdditionalVerification(300);
 
-        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
 
         $fresh = $this->askedAfter(
             $level,
             fn () => $this->elsewhere(fn () => $this->stepSessionUp($person, $session)),
-            fn (): bool => $this->adapter()->isFresh(self::OPERATION, $asked),
+            fn (): bool => $this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked),
         );
 
         self::assertTrue($fresh);
@@ -561,6 +626,19 @@ final class FreshnessGateAdapterTest extends TestCase
         $this->signInAndActOnSession($this->createPerson());
 
         return $this->adapter();
+    }
+
+    /**
+     * The caller the kit's gates are asked for: the person the guard serves on
+     * the session `freshnessGate()` signed in, as a request served now reads
+     * it.
+     *
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     */
+    #[\Override]
+    protected function freshnessCaller(): CallerContext
+    {
+        return self::servedCaller();
     }
 
     /**
@@ -589,6 +667,32 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
+     * A pending context of the person's on the sign-in given, as a pending
+     * caller would be served it.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  string  $signIn
+     * @return \SineMacula\Laravel\Mfa\Context\PendingContext
+     */
+    private static function pendingOf(Person $person, string $signIn): PendingContext
+    {
+        $reference = IdentityReference::of($person);
+
+        $firstFactor = new MfaProof(
+            MfaProofKind::FIRST_FACTOR,
+            'password',
+            new MfaChannel(MfaChannelKind::PASSWORD, null),
+            null,
+            MfaObservedProperties::none(),
+            CarbonImmutable::now(),
+            new MfaProofBinding($reference->type, $reference->key, self::GUARD, $signIn, MfaPurpose::SIGN_IN),
+            VerificationGeneration::current($person),
+        );
+
+        return new PendingContext($person, self::GUARD, $signIn, $firstFactor, Requirement::none()->withAdditionalVerification(), [], CarbonImmutable::now()->addMinutes(5));
+    }
+
+    /**
      * Step the session up with a TOTP proof of the person's, through
      * `laravel-authentication`, failing the test unless it is recorded.
      *
@@ -612,7 +716,7 @@ final class FreshnessGateAdapterTest extends TestCase
             ['otp'],
             CarbonImmutable::now(),
             new ProofBinding($person, self::GUARD, $session->getSessionIdentifier(), Purpose::STEP_UP),
-        ));
+        ), self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The session was not stepped up: [%s].', $result->reason?->value));
     }

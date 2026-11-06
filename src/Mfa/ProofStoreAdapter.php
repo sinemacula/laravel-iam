@@ -9,7 +9,6 @@ use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
-use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
@@ -261,10 +260,11 @@ final readonly class ProofStoreAdapter implements ProofStore
      *
      * A factor the identity still holds is forgotten through
      * `laravel-authentication`, the only writer of a session's proofs, as the
-     * removal it is: `factorRemoved()` on the default guard, the application
-     * MFA names a removal's, voids the current session's proofs made with the
-     * factor and judges it again, and ends every other session of the identity,
-     * every session when that guard holds none of the identity's.
+     * removal it is: `factorRemoved()` on the default guard, since MFA hands
+     * this no application as it hands the session revoker one, voids the
+     * current session's proofs made with the factor and judges it again, and
+     * ends every other session of the identity, every session when that guard
+     * holds none of the identity's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $factorId
@@ -401,16 +401,7 @@ final readonly class ProofStoreAdapter implements ProofStore
      */
     private function session(MultiFactorAuthenticatable $identity, string $application): ?Session
     {
-        try {
-            return $this->sessions->current($identity, $application);
-        } catch (UnresolvedReferenceException $exception) {
-
-            if ($exception->kind !== ReferenceKind::SESSION) {
-                throw $exception;
-            }
-
-            return null;
-        }
+        return $this->sessions->held($identity, $application);
     }
 
     /**

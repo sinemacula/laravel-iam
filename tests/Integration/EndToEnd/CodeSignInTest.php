@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Codes\CodeService;
 use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
+use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Delivery\CodeMessage;
 use SineMacula\Laravel\Iam\Delivery\DeliverySettings;
@@ -118,7 +119,7 @@ final class CodeSignInTest extends TestCase
 
         $person  = $this->person();
         $gateway = $this->gatewayOf($channel);
-        $request = $this->codes()->send($method, [$type => $given]);
+        $request = $this->codes()->send($method, [$type => $given], self::client());
 
         self::assertTrue($request->isSent(), $request->status->value);
         self::assertSame([], $gateway->sent(), 'The code is delivered once it has committed, by the queued job.');
@@ -178,7 +179,7 @@ final class CodeSignInTest extends TestCase
 
         $failure = new \RuntimeException('The provider refused the message.');
         $gateway = $this->gatewayOf($channel)->failNext($failure);
-        $request = $this->codes()->send($method, [$type => $given]);
+        $request = $this->codes()->send($method, [$type => $given], self::client());
 
         self::assertTrue($request->isSent(), 'laravel-authentication answers the request before the code is delivered.');
         self::assertSame($failure, $this->assertDeliveryFails(\RuntimeException::class));
@@ -252,7 +253,7 @@ final class CodeSignInTest extends TestCase
      */
     private function signInWith(string $method, string $type, string $identifier, string $challenge, #[\SensitiveParameter] string $code): SignInResult
     {
-        return $this->sessions()->signIn($method, [$type => $identifier, 'challenge' => $challenge, 'code' => $code]);
+        return $this->sessions()->signIn($method, [$type => $identifier, 'challenge' => $challenge, 'code' => $code], new SignInContext(self::client()));
     }
 
     /**

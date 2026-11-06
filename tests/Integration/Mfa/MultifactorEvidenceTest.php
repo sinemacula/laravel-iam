@@ -90,7 +90,7 @@ final class MultifactorEvidenceTest extends TestCase
 
         $this->travel(1)->minutes();
 
-        $totp = Mfa::verify(Submission::factor($app->id, AuthenticatorApp::code($app)), Purpose::STEP_UP);
+        $totp = Mfa::verify(self::servedCaller(), Submission::factor($app->id, AuthenticatorApp::code($app)), Purpose::STEP_UP);
 
         self::assertTrue($totp->isVerified());
         self::assertTrue($totp->refreshesMultifactor);
@@ -105,9 +105,9 @@ final class MultifactorEvidenceTest extends TestCase
         self::assertFalse($email->evaluation->multifactor);
         self::assertFalse($this->isFreshMultifactorByMfasCheck($person));
         self::assertFalse($this->isFreshMultifactor());
-        self::assertTrue($this->gate()->isFresh(self::OPERATION, Requirement::none()->withAdditionalVerification(self::MAX_AGE)));
+        self::assertTrue($this->gate()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withAdditionalVerification(self::MAX_AGE)));
 
-        self::assertTrue(Mfa::removeFactor($app->id)->wasMade());
+        self::assertTrue(Mfa::removeFactor(self::servedCaller(), $app->id)->wasMade());
         self::assertNull(Factor::query()->find($app->id));
 
         self::assertFalse($this->isFreshMultifactorByMfasCheck($person));
@@ -138,12 +138,12 @@ final class MultifactorEvidenceTest extends TestCase
             'confirmed_at'         => CarbonImmutable::now(),
         ]);
 
-        $sent = Mfa::sendCode($factor->id, Purpose::STEP_UP);
+        $sent = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
         $code = $sender->lastCodeTo(self::DESTINATION);
 
         self::assertIsString($sent->challengeId);
         self::assertIsString($code);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, $sent->challengeId, $code), Purpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, $sent->challengeId, $code), Purpose::STEP_UP)->isVerified());
 
         foreach ($this->proofsOf($session) as $proof) {
             if ($proof->factor === $factor->id) {
@@ -164,7 +164,7 @@ final class MultifactorEvidenceTest extends TestCase
      */
     private function isFreshMultifactor(): bool
     {
-        return $this->gate()->isFresh(self::OPERATION, Requirement::none()->withMultifactor(self::MAX_AGE));
+        return $this->gate()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withMultifactor(self::MAX_AGE));
     }
 
     /**

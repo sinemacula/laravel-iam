@@ -15,7 +15,6 @@ use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
 use SineMacula\Laravel\Authentication\Sessions\FactorChangeResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
-use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\SessionTransitionAdapter;
@@ -38,11 +37,12 @@ use Tests\TestCase;
 
 /**
  * Integration tests for MFA's session transition through
- * `laravel-authentication` (IAM-3.8): MFA's contract kit, the guard's current
- * session judged again by `laravel-authentication`'s rules and its result
- * returned as MFA's completion, a session that falls short returned to pending
- * with a new credential, and a change on another sign-in, or none, refused by
- * throwing so the change rolls back unjudged (IAM-8.2).
+ * `laravel-authentication` (IAM-3.8): MFA's contract kit, the session MFA names
+ * judged again by `laravel-authentication`'s rules, whatever the guard holds,
+ * and its result returned as MFA's completion, a session that falls short
+ * returned to pending with a new credential, and a change on a sign-in that is
+ * no session of the identity's refused by throwing so the change rolls back
+ * unjudged (IAM-8.2).
  *
  * MFA's own flow is run too: confirming an enrolment on an active session, with
  * this package's factor-change adapters bound alone, judges the session last,
@@ -119,21 +119,16 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * A change on another of the identity's sign-ins than the guard's session
-     * is refused, inside the change's transaction, which rolls back: neither
-     * session is judged, and what the change wrote is gone.
+     * The sign-in MFA names is the session judged, never the guard's: a change
+     * on another of the identity's sessions returns that one to pending and
+     * leaves the guard's alone.
      *
-     * @param  string  $level
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideIsolationLevels')]
-    public function testAChangeOnAnotherSignInIsRefusedAndRollsBack(string $level): void
+    public function testAChangeOnAnotherSignInJudgesThatSignIn(): void
     {
-        self::requireIsolationLevels();
-        self::useIsolationLevel($level);
-
         $person  = $this->createPerson();
         $other   = $this->signIn($person)->record;
         $current = $this->signInAndActOnSession($person);
@@ -142,42 +137,72 @@ final class SessionTransitionAdapterTest extends TestCase
 
         $change = new SessionChange($person, self::GUARD, $this->signInReference($other), FactorChangeMade::CONFIRMED, self::factorSummary(), null);
 
-        try {
-            self::storage()->transaction(function () use ($person, $change): void {
-
-                $person->forceFill(['name' => 'Changed'])->save();
-
-                $this->transition()->factorChanged($change);
-            });
-
-            self::fail('A change on another sign-in was judged.');
-        } catch (SessionMismatchException $exception) {
-            self::assertSame(self::GUARD, $exception->application);
-        }
-
-        self::assertSame('Ada Lovelace', $person->refresh()->name);
-        self::assertSame(SessionStatus::ACTIVE, $this->sessionNamed($this->signInReference($other))->getStatus());
+        self::assertTrue($this->transition()->factorChanged($change)->isPending());
+        self::assertSame(SessionStatus::PENDING, $this->sessionNamed($this->signInReference($other))->getStatus());
         self::assertSame(SessionStatus::ACTIVE, $this->sessionNamed($this->signInReference($current))->getStatus());
     }
 
     /**
-     * A guard holding no session of the identity's has no sign-in to judge, so
-     * the change is refused.
+     * The sign-in MFA names is judged whatever the guard holds, as a change
+     * made from a queued job or a console command is: a guard serving no one
+     * still judges it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAGuardHoldingNoSessionIsUnresolved(): void
+    public function testTheNamedSignInIsJudgedWhateverTheGuardHolds(): void
     {
         $change = $this->sessionChange(FactorChangeMade::CONFIRMED);
 
         $this->stopActing(self::GUARD);
+        $this->requireAFurtherFactor();
 
-        $exception = self::refusal(fn (): mixed => $this->transition()->factorChanged($change));
+        self::assertTrue($this->transition()->factorChanged($change)->isPending());
+        self::assertSame(SessionStatus::PENDING, $this->sessionNamed($change->session)->getStatus());
+    }
 
-        self::assertSame(ReferenceKind::SESSION, $exception->kind);
-        self::assertSame(self::GUARD, $exception->application);
+    /**
+     * A change on a sign-in that is no session of the identity's on the guard
+     * (another identity's session, or a key no session holds) is refused inside
+     * the change's transaction, which rolls back: no session is judged, and
+     * what the change wrote is gone.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAChangeOnASignInThatIsNoSessionOfTheIdentitysIsRefusedAndRollsBack(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person   = $this->createPerson();
+        $stranger = $this->signIn($this->createPerson())->record;
+
+        $this->signInAndActOnSession($person);
+        $this->requireAFurtherFactor();
+
+        foreach ([$this->signInReference($stranger), '987654'] as $signIn) {
+
+            $change    = new SessionChange($person, self::GUARD, $signIn, FactorChangeMade::CONFIRMED, self::factorSummary(), null);
+            $exception = self::refusal(function () use ($person, $change): void {
+                self::storage()->transaction(function () use ($person, $change): void {
+
+                    $person->forceFill(['name' => 'Changed'])->save();
+
+                    $this->transition()->factorChanged($change);
+                });
+            });
+
+            self::assertSame(ReferenceKind::SESSION, $exception->kind);
+            self::assertSame(self::GUARD, $exception->application);
+            self::assertSame('Ada Lovelace', $person->refresh()->name);
+        }
+
+        self::assertSame(SessionStatus::ACTIVE, $this->sessionNamed($this->signInReference($stranger))->getStatus());
     }
 
     /**
@@ -221,7 +246,7 @@ final class SessionTransitionAdapterTest extends TestCase
         $this->nameTheSignIn($person, $session);
         $this->reauthenticate($person, $session);
 
-        $start  = Mfa::startEnrollment(EnrollmentRequest::totp('ada@example.test'));
+        $start  = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp('ada@example.test'));
         $factor = Factor::query()->sole();
 
         self::assertNotNull($start->grant);
@@ -230,7 +255,7 @@ final class SessionTransitionAdapterTest extends TestCase
 
         DB::enableQueryLog();
 
-        $confirmation = Mfa::confirmEnrollment($start->grant, AuthenticatorApp::code($factor));
+        $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, AuthenticatorApp::code($factor));
 
         $locks = array_values(array_filter(
             array_column(DB::getQueryLog(), 'query'),

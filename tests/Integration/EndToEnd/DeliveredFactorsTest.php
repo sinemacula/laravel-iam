@@ -28,6 +28,7 @@ use SineMacula\Laravel\Iam\Delivery\SmsSenderAdapter;
 use SineMacula\Laravel\Iam\Mfa\ChallengeGatewayAdapter;
 use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
@@ -37,6 +38,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Events\CodeSent;
 use SineMacula\Laravel\Mfa\Events\ContextEvent;
 use SineMacula\Laravel\Mfa\Events\EnrollmentStarted;
+use SineMacula\Laravel\Mfa\Events\EventContext;
 use SineMacula\Laravel\Mfa\Events\FactorConfirmed;
 use SineMacula\Laravel\Mfa\Events\VerificationPassed;
 use SineMacula\Laravel\Mfa\Exceptions\CodeDeliveryFailedException;
@@ -62,8 +64,9 @@ use Tests\TestCase;
  * issued and checked by `laravel-authentication`'s factor codes under MFA's
  * challenge counters, and delivered once, through the application's gateway of
  * the factor's channel, as this package's one `CodeMessage`; MFA's own senders
- * never run. MFA's events about it carry the tenant of the caller's validated
- * session, never one a request claims. A gateway that throws fails
+ * never run. MFA's events about it carry the identity and the application MFA
+ * names, and the session MFA names them made on, with its principal and its own
+ * tenant, never one a request claims. A gateway that throws fails
  * `laravel-authentication`'s delivery job once the code has committed, so the
  * code stays issued and the queue's retry delivers it; an application that
  * keeps MFA's own challenge gateway has its codes delivered inside MFA's
@@ -165,7 +168,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertCount(1, $gateway->sent());
         $this->assertMessage($enrolment, $person, $channel, $type, $destination, CodePurpose::ENROLLMENT, Purpose::ENROLLMENT);
 
-        $sent = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertSame([$enrolment], $gateway->sent(), 'The code is delivered once the code has committed, by the queued job.');
@@ -177,7 +180,7 @@ final class DeliveredFactorsTest extends TestCase
         $this->assertMessage($stepUp, $person, $channel, $type, $destination, CodePurpose::MFA, Purpose::ADDITIONAL_FACTOR);
         self::assertTrue($stepUp->expiresAt->equalTo($sent->expiresAt));
 
-        $verified = Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP);
+        $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP);
 
         self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
 
@@ -191,9 +194,11 @@ final class DeliveredFactorsTest extends TestCase
     }
 
     /**
-     * MFA's events about the enrolment and the step-up each carry the tenant
-     * the caller's validated session was signed in to, with the session and the
-     * application, never the tenant a request header or input claims.
+     * MFA's events about the enrolment and the step-up each carry the identity
+     * and the application MFA names, and the session MFA names them made on,
+     * with the principal it acts as and the tenant its row records, never the
+     * tenant a request header or input claims; an event MFA names no sign-in
+     * for carries none of them.
      *
      * @param  string  $level
      * @param  string  $type
@@ -204,7 +209,7 @@ final class DeliveredFactorsTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideDeliveredFactors')]
-    public function testMfasEventsCarryTheTenantOfTheCallersSession(string $level, string $type, Channel $channel, string $destination): void
+    public function testMfasEventsCarryTheSessionTheyNameAndNoClaimedTenant(string $level, string $type, Channel $channel, string $destination): void
     {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
@@ -219,13 +224,13 @@ final class DeliveredFactorsTest extends TestCase
         $request->merge(['tenant_id' => self::CLAIMED_TENANT, 'tenant' => self::CLAIMED_TENANT]);
 
         $factor = $this->enrol($person, $session, $type, $destination);
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         $this->runDeliveries();
 
         $code = $this->gatewayOf($channel)->lastCodeTo($destination, Purpose::ADDITIONAL_FACTOR) ?? self::fail('No step-up code was delivered.');
 
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
 
         $dispatched = array_map(static fn (MfaEvent $event): string => $event::class, $this->events);
 
@@ -233,13 +238,28 @@ final class DeliveredFactorsTest extends TestCase
             self::assertContains($expected, $dispatched);
         }
 
+        $named  = [SignIn::reference($session, self::GUARD), $person->getMorphClass(), EventContext::scalarKey($person->getKey()), self::TENANT];
+        $naming = [];
+
         foreach ($this->events as $event) {
 
             self::assertInstanceOf(ContextEvent::class, $event);
-            self::assertSame(self::TENANT, $event->context['tenant_id'], $event::class);
             self::assertSame(self::GUARD, $event->context['application'], $event::class);
-            self::assertSame($this->signInReference($session), $event->context['session_id'], $event::class);
             self::assertSame($person->getMorphClass(), $event->context['identity_type'], $event::class);
+
+            $carried = [$event->context['session_id'], $event->context['principal_type'], $event->context['principal_id'], $event->context['tenant_id']];
+
+            self::assertContains($carried, [$named, [null, null, null, null]], $event::class);
+
+            if ($carried !== $named) {
+                continue;
+            }
+
+            $naming[] = $event::class;
+        }
+
+        foreach ([EnrollmentStarted::class, CodeSent::class, FactorConfirmed::class, VerificationPassed::class] as $expected) {
+            self::assertContains($expected, $naming);
         }
     }
 
@@ -272,7 +292,7 @@ final class DeliveredFactorsTest extends TestCase
 
         $gateway->failNext($failure);
 
-        $sent = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), 'MFA reports the code sent once it is issued and queued.');
         self::assertSame($failure, $this->assertDeliveryFails(\RuntimeException::class));
@@ -285,7 +305,7 @@ final class DeliveredFactorsTest extends TestCase
 
         self::assertSame(CodePurpose::MFA, $message->memberPurpose);
 
-        $verified = Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP);
+        $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $message->code->reveal()), MfaPurpose::STEP_UP);
 
         self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
     }
@@ -320,7 +340,7 @@ final class DeliveredFactorsTest extends TestCase
 
         $gateway = $this->gatewayOf($channel)->failNext();
         $request = EnrollmentRequest::delivered($type, $destination);
-        $thrown  = rescue(static fn (): mixed => Mfa::startEnrollment($request), static fn (\Throwable $exception): \Throwable => $exception, false);
+        $thrown  = rescue(static fn (): mixed => Mfa::startEnrollment(self::servedCaller(), $request), static fn (\Throwable $exception): \Throwable => $exception, false);
 
         self::assertInstanceOf(CodeDeliveryFailedException::class, $thrown);
         self::assertSame(0, Factor::query()->count(), 'The pending factor rolls back with its code.');
@@ -328,7 +348,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertSame([], $gateway->sent());
         self::assertSame(0, self::storage()->transactionLevel());
 
-        $start = Mfa::startEnrollment(EnrollmentRequest::delivered($type, $destination));
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::delivered($type, $destination));
 
         self::assertTrue($start->hasStarted(), (string) $start->reason?->value);
         self::assertNotNull($start->grant);
@@ -345,15 +365,17 @@ final class DeliveredFactorsTest extends TestCase
         self::assertNotSame($destination, $enrolment->factor->maskedDestination);
         self::assertTrue($person->is($enrolment->recipient()));
 
-        self::assertTrue(Mfa::confirmEnrollment($start->grant, $enrolment->code->reveal())->isConfirmed());
+        self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
         $factor = Factor::query()->where('destination', $destination)->sole();
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
         $stepUp = $gateway->sent()[1] ?? self::fail('No step-up code was delivered.');
 
         self::assertSame(MfaPurpose::STEP_UP, $stepUp->memberPurpose);
         self::assertSame(Purpose::ADDITIONAL_FACTOR, $stepUp->purpose);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
         self::assertSame([], $this->otherGatewayThan($channel)->sent());
     }
 
@@ -463,7 +485,7 @@ final class DeliveredFactorsTest extends TestCase
     {
         $this->reauthenticate($person, $session);
 
-        $start = Mfa::startEnrollment(EnrollmentRequest::delivered($type, $destination));
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::delivered($type, $destination));
 
         self::assertTrue($start->hasStarted(), (string) $start->reason?->value);
         self::assertNotNull($start->grant);
@@ -471,7 +493,7 @@ final class DeliveredFactorsTest extends TestCase
 
         $code = $this->gatewayOf(Channel::from($type))->lastCodeTo($destination, Purpose::ENROLLMENT) ?? self::fail('No enrolment code was delivered.');
 
-        $confirmation = Mfa::confirmEnrollment($start->grant, $code);
+        $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $code);
 
         self::assertTrue($confirmation->isConfirmed(), (string) $confirmation->reason?->value);
 
@@ -511,7 +533,7 @@ final class DeliveredFactorsTest extends TestCase
      */
     private function reauthenticate(Person $person, EloquentSession&Model $session): void
     {
-        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The session was not reauthenticated: [%s].', $result->reason->value ?? 'none'));
     }

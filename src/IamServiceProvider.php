@@ -14,6 +14,7 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
+use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
@@ -23,9 +24,10 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 
 /**
  * Package service provider: registers the package's configuration, the `iam`
- * manager, the storage connection's alignment, the seam bindings, the storage
- * check's booting and booted callbacks, the worker reset listeners and the
- * publishing tag.
+ * manager, the callers MFA's challenge gateway keeps for its factor codes, the
+ * storage connection's alignment, the seam bindings, the storage check's
+ * booting and booted callbacks, the worker reset listeners and the publishing
+ * tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -117,6 +119,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../config/iam.php', 'iam');
 
         $this->registerManager();
+        $this->registerFactorCodeCallers();
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
@@ -152,6 +155,25 @@ final class IamServiceProvider extends ServiceProvider
     {
         $this->app->singleton('iam', static fn (Application $app): IamManager => new IamManager($app));
         $this->app->alias('iam', IamManager::class);
+    }
+
+    /**
+     * Register the callers MFA's challenge gateway keeps beside the factor code
+     * bindings it hands `laravel-authentication`, scoped, so they are one
+     * request's or one job's alone (IAM-8.1): scoped under this package's own
+     * key for its scoped adapters, which `Iam::resetWorkerState()` forgets as
+     * it forgets every other one, and resolved through that key, so the
+     * explicit reset never leaves a caller held for a binding something still
+     * references.
+     *
+     * @return void
+     */
+    protected function registerFactorCodeCallers(): void
+    {
+        $key = BindingRule::SCOPED_PREFIX . FactorCodeCallers::class;
+
+        $this->app->scoped($key, static fn (): FactorCodeCallers => new FactorCodeCallers);
+        $this->app->bind(FactorCodeCallers::class, static fn (Application $app): mixed => $app->make($key));
     }
 
     /**

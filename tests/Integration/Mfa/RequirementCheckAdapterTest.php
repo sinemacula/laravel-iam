@@ -469,7 +469,7 @@ final class RequirementCheckAdapterTest extends TestCase
 
         $proof = $factor(new ProofBinding($person, self::GUARD, $pending->pending->id, Purpose::SIGN_IN));
 
-        return $this->sessions()->satisfy($pending->credential, $proof);
+        return $this->sessions()->satisfy($pending->credential, $proof, self::client());
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Feature;
 
+use Illuminate\Auth\GenericUser;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
@@ -15,7 +16,14 @@ use Orchestra\Testbench\Attributes\DefineEnvironment;
 use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Proofs\Channel;
+use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
+use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
+use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
+use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
@@ -23,12 +31,14 @@ use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
+use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
@@ -97,6 +107,51 @@ final class IamServiceProviderTest extends TestCase
     public function testTheConfigurationIsMergedUnderIam(): void
     {
         self::assertSame(require self::configurationFile(), $this->config()->get('iam'));
+    }
+
+    /**
+     * The callers MFA's challenge gateway keeps for its factor codes are one
+     * instance for each request or job, forgotten between them.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheFactorCodeCallersAreScoped(): void
+    {
+        $app     = $this->application();
+        $callers = $app->make(FactorCodeCallers::class);
+
+        self::assertSame($callers, $app->make(FactorCodeCallers::class));
+
+        $app->forgetScopedInstances();
+
+        self::assertNotSame($callers, $app->make(FactorCodeCallers::class));
+    }
+
+    /**
+     * The worker reset forgets the callers MFA's challenge gateway keeps, so a
+     * caller kept for a binding something still references is not read back
+     * after the reset.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheWorkerResetForgetsTheFactorCodeCallers(): void
+    {
+        $app     = $this->application();
+        $callers = $app->make(FactorCodeCallers::class);
+        $caller  = CallerContext::nobody('api');
+        $binding = $callers->hold(self::factorCodeBinding(), $caller);
+
+        self::assertSame($caller, $app->make(FactorCodeCallers::class)->of($binding));
+        self::assertSame($callers, $app->make(BindingRule::SCOPED_PREFIX . FactorCodeCallers::class));
+
+        $app->make(IamManager::class)->resetWorkerState();
+
+        self::assertNotSame($callers, $app->make(FactorCodeCallers::class));
+        self::assertNull($app->make(FactorCodeCallers::class)->of($binding));
     }
 
     /**
@@ -933,6 +988,18 @@ final class IamServiceProviderTest extends TestCase
     private static function membersWithoutSso(): array
     {
         return array_values(array_diff(self::MEMBER_PROVIDERS, [SsoServiceProvider::class]));
+    }
+
+    /**
+     * A factor code binding for a caller to be kept beside.
+     *
+     * @return \SineMacula\Laravel\Authentication\Codes\FactorCodeBinding
+     */
+    private static function factorCodeBinding(): FactorCodeBinding
+    {
+        $identity = new class (['id' => 7]) extends GenericUser implements Identity {};
+
+        return new FactorCodeBinding(new ProofBinding($identity, 'api', 'session-1', Purpose::STEP_UP), 'factor-1', new Channel(ChannelKind::SMS, '+447700900123'));
     }
 
     /**

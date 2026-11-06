@@ -4,11 +4,12 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
-use Illuminate\Contracts\Config\Repository;
 use Illuminate\Http\Request;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
+use SineMacula\Laravel\Authentication\Secrets\Secret;
+use SineMacula\Laravel\Authentication\Sessions\PendingCredential;
 use SineMacula\Laravel\Authentication\Sessions\PendingSession;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
@@ -24,31 +25,52 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
  * MFA's pending session resolver, read from `laravel-authentication`'s pending
- * session the request's pending credential names (IAM-3.3).
+ * session a pending credential names (IAM-3.3).
  *
- * The credential is read where `laravel-authentication` reads it: the body
- * field `authentication.session.pending_credential_field` names (the JSON body,
- * or the form body of a request that may have one), never the query string or a
- * header. It is checked by `Auth::sessions()->pending()` on the default guard,
- * the guard MFA names its application after, which reads without a lock and
- * writes nothing. A request with no such field has no pending session; one
- * whose credential names no live pending session of the guard, or that is not a
- * credential at all, is refused by throwing, as is a default guard that holds
- * no sessions or a session whose identity is none of MFA's (IAM-8.2), so the
- * request is never served as the guard's user instead.
+ * `fromRequest()` is the edge, the one place a request is read: the credential
+ * is taken by `laravel-authentication`'s own extractor
+ * (`PendingCredential::extract()`), from the body field it reads one from (the
+ * JSON body, or the form body of a request that may have one), never the query
+ * string or a header. It is checked by `Auth::sessions()->pending()` on the
+ * default guard, the guard MFA names its application after, which reads without
+ * a lock and writes nothing. A request with no such field has no pending
+ * session; one whose credential names no live pending session of the guard, or
+ * that is not a credential at all, is refused by throwing, as is a default
+ * guard that holds no sessions or a session whose identity is none of MFA's
+ * (IAM-8.2), so the request is never served as the guard's user instead.
+ *
+ * `revalidate()`, which MFA asks under the identity's lock, reads no request:
+ * it reads the session again from the credential the context it is handed keeps
+ * (`PendingContext::credential()`), on the guard that context's application
+ * names, never the default guard's. As MFA's contract has it, a session that no
+ * longer stands is answered `null`, which MFA turns into a refusal of the
+ * action: a context that kept no credential, a credential that names no live
+ * pending session of the guard any more (expired, discarded or activated
+ * meanwhile), and a session that is not the one the context names (another key,
+ * or another identity). A guard that holds no sessions still throws, as a
+ * misconfiguration (IAM-8.2).
+ *
+ * `fromCredential()` reads no request either: it reads the pending session a
+ * credential handed in as a plain value names, on the guard the application
+ * given names, and answers `null` when it names no live pending session there.
+ * It serves this package's own adapters that are handed a pending credential
+ * rather than a request (`PasskeyFactorGateAdapter`, for a passkey registered
+ * on a pending sign-in).
  *
  * The pending session crosses as MFA's pending context: its identity, the guard
  * as the application, its key as the sign-in id, its first factor and further
  * proofs bound to that sign-in under the identity's current verification
  * generation, the requirement it still falls short of, MFA's pending actions
- * among those its first outstanding requirement allows, and when its credential
- * expires. The further proofs are read newest first, up to the bound
- * `laravel-authentication` sets on one read, and handed over oldest first, as
- * MFA keeps them; a proof that would not survive translation is refused with
- * the translator's exception rather than left out.
+ * among those its first outstanding requirement allows, when its credential
+ * expires, and the credential itself, hidden, so the context can be read again
+ * and the pending completion can satisfy the session it names. The further
+ * proofs are read newest first, up to the bound `laravel-authentication` sets
+ * on one read, and handed over oldest first, as MFA keeps them; a proof that
+ * would not survive translation is refused with the translator's exception
+ * rather than left out.
  *
- * Stateless: the guard, the configuration and the session are read on every
- * call, so nothing outlives the request (IAM-8.1).
+ * Stateless: the guard and the session are read on every call, so nothing
+ * outlives the request (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -57,17 +79,10 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  */
 final readonly class PendingSessionResolverAdapter implements PendingSessionResolver
 {
-    /** @var string Configuration key of the body field `laravel-authentication` reads a pending credential from. */
-    private const string FIELD_KEY = 'authentication.session.pending_credential_field';
-
-    /** @var string Field `laravel-authentication` reads when its configuration names none. */
-    private const string DEFAULT_FIELD = 'pending_credential';
-
     /**
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator  $requirements
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator  $changes
@@ -76,9 +91,6 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
 
         /** Resolves the default guard and its session service. */
         private CurrentSession $sessions,
-
-        /** The configuration the credential's field is declared in. */
-        private Repository $config,
 
         /** Translates the session's proofs. */
         private ProofTranslator $proofs,
@@ -97,61 +109,103 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
      * @param  \Illuminate\Http\Request  $request
      * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
      *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     #[\Override]
-    public function resolve(Request $request): ?PendingContext
+    public function fromRequest(Request $request): ?PendingContext
     {
         $guard      = $this->sessions->defaultGuard();
-        $credential = $this->credential($request, $guard);
+        $credential = PendingCredential::extract($request);
 
         if ($credential === null) {
             return null;
         }
 
-        $pending = $this->sessions->sessions($guard)->pending($credential) ?? throw self::unresolved($guard);
+        if (!$credential instanceof Secret) {
+            throw self::unresolved($guard);
+        }
 
-        return $this->context($pending);
+        $presented = $credential->reveal();
+        $pending   = $this->sessions->sessions($guard)->pending($presented) ?? throw self::unresolved($guard);
+
+        return $this->context($pending, $presented);
     }
 
     /**
-     * The pending credential the request carries in its body, or `null` when it
-     * carries none; a value in the field that is not a credential at all is
-     * refused, as one naming no pending session of the guard would be. The
-     * pending completion reads the credential it satisfies here too.
+     * The pending sign-in as it stands now, read again from the credential the
+     * context keeps, or `null` when it no longer stands.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string  $guard
-     * @return ?string
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
+     * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Throwable
      */
-    public function credential(Request $request, string $guard): ?string
+    #[\Override]
+    public function revalidate(PendingContext $pending): ?PendingContext
     {
-        $body  = self::body($request);
-        $field = $this->field();
+        $credential = $pending->credential();
 
-        if (!array_key_exists($field, $body)) {
+        if ($credential === null) {
             return null;
         }
 
-        $credential = $body[$field];
+        $application = $pending->application;
+        $now         = $this->sessions->sessions($application)->pending($credential);
 
-        return is_string($credential) && $credential !== '' ? $credential : throw self::unresolved($guard);
+        return $now === null || !self::isTheSession($now, $pending) ? null : $this->context($now, $credential);
     }
 
     /**
-     * MFA's pending context for `laravel-authentication`'s pending session.
+     * The pending sign-in the credential names on the application's guard, or
+     * `null` when it names no live pending session there.
+     *
+     * @param  string  $application
+     * @param  string  $credential
+     * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
+     *
+     * @throws \InvalidArgumentException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Throwable
+     */
+    public function fromCredential(string $application, #[\SensitiveParameter] string $credential): ?PendingContext
+    {
+        $pending = $this->sessions->sessions($application)->pending($credential);
+
+        return $pending === null ? null : $this->context($pending, $credential);
+    }
+
+    /**
+     * Whether the pending session read again is the one the context names: the
+     * same key, held by the same identity.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Sessions\PendingSession  $now
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
+     * @return bool
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    private static function isTheSession(PendingSession $now, PendingContext $pending): bool
+    {
+        return SignIn::reference($now->session, $pending->application) === $pending->sessionId
+            && IdentityReference::of($now->identity)->is(IdentityReference::of($pending->identity));
+    }
+
+    /**
+     * MFA's pending context for `laravel-authentication`'s pending session,
+     * keeping the credential that names it.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\PendingSession  $pending
+     * @param  string  $credential
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function context(PendingSession $pending): PendingContext
+    private function context(PendingSession $pending, #[\SensitiveParameter] string $credential): PendingContext
     {
         $identity = $pending->identity;
 
@@ -174,42 +228,8 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
             $this->changes->pendingActions($pending->actions()),
             $pending->expiresAt,
             array_map(fn (RecordedProof $proof) => $this->proofs->toMfa($proof, $signIn), $further),
+            $credential,
         );
-    }
-
-    /**
-     * The body field the pending credential is read from.
-     *
-     * @return string
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function field(): string
-    {
-        $field = $this->config->get(self::FIELD_KEY, self::DEFAULT_FIELD);
-
-        if (!is_string($field) || $field === '') {
-            throw new \InvalidArgumentException(sprintf('%s must name the body field a pending credential is read from.', self::FIELD_KEY));
-        }
-
-        return $field;
-    }
-
-    /**
-     * The request's body fields, as `laravel-authentication` reads them: the
-     * JSON body, or the form body of a request that may have one; never the
-     * query string.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return array<array-key, mixed>
-     */
-    private static function body(Request $request): array
-    {
-        if ($request->isJson()) {
-            return $request->json()->all();
-        }
-
-        return in_array($request->getRealMethod(), ['GET', 'HEAD'], true) ? [] : $request->request->all();
     }
 
     /**

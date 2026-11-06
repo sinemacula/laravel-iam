@@ -117,7 +117,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
 
         $person      = $this->person();
         $destination = $type === 'email' ? $person->email : self::PHONE;
-        $request     = $this->auth()->passwords(self::GUARD)->sendResetCode($type, [$type => $destination]);
+        $request     = $this->auth()->passwords(self::GUARD)->sendResetCode($type, [$type => $destination], self::client());
 
         self::assertIsString($request->challengeId);
         self::assertSame([], $gateway->sent(), 'The code is delivered from the queued job, not the request.');
@@ -144,7 +144,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
             'challenge' => $request->challengeId,
             'code'      => $message->code->reveal(),
             'password'  => self::NEW_PASSWORD,
-        ]);
+        ], self::client());
 
         self::assertTrue($reset->isReset());
     }
@@ -179,7 +179,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
 
         $email   = FakeEmailGateway::fake($this->app);
         $person  = $this->person();
-        $request = $this->auth()->codes(self::GUARD)->sendFactorCode($this->factorBinding($person));
+        $request = $this->auth()->codes(self::GUARD)->sendFactorCode($this->factorBinding($person), self::client());
 
         self::assertIsString($request->challengeId);
         self::assertCount(0, $observed);
@@ -224,7 +224,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
 
         $gateway->failNext($failure);
 
-        $this->auth()->passwords(self::GUARD)->sendResetCode('email', ['email' => $person->email]);
+        $this->auth()->passwords(self::GUARD)->sendResetCode('email', ['email' => $person->email], self::client());
 
         $this->assertDeliveryJobFails($failure::class);
 
@@ -251,7 +251,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
 
         config()->set('iam.delivery.types', ['email' => 'email']);
 
-        $this->auth()->passwords(self::GUARD)->sendResetCode('phone', ['phone' => $this->person()->phone]);
+        $this->auth()->passwords(self::GUARD)->sendResetCode('phone', ['phone' => $this->person()->phone], self::client());
 
         $this->assertDeliveryJobFails(DeliveryNotConfiguredException::class);
 

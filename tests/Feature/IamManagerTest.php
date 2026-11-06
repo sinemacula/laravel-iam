@@ -15,7 +15,9 @@ use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
-use SineMacula\Laravel\Authorization\Evaluation\EvaluationResult;
+use SineMacula\Laravel\Authorization\Evaluation\Decision;
+use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
+use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionStage;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
@@ -148,7 +150,7 @@ final class IamManagerTest extends TestCase
     {
         Authorization::getFacadeRoot();
 
-        $this->app?->make(LastDecisionStore::class)->put(EvaluationResult::implicitlyDenied());
+        $this->app?->make(LastDecisionStore::class)->put(Decision::deny(DecisionReason::NO_MATCH, DecisionStage::IMPLICIT));
 
         self::assertNotNull(Authorization::lastDecision());
 

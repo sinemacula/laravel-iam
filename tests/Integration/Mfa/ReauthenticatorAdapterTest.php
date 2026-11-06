@@ -419,7 +419,7 @@ final class ReauthenticatorAdapterTest extends TestCase
      */
     private function reauthenticate(Person $person, EloquentSession&Model $session): void
     {
-        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The person did not reauthenticate: [%s].', $result->reason?->value));
     }

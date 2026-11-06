@@ -97,7 +97,7 @@ trait ArrangesFactorChanges
             ['otp'],
             CarbonImmutable::now(),
             new ProofBinding($person, self::GUARD, $session->getSessionIdentifier(), Purpose::STEP_UP),
-        ));
+        ), self::client());
     }
 
     /**
@@ -111,7 +111,7 @@ trait ArrangesFactorChanges
      */
     protected function reauthenticate(Person $person, EloquentSession&Model $session): void
     {
-        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The session was not reauthenticated: [%s].', $result->reason->value ?? 'none'));
     }

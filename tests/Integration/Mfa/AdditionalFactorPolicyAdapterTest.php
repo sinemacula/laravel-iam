@@ -348,7 +348,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
         $this->answerRequirementsWith(static fn (): MfaRequirement => MfaRequirement::none()->withAdditionalVerification(self::BEYOND_A_YEAR));
 
         try {
-            $this->sessions()->satisfy($pending->credential, $proof);
+            $this->sessions()->satisfy($pending->credential, $proof, self::client());
 
             self::fail('An answer laravel-authentication cannot hold was handed to it.');
         } catch (\InvalidArgumentException) {

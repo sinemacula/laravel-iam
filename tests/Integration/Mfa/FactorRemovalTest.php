@@ -152,7 +152,7 @@ final class FactorRemovalTest extends TestCase
         $this->travel($gap)->seconds();
         $this->stepUpWith($person, $session, $removed->id);
 
-        return [$session, $removed, Mfa::removeFactor($removed->id)];
+        return [$session, $removed, Mfa::removeFactor(self::servedCaller(), $removed->id)];
     }
 
     /**

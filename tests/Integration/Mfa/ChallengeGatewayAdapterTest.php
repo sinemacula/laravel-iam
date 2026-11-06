@@ -8,31 +8,42 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\AuthManager as LaravelAuthManager;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
+use SineMacula\Laravel\Authentication\Events\AuthenticationFailed;
 use SineMacula\Laravel\Authentication\Models\OneTimeCode;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthenticationChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
+use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\ChallengeGatewayAdapter;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
+use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
+use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Events\LockoutApplied;
+use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ChallengeGatewayTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
@@ -63,10 +74,7 @@ use Tests\TestCase;
 #[CoversClass(CodeTranslator::class)]
 final class ChallengeGatewayAdapterTest extends TestCase
 {
-    use ArrangesDeliveredFactors, ChallengeGatewayTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
-
-    /** @var string Why the kit's checks of a used and an unknown challenge cannot pass. */
-    private const string INDISTINCT = 'laravel-authentication answers a used, unknown or malformed challenge `invalid`, as it does a wrong code (member gap).';
+    use ArrangesDeliveredFactors, BindsStrayRequests, ChallengeGatewayTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string A number no factor of the kit's person's sends to. */
     private const string OTHER_PHONE = '+447700900999';
@@ -108,7 +116,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testACodeIsSentThroughAuthentication(): void
     {
-        $sent = $this->challengeGateway()->send($this->challengedFactor(), $this->challengeBinding());
+        $sent = $this->challengeGateway()->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding());
 
         self::assertTrue($sent->wasSent());
         self::assertNotNull($sent->challengeId);
@@ -130,33 +138,6 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The kit's check that a used code answers as `replayed` cannot pass:
-     * `laravel-authentication` answers a used challenge `invalid`, as it does a
-     * wrong code, and says nothing more (member gap, reported).
-     * `testAUsedCodeNeverAnswersAgain` pins what the gateway answers instead.
-     *
-     * @return void
-     */
-    public function testChallengeGatewayConsumesACodeOnce(): void
-    {
-        self::markTestSkipped(self::INDISTINCT);
-    }
-
-    /**
-     * The kit's check that an unknown challenge answers as `not_found` cannot
-     * pass: `laravel-authentication` answers a malformed or unknown challenge
-     * `invalid`, as it does a wrong code, and says nothing more (member gap,
-     * reported). `testAnUnknownChallengeNeverPasses` pins what the gateway
-     * answers instead.
-     *
-     * @return void
-     */
-    public function testChallengeGatewayDoesNotFindAnUnknownChallenge(): void
-    {
-        self::markTestSkipped(self::INDISTINCT);
-    }
-
-    /**
      * A step-up is proved end to end with a code MFA asks for and checks
      * through the gateway: `laravel-authentication` delivers it, and once it is
      * checked the session records the step-up with the SMS factor.
@@ -168,12 +149,12 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAStepUpIsProvedWithACodeThroughAuthentication(): void
     {
         $factor = $this->challengedFactor();
-        $sent   = Mfa::sendCode($factor->id, Purpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
 
         $code     = $this->deliveredCodeTo(self::DELIVERED_PHONE);
-        $verified = Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP);
+        $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP);
 
         self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
 
@@ -190,6 +171,232 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
+     * A pending sign-in's further factor is proved end to end with a code MFA
+     * asks for and checks through the gateway as the pending caller's: the
+     * counters judge the caller the gateway was handed, the pending sign-in
+     * whose first factor the code follows, never anything of the request the
+     * container holds, so the code is sent, checked and activates the sign-in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPendingSignInIsCompletedWithACodeThroughAuthentication(): void
+    {
+        $person = $this->createPerson();
+        $factor = $this->deliveredFactor($person);
+        $result = $this->attemptSignIn($person);
+
+        self::assertTrue($result->isPending(), (string) $result->reason?->value);
+        self::assertNotNull($result->credential);
+
+        $caller = self::servedCaller(Request::create('/mfa/verify', 'POST', ['pending_credential' => $result->credential->reveal()]));
+
+        $this->bindStrayRequest();
+
+        $sent = Mfa::sendCode($caller, $factor->id, Purpose::SIGN_IN);
+
+        self::assertNotNull($caller->pending);
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+
+        $verified = Mfa::verify($caller, Submission::challenge($factor->id, (string) $sent->challengeId, $this->deliveredCodeTo(self::DELIVERED_PHONE)), Purpose::SIGN_IN);
+
+        self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
+
+        $completion = $verified->completion();
+
+        self::assertInstanceOf(SignInResult::class, $completion);
+        self::assertTrue($completion->isSignedIn());
+    }
+
+    /**
+     * `laravel-authentication` is handed the caller's client with each code: a
+     * send its counters refuse is reported for that client, never for the
+     * client of the request the container holds.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheCallersClientIsHandedOn(): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+        $factor    = $this->challengedFactor();
+        $events    = [];
+
+        FactorModel::query()->whereKey($factor->id)->update([$factor->getLockedUntilName() => CarbonImmutable::now()->addMinutes(10)]);
+
+        $this->bindStrayRequest();
+
+        Event::listen(AuthenticationFailed::class, static function (AuthenticationFailed $event) use (&$events): void {
+            $events[] = $event;
+        });
+
+        self::assertSame(FailureReason::LOCKED, $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding())->reason);
+        self::assertSame(FailureReason::LOCKED, $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), $challenge, $code)->reason);
+        self::assertCount(2, $events);
+
+        foreach ($events as $event) {
+            self::assertSame([self::CLIENT_IP, self::CLIENT_AGENT], [$event->context->client->ip, $event->context->client->userAgent]);
+        }
+    }
+
+    /**
+     * A request bound in the container never reaches a code: though it comes
+     * from another client and carries a pending sign-in's credential of the
+     * person's, the code is sent and counted as the active caller's the gateway
+     * was handed, on the session the binding names, and MFA's lockout names the
+     * caller's client, never the request's.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABoundRequestNeverReachesTheCode(): void
+    {
+        config()->set('mfa.attempts.factor_limit', 1);
+
+        $factor  = $this->challengedFactor();
+        $pending = $this->attemptSignIn($this->person());
+        $events  = [];
+
+        self::assertTrue($pending->isPending(), (string) $pending->reason?->value);
+        self::assertNotNull($pending->credential);
+
+        $this->bindStrayRequest(['pending_credential' => $pending->credential->reveal()]);
+
+        Event::listen(LockoutApplied::class, static function (LockoutApplied $event) use (&$events): void {
+            $events[] = $event;
+        });
+
+        $challenge = $this->sentChallenge();
+        $outcome   = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), $challenge, self::wrong($this->deliveredCode($challenge)));
+
+        self::assertSame(FailureReason::INVALID_CODE, $outcome->reason);
+        self::assertTrue($outcome->counted);
+        self::assertCount(1, $events);
+        self::assertSame([self::CLIENT_IP, self::CLIENT_AGENT], [$events[0]->context['ip'], $events[0]->context['user_agent']]);
+    }
+
+    /**
+     * A caller that is nobody is refused by throwing, inside
+     * `laravel-authentication`'s transaction, before any code is issued or
+     * checked: no code is kept or delivered for it, nothing is counted, and the
+     * challenge it checked still answers the caller it was sent for.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerThatIsNobodyIsRefusedByThrowing(): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+        $factor    = $this->challengedFactor();
+        $binding   = $this->challengeBinding();
+        $nobody    = CallerContext::nobody(self::GUARD, new MfaClientContext(self::CLIENT_IP, self::CLIENT_AGENT));
+
+        $calls = [
+            fn (): mixed => $this->challengeGateway()->send($nobody, $factor, $binding),
+            fn (): mixed => $this->challengeGateway()->verify($nobody, $factor, $binding, $challenge, $code),
+        ];
+
+        foreach ($calls as $call) {
+            $refusal = self::thrownBy($call);
+
+            self::assertInstanceOf(\InvalidArgumentException::class, $refusal);
+            self::assertSame('Challenge counters are kept for an identity, and the caller is nobody.', $refusal->getMessage());
+            self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
+        }
+
+        self::assertSame(1, OneTimeCode::query()->count());
+        self::assertSame(0, $this->queuedDeliveries());
+        self::assertSame(0, $this->failures());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+    }
+
+    /**
+     * A binding of another application than the caller's is refused by throwing
+     * `not_accepted`, before the code's path is chosen, on
+     * `laravel-authentication`'s path and on MFA's own: no code is kept or
+     * delivered for it, nothing is counted, and the challenge it checked still
+     * answers the caller it was sent for.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABindingOfAnotherApplicationThanTheCallersIsRefusedByThrowing(): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+        $factor    = $this->challengedFactor();
+        $binding   = $this->challengeBinding();
+        $elsewhere = self::callerOf($this->person(), 'admin');
+        $app       = $this->app ?? self::fail('The application has not booted.');
+
+        $calls = [
+            fn (): mixed => $this->challengeGateway()->send($elsewhere, $factor, $binding),
+            fn (): mixed => $this->challengeGateway()->verify($elsewhere, $factor, $binding, $challenge, $code),
+            function () use ($app, $elsewhere, $factor, $binding, $challenge, $code): mixed {
+                $sender = $app->make(OneTimeCodeSender::class);
+
+                unset($app[OneTimeCodeSender::class]);
+
+                try {
+                    return $this->challengeGateway()->verify($elsewhere, $factor, $binding, $challenge, $code);
+                } finally {
+                    $app->instance(OneTimeCodeSender::class, $sender);
+                }
+            },
+        ];
+
+        foreach ($calls as $call) {
+            $refusal = self::thrownBy($call);
+
+            self::assertInstanceOf(OperationRefusedException::class, $refusal);
+            self::assertSame(FailureReason::NOT_ACCEPTED, $refusal->reason);
+            self::assertSame(ChallengeGatewayAdapter::ANOTHER_APPLICATION, $refusal->getMessage());
+            self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
+        }
+
+        self::assertSame(1, OneTimeCode::query()->count());
+        self::assertSame(0, $this->queuedDeliveries());
+        self::assertSame(0, $this->failures());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+    }
+
+    /**
+     * A caller who is another identity than the binding's is judged as that
+     * caller, never as the binding's identity: MFA's counters refuse the
+     * binding as another identity's, so no code is issued for it and the code
+     * already sent is neither checked nor counted.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerOfAnotherIdentityIsJudgedAsThatCaller(): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+        $factor    = $this->challengedFactor();
+        $binding   = $this->challengeBinding();
+        $stranger  = self::callerOf($this->createPerson());
+
+        self::assertSame(FailureReason::NOT_FOUND, $this->challengeGateway()->send($stranger, $factor, $binding)->reason);
+
+        $outcome = $this->challengeGateway()->verify($stranger, $factor, $binding, $challenge, self::wrong($code));
+
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertFalse($outcome->counted);
+        self::assertSame(1, OneTimeCode::query()->count());
+        self::assertSame(0, $this->failures());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+    }
+
+    /**
      * An SMS factor is enrolled end to end, on a session that has just proved
      * its password again: MFA's first code goes out through
      * `laravel-authentication` as an enrolment's, bound to the pending factor,
@@ -202,11 +409,11 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAnEnrolmentIsConfirmedWithACodeThroughAuthentication(): void
     {
         $person          = $this->person();
-        $reauthenticated = $this->sessions()->reauthenticate($this->personsSession(), 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $reauthenticated = $this->sessions()->reauthenticate($this->personsSession(), 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($reauthenticated->isIssued());
 
-        $start = Mfa::startEnrollment(EnrollmentRequest::delivered('sms', self::OTHER_PHONE));
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::delivered('sms', self::OTHER_PHONE));
 
         self::assertTrue($start->hasStarted(), (string) $start->reason?->value);
         self::assertNotNull($start->grant);
@@ -216,7 +423,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         self::assertCount(1, $messages);
         self::assertSame(CodePurpose::ENROLLMENT, $messages[0]->purpose);
 
-        $confirmation = Mfa::confirmEnrollment($start->grant, $messages[0]->code->reveal());
+        $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $messages[0]->code->reveal());
 
         self::assertTrue($confirmation->isConfirmed(), (string) $confirmation->reason?->value);
         self::assertTrue(FactorModel::query()->where('destination', self::OTHER_PHONE)->sole()->isConfirmed());
@@ -233,7 +440,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAWrongCodeIsCountedAgainstTheFactor(): void
     {
         $challenge = $this->sentChallenge();
-        $outcome   = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, self::wrong($this->deliveredCode($challenge)));
+        $wrong     = self::wrong($this->deliveredCode($challenge));
+        $outcome   = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $wrong);
 
         self::assertSame(FailureReason::INVALID_CODE, $outcome->reason);
         self::assertSame(CodeTranslator::INVALID, $outcome->detail);
@@ -242,9 +450,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A used code never answers its challenge again: it fails as an invalid
-     * code, and is counted against nothing, as `laravel-authentication` reports
-     * no attempt at a used challenge.
+     * A used code never answers its challenge again: it is refused as replayed,
+     * and is counted against nothing, as `laravel-authentication` reports no
+     * attempt at a used challenge.
      *
      * @return void
      *
@@ -255,17 +463,18 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $challenge = $this->sentChallenge();
         $code      = $this->deliveredCode($challenge);
 
-        self::assertTrue($this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $code)->hasPassed());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code)->hasPassed());
 
-        $again = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
+        $again = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
 
-        self::assertSame(FailureReason::INVALID_CODE, $again->reason);
+        self::assertSame(FailureReason::REPLAYED, $again->reason);
+        self::assertFalse($again->hasPassed());
         self::assertSame(0, $this->failures());
     }
 
     /**
-     * A challenge that is not the binding's never passes: it fails as an
-     * invalid code, and is counted against nothing.
+     * A challenge that is not the binding's never passes: it is refused as not
+     * found, and is counted against nothing.
      *
      * @return void
      *
@@ -273,9 +482,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testAnUnknownChallengeNeverPasses(): void
     {
-        $outcome = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), 'unknown-challenge', '000000');
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), 'unknown-challenge', '000000');
 
-        self::assertSame(FailureReason::INVALID_CODE, $outcome->reason);
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
         self::assertSame(0, $this->failures());
     }
 
@@ -294,7 +503,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         $this->travel(601)->seconds();
 
-        $outcome = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
 
         self::assertSame(FailureReason::EXPIRED, $outcome->reason);
         self::assertSame(CodeTranslator::EXPIRED, $outcome->detail);
@@ -321,8 +530,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         FactorModel::query()->whereKey($factor->id)->update([$factor->getLockedUntilName() => $until]);
 
-        $sent    = $this->challengeGateway()->send($factor, $this->challengeBinding());
-        $outcome = $this->challengeGateway()->verify($factor, $this->challengeBinding(), $challenge, $code);
+        $sent    = $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding());
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), $challenge, $code);
 
         self::assertSame(FailureReason::LOCKED, $sent->reason);
         self::assertSame(600, $sent->retryAfter);
@@ -348,8 +557,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         config()->set('mfa.applications.' . self::GUARD . '.types', ['totp']);
 
-        $sent    = $this->challengeGateway()->send($this->challengedFactor(), $this->challengeBinding());
-        $outcome = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
+        $sent    = $this->challengeGateway()->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding());
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
 
         self::assertSame(FailureReason::TYPE_NOT_ENABLED, $sent->reason);
         self::assertSame(FailureReason::TYPE_NOT_ENABLED, $outcome->reason);
@@ -373,7 +582,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         $this->sentChallenge();
 
-        $again = $this->challengeGateway()->send($this->challengedFactor(), $this->challengeBinding());
+        $again = $this->challengeGateway()->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding());
 
         self::assertSame(FailureReason::SENDING_CAPPED, $again->reason);
         self::assertSame(60, $again->retryAfter);
@@ -395,9 +604,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $challenge = $this->sentChallenge();
         $wrong     = self::wrong($this->deliveredCode($challenge));
 
-        $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $wrong);
+        $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $wrong);
 
-        $outcome = $this->challengeGateway()->verify($this->challengedFactor(), $this->challengeBinding(), $challenge, $wrong);
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $wrong);
 
         self::assertSame(FailureReason::LOCKED, $outcome->reason);
         self::assertSame(CodeTranslator::RATE_LIMITED, $outcome->detail);
@@ -420,8 +629,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $this->person();
 
         $factor  = $this->deliveredFactor($this->createPerson(), 'sms', self::OTHER_PHONE);
-        $sent    = $this->challengeGateway()->send($factor, $this->challengeBinding());
-        $outcome = $this->challengeGateway()->verify($factor, $this->challengeBinding(), 'unknown-challenge', '000000');
+        $sent    = $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding());
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), 'unknown-challenge', '000000');
 
         self::assertSame(FailureReason::NOT_FOUND, $sent->reason);
         self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
@@ -443,8 +652,11 @@ final class ChallengeGatewayAdapterTest extends TestCase
     {
         $factor = new DetachedFactor;
 
-        self::assertSame(FailureReason::NOT_FOUND, $this->challengeGateway()->send($factor, $this->challengeBinding())->reason);
-        self::assertSame(FailureReason::NOT_FOUND, $this->challengeGateway()->verify($factor, $this->challengeBinding(), 'unknown-challenge', '000000')->reason);
+        self::assertSame(FailureReason::NOT_FOUND, $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding())->reason);
+
+        $checked = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), 'unknown-challenge', '000000');
+
+        self::assertSame(FailureReason::NOT_FOUND, $checked->reason);
         self::assertSame(0, OneTimeCode::query()->count());
     }
 
@@ -459,9 +671,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAReauthenticationIsNotAccepted(): void
     {
         $binding = $this->bindingOf($this->person(), Purpose::REAUTHENTICATE);
-        $outcome = $this->challengeGateway()->verify($this->challengedFactor(), $binding, 'unknown-challenge', '000000');
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $binding, 'unknown-challenge', '000000');
 
-        self::assertSame(FailureReason::NOT_ACCEPTED, $this->challengeGateway()->send($this->challengedFactor(), $binding)->reason);
+        self::assertSame(FailureReason::NOT_ACCEPTED, $this->challengeGateway()->send($this->challengeCaller(), $this->challengedFactor(), $binding)->reason);
         self::assertSame(FailureReason::NOT_ACCEPTED, $outcome->reason);
         self::assertSame(ChallengeGatewayAdapter::REAUTHENTICATION, $outcome->detail);
         self::assertSame(0, OneTimeCode::query()->count());
@@ -479,10 +691,11 @@ final class ChallengeGatewayAdapterTest extends TestCase
     {
         $owner   = IdentityReference::of($this->person());
         $binding = new ProofBinding($owner->type, $owner->key, 'console', $this->signInReference($this->personsSession()), Purpose::STEP_UP);
+        $caller  = self::callerOf($this->person(), 'console');
 
         $calls = [
-            fn (): mixed => $this->challengeGateway()->send($this->challengedFactor(), $binding),
-            fn (): mixed => $this->challengeGateway()->verify($this->challengedFactor(), $binding, 'unknown-challenge', '000000'),
+            fn (): mixed => $this->challengeGateway()->send($caller, $this->challengedFactor(), $binding),
+            fn (): mixed => $this->challengeGateway()->verify($caller, $this->challengedFactor(), $binding, 'unknown-challenge', '000000'),
         ];
 
         foreach ($calls as $call) {
@@ -505,8 +718,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAnAuthenticationFactoryOfAnotherKindThrows(): void
     {
         $app     = $this->app ?? self::fail('The application has not booted.');
-        $gateway = new ChallengeGatewayAdapter(new LaravelAuthManager($app), $app->make(CurrentSession::class), $app->make(CodeTranslator::class), $app);
-        $refusal = self::thrownBy(fn (): mixed => $gateway->send($this->challengedFactor(), $this->challengeBinding()));
+        $gateway = new ChallengeGatewayAdapter(new LaravelAuthManager($app), $app->make(CurrentSession::class), $app->make(CodeTranslator::class), $app, new FactorCodeCallers);
+        $refusal = self::thrownBy(fn (): mixed => $gateway->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding()));
 
         self::assertInstanceOf(UnresolvedReferenceException::class, $refusal);
         self::assertSame(ReferenceKind::GUARD, $refusal->kind);
@@ -535,7 +748,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         try {
             DB::connection(StorageConnection::name())->transaction(function () use ($factor, $binding, &$sent): never {
 
-                $sent = $this->challengeGateway()->send($factor, $binding);
+                $sent = $this->challengeGateway()->send($this->challengeCaller(), $factor, $binding);
 
                 throw new \RuntimeException(self::ROLLED_BACK);
             });
@@ -574,7 +787,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
         try {
             DB::connection(StorageConnection::name())->transaction(function () use ($factor, $binding, $challenge, $code): never {
 
-                self::assertSame(FailureReason::INVALID_CODE, $this->challengeGateway()->verify($factor, $binding, $challenge, self::wrong($code))->reason);
+                $checked = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, self::wrong($code));
+
+                self::assertSame(FailureReason::INVALID_CODE, $checked->reason);
                 self::assertSame(1, $this->failures());
 
                 throw new \RuntimeException(self::ROLLED_BACK);
@@ -584,7 +799,21 @@ final class ChallengeGatewayAdapterTest extends TestCase
         }
 
         self::assertSame(0, $this->failures());
-        self::assertTrue($this->challengeGateway()->verify($factor, $binding, $challenge, $code)->hasPassed());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+    }
+
+    /**
+     * The caller the kit's challenges are for: the person signed in on the
+     * guard, served to the tests' client.
+     *
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function challengeCaller(): CallerContext
+    {
+        return self::callerOf($this->person());
     }
 
     /**
@@ -690,7 +919,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     private function sentChallenge(): string
     {
-        $sent = $this->challengeGateway()->send($this->challengedFactor(), $this->challengeBinding());
+        $sent = $this->challengeGateway()->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding());
 
         return $sent->challengeId ?? self::fail(sprintf('No code was sent: [%s].', $sent->reason?->value));
     }

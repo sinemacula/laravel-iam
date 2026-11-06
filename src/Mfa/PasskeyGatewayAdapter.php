@@ -12,6 +12,7 @@ use SineMacula\Laravel\Authentication\Passkeys\PasskeyFactorResult;
 use SineMacula\Laravel\Authentication\Passkeys\PasskeyService;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -36,7 +37,10 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * PublicKeyCredential, as an array or its JSON>]`; anything else does not
  * verify. A verified assertion is MFA's, with the credential it made, the
  * properties its own authenticator data showed, never what was asked for, and
- * the challenge it answered.
+ * the challenge it answered. MFA hands the gateway no client, so
+ * `verifyFactor()` is handed one of which nothing is known
+ * (`Translation\ClientTranslator::unknown()`), never one read from a request,
+ * and `laravel-authentication`'s `PasskeyUsed` event names no client.
  *
  * `laravel-authentication` concedes nothing on the way and counts nothing: MFA
  * counts every failure. Its reasons cross as MFA's: a challenge that is no
@@ -194,21 +198,27 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
             return FailureReason::INVALID_CODE;
         }
 
-        $result = $this->passkeys($binding->application)->verifyFactor($owner, $this->binding($owner, $binding), $challenge, $credential);
+        $result = $this->passkeys($binding->application)->verifyFactor($owner, $this->binding($owner, $binding), $challenge, $credential, ClientTranslator::unknown());
 
         return $this->assertionOf($result, $credentialIds, $challenge);
     }
 
     /**
-     * MFA's failure reason for `laravel-authentication`'s: a challenge no
-     * longer live is `expired`, and every other failure `invalid_code`.
+     * MFA's failure reason for `laravel-authentication`'s: a ceremony whose
+     * challenge expired, or is no live challenge of the binding, is `expired`,
+     * one already answered `replayed`, and every other failure `invalid_code`.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Events\Enums\FailureReason  $reason
      * @return \SineMacula\Laravel\Mfa\Enums\FailureReason
      */
     public static function reason(?AuthenticationFailureReason $reason): FailureReason
     {
-        return $reason === AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID ? FailureReason::EXPIRED : FailureReason::INVALID_CODE;
+        return match ($reason) {
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_EXPIRED,
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID => FailureReason::EXPIRED,
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_USED    => FailureReason::REPLAYED,
+            default                                                => FailureReason::INVALID_CODE,
+        };
     }
 
     /**

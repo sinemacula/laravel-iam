@@ -60,6 +60,25 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
+     * The exception for a sign-in that is no session of the identity's on the
+     * guard names the guard, as a reference of the kind `session`.
+     *
+     * @return void
+     */
+    public function testItNamesASignInThatIsNoSessionOfTheIdentity(): void
+    {
+        $exception = UnresolvedReferenceException::forSignIn('api');
+
+        self::assertSame(
+            'The sign-in MFA names is no session of the identity asked about on the guard [api], so it cannot be resolved;'
+            . ' the change is refused rather than made against another session or none.',
+            $exception->getMessage(),
+        );
+        self::assertSame(ReferenceKind::SESSION, $exception->kind);
+        self::assertSame('api', $exception->application);
+    }
+
+    /**
      * The exception for an identity names its type and what it must be, on no
      * application.
      *

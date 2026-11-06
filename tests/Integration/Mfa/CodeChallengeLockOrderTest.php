@@ -119,12 +119,12 @@ final class CodeChallengeLockOrderTest extends TestCase
         $factor = $this->deliveredFactor($person);
 
         if ($challenge === 'a send') {
-            $this->record(static fn (): bool => Mfa::sendCode($factor->id, Purpose::STEP_UP)->wasSent());
+            $this->record(static fn (): bool => Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP)->wasSent());
         } else {
-            $sent = Mfa::sendCode($factor->id, Purpose::STEP_UP);
-            $code = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+            $sent       = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
+            $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $this->deliveredCodeTo(self::DELIVERED_PHONE));
 
-            $this->record(static fn (): bool => Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP)->isVerified());
+            $this->record(static fn (): bool => Mfa::verify(self::servedCaller(), $submission, Purpose::STEP_UP)->isVerified());
         }
 
         $listing = implode("\n", $this->statements);

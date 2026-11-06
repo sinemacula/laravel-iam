@@ -18,7 +18,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
-use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
@@ -53,8 +52,9 @@ use Tests\TestCase;
  * ends; the change judged on `laravel-authentication`'s verdict alone, made
  * under that lock on the session's proofs as committed, so a step-up voided or
  * made by another request after the caller's transaction first read is judged
- * as committed; and a change from another sign-in, or none, refused by throwing
- * so the change rolls back (IAM-8.2).
+ * as committed; the change gated on the sign-in MFA names, whatever the guard
+ * holds; and a change from a sign-in that is no session of the identity's
+ * refused by throwing so the change rolls back (IAM-8.2).
  *
  * MFA's own flow is run too: enrolling a further factor, with this package's
  * factor-change adapters bound alone, is gated after MFA's locks, on MySQL and
@@ -338,10 +338,11 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A change from another of the identity's sign-ins than the guard's
-     * session, or with no session on the guard, or by an identity
-     * `laravel-authentication` does not sign in, is refused inside the change's
-     * transaction, which rolls back.
+     * A change from a sign-in that is no session of the identity's on the guard
+     * (another identity's session, or a key no session holds), by an identity
+     * `laravel-authentication` does not sign in, or on an application that is
+     * no session guard, is refused inside the change's transaction, which rolls
+     * back.
      *
      * @param  string  $level
      * @return void
@@ -349,34 +350,57 @@ final class FactorChangeGateAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testAChangeWithoutTheGuardsSessionIsRefusedAndRollsBack(string $level): void
+    public function testAChangeWithoutTheIdentitysSessionIsRefusedAndRollsBack(string $level): void
     {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
 
-        $person  = $this->createPerson();
-        $other   = $this->signIn($person)->record;
-        $current = $this->signInAndActOnSession($person);
-
-        $this->stepUpWith($person, $current, self::STEPPED_UP);
-
+        $person   = $this->createPerson();
+        $current  = $this->signInAndActOnSession($person);
+        $foreign  = $this->signIn($this->createPerson())->record;
         $stranger = new class extends User implements MultiFactorAuthenticatable {
             use HasFactors;
         };
 
-        $refusals = [
-            [SessionMismatchException::class, $this->request($person, $other, FactorChange::ADD_FACTOR)],
-            [UnresolvedReferenceException::class, new FactorChangeRequest($stranger, self::GUARD, 'sign-in', FactorChange::ADD_FACTOR, new Collection)],
-            [UnresolvedReferenceException::class, new FactorChangeRequest($person, 'web', $this->signInReference($current), FactorChange::ADD_FACTOR, new Collection)],
+        $this->stepUpWith($person, $current, self::STEPPED_UP);
+
+        $requests = [
+            $this->request($person, $foreign, FactorChange::ADD_FACTOR),
+            new FactorChangeRequest($person, self::GUARD, '987654', FactorChange::ADD_FACTOR, new Collection),
+            new FactorChangeRequest($stranger, self::GUARD, 'sign-in', FactorChange::ADD_FACTOR, new Collection),
+            new FactorChangeRequest($person, 'web', $this->signInReference($current), FactorChange::ADD_FACTOR, new Collection),
         ];
 
-        foreach ($refusals as [$refusal, $request]) {
-            $this->assertRolledBack($person, $refusal, $request);
+        foreach ($requests as $request) {
+            $this->assertRolledBack($person, UnresolvedReferenceException::class, $request);
         }
+    }
+
+    /**
+     * A change is gated on the sign-in MFA names, never the guard's session:
+     * another of the identity's sessions, stepped up, allows it while the
+     * guard's, not stepped up, would not, and so does the named session once
+     * the guard serves no one, as a change made from a queued job or a console
+     * command is.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAChangeIsGatedOnTheNamedSignInWhateverTheGuardHolds(): void
+    {
+        $person  = $this->createPerson();
+        $other   = $this->signIn($person)->record;
+        $current = $this->signInAndActOnSession($person);
+
+        $this->stepUpWith($person, $other, self::STEPPED_UP);
+
+        self::assertTrue($this->isAllowed($this->request($person, $other, FactorChange::ADD_FACTOR)));
+        self::assertFalse($this->isAllowed($this->request($person, $current, FactorChange::ADD_FACTOR)));
 
         $this->stopActing(self::GUARD);
 
-        $this->assertRolledBack($person, UnresolvedReferenceException::class, $this->request($person, $current, FactorChange::ADD_FACTOR));
+        self::assertTrue($this->isAllowed($this->request($person, $other, FactorChange::ADD_FACTOR)));
     }
 
     /**
@@ -433,14 +457,14 @@ final class FactorChangeGateAdapterTest extends TestCase
         $this->bindTheFactorChangeAdapters();
         $this->nameTheSignIn($person, $session);
 
-        self::assertSame(FailureReason::NOT_FRESH, Mfa::startEnrollment(EnrollmentRequest::totp('ada@example.test'))->reason);
+        self::assertSame(FailureReason::NOT_FRESH, Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp('ada@example.test'))->reason);
         self::assertSame(1, Factor::query()->count());
 
         $this->stepUpWith($person, $session, $factor->id);
 
         DB::enableQueryLog();
 
-        $start = Mfa::startEnrollment(EnrollmentRequest::totp('ada@example.test'));
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp('ada@example.test'));
 
         $locks = array_values(array_filter(
             array_column(DB::getQueryLog(), 'query'),
@@ -724,7 +748,7 @@ final class FactorChangeGateAdapterTest extends TestCase
                 $this->gate()->authorize($request);
             });
 
-            self::fail('A change was allowed without the guard\'s session.');
+            self::fail('A change was allowed without a session of the identity\'s.');
         } catch (\RuntimeException $exception) {
             self::assertInstanceOf($refusal, $exception);
         }

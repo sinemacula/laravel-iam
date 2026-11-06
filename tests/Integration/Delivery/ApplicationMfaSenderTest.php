@@ -87,7 +87,7 @@ final class ApplicationMfaSenderTest extends TestCase
 
         $person = $this->signedInPerson();
         $sms    = $this->deliveredFactor($person);
-        $sent   = Mfa::sendCode($sms->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $sms->id, MfaPurpose::STEP_UP);
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertCount(1, $own->sent(), 'The application\'s sender must receive the code.');
@@ -97,11 +97,11 @@ final class ApplicationMfaSenderTest extends TestCase
 
         $code = $own->lastCodeTo(self::DELIVERED_PHONE) ?? self::fail('No code reached the application\'s sender.');
 
-        self::assertTrue(Mfa::verify(Submission::challenge($sms->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($sms->id, (string) $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
 
         $email = $this->deliveredFactor($person, 'email');
 
-        self::assertTrue(Mfa::sendCode($email->id, MfaPurpose::STEP_UP)->wasSent());
+        self::assertTrue(Mfa::sendCode(self::servedCaller(), $email->id, MfaPurpose::STEP_UP)->wasSent());
         self::assertSame([], $this->gatewayOf(Channel::EMAIL)->sent());
         self::assertSame(1, $this->runDeliveries(), 'The email code waits for its delivery job.');
         self::assertSame(Source::AUTHENTICATION, ($this->gatewayOf(Channel::EMAIL)->sent()[0] ?? self::fail('No email code arrived.'))->source);

@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\SessionFirstFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
@@ -134,7 +135,7 @@ final readonly class VerifiedSession
             generation: VerificationGeneration::current($identity),
         );
 
-        $this->stepUp->stepUp(VerificationResult::verified(
+        $this->stepUp->stepUp(CallerContext::forIdentity($identity, $application), VerificationResult::verified(
             $proof,
             $this->check->check(Requirement::none(), ...array_merge($this->proofs->proofs($identity, $application), [$proof])),
             $amr,

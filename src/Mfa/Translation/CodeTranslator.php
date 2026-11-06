@@ -69,7 +69,13 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaBinding;
 final readonly class CodeTranslator
 {
     /** @var string The detail of a check `laravel-authentication` answered `invalid`. */
-    public const string INVALID = 'laravel-authentication did not accept the code: it is wrong, or the challenge is not the binding\'s live one.';
+    public const string INVALID = 'laravel-authentication did not accept the code: it is malformed, or wrong for the binding\'s live challenge.';
+
+    /** @var string The detail of a check of a challenge that is not the binding's. */
+    public const string NOT_FOUND = 'laravel-authentication found no live challenge of the binding by that id.';
+
+    /** @var string The detail of a check of a challenge already used up. */
+    public const string USED = 'laravel-authentication found the binding\'s challenge already used.';
 
     /** @var string The detail of a check of a challenge that has expired or used up its attempts. */
     public const string EXPIRED = 'laravel-authentication found the challenge expired, or out of attempts.';
@@ -242,6 +248,8 @@ final readonly class CodeTranslator
         return match ($check->outcome) {
             FactorCodeOutcome::VERIFIED                              => ChallengeOutcome::passed(),
             FactorCodeOutcome::INVALID                               => ChallengeOutcome::failed(FailureReason::INVALID_CODE, self::INVALID),
+            FactorCodeOutcome::NOT_FOUND                             => ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND),
+            FactorCodeOutcome::USED                                  => ChallengeOutcome::refused(FailureReason::REPLAYED, self::USED),
             FactorCodeOutcome::EXPIRED, FactorCodeOutcome::EXHAUSTED => ChallengeOutcome::refused(FailureReason::EXPIRED, self::EXPIRED),
             FactorCodeOutcome::LOCKED                                => ChallengeOutcome::refused(FailureReason::LOCKED, self::LOCKED, $check->lockedUntil),
             FactorCodeOutcome::REFUSED                               => ChallengeOutcome::refused(self::reason($check->refusal), self::REFUSED),
