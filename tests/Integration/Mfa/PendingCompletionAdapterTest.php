@@ -161,11 +161,12 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Each proof is recorded with MFA's evaluation of it on its own after the
-     * first factor, never of the whole pending session: an email code that
-     * completes the sign-in after an authenticator app code is recorded
-     * accepted but not multifactor, although MFA's evaluation of the session's
-     * proofs together, which the verification carries, is multifactor.
+     * Each proof is recorded accepted, and multifactor only when MFA says it
+     * refreshes the multifactor evidence of the first factor, never because of
+     * the whole pending session: an email code that completes the sign-in after
+     * an authenticator app code is recorded accepted but not multifactor,
+     * although MFA's evaluation of the session's proofs together, which the
+     * verification carries, is multifactor.
      *
      * @return void
      *
@@ -195,6 +196,7 @@ final class PendingCompletionAdapterTest extends TestCase
         $verified = $this->verified($pending, $email);
 
         self::assertTrue($verified->evaluation?->multifactor);
+        self::assertFalse($verified->refreshesMultifactor);
 
         $result = $this->completeInTransaction($pending, $verified);
 

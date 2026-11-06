@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,7 @@ use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FactorChangeGateTests;
+use Tests\Concerns\ChangesSessionsElsewhere;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
@@ -48,8 +50,11 @@ use Tests\TestCase;
  * configures crossing as `laravel-authentication`'s freshness requirement, the
  * stricter applying; every refusal, a session no longer live included, thrown
  * as MFA's `not_fresh`; the session's row held until the caller's transaction
- * ends; and a change from another sign-in, or none, refused by throwing so the
- * change rolls back (IAM-8.2).
+ * ends; the change judged on `laravel-authentication`'s verdict alone, made
+ * under that lock on the session's proofs as committed, so a step-up voided or
+ * made by another request after the caller's transaction first read is judged
+ * as committed; and a change from another sign-in, or none, refused by throwing
+ * so the change rolls back (IAM-8.2).
  *
  * MFA's own flow is run too: enrolling a further factor, with this package's
  * factor-change adapters bound alone, is gated after MFA's locks, on MySQL and
@@ -64,7 +69,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class FactorChangeGateAdapterTest extends TestCase
 {
-    use ArrangesFactorChanges, FactorChangeGateTests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use ArrangesFactorChanges, ChangesSessionsElsewhere, FactorChangeGateTests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var int How long `laravel-authentication`'s factor changes stay fresh after a step-up by default, in seconds. */
     private const int FACTOR_CHANGE_SECONDS = 900;
@@ -224,44 +229,112 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A change is allowed only while the fresh proof `laravel-authentication`
-     * allowed it on is among the session's counting proofs read back current:
-     * one behind more newer proofs of its kind than one read returns (here
-     * step-ups made with the factor the removal names, which never count for
-     * it) is refused as not fresh rather than guessed to count.
+     * The change is judged on `laravel-authentication`'s verdict alone, which
+     * reads the session's proofs once, current, under the session's lock: a
+     * step-up behind more newer step-ups made with the factor the removal names
+     * than one read of the proofs returns still allows the removal, as the
+     * verdict leaves those out in its own read, and the gate reads no proof of
+     * its own after it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAChangeIsRefusedUnlessItsProofIsReadBackCurrent(): void
+    public function testAChangeIsJudgedOnLaravelAuthenticationsVerdictAlone(): void
     {
         $person  = $this->createPerson();
         $session = $this->signInAndActOnSession($person);
         $change  = $this->request($person, $session, FactorChange::REMOVE_FACTOR, self::configuredRequirement());
+        $reads   = [];
 
         $this->stepUpWith($person, $session, self::STEPPED_UP);
 
-        for ($stepUp = 1; $stepUp < RequirementSubject::MAX_LIMIT; $stepUp++) {
+        for ($stepUp = 0; $stepUp < RequirementSubject::MAX_LIMIT; $stepUp++) {
             $this->stepUpWith($person, $session, self::REMOVED);
         }
 
+        DB::listen(static function (QueryExecuted $query) use (&$reads): void {
+
+            if (!str_contains($query->sql, 'authentication_proofs')) {
+                return;
+            }
+
+            $reads[] = $query->sql;
+        });
+
+        self::assertTrue($this->isAllowed($change));
+        self::assertCount(1, $reads, implode("\n", $reads));
+    }
+
+    /**
+     * Inside a caller's transaction that read before another request voided the
+     * session's step-up (removing the factor it was made with), the change is
+     * refused as not fresh, on `laravel-authentication`'s own refusal: the
+     * step-up is judged as committed, never as the transaction's snapshot shows
+     * it, which on MySQL at REPEATABLE READ still holds it. On PostgreSQL at
+     * REPEATABLE READ the session's lock fails to serialise first, and the
+     * change asked again in a new transaction is refused the same.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAStepUpVoidedAfterTheTransactionsFirstReadNeverAllowsAChange(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $change  = $this->request($person, $session, FactorChange::ADD_FACTOR, self::configuredRequirement());
+
+        $this->stepUpWith($person, $session, self::STEPPED_UP);
+
         self::assertTrue($this->isAllowed($change));
 
-        $this->stepUpWith($person, $session, self::REMOVED);
+        $refusal = $this->askedAfter(
+            $level,
+            fn () => $this->removeElsewhere($person, $session, self::STEPPED_UP),
+            fn (): ?string => $this->refusalOf($change),
+        );
 
-        try {
-            $this->gate()->authorize($change);
+        self::assertSame('laravel-authentication refused the change [mfa.add_factor] from the session: [step_up_required].', $refusal);
+    }
 
-            self::fail('A change was allowed on a proof not read back.');
-        } catch (OperationRefusedException $exception) {
-            self::assertSame(FailureReason::NOT_FRESH, $exception->reason);
-            self::assertFalse($exception->byPackage);
-            self::assertSame(
-                'The proof laravel-authentication allowed the change on is not among the session\'s counting proofs read current, so it is not taken to count.',
-                $exception->getMessage(),
-            );
-        }
+    /**
+     * Inside a caller's transaction that read before another request stepped
+     * the session up, the change is allowed on that step-up, which the
+     * transaction's snapshot on MySQL at REPEATABLE READ does not hold. On
+     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
+     * first, and the change asked again in a new transaction is allowed the
+     * same.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAStepUpMadeAfterTheTransactionsFirstReadAllowsAChange(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $change  = $this->request($person, $session, FactorChange::ADD_FACTOR, self::configuredRequirement());
+
+        self::assertFalse($this->isAllowed($change));
+
+        $refusal = $this->askedAfter(
+            $level,
+            fn () => $this->elsewhere(fn () => $this->stepUpWith($person, $session, self::STEPPED_UP)),
+            fn (): ?string => $this->refusalOf($change),
+        );
+
+        self::assertNull($refusal);
     }
 
     /**
@@ -422,14 +495,14 @@ final class FactorChangeGateAdapterTest extends TestCase
              * Ask the gate inside a transaction on the storage connection.
              *
              * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $request
-             * @return ?\Carbon\CarbonImmutable
+             * @return \Carbon\CarbonImmutable
              *
              * @throws \Throwable
              */
             #[\Override]
-            public function authorize(FactorChangeRequest $request): ?CarbonImmutable
+            public function authorize(FactorChangeRequest $request): CarbonImmutable
             {
-                return FactorChangeGateAdapterTest::storageConnection()->transaction(fn (): ?CarbonImmutable => $this->gate->authorize($request));
+                return FactorChangeGateAdapterTest::storageConnection()->transaction(fn (): CarbonImmutable => $this->gate->authorize($request));
             }
         };
     }
@@ -605,6 +678,28 @@ final class FactorChangeGateAdapterTest extends TestCase
         }
 
         return true;
+    }
+
+    /**
+     * The detail of the gate's refusal of the change, asked in the caller's
+     * transaction as it stands, or `null` when the change is allowed.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $change
+     * @return ?string
+     *
+     * @throws \Throwable
+     */
+    private function refusalOf(FactorChangeRequest $change): ?string
+    {
+        try {
+            $this->gate()->authorize($change);
+        } catch (OperationRefusedException $exception) {
+            self::assertSame(FailureReason::NOT_FRESH, $exception->reason);
+
+            return $exception->getMessage();
+        }
+
+        return null;
     }
 
     /**

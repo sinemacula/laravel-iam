@@ -26,7 +26,9 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ReauthenticatorTests;
+use Tests\Concerns\ChangesSessionsElsewhere;
 use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RecordsFreshnessReadModes;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
@@ -40,8 +42,11 @@ use Tests\TestCase;
  * to the identity, the application and the session; a session without one, or
  * no longer live, answers none; a guard holding no session of the identity, and
  * an application that is no guard, throw (IAM-8.2), rolling back the
- * transaction they are asked in; and the only lock it takes is the session's,
- * last.
+ * transaction they are asked in; outside a transaction it asks the policy
+ * plainly and takes no lock; and inside one, as MFA's own factor-change gate
+ * asks it inside MFA's transaction, the only lock it takes is the session's,
+ * last, and it asks the policy current, so a reauthentication made by another
+ * request after the transaction's first read is found.
  *
  * The sessions are real ones, signed in and reauthenticated through
  * `laravel-authentication` with a password, and the adapter is resolved on its
@@ -56,7 +61,10 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class ReauthenticatorAdapterTest extends TestCase
 {
-    use MigratesMembers, ReauthenticatorTests, RunsAtIsolationLevels, SignsInPeople;
+    use ChangesSessionsElsewhere, MigratesMembers, ReauthenticatorTests, RecordsFreshnessReadModes, RunsAtIsolationLevels, SignsInPeople;
+
+    /** @var string A locking read, of either server's grammar. */
+    private const string LOCKING_READ = '/\b(for update|for share|for no key update|lock in share mode)\b/i';
 
     /**
      * The newest reauthentication on the guard's session is MFA's
@@ -258,7 +266,7 @@ final class ReauthenticatorAdapterTest extends TestCase
 
             DB::listen(static function (QueryExecuted $query) use (&$locks): void {
 
-                if (preg_match('/\b(for update|for share|for no key update|lock in share mode)\b/i', $query->sql) !== 1) {
+                if (preg_match(self::LOCKING_READ, $query->sql) !== 1) {
                     return;
                 }
 
@@ -270,6 +278,93 @@ final class ReauthenticatorAdapterTest extends TestCase
 
         self::assertNotSame([], array_filter($locks, static fn (string $sql): bool => str_contains($sql, $session->getTable())));
         self::assertSame([], array_filter($locks, static fn (string $sql): bool => str_contains($sql, 'mfa_')));
+    }
+
+    /**
+     * Outside a transaction, as MFA's contract kit or a caller of the
+     * application's asks it, nothing acts on the answer atomically: the
+     * reauthenticator asks the policy plainly, which the policy answers there,
+     * and takes no lock.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOutsideATransactionItAsksPlainlyAndTakesNoLock(): void
+    {
+        $person   = $this->createPerson();
+        $session  = $this->signInAndActOnSession($person);
+        $recorder = $this->recordReadModes();
+        $queries  = [];
+
+        $this->reauthenticate($person, $session);
+
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        self::assertSame(0, DB::transactionLevel());
+        self::assertNotNull($this->adapter()->reauthenticate($person, self::GUARD));
+        self::assertAskedOnlyIn($recorder, false);
+        self::assertNotSame([], $queries);
+        self::assertSame([], array_filter($queries, static fn (string $sql): bool => preg_match(self::LOCKING_READ, $sql) === 1));
+    }
+
+    /**
+     * Inside a transaction on the session model's connection, as MFA's own
+     * factor-change gate asks it inside MFA's transaction and grants a first
+     * additional factor on the answer, the reauthenticator asks the policy
+     * current, which the policy answers there.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testInsideATransactionItAsksCurrent(): void
+    {
+        $person   = $this->createPerson();
+        $session  = $this->signInAndActOnSession($person);
+        $recorder = $this->recordReadModes();
+
+        $this->reauthenticate($person, $session);
+
+        self::assertNotNull(DB::transaction(fn (): ?Proof => $this->adapter()->reauthenticate($person, self::GUARD)));
+        self::assertAskedOnlyIn($recorder, true);
+    }
+
+    /**
+     * Inside a caller's transaction that read before another request proved the
+     * person's password again on the session, that reauthentication is
+     * answered, though the transaction's snapshot on MySQL at REPEATABLE READ
+     * does not hold it. On PostgreSQL at REPEATABLE READ the session's lock
+     * fails to serialise first, and the question asked again in a new
+     * transaction is answered the same.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAReauthenticationMadeAfterTheTransactionsFirstReadIsAnswered(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        self::assertNull($this->adapter()->reauthenticate($person, self::GUARD));
+
+        $proof = $this->askedAfter(
+            $level,
+            fn () => $this->reauthenticateElsewhere($person, $session),
+            fn (): ?Proof => $this->adapter()->reauthenticate($person, self::GUARD),
+        );
+
+        self::assertInstanceOf(Proof::class, $proof);
+        self::assertSame(ProofKind::FIRST_FACTOR_REAUTHENTICATION, $proof->kind);
+        self::assertSame($this->signInReference($session), $proof->binding->sessionId);
     }
 
     /**

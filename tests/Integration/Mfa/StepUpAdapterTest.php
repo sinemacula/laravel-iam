@@ -109,6 +109,54 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
+     * Rows of `[refreshes multifactor, multifactor of the whole session]`.
+     *
+     * @return iterable<string, array{0: bool, 1: bool}>
+     */
+    public static function provideMultifactorEvidence(): iterable
+    {
+        yield 'refreshes it, the whole session multifactor' => [true, true];
+        yield 'refreshes it, the whole session not multifactor' => [true, false];
+        yield 'does not refresh it, the whole session multifactor' => [false, true];
+        yield 'does not refresh it, the whole session not multifactor' => [false, false];
+    }
+
+    /**
+     * The proof is recorded accepted, at the time MFA proved it, and
+     * multifactor exactly when MFA says it refreshes the multifactor evidence
+     * of the session's first factor, whatever MFA's evaluation of the whole
+     * session says.
+     *
+     * @param  bool  $refreshes
+     * @param  bool  $wholeSession
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideMultifactorEvidence')]
+    public function testTheProofIsRecordedMultifactorOnlyWhenItRefreshesTheEvidence(bool $refreshes, bool $wholeSession): void
+    {
+        $signedIn = CarbonImmutable::now()->startOfSecond();
+
+        CarbonImmutable::setTestNow($signedIn);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        CarbonImmutable::setTestNow($signedIn->addMinute());
+
+        $result = $this->verifiedResult($person, $this->signInReference($session), refreshes: $refreshes, wholeSession: $wholeSession, provedAt: $signedIn->addSeconds(30));
+
+        self::assertTrue($this->adapter()->stepUp($result)->isIssued());
+
+        $proof = $this->proofsOf($session)[0];
+
+        self::assertTrue($proof->evaluation?->accepted);
+        self::assertSame($refreshes, $proof->evaluation->multifactor);
+        self::assertTrue($result->proof?->provedAt->equalTo($proof->authenticatedAt));
+    }
+
+    /**
      * A proof bound to another identity, on the caller's current session, is
      * refused, and nothing is recorded.
      *
@@ -170,8 +218,8 @@ final class StepUpAdapterTest extends TestCase
 
     /**
      * A session revoked since the request was authenticated, which the guard
-     * still holds, is not stepped up: its first factor no longer counts, so no
-     * proof is accepted after it, and nothing is recorded.
+     * still holds, is not stepped up: `laravel-authentication` refuses it under
+     * the session's lock, and nothing is recorded.
      *
      * @return void
      *
@@ -186,10 +234,7 @@ final class StepUpAdapterTest extends TestCase
 
         $refusal = self::assertNotAccepted(fn (): mixed => $this->adapter()->stepUp($this->verifiedResult($person, $this->signInReference($session))));
 
-        self::assertSame(
-            'The session\'s first factor is not known, as the session is no longer live and active or its first factor no longer counts, so no proof is accepted after it.',
-            $refusal->getMessage(),
-        );
+        self::assertSame('laravel-authentication refused the step-up: [session_revoked].', $refusal->getMessage());
         self::assertSame([], $this->proofsOf($session));
     }
 
@@ -373,16 +418,28 @@ final class StepUpAdapterTest extends TestCase
 
     /**
      * A verified TOTP proof of the person's, bound to the sign-in on the
-     * application for the purpose given, with a multifactor evaluation.
+     * application for the purpose given, made at the time given (now by
+     * default), refreshing the multifactor evidence or not, with MFA's
+     * evaluation of the whole session multifactor or not (both by default).
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $signIn
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @param  string  $application
+     * @param  bool  $refreshes
+     * @param  bool  $wholeSession
+     * @param  ?\Carbon\CarbonImmutable  $provedAt
      * @return \SineMacula\Laravel\Mfa\Verification\VerificationResult
      */
-    private function verifiedResult(Person $person, string $signIn, Purpose $purpose = Purpose::STEP_UP, string $application = self::GUARD): VerificationResult
-    {
+    private function verifiedResult(
+        Person $person,
+        string $signIn,
+        Purpose $purpose = Purpose::STEP_UP,
+        string $application = self::GUARD,
+        bool $refreshes = true,
+        bool $wholeSession = true,
+        ?CarbonImmutable $provedAt = null,
+    ): VerificationResult {
         $reference = IdentityReference::of($person);
 
         $proof = new Proof(
@@ -391,23 +448,23 @@ final class StepUpAdapterTest extends TestCase
             new Channel(ChannelKind::AUTHENTICATOR_APP, self::FACTOR),
             self::FACTOR,
             ObservedProperties::none(),
-            CarbonImmutable::now(),
+            $provedAt ?? CarbonImmutable::now(),
             new ProofBinding($reference->type, $reference->key, $application, $signIn, $purpose),
             VerificationGeneration::current($person),
         );
 
         $evaluation = new Evaluation(
             accepted: true,
-            multifactor: true,
-            level: AssuranceLevel::AAL2,
+            multifactor: $wholeSession,
+            level: $wholeSession ? AssuranceLevel::AAL2 : AssuranceLevel::AAL1,
             phishingResistant: false,
             restricted: false,
-            amr: ['otp', 'mfa'],
+            amr: $wholeSession ? ['otp', 'mfa'] : ['otp', 'mca'],
             met: [],
             unmet: [],
         );
 
-        return VerificationResult::verified($proof, $evaluation, ['otp', 'mfa'], 'totp');
+        return VerificationResult::verified($proof, $evaluation, ['otp', 'mfa'], 'totp', $refreshes);
     }
 
     /**

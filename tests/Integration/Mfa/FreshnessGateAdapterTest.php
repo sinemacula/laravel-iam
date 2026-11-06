@@ -31,7 +31,9 @@ use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FreshnessGateTests;
+use Tests\Concerns\ChangesSessionsElsewhere;
 use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RecordsFreshnessReadModes;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
@@ -45,7 +47,12 @@ use Tests\TestCase;
  * requirement it holds the session to is at least the caller's; a part the
  * policy cannot judge is refused; a caller with no session is not fresh; a
  * default guard that is not `laravel-authentication`'s throws (IAM-8.2),
- * rolling back the transaction it is asked in; and it takes no lock.
+ * rolling back the transaction it is asked in; outside a transaction it asks
+ * the policy plainly and takes no lock; and inside one, as MFA's own
+ * factor-change gate asks it inside MFA's transaction, it asks the policy
+ * current, locking the session's row after MFA's locks, so a step-up voided or
+ * made by another request after the transaction's first read is judged as
+ * committed.
  *
  * The sessions are real ones, signed in through `laravel-authentication` with a
  * password and stepped up through it, and the adapter is resolved on its own,
@@ -60,7 +67,13 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class FreshnessGateAdapterTest extends TestCase
 {
-    use FreshnessGateTests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use ChangesSessionsElsewhere, FreshnessGateTests, MigratesMembers, RecordsFreshnessReadModes, RunsAtIsolationLevels, SignsInPeople;
+
+    /** @var string The factor the tests' step-ups are made with. */
+    private const string FACTOR = 'factor-1';
+
+    /** @var string A locking read, of either server's grammar. */
+    private const string LOCKING_READ = '/\b(for update|for share|for no key update|lock in share mode)\b/i';
 
     /** @var string An operation of MFA's that `laravel-authentication` configures no setting for. */
     private const string OPERATION = 'mfa.remove_factor';
@@ -366,9 +379,67 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside MFA's transaction, holding the identity's state row, the gate
-     * reads without taking any lock, so it never takes one out of the order
-     * identity state, factors, challenge, session row.
+     * Outside a transaction, as MFA's route gate and `Mfa::isFresh()` ask it,
+     * nothing acts on the answer atomically: the gate asks the policy plainly,
+     * which the policy answers there, and takes no lock.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOutsideATransactionItAsksPlainlyAndTakesNoLock(): void
+    {
+        $person   = $this->createPerson();
+        $session  = $this->signInAndActOnSession($person);
+        $asked    = Requirement::none()->withAdditionalVerification(300)->withMultifactor(300);
+        $recorder = $this->recordReadModes();
+        $queries  = [];
+
+        $this->stepSessionUp($person, $session);
+
+        DB::listen(static function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        self::assertSame(0, DB::transactionLevel());
+        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
+        self::assertNotNull($this->adapter()->freshUntil(self::OPERATION, $asked));
+        self::assertAskedOnlyIn($recorder, false);
+        self::assertNotSame([], $queries);
+        self::assertSame([], self::lockingReads($queries));
+    }
+
+    /**
+     * Inside a transaction on the session model's connection, as MFA's own
+     * factor-change gate asks it inside MFA's transaction and grants the change
+     * on the answer, the gate asks the policy current, which the policy answers
+     * there, both for whether the session is fresh and until when.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testInsideATransactionItAsksCurrent(): void
+    {
+        $person   = $this->createPerson();
+        $session  = $this->signInAndActOnSession($person);
+        $asked    = Requirement::none()->withAdditionalVerification(300)->withMultifactor(300);
+        $recorder = $this->recordReadModes();
+
+        $this->stepSessionUp($person, $session);
+
+        [$fresh, $until] = DB::transaction(fn (): array => [$this->adapter()->isFresh(self::OPERATION, $asked), $this->adapter()->freshUntil(self::OPERATION, $asked)]);
+
+        self::assertTrue($fresh);
+        self::assertNotNull($until);
+        self::assertAskedOnlyIn($recorder, true);
+    }
+
+    /**
+     * Inside MFA's transaction, holding the identity's state row, the gate's
+     * current read locks the session's row and then reads its proofs, and takes
+     * no lock of MFA's, so it never takes one out of the order identity state,
+     * factors, challenge, session row.
      *
      * @param  string  $level
      * @return void
@@ -376,7 +447,7 @@ final class FreshnessGateAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testItTakesNoLock(string $level): void
+    public function testInsideMfasTransactionItLocksTheSessionRowLast(string $level): void
     {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
@@ -398,8 +469,83 @@ final class FreshnessGateAdapterTest extends TestCase
             self::assertTrue($this->adapter()->isFresh(self::OPERATION, Requirement::none()->withAdditionalVerification(300)->withMultifactor(300)));
         });
 
-        self::assertNotSame([], $queries);
-        self::assertSame([], array_filter($queries, static fn (string $sql): bool => preg_match('/\b(for update|for share|for no key update|lock in share mode)\b/i', $sql) === 1));
+        $locks = self::lockingReads($queries);
+
+        self::assertNotSame([], $locks);
+        self::assertStringContainsString($session->getTable(), $locks[0]);
+        self::assertSame([], array_filter($locks, static fn (string $sql): bool => !str_contains($sql, 'authentication_')));
+        self::assertSame([], array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'mfa_')));
+    }
+
+    /**
+     * Inside a caller's transaction that read before another request voided the
+     * session's step-up (removing the factor it was made with), the session is
+     * not fresh: the step-up is judged as committed, never as the transaction's
+     * snapshot shows it, which on MySQL at REPEATABLE READ still holds it. On
+     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
+     * first, and the question asked again in a new transaction is answered the
+     * same.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAStepUpVoidedAfterTheTransactionsFirstReadIsNotFresh(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $asked   = Requirement::none()->withAdditionalVerification(300);
+
+        $this->stepSessionUp($person, $session);
+
+        self::assertTrue($this->adapter()->isFresh(self::OPERATION, $asked));
+
+        $answers = $this->askedAfter(
+            $level,
+            fn () => $this->removeElsewhere($person, $session, self::FACTOR),
+            fn (): array => [$this->adapter()->isFresh(self::OPERATION, $asked), $this->adapter()->freshUntil(self::OPERATION, $asked)],
+        );
+
+        self::assertSame([false, null], $answers);
+    }
+
+    /**
+     * Inside a caller's transaction that read before another request stepped
+     * the session up, the session is fresh on that step-up, which the
+     * transaction's snapshot on MySQL at REPEATABLE READ does not hold. On
+     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
+     * first, and the question asked again in a new transaction is answered the
+     * same.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testAStepUpMadeAfterTheTransactionsFirstReadIsFresh(string $level): void
+    {
+        self::requireIsolationLevels();
+        self::useIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $asked   = Requirement::none()->withAdditionalVerification(300);
+
+        self::assertFalse($this->adapter()->isFresh(self::OPERATION, $asked));
+
+        $fresh = $this->askedAfter(
+            $level,
+            fn () => $this->elsewhere(fn () => $this->stepSessionUp($person, $session)),
+            fn (): bool => $this->adapter()->isFresh(self::OPERATION, $asked),
+        );
+
+        self::assertTrue($fresh);
     }
 
     /**
@@ -459,8 +605,8 @@ final class FreshnessGateAdapterTest extends TestCase
         $result = $this->sessions()->stepUp(new ProofResult(
             ProofKind::ADDITIONAL_FACTOR,
             'totp',
-            new Channel(ChannelKind::AUTHENTICATOR_APP, 'factor-1'),
-            'factor-1',
+            new Channel(ChannelKind::AUTHENTICATOR_APP, self::FACTOR),
+            self::FACTOR,
             new ObservedProperties(phishingResistant: $phishingResistant),
             new Evaluation(true, $multifactor),
             ['otp'],
@@ -487,6 +633,17 @@ final class FreshnessGateAdapterTest extends TestCase
         }
 
         self::fail('The requirement was not refused.');
+    }
+
+    /**
+     * The locking reads among the statements.
+     *
+     * @param  list<string>  $queries
+     * @return list<string>
+     */
+    private static function lockingReads(array $queries): array
+    {
+        return array_values(array_filter($queries, static fn (string $sql): bool => preg_match(self::LOCKING_READ, $sql) === 1));
     }
 
     /**

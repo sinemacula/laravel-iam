@@ -21,6 +21,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
@@ -168,8 +169,11 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * MFA's successful verification of the proof on the pending session,
-     * evaluated by MFA's own requirement check with the session's first factor.
+     * MFA's successful verification of the proof on the pending session, as
+     * MFA's own acceptance makes it: the session's proofs evaluated together by
+     * MFA's requirement check, and the proof refreshing the multifactor
+     * evidence when the check, judging the session's first factor and the proof
+     * alone, dates that evidence to the proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
@@ -181,7 +185,10 @@ trait ArrangesPendingSessions
 
         self::assertInstanceOf(MfaRequirementCheck::class, $check);
 
-        return VerificationResult::verified($proof, $check->check($pending->requirement, $pending->firstFactor, ...$pending->proofs, ...[$proof]), ['otp'], 'totp');
+        $evaluation = $check->check($pending->requirement, $pending->firstFactor, ...$pending->proofs, ...[$proof]);
+        $refreshes  = $check->check(Requirement::none(), $pending->firstFactor, $proof)->multifactorAt?->equalTo($proof->provedAt) ?? false;
+
+        return VerificationResult::verified($proof, $evaluation, ['otp'], 'totp', $refreshes);
     }
 
     /**

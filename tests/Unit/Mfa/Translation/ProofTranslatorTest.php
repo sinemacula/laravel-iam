@@ -15,7 +15,6 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthChannelKin
 use SineMacula\Laravel\Authentication\Proofs\Enums\KeyProtection as AuthenticationKeyProtection;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind as AuthKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthPurpose;
-use SineMacula\Laravel\Authentication\Proofs\Evaluation as AuthenticationEvaluation;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties as AuthenticationProperties;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
@@ -289,24 +288,21 @@ final class ProofTranslatorTest extends TestCase
 
     /**
      * A verified additional factor is the proof result `laravel-authentication`
-     * takes: its kind, method, channel, factor, properties and time, the
-     * evaluation of the proof given, its own `amr` values without `mfa`, and a
-     * binding to the identity on the proof's application and sign-in, for its
-     * purpose.
+     * takes: its kind, method, channel, factor, properties and time, accepted
+     * and multifactor as it refreshes the multifactor evidence, its own `amr`
+     * values without `mfa`, and a binding to the identity on the proof's
+     * application and sign-in, for its purpose.
      *
      * @return void
      */
     public function testAVerifiedProofIsTheProofResultLaravelAuthenticationTakes(): void
     {
-        $identity   = self::identity();
-        $channel    = new MfaChannel(MfaChannelKind::SMS, '+447700900123');
-        $proof      = self::proof(MfaProofKind::ADDITIONAL_FACTOR, $channel, 'factor-2', MfaPurpose::STEP_UP, new MfaProperties(userVerification: true));
-        $result     = VerificationResult::verified($proof, self::evaluation(true, true), ['otp', 'mfa', 'sms'], 'sms');
-        $evaluation = new AuthenticationEvaluation(true, true);
+        $identity = self::identity();
+        $channel  = new MfaChannel(MfaChannelKind::SMS, '+447700900123');
+        $proof    = self::proof(MfaProofKind::ADDITIONAL_FACTOR, $channel, 'factor-2', MfaPurpose::STEP_UP, new MfaProperties(userVerification: true));
+        $result   = VerificationResult::verified($proof, self::evaluation(true, true), ['otp', 'mfa', 'sms'], 'sms', true);
 
-        $translated = self::translator()->toResult($result, $identity, $evaluation);
-
-        self::assertSame($evaluation, $translated->evaluation);
+        $translated = self::translator()->toResult($result, $identity);
 
         self::assertSame(AuthKind::ADDITIONAL_FACTOR, $translated->kind);
         self::assertSame('sms', $translated->method);
@@ -326,22 +322,41 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * The evaluation given crosses as it is, never MFA's evaluation of the
-     * whole session the result carries: a fresh email code after an old
-     * authenticator app code, which MFA's whole-session evaluation reports
-     * multifactor, crosses as the proof's own, which is not.
+     * Rows of `[refreshes multifactor, multifactor of the whole session]`.
      *
+     * @return iterable<string, array{0: bool, 1: bool}>
+     */
+    public static function provideMultifactorEvidence(): iterable
+    {
+        yield 'refreshes it, the whole session multifactor' => [true, true];
+        yield 'refreshes it, the whole session not multifactor' => [true, false];
+        yield 'does not refresh it, the whole session multifactor' => [false, true];
+        yield 'does not refresh it, the whole session not multifactor' => [false, false];
+    }
+
+    /**
+     * The proof crosses accepted, and multifactor exactly when MFA says it
+     * refreshes the multifactor evidence of the session's first factor, never
+     * as MFA's evaluation of the whole session the result carries: a fresh
+     * email code after an old authenticator app code, which MFA's whole-session
+     * evaluation reports multifactor, crosses as not multifactor.
+     *
+     * @param  bool  $refreshes
+     * @param  bool  $wholeSession
      * @return void
      */
-    public function testTheProofsOwnEvaluationCrossesNotTheSessions(): void
+    #[DataProvider('provideMultifactorEvidence')]
+    public function testTheProofIsMultifactorOnlyWhenItRefreshesTheEvidence(bool $refreshes, bool $wholeSession): void
     {
         $proof  = self::proof(MfaProofKind::ADDITIONAL_FACTOR, new MfaChannel(MfaChannelKind::EMAIL, 'ada@example.test'), 'factor-3', MfaPurpose::SIGN_IN);
-        $result = VerificationResult::verified($proof, self::evaluation(true, true), ['otp'], 'email');
+        $result = VerificationResult::verified($proof, self::evaluation(true, $wholeSession), ['otp'], 'email', $refreshes);
 
-        $translated = self::translator()->toResult($result, self::identity(), new AuthenticationEvaluation(true, false));
+        $translated = self::translator()->toResult($result, self::identity());
 
         self::assertTrue($translated->evaluation->accepted);
-        self::assertFalse($translated->evaluation->multifactor);
+        self::assertSame($refreshes, $translated->evaluation->multifactor);
+        self::assertTrue($translated->evaluation->additionalVerification);
+        self::assertTrue($translated->authenticatedAt->equalTo($proof->provedAt));
         self::assertSame(['otp'], $translated->methods);
         self::assertSame(AuthPurpose::SIGN_IN, $translated->binding->purpose);
     }
@@ -357,7 +372,7 @@ final class ProofTranslatorTest extends TestCase
         $proof  = self::proof(MfaProofKind::RECOVERY_CODE, null, 'set-1', MfaPurpose::SIGN_IN);
         $result = VerificationResult::verified($proof, self::evaluation(true, false), [], 'recovery_code');
 
-        $translated = self::translator()->toResult($result, self::identity(), new AuthenticationEvaluation(true, false));
+        $translated = self::translator()->toResult($result, self::identity());
 
         self::assertSame(AuthKind::RECOVERY_CODE, $translated->kind);
         self::assertSame(AuthChannelKind::UNKNOWN, $translated->channel->kind);
@@ -374,7 +389,7 @@ final class ProofTranslatorTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Only a verification that made a proof can be handed to laravel-authentication.');
 
-        self::translator()->toResult(VerificationResult::failed(FailureReason::INVALID_CODE, 'wrong code'), self::identity(), new AuthenticationEvaluation(true, true));
+        self::translator()->toResult(VerificationResult::failed(FailureReason::INVALID_CODE, 'wrong code'), self::identity());
     }
 
     /**

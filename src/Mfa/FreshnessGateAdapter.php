@@ -50,10 +50,22 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
  * The parts cross through `RequirementTranslator`, which the factor-change
  * gate's requirement crosses through too.
  *
- * Reads only, with no lock: the policy reads the session again on the write
- * connection and judges its liveness itself, and a caller that acts on the
- * answer atomically locks the session first. It holds nothing between calls
- * (IAM-8.1).
+ * The policy reads the session again on the write connection and judges its
+ * liveness itself, read as the call site needs it
+ * (`CurrentSession::isInTransaction()`). Outside a transaction on the session
+ * model's connection (MFA's route gate, `Mfa::isFresh()`) nothing acts on the
+ * answer atomically, so `isFresh()` and `freshUntil()` ask plainly, read only,
+ * and take no lock. Inside one (MFA's own factor-change gate, asking inside
+ * MFA's transaction after its locks, which acts on the answer and takes a
+ * grant's end from `freshUntil()`) they ask current: the policy locks the
+ * session's row until the transaction ends and reads its proofs as committed,
+ * so a step-up voided before the call never counts and one recorded before it
+ * does, whatever the transaction read first. The session's row is then taken
+ * after MFA's locks, as every adapter takes it, and its proofs after the row; a
+ * removal through MFA's own gate goes on to lock the identity's other sessions'
+ * rows after both, in the revoker's `factorRemoved()`, which is
+ * `laravel-authentication`'s order. `requirement()` reads no proof, and asks
+ * nothing current. It holds nothing between calls (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -153,7 +165,7 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
         $parts   = $this->parts($callerRequirement);
         $session = $this->sessions->guard($this->sessions->defaultGuard())->session();
 
-        return $session === null ? null : $this->heldUntil($session, $operation, $parts);
+        return $session === null ? null : $this->heldUntil($session, $operation, $parts, $this->sessions->isInTransaction());
     }
 
     /**
@@ -177,20 +189,23 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
 
     /**
      * The first second the session stops meeting one of the parts, each judged
-     * by the policy for the operation, or `null` when one is not met now.
+     * by the policy for the operation, current when asked inside a transaction
+     * on the session model's connection and plainly otherwise, or `null` when
+     * one is not met now.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  string  $operation
      * @param  list<?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>  $parts
+     * @param  bool  $current
      * @return ?\Carbon\CarbonImmutable
      */
-    private function heldUntil(Session $session, string $operation, array $parts): ?CarbonImmutable
+    private function heldUntil(Session $session, string $operation, array $parts, bool $current): ?CarbonImmutable
     {
         $until = null;
 
         foreach ($parts as $part) {
 
-            $held = $this->freshness->freshUntil($session, $operation, $part);
+            $held = $this->freshness->freshUntil($session, $operation, $part, current: $current);
 
             if ($held === null) {
                 return null;

@@ -46,7 +46,10 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * the guard's application, and steps the session up with a proof made with it
  * through the step-up adapter, so `laravel-authentication` locks the session's
  * row, checks it is still one of the guard's live, active sessions of a person,
- * and records the proof. The proofs are then read back through the same
+ * and records the proof, flagged multifactor exactly when MFA's own acceptance
+ * would say it refreshes the multifactor evidence: when MFA's requirement
+ * check, judging the session's first factor and this proof alone, dates that
+ * evidence to this proof. The proofs are then read back through the same
  * `SessionFirstFactor::proofs()` and `RequirementCheck` MFA's route gate uses,
  * against additional verification and the level, exactly as MFA's own helper
  * reads them.
@@ -136,12 +139,34 @@ final readonly class VerifiedSession
             $this->check->check(Requirement::none(), ...array_merge($this->proofs->proofs($identity, $application), [$proof])),
             $amr,
             $type,
+            $this->refreshesMultifactor($identity, $application, $proof),
         ));
 
         self::assertReached($level, $this->check->check(
             Requirement::none()->withAdditionalVerification()->withMinimumLevel($level),
             ...$this->proofs->proofs($identity, $application),
         ));
+    }
+
+    /**
+     * Whether the proof refreshes the multifactor evidence of the sign-in's
+     * first factor, as MFA's own acceptance judges it: the first factor and the
+     * proof alone are multifactor, and the freshest evidence of that is the
+     * proof's own. A sign-in whose first factor is not known is refused, as MFA
+     * refuses every proof after it.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
+     * @return bool
+     *
+     * @throws \LogicException
+     */
+    private function refreshesMultifactor(MultiFactorAuthenticatable $identity, string $application, Proof $proof): bool
+    {
+        $firstFactor = $this->proofs->current($identity, $application) ?? throw new \LogicException('The session\'s first factor is not known, so no proof is accepted after it.');
+
+        return $this->check->check(Requirement::none(), $firstFactor, $proof)->multifactorAt?->equalTo($proof->provedAt) ?? false;
     }
 
     /**

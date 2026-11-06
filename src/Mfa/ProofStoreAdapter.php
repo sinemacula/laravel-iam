@@ -54,12 +54,14 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  *   on that sign-in it keeps the sign-in's own first factor, which the session
  *   already holds, and refuses any other proof, which only
  *   `laravel-authentication` can record;
- * - `forgetFactor()` writes nothing: a proof that names a factor counts only
- *   while the identity still holds that factor in MFA's factor table, read on
- *   the write connection, so a factor MFA has deleted stops counting at once,
- *   inside MFA's own transaction, before the session revoker (IAM-3.7) reports
- *   the removal to `factorRemoved()`, which voids the current session's proofs
- *   made with the factor and ends every other session;
+ * - `forgetFactor()` writes nothing for a factor MFA has deleted: a proof that
+ *   names a factor counts only while the identity still holds that factor in
+ *   MFA's factor table, read on the write connection, so the factor stops
+ *   counting at once, inside MFA's own transaction, before the session revoker
+ *   (IAM-3.7) reports the removal to `factorRemoved()`, which voids the current
+ *   session's proofs made with the factor and ends every other session; a
+ *   factor the identity still holds is reported to `factorRemoved()` here, so
+ *   its proofs stop counting all the same;
  * - `forget()` is a no-op: `laravel-authentication` signs a session out, or
  *   forgets the guard's binding to it, before `Logout` reaches MFA, and whether
  *   a session ends is its decision, not this package's.
@@ -219,8 +221,10 @@ final readonly class ProofStoreAdapter implements ProofStore
     /**
      * The first factor the identity's current sign-in on the application was
      * made with, as MFA's proof bound to it, or `null` when the guard holds no
-     * live session of the identity, MFA cannot express it, or it names a factor
-     * the identity no longer holds.
+     * live, active session of the identity, MFA cannot express it, or it names
+     * a factor the identity no longer holds. Inside a transaction on the
+     * storage connection, the session's row is locked and the proof read
+     * current.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -233,27 +237,10 @@ final readonly class ProofStoreAdapter implements ProofStore
     {
         $session = $this->session($identity, $application);
 
-        return $session === null ? null : $this->firstFactorOf($identity, $application, $session);
-    }
+        if ($session === null) {
+            return null;
+        }
 
-    /**
-     * The first factor the session, the identity's current sign-in on the
-     * application, was made with, as MFA's proof bound to it, or `null` when
-     * the session is no longer one of the guard's live, active sessions of a
-     * person, MFA cannot express it, or it names a factor the identity no
-     * longer holds. Inside a transaction on the storage connection, the
-     * session's row is locked and the proof read current.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $application
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
-     * @return ?\SineMacula\Laravel\Mfa\Proofs\Proof
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \Throwable
-     */
-    public function firstFactorOf(MultiFactorAuthenticatable $identity, string $application, Session $session): ?Proof
-    {
         $recorded = Auth::sessions($application)->firstFactor($session);
         $proof    = $recorded === null ? null : $this->translated($recorded, $this->signIn($identity, $application, $session));
 
@@ -261,22 +248,41 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * Stop counting the identity's proofs made with the factor: nothing to
-     * write, since a proof counts only while the identity holds the factor it
-     * names, and MFA deletes the factor before it forgets it.
+     * Stop counting the identity's proofs made with the factor, on the current
+     * session as on every other.
+     *
+     * A factor the identity no longer holds needs nothing written: a proof
+     * counts only while the identity holds the factor it names, so once MFA has
+     * deleted the factor, as it does before it forgets it, its proofs stop
+     * counting at once, and the session revoker (IAM-3.7) then reports the
+     * removal to `laravel-authentication`, which voids them for good. Writing
+     * here as well would judge the current session twice, and the second
+     * judgement would lose the pending credential the first issued.
+     *
+     * A factor the identity still holds is forgotten through
+     * `laravel-authentication`, the only writer of a session's proofs, as the
+     * removal it is: `factorRemoved()` on the default guard, the application
+     * MFA names a removal's, voids the current session's proofs made with the
+     * factor and judges it again, and ends every other session of the identity,
+     * every session when that guard holds none of the identity's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $factorId
      * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Throwable
      */
     #[\Override]
     public function forgetFactor(MultiFactorAuthenticatable $identity, string $factorId): void
     {
-        // MFA deletes the factor's row, in its own transaction, before it calls
-        // this, so every read of the session's proofs from then on, in that
-        // transaction as after it commits, leaves the factor's proofs out. Its
-        // session revoker then reports the removal to laravel-authentication,
-        // which voids them for good and ends every other session.
+        if (!self::holds($identity, $factorId)) {
+            return;
+        }
+
+        $guard = $this->sessions->defaultGuard();
+
+        $this->sessions->sessions($guard)->factorRemoved($this->sessions->identity($identity), $factorId, $this->session($identity, $guard));
     }
 
     /**
@@ -330,12 +336,39 @@ final readonly class ProofStoreAdapter implements ProofStore
             return $proofs;
         }
 
-        $factors = array_map(
+        $factors = self::factors($identity);
+
+        return array_values(array_filter($proofs, static fn (Proof $proof): bool => $proof->reference === null || in_array($proof->reference, $factors, true)));
+    }
+
+    /**
+     * Whether the identity still holds the factor, read from MFA's factor table
+     * on the write connection.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $factorId
+     * @return bool
+     */
+    private static function holds(MultiFactorAuthenticatable $identity, string $factorId): bool
+    {
+        return in_array($factorId, self::factors($identity), true);
+    }
+
+    /**
+     * The identity's factors, as a proof made with each names it, read from
+     * MFA's factor table on the write connection, so a factor MFA has just
+     * deleted, in its own transaction or in one since committed, is already
+     * gone, and a replica that has not caught up cannot bring it back.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @return array<int, string>
+     */
+    private static function factors(MultiFactorAuthenticatable $identity): array
+    {
+        return array_map(
             static fn (Factor $factor): string => self::factorReference($factor),
             $identity->authFactors()->useWritePdo()->get()->all(),
         );
-
-        return array_values(array_filter($proofs, static fn (Proof $proof): bool => $proof->reference === null || in_array($proof->reference, $factors, true)));
     }
 
     /**
