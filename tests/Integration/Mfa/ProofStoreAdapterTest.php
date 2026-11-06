@@ -63,16 +63,24 @@ use Tests\TestCase;
  * proof is refused unless it is bound to the identity's current, live sign-in,
  * checked under the session's lock inside the caller's transaction.
  *
- * MFA's `ProofStoreTests` kit runs on real sessions, signed in through
- * `laravel-authentication` with a password, and voided as a reset voids them,
- * through `factorReset()`. Two of its checks record a proof and expect the
- * store to keep it as a new one, which no store over `laravel-authentication`
- * can do: only it records a session's proofs. They are skipped, with a message
- * naming the member gap, until the kit gains a hook for such a store, and what
- * the store does guarantee in their place is checked under names of its own: a
- * sign-in's proofs go when `laravel-authentication` signs it out, and a factor
- * MFA has deleted stops counting as soon as it is forgotten, before
- * `laravel-authentication` voids its proofs.
+ * MFA's `ProofStoreTests` kit runs on real sessions, through its hooks for a
+ * store whose proofs and sign-ins the authentication layer alone writes. Each
+ * check's sign-in is signed in through `laravel-authentication` with a
+ * password, and the guard then stops acting on it, so the store holds no
+ * sign-in and no proof of the identity until a check arranges one: the password
+ * first factor the check arranges is the one `laravel-authentication` recorded
+ * on signing the session in, which counts once the guard acts on the session,
+ * as the bearer request after a sign-in does, and which the store then keeps
+ * when the check's proof is recorded through it (it refuses any other); a
+ * further factor is recorded through `laravel-authentication`'s step-up, the
+ * only way it records one on an active session, with a factor MFA holds for the
+ * identity. A sign-in ends when `laravel-authentication` signs the session out,
+ * and its proofs are voided as a reset voids them, through `factorReset()`.
+ *
+ * The kit forgets a factor the identity still holds, which the store reports to
+ * `laravel-authentication` as the factor's removal; a factor MFA has already
+ * deleted, as it does before forgetting one, stops counting at once, before
+ * `laravel-authentication` voids its proofs, and is checked here as well.
  *
  * The lock and rollback cases run at READ COMMITTED and REPEATABLE READ on
  * MySQL and PostgreSQL, and are skipped on SQLite. The members' defaults stay
@@ -93,74 +101,11 @@ final class ProofStoreAdapterTest extends TestCase
     /** @var string A factor the identity never held, which no proof made with it counts. */
     private const string FACTOR = 'factor-never-held';
 
-    /** @var string Why two of the kit's checks cannot run against a store kept in `laravel-authentication`'s sessions. */
-    private const string KIT_GAP = 'laravel-mfa\'s ProofStoreTests has no hook yet for a store whose proofs only the authentication layer records'
-        . ' (a follow-up to laravel-mfa #89, IAM-13.10): the check records a proof through the store and expects it kept as a new one.';
-
     /** @var ?\Tests\Fixtures\Models\Person The identity the kit's checks sign in. */
     private ?Person $person = null;
 
-    /**
-     * The kit's check that a recorded proof is kept as a new one, and goes with
-     * the sign-in when it is forgotten, cannot pass here: the first factor it
-     * records is the one the session already holds, kept without counting
-     * twice, and only `laravel-authentication` ends a sign-in.
-     *
-     * @return void
-     */
-    public function testProofStoreForgetsASignInsProofsWithIt(): void
-    {
-        self::markTestSkipped(self::KIT_GAP . ' What the store guarantees instead: testASignInsProofsGoWhenLaravelAuthenticationSignsItOut.');
-    }
-
-    /**
-     * The kit's check that forgetting a factor stops its proofs counting cannot
-     * pass here: it records a further proof through the store, which only
-     * `laravel-authentication` records.
-     *
-     * @return void
-     */
-    public function testProofStoreStopsCountingAForgottenFactor(): void
-    {
-        self::markTestSkipped(self::KIT_GAP . ' What the store guarantees instead: testAForgottenFactorStopsCountingAtOnce.');
-    }
-
-    /**
-     * The first factor recorded on the sign-in is the one the session already
-     * holds, so it is kept without counting twice; `forget()` leaves the
-     * sign-in as `laravel-authentication` keeps it, and once it signs the
-     * session out the identity has no sign-in and no proofs.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testASignInsProofsGoWhenLaravelAuthenticationSignsItOut(): void
-    {
-        [$store, $person] = [$this->proofStore(), $this->createPerson()];
-
-        $session = $this->signInReference($this->signInAndActOnSession($person));
-
-        $store->begin($person, self::GUARD, $session);
-
-        $held = $store->proofs($person, self::GUARD);
-
-        $store->record(self::firstFactor($person, $session));
-
-        self::assertSame($session, $store->currentSession($person, self::GUARD));
-        self::assertEquals($held, $store->proofs($person, self::GUARD));
-        self::assertSame([ProofKind::FIRST_FACTOR], self::kinds($held));
-
-        $store->forget($person, self::GUARD);
-
-        self::assertSame($session, $store->currentSession($person, self::GUARD));
-        self::assertEquals($held, $store->proofs($person, self::GUARD));
-
-        $this->sessions()->signOut();
-
-        self::assertNull($store->currentSession($person, self::GUARD));
-        self::assertSame([], $store->proofs($person, self::GUARD));
-    }
+    /** @var (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null The session the kit's check signed in. */
+    private (EloquentSession&Model)|null $kitSession = null;
 
     /**
      * A factor MFA has deleted stops counting as soon as it is forgotten, and
@@ -627,9 +572,10 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Forgetting a factor or a sign-in, and beginning one, write nothing: the
-     * session keeps its proofs until `laravel-authentication` voids them, and a
-     * factor the identity still holds keeps counting.
+     * Beginning and forgetting a sign-in write nothing, and forgetting a factor
+     * the identity does not hold only reads its factors: the session keeps its
+     * proofs until `laravel-authentication` voids them, and a factor the
+     * identity still holds keeps counting.
      *
      * @return void
      *
@@ -649,13 +595,79 @@ final class ProofStoreAdapterTest extends TestCase
         DB::enableQueryLog();
 
         $store->begin($person, self::GUARD, 'another-sign-in');
-        $store->forgetFactor($person, $factor);
         $store->forget($person, self::GUARD);
 
-        self::assertSame([], DB::getQueryLog());
+        $quiet = DB::getQueryLog();
+
+        DB::flushQueryLog();
+
+        self::assertSame(1, $this->factorReads(static fn () => $store->forgetFactor($person, self::FACTOR)));
+        self::assertSame([], $quiet);
+        self::assertSame(['select'], array_map(static fn (array $query): string => strtok($query['query'], ' ') ?: '', DB::getQueryLog()));
+
         self::assertSame([null, $factor], self::references($held));
         self::assertEquals($held, $store->proofs($person, self::GUARD));
         self::assertSame($this->signInReference($record), $store->currentSession($person, self::GUARD));
+    }
+
+    /**
+     * Forgetting a factor the identity still holds is reported to
+     * `laravel-authentication` as its removal: the current session's proofs
+     * made with it are voided there, and only those, the session is judged
+     * again and stays active on the factor it still holds, and every other
+     * session of the identity ends; the factor itself is left to MFA.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testForgettingAHeldFactorVoidsItsProofsThroughAuthentication(): void
+    {
+        [$store, $person] = [$this->proofStore(), $this->createPerson()];
+
+        $other  = $this->signIn($person)->record;
+        $record = $this->signInAndActOnSession($person);
+
+        [$forgotten, $kept] = [$this->factorOf($person), $this->factorOf($person)];
+
+        $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $forgotten->id);
+        $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $kept->id);
+
+        self::assertCount(3, $this->proofsOf($record));
+        self::assertNotNull($this->firstFactorOf($other));
+
+        $store->forgetFactor($person, $forgotten->id);
+
+        self::assertCount(2, $this->proofsOf($record));
+        self::assertSame([null, $kept->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertNotNull($this->firstFactorOf($record));
+        self::assertNull($this->firstFactorOf($other));
+        self::assertTrue($forgotten->newQuery()->whereKey($forgotten->getKey())->exists());
+    }
+
+    /**
+     * Forgetting a factor the identity still holds, when the default guard
+     * holds no session of the identity, ends every session it has, so no proof
+     * made with the factor counts anywhere.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testForgettingAHeldFactorWithoutASessionEndsEverySession(): void
+    {
+        [$store, $person] = [$this->proofStore(), $this->createPerson()];
+
+        $record = $this->signIn($person)->record;
+        $factor = $this->factorOf($person);
+
+        $this->stopActing(self::GUARD);
+
+        self::assertNotNull($this->firstFactorOf($record));
+
+        $store->forgetFactor($person, $factor->id);
+
+        self::assertNull($this->firstFactorOf($record));
     }
 
     /**
@@ -819,8 +831,10 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Sign the identity in through `laravel-authentication` for real, act on
-     * the session, and name it as MFA names the sign-in.
+     * Sign the identity in through `laravel-authentication` for real, and name
+     * the session as MFA names the sign-in, with the guard no longer acting on
+     * it, so the store holds no sign-in of the identity until the check
+     * arranges its first factor.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -832,7 +846,83 @@ final class ProofStoreAdapterTest extends TestCase
     {
         self::assertInstanceOf(Person::class, $identity);
 
-        return $this->signInReference($this->signInAndActOnSession($identity, $application), $application);
+        $this->kitSession = $this->signIn($identity, $application)->record;
+
+        $this->stopActing($application);
+
+        return $this->signInReference($this->kitSession, $application);
+    }
+
+    /**
+     * Put the check's proof in the sign-in through `laravel-authentication`.
+     *
+     * A password first factor is the one `laravel-authentication` recorded on
+     * signing the session in, its only first factor: the guard acts on the
+     * session, as the bearer request after a sign-in does, so it counts, and
+     * the check's proof is recorded through the store, which keeps it only as
+     * that session's own first factor. A further factor is recorded through
+     * `laravel-authentication`'s step-up, the one way it records one on an
+     * active session, made with the same factor.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $session
+     * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function arrangeProofStoreProof(ProofStore $store, MultiFactorAuthenticatable $identity, string $application, string $session, Proof $proof): void
+    {
+        $record = $this->kitSession ?? self::fail('The check arranged a proof before signing in.');
+
+        self::assertInstanceOf(Person::class, $identity);
+        self::assertSame($this->signInReference($record, $application), $session);
+
+        if ($proof->kind === ProofKind::FIRST_FACTOR) {
+            $this->actingOnSession($record, $application);
+
+            $store->record($proof);
+
+            return;
+        }
+
+        self::assertSame(ProofKind::ADDITIONAL_FACTOR, $proof->kind);
+        self::assertSame('totp', $proof->method);
+
+        $this->stepUp($identity, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $proof->reference);
+    }
+
+    /**
+     * Sign the identity out through `laravel-authentication`, which revokes the
+     * session and forgets the guard's binding to it.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function endProofStoreSignIn(ProofStore $store, MultiFactorAuthenticatable $identity, string $application): void
+    {
+        self::assertTrue($this->sessions($application)->signOut());
+    }
+
+    /**
+     * Enrol a confirmed factor of MFA's for the identity, and name it as a
+     * proof made with it names it: the store counts such a proof only while the
+     * identity holds the factor.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @return string
+     */
+    protected function proofStoreFactor(MultiFactorAuthenticatable $identity): string
+    {
+        self::assertInstanceOf(Person::class, $identity);
+
+        return ProofStoreAdapter::factorReference($this->factorOf($identity));
     }
 
     /**

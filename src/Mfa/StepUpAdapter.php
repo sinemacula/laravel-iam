@@ -22,27 +22,27 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * name, and the sign-in, which must be that guard's current session, held by
  * the identity the proof names. The proof is translated into the proof result
  * `laravel-authentication` takes, bound to that identity, guard and session for
- * the purpose MFA verified it for, with MFA's evaluation of the proof on its
- * own after the session's first factor (`ProofEvaluator`), never of every proof
- * the session holds, so it is recorded multifactor only when it is the evidence
- * of a multifactor combination. It is handed to `stepUp()`, which locks the
+ * the purpose MFA verified it for, accepted, and multifactor only when MFA says
+ * the proof itself refreshes the multifactor evidence of the session's first
+ * factor (`VerificationResult::$refreshesMultifactor`), never because of
+ * another proof the session holds. It is handed to `stepUp()`, which locks the
  * session's row (after MFA's own locks, as the last write of MFA's
  * transaction), checks the session is still one of the guard's live, active
  * sessions of a person, records the proof and issues the session a new access
  * token. The access token result is MFA's completion, so it reaches the caller
  * as `VerificationResult::$completion`.
  *
- * A failed result, a proof bound to another identity or to another of the
- * identity's sessions, a session whose first factor is not known, a proof MFA
- * does not accept after it, and a proof `laravel-authentication` refuses (one
- * made for another purpose than `step_up`, a sign-in's included, or a session
- * no longer live) are refused with an `OperationRefusedException` carrying
- * `not_accepted`, as MFA's own completion refuses them, so the code's use and
- * the count roll back; `laravel-authentication`'s reason is kept in the
- * exception's detail. An application that names no guard of
- * `laravel-authentication`'s, and a guard holding no session of a person MFA
- * knows, cannot be resolved and throw `UnresolvedReferenceException` (IAM-8.2),
- * inside the same transaction.
+ * MFA hands over only a proof it accepted after the session's first factor, so
+ * nothing here judges the proof again. A failed result, a proof bound to
+ * another identity or to another of the identity's sessions, and a proof
+ * `laravel-authentication` refuses (one made for another purpose than
+ * `step_up`, a sign-in's included, or a session no longer live) are refused
+ * with an `OperationRefusedException` carrying `not_accepted`, as MFA's own
+ * completion refuses them, so the code's use and the count roll back;
+ * `laravel-authentication`'s reason is kept in the exception's detail. An
+ * application that names no guard of `laravel-authentication`'s, and a guard
+ * holding no session of a person MFA knows, cannot be resolved and throw
+ * `UnresolvedReferenceException` (IAM-8.2), inside the same transaction.
  *
  * It holds nothing between calls: the guard and its session are read on every
  * call (IAM-8.1).
@@ -58,20 +58,12 @@ final readonly class StepUpAdapter implements StepUp
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $current
-     * @param  \SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter  $store
-     * @param  \SineMacula\Laravel\Iam\Mfa\ProofEvaluator  $evaluator
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      */
     public function __construct(
 
         /** Resolves the guard, the identity it serves and its current session. */
         private CurrentSession $current,
-
-        /** Reads the session's first factor. */
-        private ProofStoreAdapter $store,
-
-        /** Judges the proof on its own after the session's first factor. */
-        private ProofEvaluator $evaluator,
 
         /** Translates the verified proof into `laravel-authentication`'s proof result. */
         private ProofTranslator $proofs,
@@ -101,9 +93,7 @@ final readonly class StepUpAdapter implements StepUp
             throw self::refused('The proof is not bound to the caller\'s current session.');
         }
 
-        $sessions   = $this->current->sessions($application);
-        $evaluation = $this->evaluator->evaluate($this->store->firstFactorOf($identity, $application, $session), $proof);
-        $token      = $sessions->stepUp($this->proofs->toResult($result, $identity, $evaluation));
+        $token = $this->current->sessions($application)->stepUp($this->proofs->toResult($result, $identity));
 
         return $token->isIssued() ? $token : throw self::refused(sprintf('laravel-authentication refused the step-up: [%s].', $token->reason->value ?? ''));
     }

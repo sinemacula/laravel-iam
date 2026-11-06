@@ -29,8 +29,8 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * IAM-5.2): a proof a session recorded becomes MFA's proof bound to the
  * sign-in, and a proof MFA verified becomes the proof result
  * `laravel-authentication` takes to satisfy a pending session or step one up,
- * with the evaluation of the proof on its own the adapter handing it over
- * gives.
+ * accepted, and multifactor only when MFA says the proof itself supplies or
+ * completes the multifactor evidence of the session's first factor.
  *
  * Both members spell the first four proof kinds, the four purposes, the key
  * protections and the channel kinds the same, and translate one to one.
@@ -98,20 +98,28 @@ final readonly class ProofTranslator
     /**
      * The proof result `laravel-authentication` takes for a verification MFA
      * made: the proof's kind, method, channel, factor, observed properties and
-     * time, the evaluation given (the proof's own, after the session's first
-     * factor, never MFA's evaluation of the whole session, which the result
-     * carries), its own `amr` values, and a binding to the identity given (the
-     * one the proof names), on the proof's application and sign-in, for its
-     * purpose. A result without a proof is refused.
+     * time, its own `amr` values, a binding to the identity given (the one the
+     * proof names), on the proof's application and sign-in, for its purpose,
+     * and its own evaluation.
+     *
+     * `laravel-authentication` keeps the evaluation on the proof's row, and its
+     * freshness reads "multifactor within so many seconds" as the newest proof
+     * flagged multifactor, timed by that proof. So the proof is recorded
+     * accepted (a result exists only for a proof MFA accepted after the
+     * session's first factor), and multifactor exactly when the result's
+     * `refreshesMultifactor` says the freshest evidence that the first factor
+     * and this proof are multifactor is this proof's own: never from MFA's
+     * evaluation of the whole session, which the result carries too and which
+     * would flag a fresh email code multifactor because of an authenticator app
+     * code proved hours before. A result without a proof is refused.
      *
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
-     * @param  \SineMacula\Laravel\Authentication\Proofs\Evaluation  $evaluation
      * @return \SineMacula\Laravel\Authentication\Proofs\ProofResult
      *
      * @throws \InvalidArgumentException
      */
-    public function toResult(VerificationResult $result, Identity $identity, AuthenticationEvaluation $evaluation): ProofResult
+    public function toResult(VerificationResult $result, Identity $identity): ProofResult
     {
         $proof = $result->proof ?? throw self::unverified();
 
@@ -123,7 +131,7 @@ final readonly class ProofTranslator
             $proof->channel === null ? new AuthenticationChannel(AuthenticationChannelKind::UNKNOWN) : $this->channels->toAuthentication($proof->channel),
             $proof->reference,
             $this->toAuthenticationProperties($proof->properties),
-            $evaluation,
+            new AuthenticationEvaluation(true, $result->refreshesMultifactor),
             array_values(array_filter($result->amr, static fn (string $value): bool => $value !== self::MULTIFACTOR_AMR)),
             $proof->provedAt,
             $binding,

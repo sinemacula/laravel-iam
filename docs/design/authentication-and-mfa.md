@@ -78,20 +78,19 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
     `backupEligible` and `phishingResistant` are MFA's `backupEligibility` and `phishingResistance`. A further factor's
     `factor` is MFA's `reference`. Channels cross as MFA's array form (`kind`, `reference`).
   - A verified result crosses as `laravel-authentication`'s proof result bound to the proof's identity, application,
-    sign-in and purpose, with its `amr` without `mfa`, and with the evaluation of the proof on its own the adapter
-    handing it over gives (`Mfa\ProofEvaluator`), never MFA's evaluation of the whole session the result carries.
-- The evaluation a further proof is recorded with (`Mfa\ProofEvaluator`, IAM-3.2, IAM-3.5):
-  `laravel-authentication` keeps it on the proof's own row, and its freshness reads "multifactor within so many seconds"
-  as the newest proof flagged multifactor, timed by that proof. So the flag says whether this proof is the evidence of
-  a multifactor combination with the session's first factor, never whether the session holds one: MFA's
-  `VerificationResult::$evaluation` judges every proof of the session together, and would flag a fresh email code
-  multifactor because of an authenticator app code proved hours before. MFA's requirement check judges the first
-  factor and the proof alone, asking for multifactor authentication within a day
-  (`FreshnessRequirement::MAX_AGE_SECONDS`) as if the proof had been made now and the first factor a second longer ago
-  than that, so the part is met only on the proof's own evidence: a passkey sign-in that verified the person followed
-  by an email code leaves the code unflagged. The first factor is the pending context's for a pending session and
-  `ProofStoreAdapter::firstFactorOf()` for an active one; a session whose first factor is not known, and a proof the
-  combination policy does not accept after it, are refused as `not_accepted`.
+    sign-in and purpose, made at the proof's `provedAt`, with its `amr` without `mfa`, and with the proof's own
+    evaluation (`ProofTranslator::toResult()`), never MFA's evaluation of the whole session the result carries.
+- The evaluation a further proof is recorded with (IAM-3.2, IAM-3.5): `laravel-authentication` keeps it on the proof's
+  own row, and its freshness reads "multifactor within so many seconds" as the newest proof flagged multifactor, timed
+  by that proof. So the proof is recorded accepted, as MFA hands over only a proof it accepted after the session's first
+  factor, and multifactor exactly when `VerificationResult::$refreshesMultifactor` says so: when the freshest evidence
+  that the first factor and this proof are multifactor, as MFA's requirement check judges the two alone
+  (`Evaluation::$multifactorAt`), is this proof's own. Never MFA's `VerificationResult::$evaluation`, which judges every
+  proof of the session together and would flag a fresh email code multifactor because of an authenticator app code
+  proved hours before. A password followed by a fresh authenticator app code is flagged; a passkey sign-in that
+  verified the person followed by an email code is not, while one followed by a fresh passkey is; an older further
+  proof the session holds never counts; and a combination policy that does not date its multifactor evidence leaves
+  every proof unflagged.
   - `laravel-authentication`'s `REPLACE` change, its `OTHER` change made and its `list_principals` and
     `choose_principal` pending actions have no MFA counterpart: the first two never reach MFA, and the actions are
     left out of a pending context.
@@ -119,12 +118,12 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
     other than `GET` and `HEAD`, never the query string) and answers `Auth::sessions()->pending()` on the default guard
     as MFA's pending context. No field is no pending session; a field that names no live pending session is refused.
   - `PendingCompletionAdapter` (IAM-3.3) calls `satisfy()` with the request's credential and the proof's own
-    evaluation after the pending context's first factor as the last write of MFA's transaction, only inside a
-    transaction on the storage connection, and returns the `SignInResult` as MFA's completion. `satisfy()` binds the
-    guard only once that transaction commits, so a result never reaches a response when MFA's commit fails.
-  - `StepUpAdapter` (IAM-3.4) checks the proof names the guard's identity and current session, reads the session's
-    first factor (locking its row, after MFA's locks), and calls `stepUp()` with the proof's own evaluation after it;
-    the `AccessTokenResult` is MFA's completion.
+    evaluation as the last write of MFA's transaction, only inside a transaction on the storage connection, and returns
+    the `SignInResult` as MFA's completion. `satisfy()` binds the guard only once that transaction commits, so a result
+    never reaches a response when MFA's commit fails.
+  - `StepUpAdapter` (IAM-3.4) checks the proof names the guard's identity and current session and calls `stepUp()`
+    with the proof's own evaluation, which locks the session's row after MFA's locks; the `AccessTokenResult` is MFA's
+    completion.
   - `ReauthenticatorAdapter` (IAM-3.5) checks the session is live through `firstFactor()` (locking its row inside a
     transaction) and answers the newest reauthentication `FreshnessPolicy::freshProof()` finds for
     `first_additional_factor` within MFA's five minutes; a session no longer live answers none.
@@ -161,15 +160,20 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
     resolves, never MFA's `outstanding`.
   - `ProofStoreAdapter` and `FirstFactorResolverAdapter` (IAM-3.11) are `laravel-authentication`'s session proofs,
     read through `Auth::sessions()->proofs()` and `firstFactor()`. `currentSession()` is the guard's current session,
-    `proofs()` its counting proofs oldest first, and the first-factor resolver its first factor. `begin()`, `forget()`
-    and `forgetFactor()` write nothing. `record()` checks, in a transaction on the storage connection, that the proof is
+    `proofs()` its counting proofs oldest first, and the first-factor resolver its first factor. `begin()` and
+    `forget()` write nothing. `record()` checks, in a transaction on the storage connection, that the proof is
     bound to the identity's current sign-in and that the session is live (`firstFactor() !== null`), and keeps only the
     sign-in's own first factor, which the session already holds; anything else throws MFA's `ProofRefusedException`.
     `laravel-authentication` is the only writer of a session's proofs. A proof that names a factor counts only while
     the identity still holds that factor in MFA's factor table, read on the write connection and only when a proof
     names one: MFA deletes a factor before it calls `forgetFactor()`, so the factor's proofs stop counting at once,
     inside MFA's own transaction, before the revoker's `factorRemoved()` voids them, and the proofs MFA reads back
-    between the two already leave them out. Nothing is kept, so a removal that rolls back counts them again.
+    between the two already leave them out. Nothing is kept, so a removal that rolls back counts them again. A factor
+    the identity still holds when `forgetFactor()` is called (MFA never forgets a factor it has not deleted, but the
+    contract allows it) is reported to `factorRemoved()` on the default guard's current session, or with no session
+    when that guard holds none of the identity's, so its proofs stop counting all the same. A deleted factor is not
+    reported there: the revoker reports it, and a second report would judge the current session twice and lose the
+    pending credential the first judgement issued.
 - Refusals are thrown, never answered (IAM-8.2): MFA's `OperationRefusedException` where MFA's contract asks for it
   (`not_accepted` for the step-up and the pending completion, `not_fresh` for the factor-change gate, with
   `laravel-authentication`'s reason kept in the detail), MFA's `ProofRefusedException` from `record()`, an
@@ -238,13 +242,15 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
 - `VerificationGeneration::advance()` on its own no longer voids anything: the proofs are stamped with the current
   generation when read. Voiding goes through `laravel-authentication` (`factorReset()`, `factorRemoved()`, a
   revocation).
-- Two checks of MFA's `ProofStoreTests` kit cannot pass against `laravel-authentication`, which has no public write
-  path for a first factor or a `sign_in` additional factor on an active session: both record a proof through the
-  store and expect it kept as a new one. `ProofStoreAdapterTest` marks them skipped, with a message naming the gap (a
-  follow-up to laravel-mfa #89, IAM-13.10: a kit hook for a store whose proofs only the authentication layer
-  records), so the gap shows in every run, and checks what the store guarantees in their place under names of its
-  own (`testASignInsProofsGoWhenLaravelAuthenticationSignsItOut`, `testAForgottenFactorStopsCountingAtOnce`). The
-  other two run unchanged.
+- MFA's `ProofStoreTests` kit runs through its hooks for a store whose proofs and sign-ins the authentication layer
+  alone writes. `laravel-authentication` records a session's first factor only when it signs the session in, so each
+  check's sign-in is signed in through it with the guard no longer acting on it: the store holds no sign-in of the
+  identity until the check arranges its password first factor, which the guard then acts on, as the bearer request
+  after a sign-in does, and which the store keeps when the check's proof is recorded through it. A further factor is
+  recorded through `stepUp()`, with a factor enrolled in MFA's factor table; a sign-in ends through `signOut()`, and a
+  void is `factorReset()`. Every check runs, none skipped: the factor check forgets a factor the identity still
+  holds, which the store reports to `factorRemoved()`, and `ProofStoreAdapterTest` checks MFA's own order as well (a
+  deleted factor stops counting as soon as it is forgotten, `testAForgottenFactorStopsCountingAtOnce`).
 - A proof made with a factor the identity never held, or no longer holds, does not count, whatever
   `laravel-authentication` recorded: an application that hands `laravel-authentication` a step-up itself must name one
   of MFA's factors in it.
@@ -253,7 +259,8 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   which `proofs()` would leave out. An application's tests use `Testing\Concerns\InteractsWithIam`
   `actingOnVerifiedSession($session, $level)` instead, which acts on a signed-in session, enrols a confirmed fixture
   factor for its identity (an email factor for AAL1, an authenticator app for AAL2, a passkey for AAL3), steps the
-  session up with a proof made with it through the step-up adapter, so `laravel-authentication` records it, and throws
+  session up with a proof made with it through the step-up adapter, so `laravel-authentication` records it (flagged
+  multifactor as MFA's own acceptance would flag it, from the session's first factor and the proof alone), and throws
   a `LogicException` unless MFA's route gate would read the session at exactly that level. The further proof is made
   now, so a freshness test verifies the session and then moves the clock on. The refusal `actingAsVerified()` meets
   names the helper. Closing the gap is a member change still needed in `laravel-mfa`: a hook in `VerifiedSignIn` for a
@@ -342,8 +349,8 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
 - `src/Mfa/AdditionalFactorPolicyAdapter.php`, `RequirementCheckAdapter.php`, `PendingSessionResolverAdapter.php`
   (`credential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
   `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
-  `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`,
-  `firstFactorOf()`, `held()`), `FirstFactorResolverAdapter.php`, `ProofEvaluator.php` (`evaluate()`).
+  `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`, `held()`),
+  `FirstFactorResolverAdapter.php`.
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
   (`verify()`).
 - `src/Exceptions/UnresolvedReferenceException.php` (`forGuard()`, `forSession()`, `forIdentity()`, `forMfaIdentity()`),
@@ -365,7 +372,7 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
 - The adapter tests in `tests/Integration/Mfa`, each over MFA's contract kit where one exists
   (`PendingSessionResolverTests`, `PendingCompletionTests`, `StepUpTests`, `ReauthenticatorTests`,
   `FreshnessGateTests`, `FactorChangeGateTests`, `SessionRevokerTests`, `SessionTransitionTests`, `ProofStoreTests`,
-  `FirstFactorResolverTests`; two `ProofStoreTests` checks are skipped, see above), with their own cases on MySQL and
+  `FirstFactorResolverTests`, every check run), with their own cases on MySQL and
   PostgreSQL at READ COMMITTED and REPEATABLE READ:
   - lock order: `StepUpAdapterTest` and `ReauthenticatorAdapterTest` (`testTheSessionRowIsTheOnlyLockItTakes`),
     `FreshnessGateAdapterTest` (`testInsideMfasTransactionItLocksTheSessionRowLast`),
@@ -406,7 +413,9 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   `testTheRemovedFactorStopsCountingInsideMfasTransaction`: a removal through MFA with every adapter bound reports a
   requirement outstanding exactly when `laravel-authentication` returned the session to pending
 - `tests/Integration/Mfa/ProofStoreAdapterTest.php` `testAForgottenFactorStopsCountingAtOnce`,
-  `testAFirstFactorMadeWithAFactorNoLongerHeldIsNone`, `testTheFactorsAreReadOnlyWhenAProofNamesOne`;
+  `testAFirstFactorMadeWithAFactorNoLongerHeldIsNone`, `testTheFactorsAreReadOnlyWhenAProofNamesOne`,
+  `testForgettingAHeldFactorVoidsItsProofsThroughAuthentication`,
+  `testForgettingAHeldFactorWithoutASessionEndsEverySession`;
   `SessionRevokerAdapterTest.php` `testAResetMadeWhereTheDefaultGuardHoldsNoSessionsEndsEverySession`,
   `testAResetGoesThroughTheDefaultGuardWhenItHoldsSessions`, `testAResetWithNoSessionGuardDeclaredIsUnresolved`
 - `tests/Integration/Mfa/FactorChangeLockOrderTest.php` `testAStepUpWaitingOnARemovalResumesAgainstIt`,
@@ -422,11 +431,14 @@ the `mfa` context contributor come later (M3, M10) and are not described here.
   `QueryException` made directly, a `DeadlockException` inside the caller's transaction, both recognised as
   concurrency failures, and retried by `Iam::transaction()` against the removal); `FactorChangeGateAdapterTest`
   `testAChangeIsJudgedOnLaravelAuthenticationsVerdictAlone` (one read of the session's proofs, the verdict's)
-- `tests/Unit/Mfa/ProofEvaluatorTest.php` `testAFreshEmailCodeAfterAnOldAuthenticatorAppCodeIsNotMultifactor`,
-  `testTheProofIsMultifactorOnlyOnItsOwnEvidence`; `tests/Integration/Mfa/MultifactorEvidenceTest.php`
-  `testAFreshWeakerProofNeverRefreshesAnOldMultifactorOne` (a fresh email code after an old authenticator app code is
-  not fresh multifactor authentication, before or after the authenticator app is removed, as MFA's own check judges);
-  `PendingCompletionAdapterTest` `testEachProofIsRecordedWithItsOwnEvaluation`
+- `tests/Unit/Mfa/Translation/ProofTranslatorTest.php` `testTheProofIsMultifactorOnlyWhenItRefreshesTheEvidence`;
+  `tests/Integration/Mfa/StepUpAdapterTest.php` `testTheProofIsRecordedMultifactorOnlyWhenItRefreshesTheEvidence`
+  (accepted, at the proof's time, multifactor exactly as `refreshesMultifactor` says, whatever the whole session's
+  evaluation says);
+  `tests/Integration/Mfa/MultifactorEvidenceTest.php` `testAFreshWeakerProofNeverRefreshesAnOldMultifactorOne` (a
+  fresh email code after an old authenticator app code is not fresh multifactor authentication, before or after the
+  authenticator app is removed, as MFA's own check judges); `PendingCompletionAdapterTest`
+  `testEachProofIsRecordedWithItsOwnEvaluation`
 - `tests/Integration/Mfa/StatelessVerificationTest.php` `testAVerificationCountsOnTheNextRequestWithTheSameToken`
 - `tests/Performance/Mfa/RequirementQueryBudgetTest.php`; `benchmarks/Mfa/RequirementCheckBench.php`
 - `tests/Feature/Testing/InteractsWithIamTest.php` `testMfasActingAsVerifiedIsRefusedByThisPackagesStore`,
@@ -438,8 +450,7 @@ Update this note when:
 
 - a member renames, adds or removes one of the seams in the table, or changes a default's class or binding style;
 - `laravel-authentication` gains a public write path for a session's proofs, or a single-factor void (the proof store
-  could then record and forget, and its kit could run unchanged), or `laravel-mfa`'s `ProofStoreTests` gains a hook
-  for a store whose proofs only the authentication layer records (the two skipped checks then run);
+  could then record and forget, and its kit could run without its hooks);
 - MFA stops deleting a factor before it calls `forgetFactor()`, or changes what a proof's reference names;
 - `laravel-mfa`'s `VerifiedSignIn` gains a hook for a store whose proofs only the authentication layer records, or
   changes the evidence it records for a level (`actingOnVerifiedSession()` records the same evidence);
@@ -455,4 +466,5 @@ Update this note when:
   current read locks or in what order, or its freshness starts to read a first factor's evaluation;
 - MFA asks the freshness gate or the reauthenticator inside a transaction where it does not act on the answer, or acts
   on it atomically outside one (the read mode `CurrentSession::isInTransaction()` decides would then be wrong);
-- MFA's `VerificationResult` gains an evaluation of the new proof on its own, which `ProofEvaluator` would then take.
+- MFA changes what `VerificationResult::$refreshesMultifactor` or `Evaluation::$multifactorAt` says, or starts handing
+  over a proof it has not accepted after the session's first factor.

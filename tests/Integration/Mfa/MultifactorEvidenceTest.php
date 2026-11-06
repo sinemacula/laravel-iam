@@ -9,7 +9,6 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
-use SineMacula\Laravel\Iam\Mfa\ProofEvaluator;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
@@ -32,10 +31,10 @@ use Tests\TestCase;
  * Verifies further factors through MFA with every adapter between the two
  * members bound by this package's binding rule, as an application gets them,
  * and holds `laravel-authentication`'s freshness to MFA's own requirement check
- * (IAM-3.2, IAM-3.4, IAM-3.5): a step-up is recorded multifactor only when it
- * is itself the evidence of a multifactor combination, so a fresh weaker proof
- * never refreshes an old stronger one, and a removed factor's proofs stop
- * counting.
+ * (IAM-3.2, IAM-3.4, IAM-3.5): a step-up is recorded multifactor only when MFA
+ * says it refreshes the multifactor evidence of the session's first factor
+ * (`VerificationResult::$refreshesMultifactor`), so a fresh weaker proof never
+ * refreshes an old stronger one, and a removed factor's proofs stop counting.
  *
  * The person signs in with a password and steps up with an authenticator app
  * code a minute later; three hours on, they step up with an email code, which
@@ -49,7 +48,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(StepUpAdapter::class)]
-#[CoversClass(ProofEvaluator::class)]
 #[CoversClass(FreshnessGateAdapter::class)]
 final class MultifactorEvidenceTest extends TestCase
 {
@@ -86,7 +84,11 @@ final class MultifactorEvidenceTest extends TestCase
 
         $this->travel(1)->minutes();
 
-        self::assertTrue(Mfa::verify(Submission::factor($app->id, AuthenticatorApp::code($app)), Purpose::STEP_UP)->isVerified());
+        $totp = Mfa::verify(Submission::factor($app->id, AuthenticatorApp::code($app)), Purpose::STEP_UP);
+
+        self::assertTrue($totp->isVerified());
+        self::assertTrue($totp->refreshesMultifactor);
+        self::assertTrue($this->proofsOf($session)[0]->evaluation?->multifactor);
         self::assertTrue($this->isFreshMultifactor());
 
         $this->travel(3)->hours();
