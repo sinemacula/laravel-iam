@@ -17,8 +17,10 @@ use SineMacula\Laravel\Mfa\Codes\CodeMessage as MfaCodeMessage;
  * is drawn, so a gateway that throws, or one that is neither bound nor named (a
  * `DeliveryNotConfiguredException`), rolls the code back: MFA scrubs the
  * failure of the code and the destination and rethrows it as its
- * `CodeDeliveryFailedException`. It takes no lock and issues no statement. Each
- * sender is bound only while its channel's gateway is named or bound, and holds
+ * `CodeDeliveryFailedException`, and retries nothing. A return means the
+ * gateway accepted the message for delivery, not that it was received, and MFA
+ * reports the code sent. It takes no lock and issues no statement. Each sender
+ * is bound only while its channel's gateway is named or bound, and holds
  * nothing between calls (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>

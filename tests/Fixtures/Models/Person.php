@@ -17,7 +17,6 @@ use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Models\Session;
-use SineMacula\Laravel\Iam\Concerns\MfaActiveFromAuthentication;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 
@@ -31,7 +30,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * application's identity models, and signs in with its email address and
  * password. It is active until a test clears its `is_active` flag, which
  * `laravel-authentication` reads as its active state, and MFA reads the same
- * through `MfaActiveFromAuthentication`; its phone number, when it has one, is
+ * through this package's active state adapter, while its own `isMfaActive()`
+ * keeps the answer of MFA's `HasFactors`; its phone number, when it has one, is
  * kept in its normal form; and each identifier is verified once its
  * `<type>_verified_at` column is set, so a verified one can sign in by code.
  *
@@ -51,9 +51,7 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  */
 final class Person extends User implements CanBeActive, HasSessions, HasVerifiableIdentifiers, Identity, MultiFactorAuthenticatable, Principal
 {
-    use ActsAsPrincipal, Authenticatable, HasFactors, MfaActiveFromAuthentication, ProvidesActiveState, ProvidesIdentifierVerification {
-        MfaActiveFromAuthentication::isMfaActive insteadof HasFactors;
-    }
+    use ActsAsPrincipal, Authenticatable, HasFactors, ProvidesActiveState, ProvidesIdentifierVerification;
 
     /** @var ?string The table people are kept in. */
     protected $table = 'iam_people';

@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Events\Enums\FailureReason as AuthenticationFailureReason;
@@ -43,9 +44,12 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * and `laravel-authentication`'s `PasskeyUsed` event names no client.
  *
  * `laravel-authentication` concedes nothing on the way and counts nothing: MFA
- * counts every failure. Its reasons cross as MFA's: a challenge that is no
- * longer live (unknown, used or expired, which it does not tell apart) is
- * `expired`, and every other failure, a counter that went backwards included,
+ * counts every failure. Its reasons cross as MFA's: the ceremony's own
+ * challenge submitted to before (`passkey_challenge_used`) is `replayed`; its
+ * own challenge expired (`passkey_challenge_expired`) is `expired`, as is a
+ * challenge that is malformed, unknown or another binding's
+ * (`passkey_challenge_invalid`), which answers no live ceremony of the
+ * binding's; and every other failure, a counter that went backwards included,
  * is `invalid_code`. An empty allowlist, a response without a challenge or a
  * credential, and an assertion made by a credential the allowlist does not name
  * never verify. A request that would allow none of the identity's passkeys is
@@ -53,16 +57,26 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * would otherwise offer any credential it holds; so is a binding that names
  * another identity.
  *
- * `laravel-authentication` keeps no public read of an identity's credential ids
- * (its passkey summaries leave them out), so the identity's registered passkeys
- * are listed as MFA's own passkey factors' credentials. They match the passkeys
- * `laravel-authentication` holds while its passkey factor gate is this
- * package's, which is mandatory and bound while MFA's capability switch is on:
- * the factor is made and removed in the same transaction as the passkey. A
- * factor whose passkey went any other way still cannot be asserted: no ceremony
- * is started for it. Passkeys are available whenever this adapter is bound,
- * which is only while an MFA application offers them; a guard with no valid
- * relying party fails closed when its ceremony runs.
+ * The identity's registered passkeys are the ones `laravel-authentication`
+ * holds for it (`PasskeyService::credentialIds()`), on the relying party of
+ * each of its guards of the `jwt` driver whose MFA application offers the
+ * `passkey` type (`mfa.applications.<guard>.types`), in the order the guards
+ * are declared, each relying party's oldest first, each id listed once. These
+ * are the only guards whose passkeys can back a passkey factor MFA asks about:
+ * a ceremony runs on the binding's application's guard alone, and MFA refuses a
+ * factor of a type its application does not enable before it asks for the
+ * listing. MFA names no application when it asks, so every such guard's are
+ * listed: MFA only asks whether a passkey factor's credential is still
+ * registered, and a ceremony is always narrowed to the binding's guard's
+ * relying party, so a passkey of another relying party's is never offered or
+ * verified there. A guard that does not offer passkeys is never asked, so one
+ * with no relying party, as `laravel-authentication` allows a guard that uses
+ * no passkeys, leaves the listing working. A sign-in passkey that is no factor
+ * of MFA's is listed too, and never asserted: MFA asserts only a passkey factor
+ * it holds an association for. A guard that offers passkeys with no valid
+ * relying party fails closed, as its ceremony does: the listing throws.
+ * Passkeys are available whenever this adapter is bound, which is only while an
+ * MFA application offers them.
  *
  * An application that names no `jwt` guard of `laravel-authentication`'s, and
  * an identity it does not sign in, cannot be resolved and throw
@@ -86,6 +100,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Auth\Factory  $auth
+     * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      */
@@ -93,6 +108,9 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
 
         /** Resolves `laravel-authentication`'s passkey service for a guard. */
         private AuthFactory $auth,
+
+        /** Holds the MFA applications and the factor types each offers. */
+        private Repository $config,
 
         /** Resolves the guard an application names and the identity MFA asks about. */
         private CurrentSession $sessions,
@@ -114,29 +132,35 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * The credential ids of the identity's registered passkeys, read as its
-     * passkey factors' credentials.
+     * The credential ids of the identity's registered passkeys, as
+     * `laravel-authentication` holds them on the relying party of each of its
+     * guards of the `jwt` driver whose MFA application offers passkeys, each
+     * listed once.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return list<string>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
     public function credentialIds(MultiFactorAuthenticatable $identity): array
     {
+        $owner       = $this->sessions->identity($identity);
         $credentials = [];
 
-        foreach ($identity->authFactors()->get() as $factor) {
+        foreach ($this->sessions->sessionGuards() as $guard) {
 
-            $credential = $factor->getType() === PasskeySeams::TYPE ? $factor->getCredentialReference() : null;
-
-            if ($credential === null || in_array($credential, $credentials, true)) {
+            if (!PasskeySeams::isOfferedBy($this->config, $guard)) {
                 continue;
             }
 
-            $credentials[] = $credential;
+            $credentials = [...$credentials, ...$this->passkeys($guard)->credentialIds($owner)];
         }
 
-        return $credentials;
+        return array_values(array_unique($credentials));
     }
 
     /**

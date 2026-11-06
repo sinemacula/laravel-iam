@@ -433,6 +433,34 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
+     * The session guards are the guards declared with the `jwt` driver, in the
+     * order they are declared, by their names, passing over guards of other
+     * drivers and entries that are no guard; with no guards declared there are
+     * none.
+     *
+     * @return void
+     */
+    public function testTheSessionGuardsAreTheJwtGuardsInTheOrderDeclared(): void
+    {
+        $guards = $this->guards();
+
+        $this->declareGuards([
+            'web'       => $guards['web'],
+            'admin'     => $this->sessionGuard(),
+            'broken'    => 'not a guard',
+            'keys'      => ['driver' => 'api_key', 'provider' => 'people'],
+            self::GUARD => $guards[self::GUARD],
+            '7'         => $this->sessionGuard(),
+        ]);
+
+        self::assertSame(['admin', self::GUARD, '7'], $this->currentSession()->sessionGuards());
+
+        config()->set('auth.guards', 'not guards');
+
+        self::assertSame([], $this->currentSession()->sessionGuards());
+    }
+
+    /**
      * A `jwt` guard declared under a number, which the configuration keeps as
      * an integer key, is named by its text.
      *

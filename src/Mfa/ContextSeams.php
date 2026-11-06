@@ -8,7 +8,9 @@ use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Mfa\Context\DefaultEventContextResolver;
+use SineMacula\Laravel\Mfa\Context\IdentityContractActiveState;
 use SineMacula\Laravel\Mfa\Context\IdentityContractSubjectType;
+use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\ApplicationResolver;
 use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
@@ -17,9 +19,10 @@ use SineMacula\Laravel\Mfa\Requirements\NoActiveTenant;
 
 /**
  * The seams MFA reads its context through, answered by `laravel-authentication`
- * (IAM-3.12): the event context and the application from the caller, the active
- * tenant from the validated session's tenant, never a request or an event, and
- * the subject type from the machine identity contract.
+ * (IAM-3.12): the event context from the caller, the application from the guard
+ * MFA names it through, the active tenant from the validated session's tenant,
+ * never a request or an event, the subject type from the machine identity
+ * contract, and the active state from its own (`CanBeActive`).
  *
  * Each binds while MFA's capability switch (`iam.adapters.mfa`) is on, and
  * replaces the member's own default only (IAM-8.4). MFA binds no application
@@ -50,6 +53,7 @@ final readonly class ContextSeams implements ProvidesSeams
             new SeamBinding(EventContextResolver::class, EventContextResolverAdapter::class, [DefaultEventContextResolver::class], appliesWhen: $on),
             new SeamBinding(ActiveTenantResolver::class, ActiveTenantResolverAdapter::class, [NoActiveTenant::class], appliesWhen: $on),
             new SeamBinding(SubjectTypeResolver::class, SubjectTypeResolverAdapter::class, [IdentityContractSubjectType::class], appliesWhen: $on),
+            new SeamBinding(ActiveStateResolver::class, ActiveStateResolverAdapter::class, [IdentityContractActiveState::class], appliesWhen: $on),
             new SeamBinding(ApplicationResolver::class, ApplicationResolverAdapter::class, [], appliesWhen: $on),
         ];
     }

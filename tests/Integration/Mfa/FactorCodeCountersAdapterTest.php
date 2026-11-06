@@ -33,6 +33,7 @@ use SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
+use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
@@ -131,9 +132,26 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
+     * A wrong code that locks nothing is invalid and counted, and carries no
+     * lock.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAWrongCodeThatLocksNothingCarriesNoLock(): void
+    {
+        $check = $this->checkWrongly();
+
+        self::assertSame(FactorCodeOutcome::INVALID, $check->outcome);
+        self::assertNull($check->lockedUntil);
+        self::assertSame(1, $this->failures());
+    }
+
+    /**
      * A wrong code that reaches the factor's limit is invalid and counted, and
-     * the factor is locked from then on: the next code is refused as locked,
-     * until the lock ends.
+     * carries the lock it caused, until the lock ends: the factor is locked
+     * from then on, so the next code is refused as locked until then.
      *
      * @return void
      *
@@ -143,14 +161,45 @@ final class FactorCodeCountersAdapterTest extends TestCase
     {
         config()->set('mfa.attempts.factor_limit', 1);
 
-        self::assertSame(FactorCodeOutcome::INVALID, $this->checkWrongly()->outcome);
+        $check = $this->checkWrongly();
+
+        self::assertSame(FactorCodeOutcome::INVALID, $check->outcome);
+        self::assertNotNull($check->lockedUntil);
+        self::assertTrue($check->lockedUntil->isFuture());
         self::assertSame(1, $this->failures());
 
         $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
 
         self::assertSame(CodeRequestStatus::LOCKED, $request->status);
         self::assertNotNull($request->lockedUntil);
-        self::assertTrue($request->lockedUntil->isFuture());
+        self::assertTrue($check->lockedUntil->equalTo($request->lockedUntil));
+    }
+
+    /**
+     * A wrong code that reaches the identity's limit, though not the factor's,
+     * is invalid and counted, and carries the identity's lock it caused, until
+     * that ends: the next code is refused as locked until then.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAWrongCodeThatReachesTheIdentitysLimitCarriesItsLock(): void
+    {
+        config()->set('mfa.attempts.identity_limit', 1);
+
+        $check = $this->checkWrongly();
+
+        self::assertSame(FactorCodeOutcome::INVALID, $check->outcome);
+        self::assertNotNull($check->lockedUntil);
+        self::assertTrue($check->lockedUntil->isFuture());
+        self::assertNull(FactorModel::query()->whereKey($this->countedFactor()->getKey())->sole()->getLockedUntil());
+
+        $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
+
+        self::assertSame(CodeRequestStatus::LOCKED, $request->status);
+        self::assertNotNull($request->lockedUntil);
+        self::assertTrue($check->lockedUntil->equalTo($request->lockedUntil));
     }
 
     /**
@@ -175,9 +224,9 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
     /**
      * An identity `laravel-authentication` has deactivated is inactive to MFA
-     * too, through `MfaActiveFromAuthentication`: once deactivated, no code is
-     * sent for its factor and the code it was sent before is never checked,
-     * each refused as `identity_inactive`, though no request's bearer token is
+     * too, through the active state adapter: once deactivated, no code is sent
+     * for its factor and the code it was sent before is never checked, each
+     * refused as `identity_inactive`, though no request's bearer token is
      * refused first, as a queued job's or a console's call to the factor codes
      * runs, at either isolation level.
      *
@@ -202,7 +251,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
         $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
         $check   = $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code, self::client());
 
-        self::assertFalse($person->isMfaActive());
+        self::assertFalse($this->app?->make(ActiveStateResolver::class)->isActive($person));
         self::assertSame(CodeRequestStatus::REFUSED, $request->status);
         self::assertSame(FactorCodeRefusal::IDENTITY_INACTIVE, $request->refusal);
         self::assertSame(FactorCodeOutcome::REFUSED, $check->outcome);

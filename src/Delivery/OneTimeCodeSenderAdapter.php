@@ -21,9 +21,11 @@ use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
  * code of MFA's is for, nor whether it is a sign-in's or a step-up's.
  *
  * `laravel-authentication` calls it from its own queued delivery job, once the
- * code has committed, so a gateway that throws fails the job, which the queue
- * retries under its policy, checking first that the code is still current; it
- * never rolls the code back. It holds nothing between calls (IAM-8.1).
+ * code has committed, so a gateway that throws fails the job and never rolls
+ * the code back: retrying it is the application's queue's, under the queue's
+ * retry policy, and the job checks first that the code is still current. A
+ * return means the gateway accepted the message for delivery, not that it was
+ * received. It holds nothing between calls (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

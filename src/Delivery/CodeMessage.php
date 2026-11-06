@@ -41,9 +41,9 @@ use SineMacula\Laravel\Mfa\Factors\FactorSummary;
  * MFA's log redaction logs an object, by its public properties, the code
  * redacted under its key, and neither the destination nor the recipient, which
  * are not public, appear; it is not `\JsonSerializable`, so the redaction never
- * asks it for a JSON form it would refuse and so fail the log. The factor's
- * summary masks its destination, but its label is the person's own text and is
- * shown as it is.
+ * asks it for a JSON form it would refuse, which would leave only its class in
+ * the log (`[unserializable]`). The factor's summary masks its destination, but
+ * its label is the person's own text and is shown as it is.
  *
  * @api
  *

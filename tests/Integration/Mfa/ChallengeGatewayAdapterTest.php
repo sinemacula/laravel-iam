@@ -39,6 +39,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\LockoutApplied;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Models\Enrollment;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ChallengeGatewayTests;
@@ -75,6 +76,12 @@ use Tests\TestCase;
 final class ChallengeGatewayAdapterTest extends TestCase
 {
     use ArrangesDeliveredFactors, BindsStrayRequests, ChallengeGatewayTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+
+    /** @var string A challenge id in the form `laravel-authentication` issues, naming no challenge. */
+    private const string UNKNOWN_CHALLENGE = '00000000-0000-4000-8000-000000000000';
+
+    /** @var string A challenge id that is not in the form `laravel-authentication` issues. */
+    private const string MALFORMED_CHALLENGE = 'not-a-challenge';
 
     /** @var string A number no factor of the kit's person's sends to. */
     private const string OTHER_PHONE = '+447700900999';
@@ -451,14 +458,14 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
     /**
      * A used code never answers its challenge again: it is refused as replayed,
-     * and is counted against nothing, as `laravel-authentication` reports no
+     * and counted against nothing, as `laravel-authentication` reports no
      * attempt at a used challenge.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAUsedCodeNeverAnswersAgain(): void
+    public function testAUsedCodeIsRefusedAsReplayed(): void
     {
         $challenge = $this->sentChallenge();
         $code      = $this->deliveredCode($challenge);
@@ -468,24 +475,205 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $again = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
 
         self::assertSame(FailureReason::REPLAYED, $again->reason);
-        self::assertFalse($again->hasPassed());
+        self::assertSame(CodeTranslator::REPLAYED, $again->detail);
+        self::assertFalse($again->counted);
         self::assertSame(0, $this->failures());
     }
 
     /**
-     * A challenge that is not the binding's never passes: it is refused as not
-     * found, and is counted against nothing.
+     * Any well-formed code at a used challenge is refused as replayed, not only
+     * the code that used it: `laravel-authentication` answers a used challenge
+     * alike whatever the well-formed code, and counts nothing.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAnUnknownChallengeNeverPasses(): void
+    public function testAnotherCodeAtAUsedChallengeIsRefusedAsReplayed(): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code)->hasPassed());
+
+        $again = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, self::wrong($code));
+
+        self::assertSame(FailureReason::REPLAYED, $again->reason);
+        self::assertFalse($again->counted);
+        self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * A malformed challenge id is not found, and counted against nothing.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMalformedChallengeIsNotFound(): void
     {
         $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), 'unknown-challenge', '000000');
 
         self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertSame(CodeTranslator::NOT_FOUND, $outcome->detail);
+        self::assertFalse($outcome->counted);
         self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * A challenge id in the form `laravel-authentication` issues that names no
+     * challenge of the binding's is not found, and counted against nothing.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnUnknownChallengeIsNotFound(): void
+    {
+        $code    = $this->deliveredCode($this->sentChallenge());
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), self::UNKNOWN_CHALLENGE, $code);
+
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertFalse($outcome->counted);
+        self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * Through MFA, repeated checks of a challenge that is not found, or that is
+     * used up, are never counted by MFA's own IP throttle: MFA gives the IP
+     * address's slot back for a refusal, so a limit of one lets every check
+     * through to be refused for what it is.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testMfasIpThrottleNeverCountsAChallengeNotFoundOrUsed(): void
+    {
+        config()->set('mfa.attempts.ip_limit', 1);
+
+        $factor = $this->challengedFactor();
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
+
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+
+        $code = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+
+        foreach ([self::UNKNOWN_CHALLENGE, self::UNKNOWN_CHALLENGE, self::UNKNOWN_CHALLENGE] as $challenge) {
+            self::assertSame(FailureReason::NOT_FOUND, Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, $challenge, $code), Purpose::STEP_UP)->reason);
+        }
+
+        $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP);
+
+        self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
+
+        foreach ([$code, self::wrong($code)] as $again) {
+            $replayed = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $again), Purpose::STEP_UP);
+
+            self::assertSame(FailureReason::REPLAYED, $replayed->reason);
+        }
+    }
+
+    /**
+     * Through MFA, repeated checks of a challenge id in the form
+     * `laravel-authentication` issues that is not found are bounded by its
+     * limit on checking factor codes from the IP address: its count of a
+     * refused check commits with MFA's verification, so the check beyond the
+     * limit is refused as locked.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAuthenticationsIpLimitBoundsChecksOfAChallengeNotFound(): void
+    {
+        config()->set('authentication.rate_limits.factor_code.per_ip', ['max' => 1, 'decay_seconds' => 300]);
+
+        $factor = $this->challengedFactor();
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
+
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+
+        $code    = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+        $reasons = [];
+
+        for ($check = 0; $check < 3; $check++) {
+            $reasons[] = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, self::UNKNOWN_CHALLENGE, $code), Purpose::STEP_UP)->reason;
+        }
+
+        self::assertSame([FailureReason::NOT_FOUND, FailureReason::LOCKED, FailureReason::LOCKED], $reasons);
+        self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * Through MFA, repeated checks of a challenge id that is not in the form
+     * `laravel-authentication` issues are bounded by its limit on checking
+     * factor codes from the IP address, as a well-formed one is: it takes its
+     * per-IP count before it judges the challenge's shape, and that count of a
+     * refused check commits with MFA's verification, so the check beyond the
+     * limit is refused as locked, and so is a real check from the same IP
+     * address until the limit's window ends.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAuthenticationsIpLimitBoundsChecksOfAMalformedChallenge(): void
+    {
+        config()->set('authentication.rate_limits.factor_code.per_ip', ['max' => 1, 'decay_seconds' => 300]);
+
+        $factor = $this->challengedFactor();
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
+
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+
+        $code    = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+        $reasons = [];
+
+        for ($check = 0; $check < 3; $check++) {
+            $reasons[] = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, self::MALFORMED_CHALLENGE, $code), Purpose::STEP_UP)->reason;
+        }
+
+        self::assertSame([FailureReason::NOT_FOUND, FailureReason::LOCKED, FailureReason::LOCKED], $reasons);
+        self::assertSame(0, $this->failures());
+
+        $real = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP);
+
+        self::assertSame(FailureReason::LOCKED, $real->reason);
+    }
+
+    /**
+     * Through MFA, a code at an enrolment's challenge once it is used up is
+     * refused as replayed, and MFA's enrolment confirmation counts that against
+     * the enrolment's attempts, where the `expired` MFA's contract gives a
+     * different code would count nothing.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACodeAtAUsedEnrolmentChallengeIsCountedAgainstTheEnrolment(): void
+    {
+        $person          = $this->person();
+        $reauthenticated = $this->sessions()->reauthenticate($this->personsSession(), 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
+
+        self::assertTrue($reauthenticated->isIssued());
+
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::delivered('sms', self::OTHER_PHONE));
+
+        self::assertTrue($start->hasStarted(), (string) $start->reason?->value);
+        self::assertNotNull($start->grant);
+
+        $messages = $this->deliverFactorCodes();
+
+        self::assertCount(1, $messages);
+
+        OneTimeCode::query()->sole()->forceFill(['consumed_at' => CarbonImmutable::now()])->save();
+
+        $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, self::wrong($messages[0]->code->reveal()));
+
+        self::assertSame(FailureReason::REPLAYED, $confirmation->reason);
+        self::assertSame(1, Enrollment::query()->sole()->attempts);
     }
 
     /**

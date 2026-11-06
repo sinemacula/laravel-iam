@@ -198,6 +198,49 @@ final class PasskeySeamsTest extends TestCase
     }
 
     /**
+     * Rows of `[configuration, application, offered]`: what MFA's configuration
+     * holds, the application asked about, and whether that application offers
+     * the `passkey` type.
+     *
+     * @return iterable<string, array{0: array<string, mixed>, 1: string, 2: bool}>
+     */
+    public static function provideApplicationOffers(): iterable
+    {
+        yield 'offered by the application' => [['mfa' => ['applications' => ['api' => ['types' => ['totp', 'passkey']]]]], 'api', true];
+
+        yield 'offered by another application only' => [['mfa' => ['applications' => ['api' => ['types' => ['totp']], 'admin' => ['types' => ['passkey']]]]], 'api', false];
+
+        yield 'an application not declared' => [['mfa' => ['applications' => ['admin' => ['types' => ['passkey']]]]], 'api', false];
+
+        yield 'an application named with a dot' => [['mfa' => ['applications' => ['api.v2' => ['types' => ['passkey']]]]], 'api.v2', true];
+
+        yield 'applications not a map' => [['mfa' => ['applications' => 'api']], 'api', false];
+
+        yield 'settings not a map' => [['mfa' => ['applications' => ['api' => 'passkey']]], 'api', false];
+
+        yield 'types not a list' => [['mfa' => ['applications' => ['api' => ['types' => 'passkey']]]], 'api', false];
+
+        yield 'no types' => [['mfa' => ['applications' => ['api' => []]]], 'api', false];
+
+        yield 'a type spelt otherwise' => [['mfa' => ['applications' => ['api' => ['types' => ['Passkey']]]]], 'api', false];
+    }
+
+    /**
+     * An application offers passkeys exactly while its own types list the
+     * `passkey` type, whatever another application offers.
+     *
+     * @param  array<string, mixed>  $configuration
+     * @param  string  $application
+     * @param  bool  $offered
+     * @return void
+     */
+    #[DataProvider('provideApplicationOffers')]
+    public function testAnApplicationOffersPasskeysWhileItsOwnTypesListThem(array $configuration, string $application, bool $offered): void
+    {
+        self::assertSame($offered, PasskeySeams::isOfferedBy(new Repository($configuration), $application));
+    }
+
+    /**
      * Both bindings are transient over their members' defaults, and only the
      * passkey factor gate is mandatory.
      *
