@@ -119,17 +119,17 @@ final readonly class CurrentSession
      * names.
      *
      * Where MFA hands the sign-in (a step-up's proof binding, a removal, a
-     * change and its judgement), the session is the one it names, never the
-     * guard's current one, so a change made from a queued job, a console
-     * command or a request served by another guard acts on the sign-in MFA
-     * named. It is read through the identity's own `sessions()` relation on the
-     * write connection, so another identity's session is never found, and a key
-     * that cannot be one of the session model's is not queried. A key that
-     * names no session of the identity's, or one of another guard's, throws
-     * `UnresolvedReferenceException` of the kind `session` (IAM-8.2). Whether
-     * the session is still live and active is `laravel-authentication`'s to
-     * judge, under the session's row lock, in the call it is handed to: a read
-     * here would be stale by then.
+     * change and its judgement, an event's subject), the session is the one it
+     * names, never the guard's current one, so a change made from a queued job,
+     * a console command or a request served by another guard acts on the
+     * sign-in MFA named. It is read through the identity's own `sessions()`
+     * relation on the write connection, so another identity's session is never
+     * found, and a key that cannot be one of the session model's is not
+     * queried. A key that names no session of the identity's, or one of another
+     * guard's, throws `UnresolvedReferenceException` of the kind `session`
+     * (IAM-8.2). Whether the session is still live and active is
+     * `laravel-authentication`'s to judge, under the session's row lock, in the
+     * call it is handed to: a read here would be stale by then.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -335,7 +335,7 @@ final readonly class CurrentSession
      *
      * @return list<string>
      */
-    public function sessionGuards(): array
+    private function sessionGuards(): array
     {
         $guards = $this->config->get('auth.guards');
         $named  = [];

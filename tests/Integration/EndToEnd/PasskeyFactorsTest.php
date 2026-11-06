@@ -21,12 +21,14 @@ use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\PasskeyFactorGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\PasskeyGatewayAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MfaEvent;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\ContextEvent;
+use SineMacula\Laravel\Mfa\Events\EventContext;
 use SineMacula\Laravel\Mfa\Events\FactorRemoved;
 use SineMacula\Laravel\Mfa\Events\PasskeyAssociated;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
@@ -55,9 +57,9 @@ use Tests\TestCase;
  * same change; removed as a factor through MFA instead, it stays a sign-in
  * passkey with no factor behind it, and its later removal asks MFA nothing.
  * Either way no factor is left without its passkey. MFA's events about it carry
- * the application MFA names and no tenant, since MFA hands the event context no
- * sign-in to name one from. Everything runs on MySQL and PostgreSQL at READ
- * COMMITTED and REPEATABLE READ.
+ * the application MFA names and, where MFA names the sign-in the change was
+ * made on, that session, the principal it acts as and its tenant. Everything
+ * runs on MySQL and PostgreSQL at READ COMMITTED and REPEATABLE READ.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -101,7 +103,8 @@ final class PasskeyFactorsTest extends TestCase
      * `laravel-authentication` once the session is stepped up with another
      * factor, it takes its factor and association with it, so MFA neither lists
      * nor challenges a factor without its passkey, and MFA's events about both
-     * changes carry the application and no tenant.
+     * changes carry the application and the session they were made on, with its
+     * principal and tenant.
      *
      * @param  string  $level
      * @return void
@@ -132,7 +135,7 @@ final class PasskeyFactorsTest extends TestCase
         self::assertFalse(Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP)->hasStarted());
         self::assertSame(0, DB::connection()->transactionLevel());
 
-        $this->assertEventsCarryTheApplicationAndNoTenant([PasskeyAssociated::class, FactorRemoved::class]);
+        $this->assertEventsCarryTheirSignIn($person, $session, [PasskeyAssociated::class, FactorRemoved::class]);
     }
 
     /**
@@ -173,7 +176,7 @@ final class PasskeyFactorsTest extends TestCase
         self::assertNull($removal->completion);
         self::assertSame(0, Factor::query()->where('type', 'passkey')->count());
 
-        $this->assertEventsCarryTheApplicationAndNoTenant([PasskeyAssociated::class, FactorRemoved::class]);
+        $this->assertEventsCarryTheirSignIn($person, $session, [PasskeyAssociated::class, FactorRemoved::class]);
     }
 
     /**
@@ -287,25 +290,41 @@ final class PasskeyFactorsTest extends TestCase
     }
 
     /**
-     * Assert every MFA event dispatched carries the application and none of the
-     * session's tenant, and that the events named were among them.
+     * Assert every MFA event dispatched carries the application, and either the
+     * session it was made on, with the principal it acts as and its tenant, or
+     * none of them where MFA names no sign-in; and that the events named were
+     * among them, each naming the session.
      *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  list<class-string<\SineMacula\Laravel\Mfa\Contracts\MfaEvent>>  $expected
      * @return void
+     *
+     * @throws \Throwable
      */
-    private function assertEventsCarryTheApplicationAndNoTenant(array $expected): void
+    private function assertEventsCarryTheirSignIn(Person $person, EloquentSession&Model $session, array $expected): void
     {
-        $dispatched = array_map(static fn (MfaEvent $event): string => $event::class, $this->events);
-
-        foreach ($expected as $class) {
-            self::assertContains($class, $dispatched);
-        }
+        $named  = [SignIn::reference($session, self::GUARD), $person->getMorphClass(), EventContext::scalarKey($person->getKey()), self::TENANT];
+        $naming = [];
 
         foreach ($this->events as $event) {
 
             self::assertInstanceOf(ContextEvent::class, $event);
-            self::assertNull($event->context['tenant_id'], $event::class);
             self::assertSame(self::GUARD, $event->context['application'], $event::class);
+
+            $carried = [$event->context['session_id'], $event->context['principal_type'], $event->context['principal_id'], $event->context['tenant_id']];
+
+            self::assertContains($carried, [$named, [null, null, null, null]], $event::class);
+
+            if ($carried !== $named) {
+                continue;
+            }
+
+            $naming[] = $event::class;
+        }
+
+        foreach ($expected as $class) {
+            self::assertContains($class, $naming);
         }
     }
 

@@ -50,6 +50,13 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  * or another identity). A guard that holds no sessions still throws, as a
  * misconfiguration (IAM-8.2).
  *
+ * `fromCredential()` reads no request either: it reads the pending session a
+ * credential handed in as a plain value names, on the guard the application
+ * given names, and answers `null` when it names no live pending session there.
+ * It serves this package's own adapters that are handed a pending credential
+ * rather than a request (`PasskeyFactorGateAdapter`, for a passkey registered
+ * on a pending sign-in).
+ *
  * The pending session crosses as MFA's pending context: its identity, the guard
  * as the application, its key as the sign-in id, its first factor and further
  * proofs bound to that sign-in under the identity's current verification
@@ -151,6 +158,25 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
         $now         = $this->sessions->sessions($application)->pending($credential);
 
         return $now === null || !self::isTheSession($now, $pending) ? null : $this->context($now, $credential);
+    }
+
+    /**
+     * The pending sign-in the credential names on the application's guard, or
+     * `null` when it names no live pending session there.
+     *
+     * @param  string  $application
+     * @param  string  $credential
+     * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
+     *
+     * @throws \InvalidArgumentException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Throwable
+     */
+    public function fromCredential(string $application, #[\SensitiveParameter] string $credential): ?PendingContext
+    {
+        $pending = $this->sessions->sessions($application)->pending($credential);
+
+        return $pending === null ? null : $this->context($pending, $credential);
     }
 
     /**

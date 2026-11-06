@@ -28,6 +28,7 @@ use SineMacula\Laravel\Iam\Delivery\SmsSenderAdapter;
 use SineMacula\Laravel\Iam\Mfa\ChallengeGatewayAdapter;
 use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
@@ -37,6 +38,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Events\CodeSent;
 use SineMacula\Laravel\Mfa\Events\ContextEvent;
 use SineMacula\Laravel\Mfa\Events\EnrollmentStarted;
+use SineMacula\Laravel\Mfa\Events\EventContext;
 use SineMacula\Laravel\Mfa\Events\FactorConfirmed;
 use SineMacula\Laravel\Mfa\Events\VerificationPassed;
 use SineMacula\Laravel\Mfa\Exceptions\CodeDeliveryFailedException;
@@ -63,14 +65,14 @@ use Tests\TestCase;
  * challenge counters, and delivered once, through the application's gateway of
  * the factor's channel, as this package's one `CodeMessage`; MFA's own senders
  * never run. MFA's events about it carry the identity and the application MFA
- * names, and no tenant or session: neither the caller's validated session's,
- * which MFA hands the event context no sign-in to name, nor one a request
- * claims. A gateway that throws fails `laravel-authentication`'s delivery job
- * once the code has committed, so the code stays issued and the queue's retry
- * delivers it; an application that keeps MFA's own challenge gateway has its
- * codes delivered inside MFA's transaction, so there a gateway that throws
- * rolls the code back with the enrolment it was for. Everything runs on MySQL
- * and PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ * names, and the session MFA names them made on, with its principal and its own
+ * tenant, never one a request claims. A gateway that throws fails
+ * `laravel-authentication`'s delivery job once the code has committed, so the
+ * code stays issued and the queue's retry delivers it; an application that
+ * keeps MFA's own challenge gateway has its codes delivered inside MFA's
+ * transaction, so there a gateway that throws rolls the code back with the
+ * enrolment it was for. Everything runs on MySQL and PostgreSQL at READ
+ * COMMITTED and REPEATABLE READ.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -193,9 +195,10 @@ final class DeliveredFactorsTest extends TestCase
 
     /**
      * MFA's events about the enrolment and the step-up each carry the identity
-     * and the application MFA names, and no tenant or session: neither those of
-     * the caller's validated session, which MFA hands the event context no
-     * sign-in to name, nor the tenant a request header or input claims.
+     * and the application MFA names, and the session MFA names them made on,
+     * with the principal it acts as and the tenant its row records, never the
+     * tenant a request header or input claims; an event MFA names no sign-in
+     * for carries none of them.
      *
      * @param  string  $level
      * @param  string  $type
@@ -206,7 +209,7 @@ final class DeliveredFactorsTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideDeliveredFactors')]
-    public function testMfasEventsCarryNoTenantOrSessionTheyAreNotHanded(string $level, string $type, Channel $channel, string $destination): void
+    public function testMfasEventsCarryTheSessionTheyNameAndNoClaimedTenant(string $level, string $type, Channel $channel, string $destination): void
     {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
@@ -235,13 +238,28 @@ final class DeliveredFactorsTest extends TestCase
             self::assertContains($expected, $dispatched);
         }
 
+        $named  = [SignIn::reference($session, self::GUARD), $person->getMorphClass(), EventContext::scalarKey($person->getKey()), self::TENANT];
+        $naming = [];
+
         foreach ($this->events as $event) {
 
             self::assertInstanceOf(ContextEvent::class, $event);
-            self::assertNull($event->context['tenant_id'], $event::class);
             self::assertSame(self::GUARD, $event->context['application'], $event::class);
-            self::assertNull($event->context['session_id'], $event::class);
             self::assertSame($person->getMorphClass(), $event->context['identity_type'], $event::class);
+
+            $carried = [$event->context['session_id'], $event->context['principal_type'], $event->context['principal_id'], $event->context['tenant_id']];
+
+            self::assertContains($carried, [$named, [null, null, null, null]], $event::class);
+
+            if ($carried !== $named) {
+                continue;
+            }
+
+            $naming[] = $event::class;
+        }
+
+        foreach ([EnrollmentStarted::class, CodeSent::class, FactorConfirmed::class, VerificationPassed::class] as $expected) {
+            self::assertContains($expected, $naming);
         }
     }
 

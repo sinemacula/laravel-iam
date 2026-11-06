@@ -26,6 +26,7 @@ use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
+use SineMacula\Laravel\Mfa\Context\ClientContext;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PendingCompletion;
@@ -53,11 +54,12 @@ use Tests\TestCase;
 /**
  * Integration tests for MFA's pending completion through
  * `laravel-authentication`'s `satisfy()` (IAM-3.3): MFA's contract kit, a
- * verified factor activating the pending session or leaving it pending, the
- * session satisfied only as the last write of MFA's transaction (after MFA's
- * locks, rolled back with it, and never answered when its commit fails), the
- * refusals `laravel-authentication` answers thrown as MFA's (every completion
- * on a guard whose refresh token travels in a cookie among them, as
+ * verified factor activating the pending session or leaving it pending for the
+ * caller's client, the session satisfied only as the last write of MFA's
+ * transaction (after MFA's locks, rolled back with it, and never answered when
+ * its commit fails), a caller holding no pending session refused, the refusals
+ * `laravel-authentication` answers thrown as MFA's (a cross-site client's on a
+ * guard whose refresh token travels in a cookie among them, as
  * `cross_site_request`), and the references that cannot be resolved thrown
  * (IAM-8.2).
  *
@@ -79,6 +81,18 @@ final class PendingCompletionAdapterTest extends TestCase
 
     /** @var string The detail of a refusal of a proof made for another pending session. */
     private const string NOT_BOUND = 'The proof is not bound to the pending session.';
+
+    /** @var string The origin of the API's own site, which the same-site client presents and is served from. */
+    private const string SITE = 'https://api.example.test';
+
+    /** @var string The custom header a cookie guard's same-site client must carry, as the tests configure it. */
+    private const string CSRF_HEADER = 'X-Iam-Csrf';
+
+    /** @var string The IP address of the client a completion is handed, unlike the sign-in's. */
+    private const string PENDING_IP = '203.0.113.24';
+
+    /** @var string The user agent of the client a completion is handed, unlike the sign-in's. */
+    private const string PENDING_AGENT = 'pending-client';
 
     /** @var ?\SineMacula\Laravel\Mfa\Context\PendingContext The pending session MFA's contract kit is given. */
     private ?PendingContext $arranged = null;
@@ -314,25 +328,121 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * On a guard whose refresh token travels in a cookie, a completion is
-     * refused as `cross_site_request`, however genuine the request the person
-     * proved their factor in: MFA hands the completion no client, so the one
-     * `satisfy()` is handed carries no same-site facts. It pins the member gap
-     * that `PendingCompletionCheck` refuses such an application at boot for.
+     * On a guard whose refresh token travels in a cookie, a completion handed a
+     * same-site client (an `Origin` of the API's own site and the guard's
+     * configured custom header) passes `laravel-authentication`'s same-site
+     * check and activates the session.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testACookieGuardsCompletionIsRefusedAsCrossSite(): void
+    public function testACookieGuardsSameSiteCompletionIsSatisfied(): void
     {
         $credential = $this->signInPending($this->createPerson());
         $pending    = $this->pendingContextFor($credential);
         $result     = $this->verified($pending, $this->factorProof($pending));
 
-        Config::set('auth.guards.' . self::GUARD . '.refresh_token', ['transport' => 'cookie', 'cookie' => ['path' => '/auth/refresh']]);
+        self::carryRefreshTokensInACookie();
 
-        self::assertRefused('laravel-authentication refused the proof as [cross_site_request].', fn (): mixed => $this->completeInTransaction($pending, $result));
+        $completion = $this->completeInTransaction($pending, $result);
+
+        self::assertTrue($completion->isSignedIn());
+        self::assertSame(['factor-1'], $this->storedFactors($completion));
+        self::assertSame($pending->sessionId, $this->signInReference($this->guard()->session() ?? self::fail('The guard was not bound.')));
+    }
+
+    /**
+     * Rows of `[client]` that did not come from a page of the API's own site.
+     *
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Context\ClientContext}>
+     */
+    public static function provideCrossSiteClients(): iterable
+    {
+        yield 'no origin' => [new ClientContext(self::PENDING_IP, self::PENDING_AGENT, null, self::SITE, [self::CSRF_HEADER])];
+
+        yield 'a foreign origin' => [new ClientContext(self::PENDING_IP, self::PENDING_AGENT, 'https://elsewhere.example.test', self::SITE, [self::CSRF_HEADER])];
+
+        yield 'no custom header' => [new ClientContext(self::PENDING_IP, self::PENDING_AGENT, self::SITE, self::SITE, ['X-Requested-With'])];
+    }
+
+    /**
+     * On a guard whose refresh token travels in a cookie, a completion handed a
+     * cross-site client is refused as `not_accepted`, naming
+     * `cross_site_request`, by throwing inside MFA's transaction, which rolls
+     * back what it wrote before: the session stays pending and the guard
+     * unbound, though a request bound in the container carries the very facts
+     * the client lacks, since the request is never read in its place.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\ClientContext  $client
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideCrossSiteClients')]
+    public function testACookieGuardsCrossSiteCompletionIsRefused(ClientContext $client): void
+    {
+        $person     = $this->createPerson();
+        $credential = $this->signInPending($person);
+        $pending    = $this->pendingContextFor($credential);
+        $result     = $this->verified($pending, $this->factorProof($pending));
+
+        self::carryRefreshTokensInACookie();
+
+        $this->bindStrayRequest(headers: ['Origin' => 'http://localhost', self::CSRF_HEADER => '1']);
+
+        $completion = function () use ($person, $pending, $client, $result): SignInResult {
+
+            VerificationGeneration::advance($person);
+
+            return $this->pendingCompleter()->complete(CallerContext::forPending($pending, $client), $result);
+        };
+
+        self::assertRefused('laravel-authentication refused the proof as [cross_site_request].', static fn (): mixed => DB::transaction($completion));
+
+        self::assertSame(0, VerificationGeneration::current($person));
+        self::assertSame([], $this->pendingContextFor($credential)->proofs);
+        self::assertNull($this->guard()->session());
+    }
+
+    /**
+     * The activated session's last use is the client the caller was served
+     * from, its IP address and user agent, not the sign-in's.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheActivatedSessionsLastUseIsTheCallersClient(): void
+    {
+        $credential = $this->signInPending($this->createPerson());
+        $pending    = $this->pendingContextFor($credential);
+
+        $result = $this->completeInTransaction($pending, $this->verified($pending, $this->factorProof($pending)));
+        $record = $result->session->record ?? self::fail('No session was signed in.');
+
+        self::assertSame(self::PENDING_IP, $record->getAttribute('last_used_ip'));
+        self::assertSame(self::PENDING_AGENT, $record->getAttribute('last_used_user_agent'));
+    }
+
+    /**
+     * A caller holding no pending session is refused as a result bound
+     * elsewhere is, though the result is the pending session's and the caller
+     * its identity on its application, and nothing is satisfied.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerWithNoPendingSessionIsRefused(): void
+    {
+        $person     = $this->createPerson();
+        $credential = $this->signInPending($person);
+        $pending    = $this->pendingContextFor($credential);
+        $result     = $this->verified($pending, $this->factorProof($pending));
+        $caller     = CallerContext::forIdentity($person, self::GUARD, self::sameSiteClient());
+
+        self::assertRefused('The caller holds no pending session.', fn (): mixed => DB::transaction(fn (): SignInResult => $this->pendingCompleter()->complete($caller, $result)));
         self::assertSame([], $this->pendingContextFor($credential)->proofs);
         self::assertNull($this->guard()->session());
     }
@@ -406,8 +516,8 @@ final class PendingCompletionAdapterTest extends TestCase
 
     /**
      * The pending session satisfied is the one the context names, on the guard
-     * its application names, for a client of which nothing is known: a request
-     * bound in the container, carrying another pending session's credential and
+     * its application names, for the client the caller carries: a request bound
+     * in the container, carrying another pending session's credential and
      * coming from another client, names neither the session nor the client, and
      * the default guard being another changes nothing.
      *
@@ -436,10 +546,10 @@ final class PendingCompletionAdapterTest extends TestCase
         $record = $result->session->record ?? self::fail('No session was signed in.');
 
         self::assertSame($pending->sessionId, $this->signInReference($record));
-        self::assertNull($record->getAttribute('last_used_ip'));
+        self::assertSame(self::PENDING_IP, $record->getAttribute('last_used_ip'));
         self::assertCount(1, $this->sessions()->pending($stray)?->proofs() ?? []);
         self::assertCount(1, $events);
-        self::assertSame([null, null], [$events[0]->context->client->ip, $events[0]->context->client->userAgent]);
+        self::assertSame([self::PENDING_IP, self::PENDING_AGENT], [$events[0]->context->client->ip, $events[0]->context->client->userAgent]);
     }
 
     /**
@@ -466,7 +576,7 @@ final class PendingCompletionAdapterTest extends TestCase
 
                 VerificationGeneration::advance($person);
 
-                return $this->pendingCompleter()->complete($pending, $result);
+                return $this->pendingCompleter()->complete(CallerContext::forPending($pending, self::sameSiteClient()), $result);
             });
 
             self::fail('A pending session was satisfied from the request\'s credential.');
@@ -523,7 +633,7 @@ final class PendingCompletionAdapterTest extends TestCase
         $pending    = $this->pendingContextFor($credential);
 
         try {
-            $this->pendingCompleter()->complete($pending, $this->verified($pending, $this->factorProof($pending)));
+            $this->pendingCompleter()->complete(CallerContext::forPending($pending, self::sameSiteClient()), $this->verified($pending, $this->factorProof($pending)));
 
             self::fail('A pending session was satisfied outside a transaction.');
         } catch (\LogicException $exception) {
@@ -623,7 +733,7 @@ final class PendingCompletionAdapterTest extends TestCase
         try {
             DB::transaction(function () use ($pending, $result): never {
 
-                $completion = $this->pendingCompleter()->complete($pending, $result);
+                $completion = $this->pendingCompleter()->complete(CallerContext::forPending($pending, self::sameSiteClient()), $result);
 
                 self::assertInstanceOf(SignInResult::class, $completion);
                 self::assertTrue($completion->isSignedIn());
@@ -685,18 +795,48 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The completion under test, for MFA's contract kit.
+     * The completion under test, for MFA's contract kit, called as MFA calls
+     * it: inside a transaction on the storage connection, outside which it
+     * satisfies nothing.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\PendingCompletion
      */
     #[\Override]
     protected function pendingCompletion(): PendingCompletion
     {
-        return $this->pendingCompleter();
+        return new class ($this->pendingCompleter()) implements PendingCompletion {
+            /**
+             * Constructor.
+             *
+             * @param  \SineMacula\Laravel\Mfa\Contracts\PendingCompletion  $completion
+             */
+            public function __construct(
+
+                /** The completion under test. */
+                private readonly PendingCompletion $completion,
+            ) {}
+
+            /**
+             * Complete inside a transaction on the storage connection.
+             *
+             * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
+             * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
+             * @return ?object
+             *
+             * @throws \Throwable
+             */
+            #[\Override]
+            public function complete(CallerContext $caller, VerificationResult $result): ?object
+            {
+                return DB::transaction(fn (): ?object => $this->completion->complete($caller, $result));
+            }
+        };
     }
 
     /**
-     * A real pending session, for MFA's contract kit.
+     * A real pending session, for MFA's contract kit, on a guard whose refresh
+     * token travels in a cookie once the person has signed in, so the kit's
+     * completion passes the same-site check only with the caller's client.
      *
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
      *
@@ -705,7 +845,43 @@ final class PendingCompletionAdapterTest extends TestCase
     #[\Override]
     protected function pendingContext(): PendingContext
     {
-        return $this->arranged ??= $this->pendingContextFor($this->signInPending($this->createPerson()));
+        if ($this->arranged !== null) {
+            return $this->arranged;
+        }
+
+        $this->arranged = $this->pendingContextFor($this->signInPending($this->createPerson()));
+
+        self::carryRefreshTokensInACookie();
+
+        return $this->arranged;
+    }
+
+    /**
+     * The pending session's caller, for MFA's contract kit, served from a
+     * same-site client, which a cookie guard's same-site check passes.
+     *
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     *
+     * @throws \Throwable
+     */
+    protected function pendingCaller(): CallerContext
+    {
+        return CallerContext::forPending($this->pendingContext(), self::sameSiteClient());
+    }
+
+    /**
+     * A verified proof of the pending session's, for MFA's contract kit.
+     *
+     * @return \SineMacula\Laravel\Mfa\Verification\VerificationResult
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function resultOfThePendingSession(): VerificationResult
+    {
+        $pending = $this->pendingContext();
+
+        return $this->verified($pending, $this->factorProof($pending));
     }
 
     /**
@@ -726,7 +902,8 @@ final class PendingCompletionAdapterTest extends TestCase
 
     /**
      * Complete the pending session with the result inside a transaction on the
-     * storage connection, as MFA's verification does.
+     * storage connection, as MFA's verification does, for the pending session's
+     * caller served from a same-site client.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
@@ -736,7 +913,33 @@ final class PendingCompletionAdapterTest extends TestCase
      */
     private function completeInTransaction(PendingContext $pending, VerificationResult $result): SignInResult
     {
-        return DB::transaction(fn (): SignInResult => $this->pendingCompleter()->complete($pending, $result));
+        $caller = CallerContext::forPending($pending, self::sameSiteClient());
+
+        return DB::transaction(fn (): SignInResult => $this->pendingCompleter()->complete($caller, $result));
+    }
+
+    /**
+     * A client that came from a page of the API's own site: it presents the
+     * site's own `Origin`, is served from that scheme and host, and carries the
+     * custom header a cookie guard's same-site check requires, from another IP
+     * address and user agent than the sign-in's.
+     *
+     * @return \SineMacula\Laravel\Mfa\Context\ClientContext
+     */
+    private static function sameSiteClient(): ClientContext
+    {
+        return new ClientContext(self::PENDING_IP, self::PENDING_AGENT, self::SITE, self::SITE, [self::CSRF_HEADER]);
+    }
+
+    /**
+     * Carry the guard's refresh token in a cookie from now on, with the custom
+     * header its same-site check requires.
+     *
+     * @return void
+     */
+    private static function carryRefreshTokensInACookie(): void
+    {
+        Config::set('auth.guards.' . self::GUARD . '.refresh_token', ['transport' => 'cookie', 'cookie' => ['path' => '/auth/refresh', 'csrf_header' => self::CSRF_HEADER]]);
     }
 
     /**

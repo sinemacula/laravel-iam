@@ -88,8 +88,9 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
   - MFA's passkey gateway uses `laravel-authentication`'s factor ceremonies: `requestAssertion()` is
     `factorOptions()` under `laravel-authentication`'s binding of the same identity, application, session and purpose,
     returned as its `toArray()`; `verifyAssertion()` reads `challenge` and `credential` from the response
-    (`PasskeyGatewayAdapter::CHALLENGE`, `CREDENTIAL`) and calls `verifyFactor()`. `passkey_challenge_invalid` is
-    `expired`; every other failure (invalid credentials, a regressed counter, a malformed response, an empty
+    (`PasskeyGatewayAdapter::CHALLENGE`, `CREDENTIAL`) and calls `verifyFactor()`. `passkey_challenge_expired` and
+    `passkey_challenge_invalid` (an unknown challenge, or another binding's) are `expired`, and `passkey_challenge_used`
+    is `replayed`; every other failure (invalid credentials, a regressed counter, a malformed response, an empty
     allowlist, a credential outside it) is `invalid_code`. A binding naming another identity, or a request allowing
     none of the identity's passkeys, throws `OperationRefusedException(not_found)`. MFA hands the gateway no client,
     so `verifyFactor()` is handed one of which nothing is known.
@@ -105,8 +106,14 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
     `PasskeyAssociationResult` (summary, recovery codes, pending-session verification, and `laravel-authentication`'s
     `FactorChangeResult` on an active session) as its completion; a removal's completion is
     `laravel-authentication`'s `Sessions\FactorRemoval`, through the session revoker. MFA is handed the caller as the
-    gate's values: `CallerContext::forIdentity()` of the identity on the application `laravel-authentication` names,
-    never one read from a request.
+    gate's values, never one read from a request: the client the registration or removal was given, translated one to
+    one (`Mfa\Translation\ClientTranslator::toMfa()`), and `CallerContext::forIdentity()` of the identity on the
+    application `laravel-authentication` names, or, for a registration handed a pending credential (a bootstrap
+    enrolment), `CallerContext::forPending()` of the pending session it names on that application's guard
+    (`PendingSessionResolverAdapter::fromCredential()`; one that names no pending sign-in of the identity is refused as
+    `not_found`). MFA then confirms the factor and hands its proof to the pending completion, which satisfies the
+    session in the same change, so a refusal of either rolls the whole registration back; a credential that names no
+    live pending session is answered `pending_invalid` by `laravel-authentication` before the gate is asked.
 - Context (IAM-3.12, resolvers only), each reading the values MFA hands it, or `laravel-authentication`'s validated
   session through `Mfa\CurrentSession` where MFA hands none, never `Auth::caller()` (which memoises the caller on the
   request), a request or an event:
@@ -116,14 +123,18 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
     about, and `null` otherwise, never `Auth::tenant()`, a bind beside the session or a claim in the request; it runs
     no query. It does not throw for a missing session, because `laravel-authentication` asks MFA's requirement during
     sign-in, before the session row exists;
-  - an event's context is MFA's allowlist filled from what MFA hands the resolver alone: the identity's morph class and
-    key, and the IP address and user agent of the client (`ClientContext`); an event MFA hands no client (an
-    administrator's, a console's or a pruning's) carries only its identity. MFA hands the resolver no application and
-    no sign-in, and writes the operation's application over the resolver's answer, so the principal, the tenant and
-    the session stay `null` and the guard is never read: its current session may be another application's than the
-    one the operation ran on, or serve someone acting on the identity. The audit trail's ambient context fills them
-    on a record that has none (IAM-9.7); MFA handing the resolver the operation's application and sign-in is a member
-    gap. It never throws;
+  - an event's context is MFA's allowlist filled from the `EventSubject` MFA hands the resolver: the identity's morph
+    class and key, and the IP address and user agent of the client (`EventSubject::$client`, never `null`, one of
+    which nothing is known for an administrator's, a console's or a pruning's event). Where MFA names both the
+    application and the sign-in the operation was bound to (`EventSubject::$signInId`), and that sign-in is one of the
+    identity's sessions on the application's guard, read by its key as `CurrentSession::named()` reads it (the
+    identity's own `sessions()` relation, on the write connection), the context names that session
+    (`SignIn::reference()`), the principal its row records (type and key, with no query of its own) and its tenant.
+    Another identity's session, another guard's, an unknown or malformed key, an application that is no session guard
+    and an identity `laravel-authentication` does not sign in leave all four `null`, as an event naming no sign-in
+    (an operator's action, a lockout) does; the guard's current session and the request are never read, and MFA
+    writes the operation's application over the resolver's answer. The audit trail's ambient context fills what a
+    record lacks (IAM-9.7). It never throws for what it cannot resolve;
   - an identity is a person only when it is not `laravel-authentication`'s `MachineIdentity`, is MFA's
     `MultiFactorAuthenticatable` and can hold factors, so a machine counts as one whatever its model says.
   - Active state has no MFA seam: MFA reads `isMfaActive()` on the model, which its `HasFactors` answers `true`. The
@@ -278,25 +289,6 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
   sign-in with a fresh step-up, so an administrator's, a console's or a queued removal of another identity's passkey
   factor is refused (`not_found` or `not_fresh`) and rolls back; a removal on a step-up made only with the passkey
   itself is refused by `laravel-authentication` (`step_up_required`).
-- `laravel-authentication`'s passkey factor gate is handed no pending credential and no client, so a passkey
-  registered on a pending sign-in (a bootstrap enrolment) is handed to MFA as the identity's active caller, never as
-  the pending session's: MFA finds no active sign-in the registration's binding names and refuses it as `not_found`,
-  so passkey bootstrap enrolment on a pending sign-in is refused, and MFA's events about a passkey change name no
-  client (member gap: the gate's `registering()` and `removing()` should take the pending credential and the client
-  `register()` and `remove()` already take, so the gate can build `CallerContext::forPending()`).
-- `laravel-authentication`'s `satisfy()` refuses a cookie application's client that carries no same-site facts as
-  `cross_site_request`, before it reads the pending session, and MFA hands its pending completion no client (and its
-  client keeps no same-site facts), so on a guard whose refresh token travels in a cookie no pending sign-in could ever
-  be completed through MFA, a genuine same-site one included, and an activation records no last-use IP address or user
-  agent (member gap: MFA hands the completion the caller's client, with the same-site facts or a verdict judged at the
-  edge, or `laravel-authentication` takes a pending session whose same-site check was judged at the edge). This is a
-  deviation from M3, where `satisfy()` read the request's own client. Rather than refuse each person at sign-in, the
-  application is refused when it boots with the pending completion bound beside such a guard
-  (`PendingCompletionCheck`, `CookieTransportUnsupportedException`); a bearer application is unaffected.
-- MFA's `EventContextResolver` is handed the identity and the client alone, so MFA's events name no principal, tenant
-  or session: reading them from the default guard could describe another application's sign-in than the one the
-  operation ran on (member gap). The audit trail's ambient context fills them on a record that has none (IAM-9.7).
-- `verifyFactor()` reports an unknown, used or expired challenge alike, so all are `expired`, never `replayed`.
 - With the application resolver bound, MFA's `Proofs\SignInApplication::of()` and `CallerContext::fromRequest()`
   ignore their guard argument, since MFA's `ApplicationResolver::resolve()` is handed the request and never the guard
   (member gap). A `Login` or `Logout` on a guard other than the default is named after the default guard, harmless
@@ -335,7 +327,7 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
 
 - `tests/Integration/EndToEnd/DeliveredFactorsTest.php`
   `testADeliveredFactorIsEnrolledChallengedAndVerifiedThroughTheGateway`,
-  `testMfasEventsCarryNoTenantOrSessionTheyAreNotHanded`, `testAFailedDeliveryLeavesTheCodeIssuedForTheQueuesRetry`,
+  `testMfasEventsCarryTheSessionTheyNameAndNoClaimedTenant`, `testAFailedDeliveryLeavesTheCodeIssuedForTheQueuesRetry`,
   `testWithMfasOwnChallengesAFailedDeliveryRollsTheCodeBack` (an SMS and an email factor, on MySQL and PostgreSQL at
   READ COMMITTED and REPEATABLE READ)
 - `tests/Integration/EndToEnd/CodeSignInTest.php` `testACodeSignInIsDeliveredThroughTheGatewayItsTypeRoutesTo`,
@@ -405,11 +397,18 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
   `tests/Integration/Mfa/PasskeyFactorGateAdapterTest.php` (over MFA's `PasskeyChangeGateTests`)
   `testAnEnrolmentRegistrationBecomesAFactor`, `testARegistrationWithoutABindingStaysASignInPasskey`,
   `testARegistrationBoundForAnotherPurposeIsRefused`, `testRemovingAPasskeyNeverLeavesItsFactorStanding`,
-  `testARemovalMfaRefusesKeepsThePasskeyAndItsFactor`, `testABoundRequestNeverReachesTheChange`
+  `testARemovalMfaRefusesKeepsThePasskeyAndItsFactor`, `testABoundRequestNeverReachesTheChange`,
+  `testAPendingSignInsBootstrapEnrolmentActivatesTheSession`, `testABadPendingCredentialIsAnsweredAsPendingInvalid`,
+  `testABootstrapEnrolmentIsServedToTheClientHandedIn`, `testAPendingCredentialOfNoSignInOfTheIdentitysIsRefused`;
+  `tests/Unit/Mfa/Translation/ClientTranslatorTest.php` `testLaravelAuthenticationsClientCrossesToMfaWithEveryFact`
 - Context: `tests/Integration/Mfa/EventContextResolverAdapterTest.php` (over MFA's `EventContextResolverTests`)
-  `testAnEventAboutTheServedIdentityCarriesNoneOfItsSignIn`, `testNothingOfAnotherIdentitysSignInIsAttributed`,
-  `testNoTenantIsCarried`, `testTheDefaultGuardIsNeverRead`, `testWithoutAClientOnlyTheIdentityIsKnown`,
-  `testABoundRequestNeverReachesTheContext`, `testMfasEventsCarryIt`;
+  `testANamedSignInOfTheIdentitysNamesItsSession`, `testAnotherIdentitysSessionNamesNone`,
+  `testAnotherApplicationsSessionNamesNone`, `testASignInThatNamesNoSessionNamesNone` (an unknown and a malformed
+  id), `testASubjectNamingLessThanBothNamesNone`, `testWhatCannotBeResolvedIsNeverRefused`,
+  `testASessionActingAsNoPrincipalNamesItsSessionAlone`, `testNoTenantIsCarriedWithoutASignIn`,
+  `testTheDefaultGuardIsNeverRead`, `testWithoutAClientNoneIsNamed`, `testMfasEventsCarryIt` (each with a request
+  from another client bound and another session served); `tests/Integration/EndToEnd/PasskeyFactorsTest.php`
+  `testAPasskeyRemovedThroughAuthenticationTakesItsFactorWithIt` (the session, principal and tenant named);
   `tests/Integration/Mfa/ActiveTenantResolverAdapterTest.php`
   `testTheTenantIsTheOneTheSessionRecords`, `testNoTenantClaimedBesideTheSessionIsEverTheActiveOne`,
   `testASignInJudgedBeforeItsSessionIsWrittenSignsIn`, `testInsideATransactionItRunsNoQuery`;
@@ -447,9 +446,6 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
 Update this note when:
 
 - a member renames, adds or removes one of the seams in the table, or changes a default's class or binding style;
-- `laravel-authentication` tells a used or unknown challenge from a wrong code in `FactorCodeCheck`, or a used passkey
-  challenge from an expired one (the adapters could answer `replayed` and `not_found`, and the kit's skipped checks
-  would run);
 - `laravel-authentication` delivers factor codes inside their transaction, or gains an opt-in to do so (a failing
   gateway would then roll every code back), or stops queueing its deliveries;
 - `laravel-authentication` gains a public read of an identity's passkey credential ids, or MFA passes the
@@ -471,9 +467,9 @@ Update this note when:
 - `laravel-authentication` hands its factor code counters the client or an opaque caller beside the factor code
   binding, or stops handing them the instance its caller sent or checked under (`Mfa\FactorCodeCallers` would then be
   dropped, or would stop finding the caller);
-- `laravel-authentication`'s passkey factor gate is handed the client or the pending credential, or MFA's
-  `PasskeyGateway::verifyAssertion()` is handed the caller (the passkey adapters would then hand them on rather than an
-  unknown client, and a bootstrap enrolment could be judged as the pending session's);
-- MFA hands its `EventContextResolver` the operation's application or sign-in (the event context could then name the
-  principal, the tenant and the session from those values);
+- MFA's `PasskeyGateway::verifyAssertion()` is handed the caller (the passkey gateway adapter would then hand on its
+  client rather than an unknown one), or `laravel-authentication` changes what it proves of a registration's pending
+  credential before it asks the passkey factor gate (the gate adapter reads the pending session from it);
+- MFA changes which events name the sign-in they were made on, or what `EventSubject::$signInId` names (the event
+  context reads it as `laravel-authentication`'s session key);
 - the `mfa` context contributor lands (M10), or a proof store keys on the application.

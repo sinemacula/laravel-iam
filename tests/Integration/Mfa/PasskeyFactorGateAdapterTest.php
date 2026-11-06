@@ -13,16 +13,20 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Models\Passkey;
 use SineMacula\Laravel\Authentication\Models\Session;
+use SineMacula\Laravel\Authentication\Passkeys\Enums\PasskeyRegistrationStatus;
 use SineMacula\Laravel\Authentication\Passkeys\PasskeyRegistration;
 use SineMacula\Laravel\Authentication\Passkeys\RegisteredPasskey;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
+use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
 use SineMacula\Laravel\Authentication\Sessions\FactorChangeResult;
 use SineMacula\Laravel\Authentication\Sessions\FactorRemoval;
+use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\PasskeyFactorGateAdapter;
@@ -79,6 +83,12 @@ final class PasskeyFactorGateAdapterTest extends TestCase
 
     /** @var string A credential id, in unpadded base64url. */
     private const string CREDENTIAL = 'cGFzc2tleS1mYWN0b3ItZ2F0ZQ';
+
+    /** @var string The IP address of the client a registration is handed, unlike the tests'. */
+    private const string HANDED_IP = '203.0.113.24';
+
+    /** @var string The user agent of the client a registration is handed, unlike the tests'. */
+    private const string HANDED_AGENT = 'handed-client';
 
     /** @var (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null The session the gated identity acts on. */
     private (EloquentSession&Model)|null $gatedSession = null;
@@ -160,32 +170,150 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A registration bound for the enrolment of a pending sign-in (a bootstrap
-     * enrolment, MFA requiring a factor of someone who has none) is refused as
-     * `not_found`, keeping neither the passkey nor any factor and leaving the
-     * session pending: `laravel-authentication` hands the gate no pending
-     * credential, so the gate hands MFA the identity as an active caller, who
-     * holds no active sign-in the binding names. It pins that member gap.
+     * A passkey registered for the enrolment of a pending sign-in (a bootstrap
+     * enrolment, MFA requiring a factor of someone who has none), handed that
+     * sign-in's pending credential, becomes a confirmed passkey factor in the
+     * same change, and its proof satisfies the pending session, which
+     * activates: the registration answers MFA's result with the verification,
+     * whose completion is `laravel-authentication`'s signed-in result.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAPendingSignInsEnrolmentRegistrationIsRefused(): void
+    public function testAPendingSignInsBootstrapEnrolmentActivatesTheSession(): void
     {
-        config()->set('mfa.applications.' . self::GUARD . '.requirement', 'always');
+        [$person, $session, $credential] = $this->pendingSignIn();
 
-        $person  = $this->createPerson();
-        $pending = $this->attemptSignIn($person)->pending ?? self::fail('The sign-in did not wait for a further factor.');
-        $binding = new ProofBinding($person, self::GUARD, $pending->id, Purpose::ENROLLMENT);
+        $registration = $this->registerThroughAuthentication($person, self::CREDENTIAL, $this->bindingOf($person, $session, Purpose::ENROLLMENT), pending: $credential);
+        $factor       = Factor::query()->sole();
 
-        $refusal = self::refusal(fn (): mixed => $this->registerThroughAuthentication($person, self::CREDENTIAL, $binding));
+        self::assertTrue($registration->isRegistered());
+        self::assertSame(FactorStatus::CONFIRMED, $factor->getStatus());
+        self::assertSame(self::CREDENTIAL, $factor->getCredentialReference());
 
-        self::assertSame(FailureReason::NOT_FOUND, $refusal->reason);
-        self::assertSame('The registration is bound to another identity, application or session.', $refusal->getMessage());
+        $completion = $registration->factor->completion ?? null;
+
+        self::assertInstanceOf(PasskeyAssociationResult::class, $completion);
+        self::assertSame($factor->id, $completion->factor->id);
+
+        $verification = $completion->verification ?? self::fail('The registration answered no verification of the pending session.');
+
+        self::assertTrue($verification->isVerified());
+
+        $signIn = $verification->completion();
+
+        self::assertInstanceOf(SignInResult::class, $signIn);
+        self::assertTrue($signIn->isSignedIn());
+        self::assertSame(SessionStatus::ACTIVE, Session::query()->whereKey($session->getKey())->sole()->getStatus());
+        self::assertTrue(PasskeyAssociation::query()->where('factor_id', $factor->id)->exists());
+    }
+
+    /**
+     * A bootstrap enrolment handed a pending credential that names no pending
+     * sign-in is answered `pending_invalid` by `laravel-authentication`, before
+     * the gate is asked: no passkey, factor or association is kept, and the
+     * session stays pending.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABadPendingCredentialIsAnsweredAsPendingInvalid(): void
+    {
+        [$person, $session] = $this->pendingSignIn();
+
+        $binding      = $this->bindingOf($person, $session, Purpose::ENROLLMENT);
+        $registration = $this->registerThroughAuthentication($person, self::CREDENTIAL, $binding, pending: 'not-a-pending-credential');
+
+        self::assertSame(PasskeyRegistrationStatus::PENDING_INVALID, $registration->status);
         self::assertFalse($this->isPasskeyStored($person, self::CREDENTIAL));
         self::assertSame(0, Factor::query()->count());
-        self::assertSame(SessionStatus::PENDING, Session::query()->whereKey($pending->id)->sole()->getStatus());
+        self::assertSame(0, PasskeyAssociation::query()->count());
+        self::assertSame(SessionStatus::PENDING, Session::query()->whereKey($session->getKey())->sole()->getStatus());
+    }
+
+    /**
+     * A bootstrap enrolment is served to the client the registration was handed
+     * and satisfies the pending session its credential names, though a request
+     * bound in the container comes from another client and carries another
+     * pending sign-in's credential: MFA's events about it, and the activated
+     * session's last use, describe the handed client, and the other sign-in
+     * stays pending.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABootstrapEnrolmentIsServedToTheClientHandedIn(): void
+    {
+        [, , $stray]                     = $this->pendingSignIn();
+        [$person, $session, $credential] = $this->pendingSignIn();
+
+        $client   = new ClientContext(self::HANDED_IP, self::HANDED_AGENT);
+        $contexts = [];
+
+        Event::listen(PasskeyAssociated::class, static function (ContextEvent $event) use (&$contexts): void {
+            $contexts[] = $event->context;
+        });
+
+        $this->bindStrayRequest(['pending_credential' => $stray]);
+
+        $binding      = $this->bindingOf($person, $session, Purpose::ENROLLMENT);
+        $registration = $this->registerThroughAuthentication($person, self::CREDENTIAL, $binding, client: $client, pending: $credential);
+
+        self::assertTrue($registration->isRegistered());
+
+        $record = Session::query()->whereKey($session->getKey())->sole();
+
+        self::assertSame(SessionStatus::ACTIVE, $record->getStatus());
+        self::assertSame([self::HANDED_IP, self::HANDED_AGENT], [$record->getAttribute('last_used_ip'), $record->getAttribute('last_used_user_agent')]);
+        self::assertNotNull($this->sessions()->pending($stray));
+        self::assertCount(1, $contexts);
+        self::assertSame([self::HANDED_IP, self::HANDED_AGENT], [$contexts[0]['ip'], $contexts[0]['user_agent']]);
+    }
+
+    /**
+     * Rows of `[whose]` for a pending credential the gate is handed that names
+     * no pending sign-in of the identity registering.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideForeignPendingCredentials(): iterable
+    {
+        yield 'none' => ['none'];
+
+        yield 'another identity\'s' => ['another'];
+    }
+
+    /**
+     * A pending credential the gate is handed that names no pending sign-in of
+     * the identity registering, which `laravel-authentication` refuses before
+     * asking the gate, is refused as `not_found` all the same, by throwing
+     * inside the transaction: no factor is made.
+     *
+     * @param  string  $whose
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideForeignPendingCredentials')]
+    public function testAPendingCredentialOfNoSignInOfTheIdentitysIsRefused(string $whose): void
+    {
+        [$other, , $foreign] = $this->pendingSignIn();
+        [$person, $session]  = $this->pendingSignIn();
+
+        self::assertNotSame($other->getKey(), $person->getKey());
+
+        $credential = new Secret($whose === 'none' ? 'not-a-pending-credential' : $foreign);
+        $binding    = $this->bindingOf($person, $session, Purpose::ENROLLMENT);
+
+        $register = fn (): mixed => $this->gate()->registering($person, self::GUARD, self::registeredPasskey(), $binding, 'Laptop', self::client(), $credential);
+        $refusal  = self::refusal(static fn (): mixed => self::storage()->transaction($register));
+
+        self::assertSame(FailureReason::NOT_FOUND, $refusal->reason);
+        self::assertSame('The pending credential names no pending sign-in of the identity on the application.', $refusal->getMessage());
+        self::assertSame(0, Factor::query()->count());
     }
 
     /**
@@ -334,7 +462,8 @@ final class PasskeyFactorGateAdapterTest extends TestCase
      * credential, the registration and the removal are judged as the active
      * caller `laravel-authentication`'s values name, on the application it
      * names, and MFA's events about both describe that identity on that
-     * application, with no sign-in and no client known, never the request's.
+     * application, on the sign-in the change was made on, served to the client
+     * the registration and the removal were handed, never the request's.
      *
      * @return void
      *
@@ -379,7 +508,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         foreach ($contexts as $context) {
             self::assertSame($key, $context['identity_id']);
             self::assertSame(self::GUARD, $context['application']);
-            self::assertSame([null, null, null], [$context['session_id'], $context['ip'], $context['user_agent']]);
+            self::assertSame([$session->getKey(), self::CLIENT_IP, self::CLIENT_AGENT], [$context['session_id'], $context['ip'], $context['user_agent']]);
         }
     }
 
@@ -396,8 +525,8 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         $stranger = new class extends User implements Identity {};
         $binding  = new ProofBinding($stranger, self::GUARD, 'sign-in', Purpose::ENROLLMENT);
 
-        self::assertNull($this->gate()->registering($stranger, self::GUARD, self::registeredPasskey(), $binding, 'Laptop'));
-        self::assertNull($this->gate()->removing($stranger, self::GUARD, 'passkey', self::CREDENTIAL));
+        self::assertNull($this->gate()->registering($stranger, self::GUARD, self::registeredPasskey(), $binding, 'Laptop', self::client(), null));
+        self::assertNull($this->gate()->removing($stranger, self::GUARD, 'passkey', self::CREDENTIAL, self::client()));
     }
 
     /**
@@ -413,7 +542,8 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         [$person, $session] = $this->freshPerson();
 
         $binding     = $this->bindingOf($person, $session, Purpose::ENROLLMENT);
-        $association = self::storage()->transaction(fn (): mixed => $this->gate()->registering($person, 'other', self::registeredPasskey(), $binding, 'Laptop'));
+        $register    = fn (): mixed => $this->gate()->registering($person, 'other', self::registeredPasskey(), $binding, 'Laptop', self::client(), null);
+        $association = self::storage()->transaction($register);
 
         self::assertNull($association);
         self::assertSame(0, Factor::query()->count());
@@ -434,7 +564,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         $binding = new ProofBinding($person, self::GUARD, null, Purpose::ENROLLMENT);
 
         try {
-            self::storage()->transaction(fn (): mixed => $this->gate()->registering($person, self::GUARD, self::registeredPasskey(), $binding, 'Laptop'));
+            self::storage()->transaction(fn (): mixed => $this->gate()->registering($person, self::GUARD, self::registeredPasskey(), $binding, 'Laptop', self::client(), null));
         } catch (UnresolvedReferenceException $exception) {
             self::assertSame(ReferenceKind::SESSION, $exception->kind);
             self::assertSame(self::GUARD, $exception->application);
@@ -524,6 +654,32 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         $this->reauthenticate($person, $session);
 
         return [$person, $session];
+    }
+
+    /**
+     * A person with no factor signed in pending, MFA requiring a factor of
+     * everyone and allowing a pending session to enrol a passkey as its first,
+     * with the pending session and its credential.
+     *
+     * @return array{0: \Tests\Fixtures\Models\Person, 1: \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession, 2: string}
+     *
+     * @throws \Throwable
+     */
+    private function pendingSignIn(): array
+    {
+        config()->set('mfa.applications.' . self::GUARD . '.requirement', 'always');
+        config()->set('mfa.applications.' . self::GUARD . '.bootstrap', ['enabled' => true, 'types' => ['passkey']]);
+
+        $person  = $this->createPerson();
+        $result  = $this->attemptSignIn($person);
+        $pending = $result->pending ?? self::fail('The sign-in did not wait for a further factor.');
+        $session = $pending->session;
+
+        self::assertInstanceOf(Model::class, $session);
+        self::assertInstanceOf(EloquentSession::class, $session);
+        self::assertNotNull($result->credential);
+
+        return [$person, $session, $result->credential->reveal()];
     }
 
     /**

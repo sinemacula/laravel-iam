@@ -9,7 +9,8 @@ use Illuminate\Http\Request;
 /**
  * Binds a stray request in the container, carrying other values than the ones
  * an adapter is handed: another client's IP address and user agent, and, when
- * given, a body (another pending session's credential, say).
+ * given, a body (another pending session's credential, say) and headers (the
+ * same-site facts a client the adapter is handed lacks, say).
  *
  * An adapter's core method acts on the plain values the member hands it and
  * never on the current request, so a test binds one of these first and then
@@ -34,18 +35,22 @@ trait BindsStrayRequests
 
     /**
      * Bind a stray request in the container as the current request, from
-     * another client than the tests', carrying the body given, and return it.
+     * another client than the tests', carrying the body and the headers given,
+     * and return it.
      *
      * @param  array<string, string>  $body
+     * @param  array<string, string>  $headers
      * @return \Illuminate\Http\Request
      */
-    protected function bindStrayRequest(array $body = []): Request
+    protected function bindStrayRequest(array $body = [], array $headers = []): Request
     {
         $app = $this->app;
 
         self::assertNotNull($app);
 
         $request = Request::create('/stray', 'POST', $body, server: ['REMOTE_ADDR' => self::STRAY_IP, 'HTTP_USER_AGENT' => self::STRAY_AGENT]);
+
+        $request->headers->add($headers);
 
         $app->instance('request', $request);
 

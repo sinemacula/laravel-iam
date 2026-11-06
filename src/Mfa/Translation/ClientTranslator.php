@@ -12,16 +12,19 @@ use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClient;
  * `laravel-authentication`, the one place the two members' client contexts
  * meet.
  *
- * MFA's client is its IP address and user agent alone; `laravel-authentication`'s
- * also carries the facts a cookie application's same-site check judges (the
- * `Origin` presented, the request's own scheme and host, and the names of the
- * headers it carried). MFA's client crosses with its IP address and user agent,
- * which `laravel-authentication` makes safe to store as it does any client's
- * (an IP address that is not one is dropped, a user agent cleaned and cut), and
- * with none of those facts, since MFA keeps none: the client is
- * `laravel-authentication`'s to describe the action by (its last use, its
- * events, its limits on an IP address), never to pass a same-site check by. A
- * client MFA does not hand over is one of which nothing is known.
+ * Both describe a client by the same five facts: its IP address and user agent,
+ * and the facts a cookie application's same-site check judges (the `Origin`
+ * presented, the request's own scheme and host, and the names of the headers it
+ * carried with a value, lower-cased with underscores read as hyphens). MFA
+ * cleans the last three as `laravel-authentication` does, so each crosses one
+ * to one, either way. Towards `laravel-authentication`, it makes the IP address
+ * and user agent safe to store as it does any client's (an IP address that is
+ * not one is dropped, a user agent cleaned and cut); towards MFA, they cross as
+ * `laravel-authentication` kept them. The client is the one the member hands
+ * over, judged and recorded by the other as given: nothing is read from a
+ * request, and no fact the member does not carry is invented. A client MFA does
+ * not hand over is one of which nothing is known, which a cookie application's
+ * same-site check refuses.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,15 +34,29 @@ use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClient;
 final readonly class ClientTranslator
 {
     /**
-     * MFA's client as `laravel-authentication`'s: its IP address and user
-     * agent, with no same-site facts.
+     * MFA's client as `laravel-authentication`'s: its IP address, user agent,
+     * `Origin`, scheme and host, and the names of the headers it carried with a
+     * value, each as MFA carries it.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\ClientContext  $client
      * @return \SineMacula\Laravel\Authentication\Http\ClientContext
      */
     public static function toAuthentication(MfaClient $client): AuthenticationClient
     {
-        return new AuthenticationClient($client->ip, $client->userAgent);
+        return new AuthenticationClient($client->ip, $client->userAgent, $client->origin, $client->schemeAndHost, $client->nonEmptyHeaders);
+    }
+
+    /**
+     * `laravel-authentication`'s client as MFA's: its IP address, user agent,
+     * `Origin`, scheme and host, and the names of the headers it carried with a
+     * value, each as `laravel-authentication` carries it.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
+     * @return \SineMacula\Laravel\Mfa\Context\ClientContext
+     */
+    public static function toMfa(AuthenticationClient $client): MfaClient
+    {
+        return new MfaClient($client->ip, $client->userAgent, $client->origin, $client->schemeAndHost, $client->nonEmptyHeaders);
     }
 
     /**

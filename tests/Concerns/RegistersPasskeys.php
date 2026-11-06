@@ -6,6 +6,7 @@ namespace Tests\Concerns;
 
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Passkeys\PasskeyRegistration;
 use SineMacula\Laravel\Authentication\Passkeys\PasskeyService;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
@@ -50,13 +51,17 @@ trait RegistersPasskeys
      * Register a passkey for the identity through the guard's passkey service,
      * under the credential id given (unpadded base64url) or a random one, with
      * the registration challenge bound as given (an MFA enrolment's binding, so
-     * MFA associates it as a factor), and return the registration.
+     * MFA associates it as a factor), served to the client given (the tests' by
+     * default), with the pending credential of the pending sign-in it enrols a
+     * factor for when given, and return the registration.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?string  $credentialId
      * @param  ?\SineMacula\Laravel\Authentication\Proofs\ProofBinding  $binding
      * @param  string  $guard
      * @param  ?string  $name
+     * @param  ?\SineMacula\Laravel\Authentication\Http\ClientContext  $client
+     * @param  ?string  $pending
      * @return \SineMacula\Laravel\Authentication\Passkeys\PasskeyRegistration
      *
      * @throws \Throwable
@@ -67,12 +72,14 @@ trait RegistersPasskeys
         ?ProofBinding $binding = null,
         string $guard = self::GUARD,
         ?string $name = 'Laptop',
+        ?ClientContext $client = null,
+        #[\SensitiveParameter] ?string $pending = null,
     ): PasskeyRegistration {
         $passkeys = $this->passkeys($guard);
         $options  = $passkeys->registrationOptions($identity, 'person@example.test', binding: $binding);
         $id       = $credentialId === null ? null : VirtualAuthenticator::decode($credentialId);
 
-        return $passkeys->register($identity, $options->challengeId, $this->authenticator()->create($options->options, id: $id), self::client(), $name);
+        return $passkeys->register($identity, $options->challengeId, $this->authenticator()->create($options->options, id: $id), $client ?? self::client(), $name, $pending);
     }
 
     /**

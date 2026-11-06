@@ -42,26 +42,13 @@ final readonly class MemberDefaults
      */
     public function isReplaceable(Container $container, string $abstract, array $defaults): bool
     {
-        return !$container->bound($abstract) || $this->isBoundTo($container, $abstract, $defaults);
-    }
+        if (!$container->bound($abstract)) {
+            return true;
+        }
 
-    /**
-     * Whether the seam is bound to one of the classes given, by a class-string
-     * binding to one of them or by a closure one of them declares: what the
-     * container will build for it, read without building it. An unbound seam,
-     * an instance, a resolved shared binding, an alias, or any other binding is
-     * bound to none of them.
-     *
-     * @param  \Illuminate\Contracts\Container\Container  $container
-     * @param  string  $abstract
-     * @param  list<class-string>  $classes
-     * @return bool
-     */
-    public function isBoundTo(Container $container, string $abstract, array $classes): bool
-    {
         $closure = $this->bindingOf($container, $abstract);
 
-        return $closure !== null && in_array($this->declarer(new \ReflectionFunction($closure)), $classes, true);
+        return $closure !== null && in_array($this->declarer(new \ReflectionFunction($closure)), $defaults, true);
     }
 
     /**

@@ -42,9 +42,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   through `laravel-authentication`'s `PendingCredential::extract()`, and `ApplicationResolverAdapter::resolve()`, whose
   `Request` MFA's contract hands it and which reads nothing of it. No adapter reaches for the request the container
   holds (`make('request')`, `request()`, the `Request` facade), so a request bound beside a core call never changes
-  what it does. Each member's `ClientContext` is its own class: MFA's crosses to `laravel-authentication`'s in one
-  place (`Mfa\Translation\ClientTranslator`), with its IP address and user agent and none of the same-site facts MFA
-  does not keep, and where a member hands no client the other is handed one of which nothing is known
+  what it does. Each member's `ClientContext` is its own class: the two cross in one place
+  (`Mfa\Translation\ClientTranslator`, `toAuthentication()` and `toMfa()`), one to one, with the IP address, user
+  agent, `Origin`, scheme and host and the names of the headers carried, the last three cleaned alike by both members,
+  and where MFA hands no client `laravel-authentication` is handed one of which nothing is known
   (`ClientTranslator::unknown()`).
 - A sign-in is one of `laravel-authentication`'s sessions, named as MFA names a sign-in (`Mfa\Translation\SignIn`):
   - MFA's application is the guard of the same name, which must be a declared guard of the `jwt` driver. MFA hands
@@ -52,8 +53,9 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
     the application and the client), and a removal its application, and those are what the adapters act on, never
     the guard's current user. Only where MFA names no application (the pending session resolver's `fromRequest()`, a
     reset, `forgetFactor()`) is it the default guard, as `Auth::shouldUse()` leaves it, which is also what MFA names
-    its application after when no application resolver is bound. The event context names no application or sign-in
-    at all, and reads no guard: MFA names the event's application itself.
+    its application after when no application resolver is bound. The event context reads no guard: it names the
+    session of the sign-in MFA hands it on the application MFA hands it, read by its key, and MFA names the event's
+    application itself.
   - MFA's sign-in id is the session's key as a string (`SignIn::reference()`), which is always its primary key. A key
     that is neither a non-empty string nor an integer names nothing and is refused.
   - Where `laravel-authentication` names no session (at sign-in, before the session row is written, and whenever it
@@ -150,15 +152,19 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
     No field is no pending session; a field that names no live pending session is refused. `revalidate()`, asked under
     MFA's lock, reads no request: it reads the session again from the credential the context keeps, on the context's
     application, and answers `null` (MFA's refusal) for a context that kept none, a session that ended, and another
-    session or identity than the context's.
-  - `PendingCompletionAdapter` (IAM-3.3) calls `satisfy()` with the credential the revalidated context keeps and the
-    proof's own evaluation as the last write of MFA's transaction, only inside a transaction on the storage
-    connection, and returns the `SignInResult` as MFA's completion. `satisfy()` binds the guard only once that
-    transaction commits, so a result never reaches a response when MFA's commit fails. MFA hands the completion no
-    client, so `satisfy()` is handed one of which nothing is known (`Translation\ClientTranslator::unknown()`): on a
-    guard whose refresh token travels in a cookie `satisfy()` refuses every completion as `cross_site_request`, so the
-    application is refused when it boots with this completion bound beside such a guard (`Mfa\PendingCompletionCheck`,
-    `Exceptions\CookieTransportUnsupportedException`; member gap, see `codes-delivery-and-passkeys.md`).
+    session or identity than the context's. `fromCredential()` reads no request either: it answers the pending session
+    a credential handed in as a plain value names on the application's guard, or `null`, for the passkey factor gate
+    (`codes-delivery-and-passkeys.md`).
+  - `PendingCompletionAdapter` (IAM-3.3) is handed the caller the verification was served to: it reads the pending
+    session from `CallerContext::$pending`, and refuses a caller holding none as `not_accepted`, as it refuses a
+    result bound elsewhere, before anything is written. It calls `satisfy()` with the credential the revalidated
+    context keeps, the proof's own evaluation and the caller's client (`Translation\ClientTranslator::toAuthentication()`)
+    as the last write of MFA's transaction, only inside a transaction on the storage connection, and returns the
+    `SignInResult` as MFA's completion. `satisfy()` binds the guard only once that transaction commits, so a result
+    never reaches a response when MFA's commit fails. `laravel-authentication` judges the client: on a guard whose
+    refresh token travels in a cookie, a client without an `Origin` of its own site or the guard's custom header is
+    refused as `cross_site_request` (thrown as `not_accepted`, inside MFA's transaction, which rolls back), and the
+    activation records the client's IP address and user agent as the session's last use.
   - `StepUpAdapter` (IAM-3.4) refuses a caller that is pending, nobody or on another application than the proof's,
     checks the proof names the caller's identity, and calls `stepUp()` with the proof's own evaluation and the caller's
     client, which steps up the session the proof's binding names, never the guard's current one, locking its row
@@ -384,16 +390,13 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
 - `src/Mfa/MfaSeams.php`: `seams()`, `SWITCH`; `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`:
   `adapters.mfa`.
 - `src/Mfa/CurrentSession.php`: `named()`, `of()`, `current()`, `held()`, `identity()`, `caller()`, `defaultGuard()`,
-  `guard()`, `sessions()`, `identitySessions()`, `sessionGuards()`, `isInTransaction()`.
-- `src/Mfa/PendingCompletionCheck.php` (`assertCompletable()`),
-  `src/Exceptions/CookieTransportUnsupportedException.php`, `src/Bindings/MemberDefaults.php` (`isBoundTo()`),
-  `src/IamServiceProvider.php` (`checkPendingCompletion()`).
+  `guard()`, `sessions()`, `identitySessions()`, `isInTransaction()`.
 - `src/Mfa/Translation/SignIn.php` (`UNNAMED`, `reference()`, `binding()`), `IdentityReference.php`,
   `ChannelTranslator.php`, `ProofTranslator.php` (`toMfa()`, `toResult()`), `RequirementTranslator.php` (`toMfa()`,
   `toAuthentication()`, `evaluation()`, `toFreshnessParts()`, `toFreshness()`, `fromFreshness()`),
-  `ChangeTranslator.php`, `ClientTranslator.php` (`toAuthentication()`, `unknown()`).
+  `ChangeTranslator.php`, `ClientTranslator.php` (`toAuthentication()`, `toMfa()`, `unknown()`).
 - `src/Mfa/AdditionalFactorPolicyAdapter.php`, `RequirementCheckAdapter.php`, `PendingSessionResolverAdapter.php`
-  (`fromRequest()`, `revalidate()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
+  (`fromRequest()`, `revalidate()`, `fromCredential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
   `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
   `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`, `held()`),
   `FirstFactorResolverAdapter.php`.
@@ -462,9 +465,12 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   `SessionTransitionAdapterTest.php` `testTheNamedSignInIsJudgedWhateverTheGuardHolds`;
   `FactorChangeGateAdapterTest.php` `testAChangeIsGatedOnTheNamedSignInWhateverTheGuardHolds`: the sign-in MFA names
   is acted on whatever the guard holds
-- `tests/Feature/Mfa/PendingCompletionCheckTest.php` `testACookieGuardRefusesBootWithThePendingCompletionBound`;
-  `tests/Integration/Mfa/PendingCompletionAdapterTest.php` `testACookieGuardsCompletionIsRefusedAsCrossSite`: the
-  cookie guard a pending completion cannot serve, refused at boot, and the refusal it would meet at sign-in
+- `tests/Integration/Mfa/PendingCompletionAdapterTest.php` `testACookieGuardsSameSiteCompletionIsSatisfied`,
+  `testACookieGuardsCrossSiteCompletionIsRefused`, `testTheActivatedSessionsLastUseIsTheCallersClient`,
+  `testACallerWithNoPendingSessionIsRefused`: the pending completion's caller, its client judged by a cookie guard's
+  same-site check (a same-site one activates the session, a cross-site one is refused inside MFA's transaction and
+  rolls back) and recorded as the session's last use, and a caller with no pending session refused; MFA's
+  `PendingCompletionTests` run on a cookie guard with a same-site caller
 - `tests/Integration/Mfa/FactorRemovalTest.php` `testTheOutstandingRequirementAgreesWithTheJudgedSession`,
   `testTheRemovedFactorStopsCountingInsideMfasTransaction`: a removal through MFA with every adapter bound reports a
   requirement outstanding exactly when `laravel-authentication` returned the session to pending
@@ -501,9 +507,11 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   `testRevalidatingReadsTheSessionAsItStandsNow`, `testRevalidatingReadsTheContextsApplication`,
   `testAContextWithoutACredentialNoLongerStands`, `testASessionThatEndedNoLongerStands`,
   `testAnotherSessionNoLongerStands`, `testOnlyTheRequestHandedInIsRead`, `testRevalidatingReadsNoBoundRequest`,
-  `testRevalidatingWithoutASessionServiceIsRefused`), `PendingCompletionAdapterTest`
+  `testRevalidatingWithoutASessionServiceIsRefused`, `testACredentialHandedInIsReadOnTheApplicationsGuard`,
+  `testACredentialHandedInThatNamesNoSessionIsNone`), `PendingCompletionAdapterTest`
   (`testAnotherPendingSessionsCredentialIsRefused`, `testWithoutAPendingCredentialNothingIsSatisfied`,
-  `testTheHandedContextIsSatisfiedWhateverTheRequestCarries`, `testWithoutACredentialTheBoundRequestIsNotReadInstead`),
+  `testTheHandedContextIsSatisfiedWhateverTheRequestCarries`, `testWithoutACredentialTheBoundRequestIsNotReadInstead`,
+  `testACookieGuardsCrossSiteCompletionIsRefused`),
   `StepUpAdapterTest` (`testOnlyAnActiveCallersSessionIsSteppedUp`, `testTheCallersClientDescribesTheStepUp`,
   `testACallerThatIsNotTheSessionsIsRefusedInsideTheTransaction`,
   `testTheCallersApplicationIsSteppedUpWhateverTheDefaultGuard`), `FreshnessGateAdapterTest`
@@ -523,11 +531,7 @@ Update this note when:
 - MFA stops deleting a factor before it calls `forgetFactor()`, or changes what a proof's reference names;
 - `laravel-mfa`'s `VerifiedSignIn` gains a hook for a store whose proofs only the authentication layer records, or
   changes the evidence it records for a level (`actingOnVerifiedSession()` records the same evidence);
-- MFA hands the pending completion the caller's client, or its client gains same-site facts, or
-  `laravel-authentication` takes a pending session whose same-site check was judged at the edge
-  (`PendingCompletionAdapter` then hands `satisfy()` the caller's client, through `ClientTranslator`, and
-  `PendingCompletionCheck` goes), or names an application on
-  `ProofStore::forgetFactor()` (which then stops using the default guard);
+- MFA names an application on `ProofStore::forgetFactor()` (which then stops using the default guard);
 - `laravel-authentication` gains a public read of a session of a guard by the identity and its id
   (`CurrentSession::named()` then reads through it in place of the identity's `sessions()` relation), or either member
   changes what its `ClientContext` carries (`ClientTranslator` follows);

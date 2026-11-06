@@ -431,6 +431,50 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
+     * A credential handed in as a plain value is read on the guard the
+     * application given names, never the default guard, as the pending session
+     * it names, keeping the credential, though a request bound in the container
+     * carries another pending session's credential.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACredentialHandedInIsReadOnTheApplicationsGuard(): void
+    {
+        $person     = $this->createPerson();
+        $credential = $this->signInPending($person);
+        $expected   = $this->pendingContextFor($credential);
+
+        $this->bindStrayRequest([self::CREDENTIAL_FIELD => $this->signInPending($person)]);
+
+        config()->set('auth.defaults.guard', 'web');
+
+        $pending = $this->pendingResolver()->fromCredential(self::GUARD, $credential);
+
+        self::assertNotNull($pending);
+        self::assertSame($expected->sessionId, $pending->sessionId);
+        self::assertSame(self::GUARD, $pending->application);
+        self::assertTrue(IdentityReference::of($pending->identity)->is(IdentityReference::of($person)));
+        self::assertSame($credential, $pending->credential());
+    }
+
+    /**
+     * A credential handed in that names no live pending session of the guard is
+     * none, though a request bound in the container carries one that does.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACredentialHandedInThatNamesNoSessionIsNone(): void
+    {
+        $this->bindStrayRequest([self::CREDENTIAL_FIELD => $this->signInPending($this->createPerson())]);
+
+        self::assertNull($this->pendingResolver()->fromCredential(self::GUARD, 'not-a-pending-credential'));
+    }
+
+    /**
      * A context whose application holds no session service cannot be read
      * again, and is refused by throwing.
      *

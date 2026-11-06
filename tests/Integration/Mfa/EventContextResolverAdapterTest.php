@@ -6,17 +6,21 @@ namespace Tests\Integration\Mfa;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Context\ClientContext;
 use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Events\Actor;
 use SineMacula\Laravel\Mfa\Events\EventContext;
+use SineMacula\Laravel\Mfa\Events\EventSubject;
 use SineMacula\Laravel\Mfa\Events\FactorsReset;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\EventContextResolverTests;
@@ -28,13 +32,15 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's event context filled from the values MFA hands it
- * (IAM-3.12): an event carries the identity it is about and the IP address and
- * user agent of the client MFA hands it, and nothing of any sign-in the guard
- * holds, the identity's own or anyone else's, nor any tenant, since MFA hands
- * the resolver no application or sign-in to name them from; it never reads a
- * request bound in the container or the default guard, never throws, and MFA's
- * own events carry it once it is bound.
+ * Integration tests for MFA's event context filled from the subject MFA hands
+ * it (IAM-3.12): an event carries the identity it is about and the IP address
+ * and user agent of the client MFA hands it, and the session, principal and
+ * tenant of the sign-in MFA names only when it names the application too and
+ * the sign-in is one of the identity's sessions on that application's guard,
+ * read by its key; another identity's session, another application's, an
+ * unknown key and a malformed one name none. It never reads a request bound in
+ * the container, the default guard or the session the guard serves, never
+ * throws, and MFA's own events carry it once it is bound.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,28 +64,197 @@ final class EventContextResolverAdapterTest extends TestCase
     /** @var string The user agent the tests' client sends. */
     private const string USER_AGENT = 'IamTest/1.0';
 
+    /** @var string Another session guard, beside the one people sign in on. */
+    private const string ADMIN = 'admin';
+
+    /** @var ?\Tests\Fixtures\Models\Person The identity MFA's contract kit asks about. */
+    private ?Person $eventPerson = null;
+
     /**
-     * An event about the identity the guard serves carries the identity and the
-     * client alone: none of the sign-in the guard holds, though it is the
-     * identity's own, since it may be another application's than the one the
-     * operation ran on.
+     * A sign-in MFA names on its application, one of the identity's sessions
+     * there, names its session, the principal it acts as and the tenant it is
+     * active in, read by its key: though the guard serves another person's
+     * session and a request from another client is bound in the container,
+     * neither reaches the context.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAnEventAboutTheServedIdentityCarriesNoneOfItsSignIn(): void
+    public function testANamedSignInOfTheIdentitysNamesItsSession(): void
     {
-        $person = $this->createPerson();
+        $person  = $this->createPerson();
+        $session = $this->signInTenant($person);
 
-        $this->actInTenant($person);
+        $this->serveAnotherSession($this->createPerson());
 
-        self::assertSame(self::identityContext($person), $this->adapter()->resolve($person, self::served()));
+        self::assertSame(self::context([
+            'identity_type'  => $person->getMorphClass(),
+            'identity_id'    => self::keyOf($person),
+            'principal_type' => $person->getMorphClass(),
+            'principal_id'   => self::keyOf($person),
+            'tenant_id'      => self::TENANT,
+            'session_id'     => self::referenceOf($session),
+            'ip'             => self::IP,
+            'user_agent'     => self::USER_AGENT,
+        ]), $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($session), self::served())));
     }
 
     /**
-     * The identity is carried by its morph class, so an application's morph map
-     * is honoured.
+     * A sign-in that is another identity's session names no session, principal
+     * or tenant, though it is on the application named.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnotherIdentitysSessionNamesNone(): void
+    {
+        $person = $this->createPerson();
+        $other  = $this->signInTenant($this->createPerson());
+
+        $this->serveAnotherSession($person);
+
+        self::assertSame(self::identityContext($person), $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($other), self::served())));
+    }
+
+    /**
+     * A sign-in that is the identity's session on another application than the
+     * one named names no session, principal or tenant.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnotherApplicationsSessionNamesNone(): void
+    {
+        $person = $this->createPerson();
+        $admin  = $this->signIn($person, self::ADMIN)->record;
+
+        $this->serveAnotherSession($person);
+
+        self::assertSame(self::identityContext($person), $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($admin), self::served())));
+    }
+
+    /**
+     * Rows of `[sign-in]` that name no session: a key no session has, and one
+     * no session could have.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideUnknownSignIns(): iterable
+    {
+        yield 'an unknown id' => ['01890a5d-ac96-774b-bcce-b302099a8057'];
+
+        yield 'a malformed id' => ['not-a-session-key'];
+    }
+
+    /**
+     * A sign-in that names no session names none of the session, principal or
+     * tenant, and is not refused, though the guard serves the identity's own
+     * session.
+     *
+     * @param  string  $signIn
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideUnknownSignIns')]
+    public function testASignInThatNamesNoSessionNamesNone(string $signIn): void
+    {
+        $person = $this->createPerson();
+
+        $this->serveAnotherSession($person);
+
+        self::assertSame(self::identityContext($person), $this->adapter()->resolve(new EventSubject($person, self::GUARD, $signIn, self::served())));
+    }
+
+    /**
+     * Rows of `[application, named]`: a subject naming the application but no
+     * sign-in, and one naming the sign-in but no application.
+     *
+     * @return iterable<string, array{0: ?string, 1: bool}>
+     */
+    public static function providePartialSubjects(): iterable
+    {
+        yield 'no sign-in' => [self::GUARD, false];
+
+        yield 'no application' => [null, true];
+    }
+
+    /**
+     * Without both the application and the sign-in, the identity's session is
+     * not named, though the guard serves it and the sign-in is its own.
+     *
+     * @param  ?string  $application
+     * @param  bool  $named
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('providePartialSubjects')]
+    public function testASubjectNamingLessThanBothNamesNone(?string $application, bool $named): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->serveAnotherSession($person);
+        $signIn  = $named ? self::referenceOf($session) : null;
+
+        self::assertSame(self::identityContext($person), $this->adapter()->resolve(new EventSubject($person, $application, $signIn, self::served())));
+    }
+
+    /**
+     * An application that is no session guard, and an identity
+     * `laravel-authentication` does not sign in, name no session and are not
+     * refused: an event is only described.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWhatCannotBeResolvedIsNeverRefused(): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->serveAnotherSession($person);
+
+        self::assertSame(self::identityContext($person), $this->adapter()->resolve(new EventSubject($person, 'not-a-guard', self::referenceOf($session), self::served())));
+
+        $stranger = new class extends User implements MultiFactorAuthenticatable {
+            use HasFactors;
+        };
+
+        $stranger->setAttribute('id', 7);
+
+        $context = $this->adapter()->resolve(new EventSubject($stranger, self::GUARD, self::referenceOf($session), self::served()));
+
+        self::assertSame('7', $context['identity_id']);
+        self::assertSame([null, null, null, null], [$context['session_id'], $context['principal_type'], $context['principal_id'], $context['tenant_id']]);
+    }
+
+    /**
+     * A session acting as no principal yet, and in no tenant, names its session
+     * alone.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASessionActingAsNoPrincipalNamesItsSessionAlone(): void
+    {
+        $person    = $this->createPerson();
+        $session   = $this->signIn($person)->record;
+        $principal = $session->principal();
+
+        $session->forceFill([$principal->getMorphType() => null, $principal->getForeignKeyName() => null])->save();
+
+        $context = $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($session), self::served()));
+
+        self::assertSame(self::referenceOf($session), $context['session_id']);
+        self::assertSame([null, null, null], [$context['principal_type'], $context['principal_id'], $context['tenant_id']]);
+    }
+
+    /**
+     * The identity and the principal are carried by their morph class, so an
+     * application's morph map is honoured.
      *
      * @return void
      *
@@ -93,35 +268,19 @@ final class EventContextResolverAdapterTest extends TestCase
         try {
             Relation::morphMap([self::MORPH => Person::class]);
 
-            $context = $this->adapter()->resolve($person, self::served());
+            $session = $this->signInTenant($person);
+            $context = $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($session), self::served()));
         } finally {
             Relation::morphMap($previous, false);
         }
 
         self::assertSame(self::MORPH, $context['identity_type']);
-        self::assertNull($context['principal_type']);
-    }
-
-    /**
-     * Nothing of the sign-in the guard serves is attributed to an event about
-     * another identity: only that identity and the client.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testNothingOfAnotherIdentitysSignInIsAttributed(): void
-    {
-        $person = $this->createPerson();
-
-        $this->actInTenant($this->createPerson());
-
-        self::assertSame(self::identityContext($person), $this->adapter()->resolve($person, self::served()));
+        self::assertSame(self::MORPH, $context['principal_type']);
     }
 
     /**
      * An event about no identity carries no sign-in, though the guard serves
-     * one: only the client.
+     * one and the subject names it: only the client.
      *
      * @return void
      *
@@ -129,77 +288,51 @@ final class EventContextResolverAdapterTest extends TestCase
      */
     public function testAnEventAboutNoIdentityCarriesOnlyTheClient(): void
     {
-        $this->actInTenant($this->createPerson());
+        $session = $this->serveAnotherSession($this->createPerson());
 
         self::assertSame(self::context([
             'ip'         => self::IP,
             'user_agent' => self::USER_AGENT,
-        ]), $this->adapter()->resolve(null, self::served()));
+        ]), $this->adapter()->resolve(new EventSubject(null, self::GUARD, self::referenceOf($session), self::served())));
     }
 
     /**
      * Served to no client, as an administrator's, a console command's or a
-     * pruning's change is, there is nothing to describe but the identity.
+     * pruning's change is, the context names no IP address or user agent,
+     * though the container holds a request from another client.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testWithoutAClientOnlyTheIdentityIsKnown(): void
+    public function testWithoutAClientNoneIsNamed(): void
     {
         $person = $this->createPerson();
 
-        $this->actInTenant($person);
+        $this->serveAnotherSession($person);
 
         self::assertSame(self::context([
             'identity_type' => $person->getMorphClass(),
             'identity_id'   => self::keyOf($person),
-        ]), $this->adapter()->resolve($person, null));
+        ]), $this->adapter()->resolve(new EventSubject($person)));
     }
 
     /**
-     * A request bound in the container never reaches the context: the client is
-     * the one MFA hands, one of which nothing is known names no IP address or
-     * user agent, and an event handed no client names none, though the
-     * container holds a request from another client.
+     * No tenant is carried for a subject naming no sign-in: neither the served
+     * session's own nor one set on the guard beside it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testABoundRequestNeverReachesTheContext(): void
+    public function testNoTenantIsCarriedWithoutASignIn(): void
     {
         $person = $this->createPerson();
 
-        $this->actInTenant($person);
-        $this->bindStrayRequest();
-
-        $known = self::identityContext($person);
-
-        self::assertSame($known, $this->adapter()->resolve($person, self::served()));
-        self::assertSame(array_replace($known, ['ip' => null, 'user_agent' => null]), $this->adapter()->resolve($person, ClientContext::unknown()));
-        self::assertSame(self::context([
-            'identity_type' => $person->getMorphClass(),
-            'identity_id'   => self::keyOf($person),
-        ]), $this->adapter()->resolve($person, null));
-    }
-
-    /**
-     * No tenant is carried: neither the session's own nor one set on the guard
-     * beside it.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testNoTenantIsCarried(): void
-    {
-        $person = $this->createPerson();
-
-        $this->actInTenant($person);
+        $this->serveAnotherSession($person);
         $this->actingInTenant(new ClaimedTenant('tenant-claimed'));
 
-        self::assertNull($this->adapter()->resolve($person, self::served())['tenant_id']);
+        self::assertNull($this->adapter()->resolve(new EventSubject($person, self::GUARD, null, self::served()))['tenant_id']);
     }
 
     /**
@@ -220,8 +353,8 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Whatever the default guard, the context is the identity and the client,
-     * and it is never refused: an event is only described.
+     * Whatever the default guard, the sign-in named is read on the application
+     * named, and the context is never refused.
      *
      * @param  string  $guard
      * @return void
@@ -231,19 +364,23 @@ final class EventContextResolverAdapterTest extends TestCase
     #[DataProvider('provideDefaultGuards')]
     public function testTheDefaultGuardIsNeverRead(string $guard): void
     {
-        $person = $this->createPerson();
+        $person  = $this->createPerson();
+        $session = $this->signInTenant($person);
 
-        $this->actInTenant($person);
+        $this->serveAnotherSession($person);
 
         Config::set('auth.defaults.guard', $guard);
 
-        self::assertSame(self::identityContext($person), $this->adapter()->resolve($person, self::served()));
+        $context = $this->adapter()->resolve(new EventSubject($person, self::GUARD, self::referenceOf($session), self::served()));
+
+        self::assertSame(self::referenceOf($session), $context['session_id']);
+        self::assertSame(self::TENANT, $context['tenant_id']);
     }
 
     /**
      * Bound as MFA's event context resolver, MFA's own events carry the
-     * identity and the client MFA hands it, on the application MFA names (none,
-     * for an administrator's reset), and none of the sign-in the guard holds.
+     * identity and the client MFA hands it, and none of the sign-in the guard
+     * serves for an administrator's reset, which names none.
      *
      * @return void
      *
@@ -258,11 +395,25 @@ final class EventContextResolverAdapterTest extends TestCase
         $person   = $this->createPerson();
         $expected = self::identityContext($person);
 
-        $this->actInTenant($person);
+        $this->serveAnotherSession($person);
 
         Mfa::resetIdentity($person, Actor::of($person), 'Lost device', client: self::served());
 
         Event::assertDispatched(FactorsReset::class, static fn (FactorsReset $event): bool => $event->context === $expected);
+    }
+
+    /**
+     * Declare another session guard beside the one people sign in on.
+     *
+     * @param  mixed  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        Config::set('auth.guards.' . self::ADMIN, ['driver' => 'jwt', 'provider' => 'people', 'application' => ['methods' => ['password']]]);
     }
 
     /**
@@ -277,24 +428,53 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity events are about: a person signed in on the guard.
+     * An identity events are about, for MFA's contract kit.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
-     *
-     * @throws \Throwable
      */
     #[\Override]
     protected function eventIdentity(): MultiFactorAuthenticatable
     {
-        $person = $this->createPerson();
-
-        $this->actInTenant($person);
-
-        return $person;
+        return $this->eventPerson ??= $this->createPerson();
     }
 
     /**
-     * The context of an event about the person, served to the tests' client.
+     * Serve a session of the kit's identity on the guard, signed in through
+     * `laravel-authentication`, with a request from another client bound beside
+     * it, so a resolver that read either would be caught.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function arrangeServedEventSession(): void
+    {
+        $identity = $this->eventIdentity();
+
+        self::assertInstanceOf(Person::class, $identity);
+
+        $this->serveAnotherSession($identity);
+    }
+
+    /**
+     * A sign-in of the kit's identity on the guard, which the resolver names.
+     *
+     * @return array{0: string, 1: string}
+     *
+     * @throws \Throwable
+     */
+    protected function knownEventSignIn(): array
+    {
+        $identity = $this->eventIdentity();
+
+        self::assertInstanceOf(Person::class, $identity);
+
+        return [self::GUARD, self::referenceOf($this->signIn($identity)->record)];
+    }
+
+    /**
+     * The context of an event about the person, served to the tests' client,
+     * naming no sign-in.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return array<string, int|string|null>
@@ -310,24 +490,54 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Sign the person in, record the tenant on the new session's row as a
-     * sign-in into the tenant records it, and act on the session as a bearer
-     * request for it from the tests' client would.
+     * Sign the person in, and record the tenant on the new session's row as a
+     * sign-in into the tenant records it, without acting on it.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
      *
      * @throws \Throwable
      */
-    private function actInTenant(Person $person): EloquentSession&Model
+    private function signInTenant(Person $person): EloquentSession&Model
     {
         $session = $this->signIn($person)->record;
 
         $session->forceFill([$session->getTenantIdName() => self::TENANT])->save();
 
+        return $session;
+    }
+
+    /**
+     * Serve another session of the person's on the guard, in the tenant, as a
+     * bearer request for it would, with a request from another client bound in
+     * the container, and return the served session.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
+     *
+     * @throws \Throwable
+     */
+    private function serveAnotherSession(Person $person): EloquentSession&Model
+    {
+        $session = $this->signInTenant($person);
+
         $this->actingOnSession($session, self::GUARD);
+        $this->bindStrayRequest();
 
         return $session;
+    }
+
+    /**
+     * The sign-in MFA names the session by.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
+     * @return string
+     *
+     * @throws \Throwable
+     */
+    private static function referenceOf(EloquentSession&Model $session): string
+    {
+        return SignIn::reference($session, (string) $session->getGuard());
     }
 
     /**
