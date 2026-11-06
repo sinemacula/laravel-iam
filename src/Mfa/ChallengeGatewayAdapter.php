@@ -76,19 +76,28 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * the pending caller's; all inside its own transaction on the shared storage
  * connection, a savepoint of MFA's when MFA calls from inside its identity's
  * lock. Its answer is translated into MFA's send result and challenge outcome.
- * A wrong or malformed code fails as MFA's counted `invalid_code`; a challenge
- * that is not the binding's live one is refused as `not_found`, and one already
- * used as `replayed`, neither counted, as `laravel-authentication` counts no
- * attempt at either.
+ * A wrong or malformed code fails as MFA's counted `invalid_code`, never a
+ * refusal that would let its count roll back; a challenge that is unknown,
+ * malformed or another binding's is refused as `not_found`, and the binding's
+ * own challenge once used up as `replayed`, whatever the code, neither counted
+ * against the factor, as `laravel-authentication` counts and reports neither
+ * (MFA's enrolment confirmation counts a `replayed` against the enrolment
+ * itself).
  *
  * There the code is delivered by `laravel-authentication`'s one-time code
  * sender, from its queued job once the outermost transaction commits, never by
- * MFA's senders: MFA reports it sent once it is issued, and a delivery that
- * fails fails the job, which the queue retries, rather than rolling the code
+ * MFA's senders: MFA reports it sent once it is issued, before any gateway has
+ * accepted it for delivery, and a delivery that fails fails the job, which the
+ * application's queue retries under its policy, rather than rolling the code
  * back. `laravel-authentication`'s counts on code requests and checks are taken
  * in MFA's transaction when MFA calls from inside one, so they commit or roll
- * back with it, and MFA's own throttle on the IP address counts the same
- * request too.
+ * back with it; a refused check commits, so its count stands. MFA's own
+ * throttle on the IP address counts the same check only when it is a counted
+ * failure, so `laravel-authentication`'s per-IP limit on checking factor codes
+ * is the one that bounds repeated checks of a challenge that names no live
+ * challenge of the binding's, or names a used one. That limit is taken before
+ * the challenge's shape is judged, so a challenge id not in the form
+ * `laravel-authentication` issues is counted against it as any other is.
  *
  * A factor that keeps no state of its own on a row, or that is not the
  * binding's identity's, is not found, as MFA's own gateway finds none; a

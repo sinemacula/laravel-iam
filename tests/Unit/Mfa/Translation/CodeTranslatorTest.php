@@ -285,6 +285,10 @@ final class CodeTranslatorTest extends TestCase
         yield 'a factor no longer stored' => [AttemptOutcome::notFound(), true, FactorCodeStanding::REFUSED, FactorCodeRefusal::NOT_FOUND];
 
         yield 'a lockout' => [AttemptOutcome::refuse(Lockout::disabled(AttemptScope::IDENTITY)), true, FactorCodeStanding::LOCKED, null];
+
+        yield 'a wrong code whose count disabled the factor' => [AttemptOutcome::fail(Lockout::disabled()), false, FactorCodeStanding::LOCKED, null];
+
+        yield 'a wrong code whose count held the identity' => [AttemptOutcome::fail(Lockout::disabled(AttemptScope::IDENTITY)), false, FactorCodeStanding::LOCKED, null];
     }
 
     /**
@@ -317,6 +321,27 @@ final class CodeTranslatorTest extends TestCase
 
         self::assertSame(FactorCodeStanding::LOCKED, $admission->standing);
         self::assertTrue($until->equalTo($admission->lockedUntil));
+    }
+
+    /**
+     * A wrong code whose count locked the factor or the identity until a time
+     * crosses as that lock, until it ends; one held at the failure ceiling
+     * crosses as a lock with no end.
+     *
+     * @return void
+     */
+    public function testALockoutAWrongCodeCausedCrossesWithItsEnd(): void
+    {
+        $until    = $this->now->addMinutes(15);
+        $factor   = self::translator()->attempt(AttemptOutcome::fail(Lockout::endingAt(AttemptScope::FACTOR, $until)), false);
+        $identity = self::translator()->attempt(AttemptOutcome::fail(Lockout::endingAt(AttemptScope::IDENTITY, $until->addMinute())), false);
+        $disabled = self::translator()->attempt(AttemptOutcome::fail(Lockout::disabled()), false);
+
+        self::assertSame(FactorCodeStanding::LOCKED, $factor->standing);
+        self::assertTrue($until->equalTo($factor->lockedUntil));
+        self::assertSame(FactorCodeStanding::LOCKED, $identity->standing);
+        self::assertTrue($until->addMinute()->equalTo($identity->lockedUntil));
+        self::assertNull($disabled->lockedUntil);
     }
 
     /**
@@ -411,7 +436,7 @@ final class CodeTranslatorTest extends TestCase
 
         yield 'not found' => [FactorCodeOutcome::NOT_FOUND, FailureReason::NOT_FOUND, CodeTranslator::NOT_FOUND, false];
 
-        yield 'used' => [FactorCodeOutcome::USED, FailureReason::REPLAYED, CodeTranslator::USED, false];
+        yield 'used' => [FactorCodeOutcome::USED, FailureReason::REPLAYED, CodeTranslator::REPLAYED, false];
 
         yield 'expired' => [FactorCodeOutcome::EXPIRED, FailureReason::EXPIRED, CodeTranslator::EXPIRED, false];
 

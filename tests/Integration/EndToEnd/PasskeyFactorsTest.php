@@ -141,8 +141,9 @@ final class PasskeyFactorsTest extends TestCase
     /**
      * A passkey factor removed through MFA, on a session stepped up with
      * another factor, leaves the passkey a sign-in passkey with no factor or
-     * association behind it; its later removal through `laravel-authentication`
-     * asks MFA nothing and answers no completion.
+     * association behind it, still registered to the identity; its later
+     * removal through `laravel-authentication` asks MFA nothing, answers no
+     * completion, and leaves no passkey registered.
      *
      * @param  string  $level
      * @return void
@@ -168,12 +169,13 @@ final class PasskeyFactorsTest extends TestCase
         self::assertNull(Factor::query()->find($factor->id));
         self::assertSame(0, PasskeyAssociation::query()->count());
         self::assertTrue(Passkey::query()->whereKey($passkeyId)->exists(), 'The passkey stays, for signing in.');
-        self::assertSame([], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person));
 
         $removal = $this->passkeys()->remove($person, $passkeyId, self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNull($removal->completion);
+        self::assertSame([], $this->gateway()->credentialIds($person));
         self::assertSame(0, Factor::query()->where('type', 'passkey')->count());
 
         $this->assertEventsCarryTheirSignIn($person, $session, [PasskeyAssociated::class, FactorRemoved::class]);

@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
+use SineMacula\Laravel\Iam\Mfa\ActiveStateResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\ActiveTenantResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\ApplicationResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
@@ -18,7 +19,9 @@ use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\SubjectTypeResolverAdapter;
 use SineMacula\Laravel\Mfa\Context\DefaultEventContextResolver;
+use SineMacula\Laravel\Mfa\Context\IdentityContractActiveState;
 use SineMacula\Laravel\Mfa\Context\IdentityContractSubjectType;
+use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\ApplicationResolver;
 use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
@@ -49,6 +52,7 @@ final class ContextSeamsTest extends TestCase
         EventContextResolver::class => EventContextResolverAdapter::class,
         ActiveTenantResolver::class => ActiveTenantResolverAdapter::class,
         SubjectTypeResolver::class  => SubjectTypeResolverAdapter::class,
+        ActiveStateResolver::class  => ActiveStateResolverAdapter::class,
         ApplicationResolver::class  => ApplicationResolverAdapter::class,
     ];
 
@@ -57,6 +61,7 @@ final class ContextSeamsTest extends TestCase
         EventContextResolver::class => [DefaultEventContextResolver::class],
         ActiveTenantResolver::class => [NoActiveTenant::class],
         SubjectTypeResolver::class  => [IdentityContractSubjectType::class],
+        ActiveStateResolver::class  => [IdentityContractActiveState::class],
         ApplicationResolver::class  => [],
     ];
 

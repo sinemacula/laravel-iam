@@ -38,9 +38,12 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
  * `report()` takes no lock those do not already cover. MFA's admission and
  * attempt outcome are translated into `laravel-authentication`'s factor code
  * admission: admitted, locked until a time, or refused for a reason (see
- * `Translation\CodeTranslator`). MFA's outcome of a counted failure does not
- * say whether that failure locked the factor or the identity, so a wrong code
- * is answered as admitted even when it did; the next admission finds the lock.
+ * `Translation\CodeTranslator`). A wrong code whose count locked or disabled
+ * the factor, or locked the identity, is answered as locked, until the lockout
+ * MFA says it caused ends, so `laravel-authentication`'s check carries the lock
+ * this attempt caused; one that locked nothing is answered as admitted. A
+ * factor disabled, or an identity held, at the failure ceiling has no time to
+ * end at, so its lock carries none.
  *
  * The factor is the identity's stored factor the binding names by id, read
  * unlocked and matched exactly: MFA reads it again under its lock. One that is

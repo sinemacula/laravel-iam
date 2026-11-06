@@ -36,25 +36,26 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   included, leaves it on. Off, nothing here is bound and each member keeps its own default. A test that changes it
   must do so before the providers register (`#[WithConfig(MfaSeams::SWITCH, false, defer: false)]`).
 - One core method for each action, taking plain values: every adapter's core path (each seam method MFA or
-  `laravel-authentication` calls with the values of an action, and each call this package makes into a member) takes
-  the caller, the client, the credential and the application as values, never an `Illuminate\Http\Request`, and has
-  no second variant for the same action. Only an edge reads a request: `PendingSessionResolverAdapter::fromRequest()`,
-  through `laravel-authentication`'s `PendingCredential::extract()`, and `ApplicationResolverAdapter::resolve()`, whose
-  `Request` MFA's contract hands it and which reads nothing of it. No adapter reaches for the request the container
-  holds (`make('request')`, `request()`, the `Request` facade), so a request bound beside a core call never changes
-  what it does. Each member's `ClientContext` is its own class: the two cross in one place
-  (`Mfa\Translation\ClientTranslator`, `toAuthentication()` and `toMfa()`), one to one, with the IP address, user
+  `laravel-authentication` calls with the values of an action, and each call this package makes into a member) takes the
+  caller, the client, the credential and the application as values, never an `Illuminate\Http\Request`, and has no
+  second variant for the same action. Only an edge reads a request: `PendingSessionResolverAdapter::fromRequest()`,
+  through `laravel-authentication`'s `PendingCredential::extract()`, and `ApplicationResolverAdapter`'s `resolve()` and
+  `resolveForGuard()`, one core method (`resolve()` names the default guard through `resolveForGuard()`), whose
+  `Request` MFA's contract hands it and which read nothing of it, the guard being the one value they need. No adapter
+  reaches for the request the container holds (`make('request')`, `request()`, the `Request` facade), so a request bound
+  beside a core call never changes what it does. Each member's `ClientContext` is its own class: the two cross in one
+  place (`Mfa\Translation\ClientTranslator`, `toAuthentication()` and `toMfa()`), one to one, with the IP address, user
   agent, `Origin`, scheme and host and the names of the headers carried, the last three cleaned alike by both members,
   and where MFA hands no client `laravel-authentication` is handed one of which nothing is known
   (`ClientTranslator::unknown()`).
 - A sign-in is one of `laravel-authentication`'s sessions, named as MFA names a sign-in (`Mfa\Translation\SignIn`):
-  - MFA's application is the guard of the same name, which must be a declared guard of the `jwt` driver. MFA hands
-    every self-service seam its caller as plain values (`CallerContext`: the identity, a pending session or nobody,
-    the application and the client), and a removal its application, and those are what the adapters act on, never
-    the guard's current user. Only where MFA names no application (the pending session resolver's `fromRequest()`, a
-    reset, `forgetFactor()`) is it the default guard, as `Auth::shouldUse()` leaves it, which is also what MFA names
-    its application after when no application resolver is bound. The event context reads no guard: it names the
-    session of the sign-in MFA hands it on the application MFA hands it, read by its key, and MFA names the event's
+  - MFA's application is the guard of the same name, which must be a declared guard of the `jwt` driver. MFA hands every
+    self-service seam its caller as plain values (`CallerContext`: the identity, a pending session or nobody, the
+    application and the client), and a removal its application, and those are what the adapters act on, never the
+    guard's current user. Only where MFA names no application (the pending session resolver's `fromRequest()`, a reset,
+    `forgetFactor()`) is it the default guard, as `Auth::shouldUse()` leaves it, which is also what MFA names its
+    application after when it reads a caller through no guard of its own. The event context reads no guard: it names
+    the session of the sign-in MFA hands it on the application MFA hands it, read by its key, and MFA names the event's
     application itself.
   - MFA's sign-in id is the session's key as a string (`SignIn::reference()`), which is always its primary key. A key
     that is neither a non-empty string nor an integer names nothing and is refused.
@@ -261,7 +262,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
 ## Success Path
 
 - Install the package with the switch on (the default) and declare each MFA application as a `jwt` guard of the same
-  name in `auth.guards`. The default guard is the one MFA names its application after.
+  name in `auth.guards`. MFA names its application after the guard it reads the caller through, which is the default
+  guard unless it is given another.
 - A sign-in: `Auth::sessions()->signIn()` asks the policy adapter, MFA composes the requirement, and the session starts
   active or pending. MFA's `verify()` on a pending session resolves it through the pending session resolver, and the
   completion calls `satisfy()` as MFA's last write; the session activates, and the guard is bound once MFA commits.
@@ -334,12 +336,13 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   additional factor takes `laravel-authentication`'s reauthentication window (`first_additional_factor`, fifteen
   minutes by default) rather than MFA's five minutes.
 - The freshness gate and a removal use the application MFA hands them: one that is not a `jwt` guard throws and rolls
-  back. The pending session resolver's `fromRequest()` uses the default guard, which `ApplicationResolverAdapter`
-  names too, so a caller read from a request is on the guard its pending session was read from. A reset is made
-  wherever it is asked for (an admin
-  panel's session guard, a console command, a queued job): it goes through the first `jwt` guard declared when the
-  default guard is not one, and the guard it goes through forgets its binding to the identity once the reset
-  commits.
+  back. The pending session resolver's `fromRequest()` uses the default guard, which `ApplicationResolverAdapter` names
+  too when MFA reads a caller through no guard of its own, so such a caller is on the guard its pending session was read
+  from. A caller read through another guard is named after that guard, except a pending one, which MFA reads on the
+  default guard whatever guard it is given (member gap: MFA hands its pending session resolver the guard). A reset is
+  made wherever it is asked for (an admin panel's session guard, a console command, a queued job): it goes through the
+  first `jwt` guard declared when the default guard is not one, and the guard it goes through forgets its binding to the
+  identity once the reset commits.
 - A pending session holding more than `MAX_LIMIT - 1` further proofs hands MFA only the newest; a proof the translator
   cannot build makes the pending resolution throw, while the proof store leaves such a proof out of the count. Both
   fail closed.
@@ -537,7 +540,8 @@ Update this note when:
   changes what its `ClientContext` carries (`ClientTranslator` follows);
 - MFA's caller starts carrying its sign-in (the freshness gate and the reauthenticator then read it without the
   guard);
-- the application resolver adapter (`codes-delivery-and-passkeys.md`) stops naming the default guard;
+- MFA hands its pending session resolver the guard, or stops handing the application resolver the guard it reads a
+  caller or a sign-in through (`codes-delivery-and-passkeys.md`);
 - either member changes a value both spell the same, adds a proof kind, channel, level or requirement part, or changes
   the lock order of its transactions;
 - `laravel-authentication`'s freshness requirement gains an additional verification or a level, or the mapping of

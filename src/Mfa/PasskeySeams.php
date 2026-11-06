@@ -76,19 +76,42 @@ final readonly class PasskeySeams implements ProvidesSeams
     {
         $applications = $config->get(self::APPLICATIONS);
 
-        if (!is_array($applications)) {
-            return false;
-        }
+        foreach (is_array($applications) ? $applications : [] as $settings) {
 
-        foreach ($applications as $settings) {
-
-            $types = is_array($settings) ? $settings['types'] ?? null : null;
-
-            if (is_array($types) && in_array(self::TYPE, $types, true)) {
+            if (self::offersIn($settings)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Whether the MFA application of the given name offers the `passkey` factor
+     * type, read as `isOffered()` reads every application's.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  string  $application
+     * @return bool
+     */
+    public static function isOfferedBy(Repository $config, string $application): bool
+    {
+        $applications = $config->get(self::APPLICATIONS);
+
+        return is_array($applications) && self::offersIn($applications[$application] ?? null);
+    }
+
+    /**
+     * Whether an application's settings list the `passkey` factor type among
+     * its types.
+     *
+     * @param  mixed  $settings
+     * @return bool
+     */
+    private static function offersIn(mixed $settings): bool
+    {
+        $types = is_array($settings) ? $settings['types'] ?? null : null;
+
+        return is_array($types) && in_array(self::TYPE, $types, true);
     }
 }

@@ -335,7 +335,7 @@ final readonly class CurrentSession
      *
      * @return list<string>
      */
-    private function sessionGuards(): array
+    public function sessionGuards(): array
     {
         $guards = $this->config->get('auth.guards');
         $named  = [];

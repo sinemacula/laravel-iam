@@ -30,6 +30,7 @@ use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyAssertion;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
@@ -79,6 +80,33 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
     /** @var string The credential id of another passkey of the person's, a sign-in passkey only. */
     private const string OTHER_CREDENTIAL = 'c2lnbi1pbi1wYXNza2V5';
+
+    /** @var string The credential id of a passkey of the person's on the admin guard's relying party. */
+    private const string ADMIN_CREDENTIAL = 'YWRtaW4tcGFzc2tleQ';
+
+    /** @var string A guard of the `jwt` driver with a relying party of its own. */
+    private const string ADMIN_GUARD = 'admin';
+
+    /** @var string The admin guard's relying party id. */
+    private const string ADMIN_RELYING_PARTY = 'admin.iam.test';
+
+    /** @var string The origin the admin guard's passkey ceremonies run on. */
+    private const string ADMIN_ORIGIN = 'https://admin.iam.test';
+
+    /** @var string The credential id of a passkey of the person's on the partner guard's relying party. */
+    private const string PARTNER_CREDENTIAL = 'cGFydG5lci1wYXNza2V5';
+
+    /** @var string A guard of the `jwt` driver whose MFA application offers no passkeys. */
+    private const string PARTNER_GUARD = 'partner';
+
+    /** @var string The partner guard's relying party id. */
+    private const string PARTNER_RELYING_PARTY = 'partner.iam.test';
+
+    /** @var string The origin the partner guard's passkey ceremonies run on. */
+    private const string PARTNER_ORIGIN = 'https://partner.iam.test';
+
+    /** @var string A guard of the `jwt` driver sharing the default guard's relying party. */
+    private const string SHARED_GUARD = 'mobile';
 
     /** @var ?\Tests\Fixtures\Models\Person The person holding a passkey factor the kit's checks share. */
     private ?Person $kitPerson = null;
@@ -164,30 +192,114 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The identity's registered passkeys are listed as its passkey factors'
-     * credentials, each once, all of them: never another type's, and never a
-     * sign-in passkey's.
+     * The identity's registered passkeys are listed as `laravel-authentication`
+     * holds them, oldest first, each once: a sign-in passkey among them, and
+     * never a credential a factor of MFA's names that no passkey of the
+     * identity's holds.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testTheRegisteredPasskeysAreThePasskeyFactors(): void
+    public function testTheRegisteredPasskeysAreTheIdentitysPasskeys(): void
     {
         [$person, , $factor] = $this->passkeyFactor();
 
         $this->registerPasskey($person, self::OTHER_CREDENTIAL);
-        $this->confirmedFactor($person);
-        Factor::query()->create([...$factor->only(['authenticatable_type', 'authenticatable_id', 'type', 'credential_reference', 'application']), 'status' => 'pending']);
-        Factor::query()->create([...$factor->only(['authenticatable_type', 'authenticatable_id', 'type', 'application']), 'status' => 'pending']);
         Factor::query()->create([
             ...$factor->only(['authenticatable_type', 'authenticatable_id', 'type', 'application']),
             'credential_reference' => self::LATER_CREDENTIAL,
             'status'               => 'pending',
         ]);
 
-        self::assertEqualsCanonicalizing([self::CREDENTIAL, self::LATER_CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL, self::OTHER_CREDENTIAL], $this->gateway()->credentialIds($person));
         self::assertSame([], $this->gateway()->credentialIds($this->createPerson()));
+    }
+
+    /**
+     * The passkeys on the relying party of each guard of the `jwt` driver whose
+     * MFA application offers passkeys are listed, guard by guard in the order
+     * they are declared, and a passkey of a relying party two guards share
+     * once; a guard of the `jwt` driver whose application offers no passkeys,
+     * declared before one that does, and a guard of any other driver, list
+     * none.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testThePasskeysOfEveryGuardOfferingPasskeysAreListed(): void
+    {
+        [$person] = $this->passkeyFactor();
+
+        config()->set('auth.guards.' . self::SHARED_GUARD, ['driver' => 'jwt', 'provider' => 'people']);
+        config()->set('auth.guards.' . self::PARTNER_GUARD, [
+            'driver'   => 'jwt',
+            'provider' => 'people',
+            'passkeys' => ['id' => self::PARTNER_RELYING_PARTY, 'origins' => [self::PARTNER_ORIGIN]],
+        ]);
+        config()->set('auth.guards.' . self::ADMIN_GUARD, [
+            'driver'   => 'jwt',
+            'provider' => 'people',
+            'passkeys' => ['id' => self::ADMIN_RELYING_PARTY, 'origins' => [self::ADMIN_ORIGIN]],
+        ]);
+        config()->set('auth.guards.panel', ['driver' => 'session', 'provider' => 'people']);
+        self::offerPasskeysOn(self::SHARED_GUARD, self::ADMIN_GUARD, 'panel');
+
+        $this->authenticator()->origin = self::ADMIN_ORIGIN;
+        $this->registerPasskey($person, self::ADMIN_CREDENTIAL, guard: self::ADMIN_GUARD);
+
+        $this->authenticator()->origin = self::PARTNER_ORIGIN;
+        $this->registerPasskey($person, self::PARTNER_CREDENTIAL, guard: self::PARTNER_GUARD);
+
+        self::assertSame([self::CREDENTIAL, self::ADMIN_CREDENTIAL], $this->gateway()->credentialIds($person));
+    }
+
+    /**
+     * A guard of the `jwt` driver that uses no passkeys, so has no relying
+     * party, as `laravel-authentication` allows, is never asked: the listing,
+     * and through it MFA's offers and assertions, still work on the guard that
+     * offers passkeys.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAGuardThatUsesNoPasskeysLeavesTheListingWorking(): void
+    {
+        [$person, , $factor] = $this->passkeyFactor();
+
+        config()->set('auth.guards.' . self::GUARD . '.passkeys', ['id' => self::RELYING_PARTY, 'origins' => [self::ORIGIN]]);
+        config()->set('authentication.passkeys.relying_party.id', null);
+        config()->set('auth.guards.' . self::PARTNER_GUARD, ['driver' => 'jwt', 'provider' => 'people']);
+
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([$factor->id], array_map(static fn (FactorSummary $offered): string => $offered->id, Mfa::offeredFactors(self::servedCaller())));
+
+        $request = Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP);
+
+        self::assertTrue($request->hasStarted(), $request->reason->value ?? '');
+    }
+
+    /**
+     * A guard of the `jwt` driver whose MFA application offers passkeys, with
+     * no valid relying party, fails closed: the listing throws, as that guard's
+     * ceremonies do.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAGuardOfferingPasskeysWithNoValidRelyingPartyFailsClosed(): void
+    {
+        [$person] = $this->passkeyFactor();
+
+        config()->set('auth.guards.' . self::ADMIN_GUARD, ['driver' => 'jwt', 'provider' => 'people', 'passkeys' => ['id' => '127.0.0.1']]);
+        self::offerPasskeysOn(self::ADMIN_GUARD);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->gateway()->credentialIds($person);
     }
 
     /**
@@ -305,6 +417,26 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         self::assertInstanceOf(PasskeyAssertion::class, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
         self::assertSame(FailureReason::REPLAYED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
+    }
+
+    /**
+     * An assertion answering the ceremony's own challenge once it has expired
+     * is `expired`.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnAssertionOfAnExpiredChallengeIsExpired(): void
+    {
+        [$person, $session] = $this->passkeyFactor();
+
+        $binding  = $this->bindingOf($person, $session);
+        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]));
+
+        $this->travel(301)->seconds();
+
+        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
     }
 
     /**
@@ -651,6 +783,19 @@ final class PasskeyGatewayAdapterTest extends TestCase
                 return Requirement::none();
             }
         });
+    }
+
+    /**
+     * Have the MFA application of each guard named offer the `passkey` type.
+     *
+     * @param  string  ...$guards
+     * @return void
+     */
+    private static function offerPasskeysOn(string ...$guards): void
+    {
+        foreach ($guards as $guard) {
+            config()->set('mfa.applications.' . $guard, ['types' => ['passkey'], 'requirement' => 'never']);
+        }
     }
 
     /**

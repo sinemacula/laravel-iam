@@ -88,7 +88,9 @@ return [
     | inside MFA's transaction, so a gateway that throws leaves no code; one
     | `laravel-authentication` issues is delivered from that package's queued
     | job once the code has committed, so a gateway that throws fails the job
-    | and the queue retries it. This package never queues a delivery itself.
+    | and the application's queue retries it under its own policy. A gateway's
+    | return means the message was accepted for delivery, not received. This
+    | package never queues or retries a delivery itself.
     |
     */
 

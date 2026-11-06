@@ -48,18 +48,25 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaBinding;
  * none MFA will challenge, and come back as that. A lockout crosses as a lock,
  * until when MFA says.
  *
- * `laravel-authentication` answers `invalid` alike for a wrong code it counted
- * and reported, and for a challenge it found used, unknown, malformed or
- * another binding's, which it neither counts nor reports, so MFA cannot be told
- * which, nor that a used code is `replayed`. Every `invalid` check is MFA's
- * counted `invalid_code` failure: what MFA does with a counted failure (keeping
- * the IP address's slot, committing what the check did) is the safe answer for
- * both, while a refusal would let a wrong code's count roll back. An expired or
- * exhausted challenge, which counts nothing, is refused as `expired`, as MFA's
- * own codes answer it; a lock, or the IP address's limit, as `locked`, the
- * limit until its window ends; and a send refused for the cooldown, a full
- * delivery window or the limits on code requests as `sending_capped`, with how
- * long to wait.
+ * `laravel-authentication` tells a wrong code apart from a challenge it did not
+ * check one against. A wrong code, which it counted and reported, is MFA's
+ * counted `invalid_code` failure, as is a malformed code, which it refuses as
+ * `invalid` before checking any challenge: what MFA does with a counted failure
+ * (keeping the IP address's slot, committing what the check did) is the safe
+ * answer for both, while a refusal would let a wrong code's count roll back. A
+ * challenge that is malformed, unknown, replaced or another binding's is
+ * refused as `not_found`, and the binding's own challenge once it is used up,
+ * by its code or by being ended, as `replayed`: neither counts against the
+ * factor, and `laravel-authentication` reports neither (MFA's enrolment
+ * confirmation counts a `replayed` against the enrolment, as it would not an
+ * `expired`). It does not say whether the code checked at a used challenge is
+ * the one that used it, so any well-formed code at one is `replayed`, never the
+ * `expired` MFA's own codes answer a different code at a used challenge with.
+ * An expired or exhausted challenge, which counts nothing, is refused as
+ * `expired`, as MFA's own codes answer it; a lock, or the IP address's limit,
+ * as `locked`, the limit until its window ends; and a send refused for the
+ * cooldown, a full delivery window or the limits on code requests as
+ * `sending_capped`, with how long to wait.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -69,13 +76,13 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaBinding;
 final readonly class CodeTranslator
 {
     /** @var string The detail of a check `laravel-authentication` answered `invalid`. */
-    public const string INVALID = 'laravel-authentication did not accept the code: it is malformed, or wrong for the binding\'s live challenge.';
+    public const string INVALID = 'laravel-authentication did not accept the code: it is wrong or malformed.';
 
-    /** @var string The detail of a check of a challenge that is not the binding's. */
-    public const string NOT_FOUND = 'laravel-authentication found no live challenge of the binding by that id.';
+    /** @var string The detail of a check of a challenge `laravel-authentication` did not find for the binding. */
+    public const string NOT_FOUND = 'laravel-authentication found no challenge of the binding\'s by that id.';
 
-    /** @var string The detail of a check of a challenge already used up. */
-    public const string USED = 'laravel-authentication found the binding\'s challenge already used.';
+    /** @var string The detail of a check of the binding's challenge once it is used up. */
+    public const string REPLAYED = 'laravel-authentication found the challenge already used up.';
 
     /** @var string The detail of a check of a challenge that has expired or used up its attempts. */
     public const string EXPIRED = 'laravel-authentication found the challenge expired, or out of attempts.';
@@ -198,10 +205,13 @@ final readonly class CodeTranslator
 
     /**
      * `laravel-authentication`'s answer to an attempt MFA counted: admitted
-     * when MFA passed it, or when it counted a wrong code; locked when a
-     * lockout refused it or the failure locked the factor or the identity;
-     * refused when the factor is no longer the identity's, or MFA did not pass
-     * a code that matched.
+     * when MFA passed it, or when it counted a wrong code that locked nothing;
+     * locked when a lockout refused it, or when counting the wrong code locked
+     * or disabled the factor or locked the identity
+     * (`AttemptOutcome::$caused`), until the lockout ends, or with no time for
+     * a factor disabled or an identity held at the failure ceiling; refused
+     * when the factor is no longer the identity's, or MFA did not pass a code
+     * that matched.
      *
      * @param  \SineMacula\Laravel\Mfa\Attempts\AttemptOutcome  $outcome
      * @param  bool  $matched
@@ -212,6 +222,7 @@ final readonly class CodeTranslator
         return match (true) {
             $outcome->passed           => FactorCodeAdmission::admitted(),
             $outcome->lockout !== null => FactorCodeAdmission::locked($outcome->lockout->until),
+            $outcome->caused  !== null => FactorCodeAdmission::locked($outcome->caused->until),
             !$outcome->found           => FactorCodeAdmission::refused(FactorCodeRefusal::NOT_FOUND),
             $matched                   => FactorCodeAdmission::refused(FactorCodeRefusal::NOT_ACCEPTED),
             default                    => FactorCodeAdmission::admitted(),
@@ -249,7 +260,7 @@ final readonly class CodeTranslator
             FactorCodeOutcome::VERIFIED                              => ChallengeOutcome::passed(),
             FactorCodeOutcome::INVALID                               => ChallengeOutcome::failed(FailureReason::INVALID_CODE, self::INVALID),
             FactorCodeOutcome::NOT_FOUND                             => ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND),
-            FactorCodeOutcome::USED                                  => ChallengeOutcome::refused(FailureReason::REPLAYED, self::USED),
+            FactorCodeOutcome::USED                                  => ChallengeOutcome::refused(FailureReason::REPLAYED, self::REPLAYED),
             FactorCodeOutcome::EXPIRED, FactorCodeOutcome::EXHAUSTED => ChallengeOutcome::refused(FailureReason::EXPIRED, self::EXPIRED),
             FactorCodeOutcome::LOCKED                                => ChallengeOutcome::refused(FailureReason::LOCKED, self::LOCKED, $check->lockedUntil),
             FactorCodeOutcome::REFUSED                               => ChallengeOutcome::refused(self::reason($check->refusal), self::REFUSED),
