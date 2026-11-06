@@ -55,8 +55,9 @@ use Tests\TestCase;
  * same change; removed as a factor through MFA instead, it stays a sign-in
  * passkey with no factor behind it, and its later removal asks MFA nothing.
  * Either way no factor is left without its passkey. MFA's events about it carry
- * the tenant of the caller's validated session. Everything runs on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ * the application MFA names and no tenant, since MFA hands the event context no
+ * sign-in to name one from. Everything runs on MySQL and PostgreSQL at READ
+ * COMMITTED and REPEATABLE READ.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -100,7 +101,7 @@ final class PasskeyFactorsTest extends TestCase
      * `laravel-authentication` once the session is stepped up with another
      * factor, it takes its factor and association with it, so MFA neither lists
      * nor challenges a factor without its passkey, and MFA's events about both
-     * changes carry the session's tenant.
+     * changes carry the application and no tenant.
      *
      * @param  string  $level
      * @return void
@@ -120,7 +121,7 @@ final class PasskeyFactorsTest extends TestCase
         $this->stepUpWithPasskey($factor);
         $this->stepUpWithAnotherFactor($person);
 
-        $removal = $this->passkeys()->remove($person, $passkeyId);
+        $removal = $this->passkeys()->remove($person, $passkeyId, self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNotNull($removal->completion, 'MFA removed the factor in the same change.');
@@ -128,10 +129,10 @@ final class PasskeyFactorsTest extends TestCase
         self::assertNull(Factor::query()->find($factor->id));
         self::assertSame(0, PasskeyAssociation::query()->count());
         self::assertSame([], $this->gateway()->credentialIds($person));
-        self::assertFalse(Mfa::requestAssertion($factor->id, Purpose::STEP_UP)->hasStarted());
+        self::assertFalse(Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP)->hasStarted());
         self::assertSame(0, DB::connection()->transactionLevel());
 
-        $this->assertEventsCarryTheTenant([PasskeyAssociated::class, FactorRemoved::class]);
+        $this->assertEventsCarryTheApplicationAndNoTenant([PasskeyAssociated::class, FactorRemoved::class]);
     }
 
     /**
@@ -158,7 +159,7 @@ final class PasskeyFactorsTest extends TestCase
         $this->stepUpWithPasskey($factor);
         $this->stepUpWithAnotherFactor($person);
 
-        $removed = Mfa::removeFactor($factor->id);
+        $removed = Mfa::removeFactor(self::servedCaller(), $factor->id);
 
         self::assertTrue($removed->wasMade(), (string) $removed->reason?->value);
         self::assertNull(Factor::query()->find($factor->id));
@@ -166,13 +167,13 @@ final class PasskeyFactorsTest extends TestCase
         self::assertTrue(Passkey::query()->whereKey($passkeyId)->exists(), 'The passkey stays, for signing in.');
         self::assertSame([], $this->gateway()->credentialIds($person));
 
-        $removal = $this->passkeys()->remove($person, $passkeyId);
+        $removal = $this->passkeys()->remove($person, $passkeyId, self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNull($removal->completion);
         self::assertSame(0, Factor::query()->where('type', 'passkey')->count());
 
-        $this->assertEventsCarryTheTenant([PasskeyAssociated::class, FactorRemoved::class]);
+        $this->assertEventsCarryTheApplicationAndNoTenant([PasskeyAssociated::class, FactorRemoved::class]);
     }
 
     /**
@@ -209,7 +210,7 @@ final class PasskeyFactorsTest extends TestCase
      */
     private function enrolPasskey(Person $person, EloquentSession&Model $session): array
     {
-        $reauthenticated = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $reauthenticated = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($reauthenticated->isIssued(), $reauthenticated->reason->value ?? '');
 
@@ -241,7 +242,7 @@ final class PasskeyFactorsTest extends TestCase
      */
     private function stepUpWithPasskey(Factor $factor): void
     {
-        $request = Mfa::requestAssertion($factor->id, Purpose::STEP_UP);
+        $request = Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP);
 
         self::assertTrue($request->hasStarted(), $request->reason->value ?? '');
 
@@ -253,7 +254,7 @@ final class PasskeyFactorsTest extends TestCase
 
         /** @var array<string, mixed> $options */
         $response = ['challenge' => $challenge, 'credential' => $this->authenticator()->get($options, self::CREDENTIAL)];
-        $result   = Mfa::verify(Submission::assertion($factor->id, $response), Purpose::STEP_UP);
+        $result   = Mfa::verify(self::servedCaller(), Submission::assertion($factor->id, $response), Purpose::STEP_UP);
 
         self::assertTrue($result->isVerified(), $result->detail ?? (string) $result->reason?->value);
     }
@@ -280,19 +281,19 @@ final class PasskeyFactorsTest extends TestCase
             'confirmed_at'         => CarbonImmutable::now(),
         ]);
 
-        $result = Mfa::verify(Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP);
+        $result = Mfa::verify(self::servedCaller(), Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP);
 
         self::assertTrue($result->isVerified(), (string) $result->reason?->value);
     }
 
     /**
-     * Assert every MFA event dispatched carries the session's tenant and the
-     * application, and that the events named were among them.
+     * Assert every MFA event dispatched carries the application and none of the
+     * session's tenant, and that the events named were among them.
      *
      * @param  list<class-string<\SineMacula\Laravel\Mfa\Contracts\MfaEvent>>  $expected
      * @return void
      */
-    private function assertEventsCarryTheTenant(array $expected): void
+    private function assertEventsCarryTheApplicationAndNoTenant(array $expected): void
     {
         $dispatched = array_map(static fn (MfaEvent $event): string => $event::class, $this->events);
 
@@ -303,7 +304,7 @@ final class PasskeyFactorsTest extends TestCase
         foreach ($this->events as $event) {
 
             self::assertInstanceOf(ContextEvent::class, $event);
-            self::assertSame(self::TENANT, $event->context['tenant_id'], $event::class);
+            self::assertNull($event->context['tenant_id'], $event::class);
             self::assertSame(self::GUARD, $event->context['application'], $event::class);
         }
     }

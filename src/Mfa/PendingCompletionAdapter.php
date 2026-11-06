@@ -4,13 +4,12 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
-use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\ConnectionResolverInterface;
-use Illuminate\Http\Request;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
@@ -40,23 +39,38 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * multifactor only when MFA says the proof itself refreshes the multifactor
  * evidence of that first factor (`VerificationResult::$refreshesMultifactor`),
  * never because of another proof the session holds. It is handed to
- * `Auth::sessions()->satisfy()` with the request's own pending credential, read
- * from the body field the resolver reads it from. It is called only inside a
- * transaction on the storage connection, where MFA calls it last: `satisfy()`
- * then stores the proof and activates the session in a savepoint of MFA's
- * transaction, and binds the guard only once that transaction commits, so a
- * rollback, or a commit that fails, leaves the session pending, the proof
- * unstored and the result unreturned. A refusal `laravel-authentication`
- * answers (the session no longer pending, the proof not one it takes, its
- * binding not the credential's session, a tenant requiring single sign-on) is
- * thrown as `not_accepted` too, naming its reason in the detail for logs; it
- * wrote nothing. A request without a pending credential, and an identity that
- * is not `laravel-authentication`'s, cannot be resolved and throw (IAM-8.2).
+ * `Auth::sessions()->satisfy()` on the guard the pending context's application
+ * names, with the pending credential that context keeps
+ * (`PendingContext::credential()`, kept by `PendingSessionResolverAdapter` and
+ * read again under MFA's lock), never one read from a request. MFA hands the
+ * completion no client, so `satisfy()` is handed a client of which nothing is
+ * known (`ClientTranslator::unknown()`), and two things are lost until the
+ * members hand the completion the caller's judged client (a member gap): the
+ * activation records no last-use IP address or user agent, and on a guard whose
+ * refresh token travels in a cookie `satisfy()` refuses every completion as
+ * `cross_site_request`, a genuine same-site one included, since such a client
+ * carries no same-site facts, so no pending sign-in there could ever be
+ * completed through MFA. That is a breakage, not a safeguard, and it is not
+ * left to surface at sign-in: an application that binds this completion beside
+ * such a guard is refused when it boots (`PendingCompletionCheck`). A bearer
+ * application is unaffected.
+ *
+ * It is called only inside a transaction on the storage connection, where MFA
+ * calls it last: `satisfy()` then stores the proof and activates the session in
+ * a savepoint of MFA's transaction, and binds the guard only once that
+ * transaction commits, so a rollback, or a commit that fails, leaves the
+ * session pending, the proof unstored and the result unreturned. A refusal
+ * `laravel-authentication` answers (the session no longer pending, the proof
+ * not one it takes, its binding not the credential's session, a tenant
+ * requiring single sign-on) is thrown as `not_accepted` too, naming its reason
+ * in the detail for logs; it wrote nothing. A pending context that kept no
+ * credential, and an identity that is not `laravel-authentication`'s, cannot be
+ * resolved and throw (IAM-8.2).
  *
  * What it returns is `laravel-authentication`'s `SignInResult`, signed in or
  * still pending, which reaches the caller as MFA's completion.
  *
- * Stateless: the request, the guard and the session are read on every call.
+ * Stateless: the guard and the session are read on every call (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,22 +82,14 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \Illuminate\Database\ConnectionResolverInterface  $database
-     * @param  \SineMacula\Laravel\Iam\Mfa\PendingSessionResolverAdapter  $pending
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      */
     public function __construct(
 
-        /** The container the request is resolved from. */
-        private Container $container,
-
         /** The connections the storage connection's transaction is read from. */
         private ConnectionResolverInterface $database,
-
-        /** Reads the request's pending credential. */
-        private PendingSessionResolverAdapter $pending,
 
         /** Resolves the guard's session service. */
         private CurrentSession $sessions,
@@ -123,7 +129,7 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
 
         $application = $pending->application;
         $proven      = $this->proofs->toResult($result, $identity);
-        $outcome     = $this->sessions->sessions($application)->satisfy($this->credential($application), $proven);
+        $outcome     = $this->sessions->sessions($application)->satisfy(self::credential($pending), $proven, ClientTranslator::unknown());
 
         $refusal = sprintf('laravel-authentication refused the proof as [%s].', $outcome->reason?->value);
 
@@ -133,26 +139,19 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
     }
 
     /**
-     * The request's pending credential.
+     * The pending credential the context keeps.
      *
-     * @param  string  $application
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @return string
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function credential(string $application): string
+    private static function credential(PendingContext $pending): string
     {
-        $request = $this->container->bound('request') ? $this->container->make('request') : null;
+        $application = $pending->application;
+        $message     = 'The pending context keeps no pending credential for the guard [%s], so the pending session the proof was made for cannot be satisfied.';
 
-        $credential = $request instanceof Request ? $this->pending->credential($request, $application) : null;
-
-        if ($credential === null) {
-            $message = 'The request carries no pending credential for the guard [%s], so the pending session the proof was made for cannot be satisfied.';
-
-            throw new UnresolvedReferenceException(sprintf($message, $application), ReferenceKind::SESSION, $application);
-        }
-
-        return $credential;
+        return $pending->credential() ?? throw new UnresolvedReferenceException(sprintf($message, $application), ReferenceKind::SESSION, $application);
     }
 
     /**

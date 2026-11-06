@@ -72,7 +72,7 @@ trait RegistersPasskeys
         $options  = $passkeys->registrationOptions($identity, 'person@example.test', binding: $binding);
         $id       = $credentialId === null ? null : VirtualAuthenticator::decode($credentialId);
 
-        return $passkeys->register($identity, $options->challengeId, $this->authenticator()->create($options->options, id: $id), $name);
+        return $passkeys->register($identity, $options->challengeId, $this->authenticator()->create($options->options, id: $id), self::client(), $name);
     }
 
     /**

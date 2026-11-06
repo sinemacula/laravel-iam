@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Mfa\FirstFactorResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
@@ -88,7 +89,7 @@ final class StatelessVerificationTest extends TestCase
 
         $router->post('verify', static function (Request $request): JsonResponse {
 
-            $result = Mfa::verify(Submission::factor($request->string('factor')->toString(), $request->string('code')->toString()));
+            $result = Mfa::verify(CallerContext::fromRequest($request), Submission::factor($request->string('factor')->toString(), $request->string('code')->toString()));
 
             return new JsonResponse(['verified' => $result->isVerified(), 'session' => $request->hasSession()]);
         })->middleware('auth:' . self::GUARD);

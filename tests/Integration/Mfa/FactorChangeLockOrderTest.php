@@ -210,7 +210,7 @@ final class FactorChangeLockOrderTest extends TestCase
         $key = $this->signInReference($session);
 
         $outcome = $this->race(
-            static fn (): bool => Mfa::removeFactor($removed->id)->wasMade(),
+            static fn (): bool => Mfa::removeFactor(self::servedCaller(), $removed->id)->wasMade(),
             function () use ($key, $kept): string {
 
                 $session = Session::query()->findOrFail($key);
@@ -284,12 +284,12 @@ final class FactorChangeLockOrderTest extends TestCase
         $key = $this->signInReference($session);
 
         $outcome = $this->race(
-            static fn (): bool => Mfa::removeFactor($removed->id)->wasMade(),
+            static fn (): bool => Mfa::removeFactor(self::servedCaller(), $removed->id)->wasMade(),
             function () use ($key): string {
 
                 $this->actingOnSession(Session::query()->findOrFail($key));
 
-                return Mfa::startEnrollment(EnrollmentRequest::totp(self::DESTINATION))->reason->value ?? self::ALLOWED;
+                return Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp(self::DESTINATION))->reason->value ?? self::ALLOWED;
             },
             $level,
         );
@@ -560,7 +560,7 @@ final class FactorChangeLockOrderTest extends TestCase
 
         $this->stepUpWith($person, $current, $kept->id);
 
-        $statements = $this->recordTransactionWithBindings(static fn (): bool => Mfa::removeFactor($removed->id)->wasMade());
+        $statements = $this->recordTransactionWithBindings(static fn (): bool => Mfa::removeFactor(self::servedCaller(), $removed->id)->wasMade());
         $listing    = implode("\n", array_map(static fn (array $statement): string => $statement['sql'] . ' [' . implode(', ', $statement['bindings']) . ']', $statements));
 
         $currentKey = $this->signInReference($current);
@@ -665,7 +665,7 @@ final class FactorChangeLockOrderTest extends TestCase
      */
     private static function remove(string $factor): string
     {
-        $result = Mfa::removeFactor($factor);
+        $result = Mfa::removeFactor(self::servedCaller(), $factor);
 
         return $result->wasMade() ? self::ALLOWED : (string) $result->reason?->value;
     }
@@ -721,7 +721,7 @@ final class FactorChangeLockOrderTest extends TestCase
             $session = Session::query()->findOrFail($key);
             $result  = $proof === self::STEP_UP
                 ? $this->stepUp($person, $session, $factor)
-                : $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+                : $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
             return $result->reason->value ?? self::ALLOWED;
         };
@@ -895,15 +895,17 @@ final class FactorChangeLockOrderTest extends TestCase
      */
     private function changeOn(string $path, Person $person, Factor $removed, Factor $kept): array
     {
+        $enrol = static fn (): bool => Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp(self::DESTINATION))->reason === null;
+
         return match ($path) {
             'a step-up with an authenticator app' => [
-                static fn (): bool => Mfa::verify(Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP)->isVerified(),
+                static fn (): bool => Mfa::verify(self::servedCaller(), Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP)->isVerified(),
                 'last_accepted_step',
                 true,
             ],
             'a step-up with a delivered code' => [$this->deliveredCodeStepUp($person), 'update ' . self::quoted('mfa_codes') . ' set ' . self::quoted('consumed_at'), true],
-            'a removal'                       => [static fn (): bool => Mfa::removeFactor($removed->id)->wasMade(), null, true],
-            default                           => [static fn (): bool => Mfa::startEnrollment(EnrollmentRequest::totp(self::DESTINATION))->reason === null, null, false],
+            'a removal'                       => [static fn (): bool => Mfa::removeFactor(self::servedCaller(), $removed->id)->wasMade(), null, true],
+            default                           => [$enrol, null, false],
         };
     }
 
@@ -934,7 +936,7 @@ final class FactorChangeLockOrderTest extends TestCase
             'confirmed_at'         => now(),
         ]);
 
-        $sent = Mfa::sendCode($factor->id, Purpose::STEP_UP);
+        $sent = Mfa::sendCode(self::servedCaller(), $factor->id, Purpose::STEP_UP);
         $code = $sender->lastCodeTo(self::DESTINATION);
 
         self::assertNull($sent->reason);
@@ -943,7 +945,7 @@ final class FactorChangeLockOrderTest extends TestCase
 
         $challenge = $sent->challengeId;
 
-        return static fn (): bool => Mfa::verify(Submission::challenge($factor->id, $challenge, $code), Purpose::STEP_UP)->isVerified();
+        return static fn (): bool => Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, $challenge, $code), Purpose::STEP_UP)->isVerified();
     }
 
     /**

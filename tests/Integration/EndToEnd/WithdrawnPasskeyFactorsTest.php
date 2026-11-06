@@ -173,7 +173,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
 
         $this->stepUpWithAnotherFactor($person);
 
-        $removal = $this->passkeys()->remove($person, $passkeyId);
+        $removal = $this->passkeys()->remove($person, $passkeyId, self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNotNull($removal->completion, 'MFA removed the factor in the same change.');
@@ -200,7 +200,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
         [$factor, $passkeyId] = $this->enrolledPasskeyFactor($person);
 
         try {
-            $this->passkeys()->remove($person, $passkeyId);
+            $this->passkeys()->remove($person, $passkeyId, self::client());
 
             self::fail('MFA must refuse a removal without a fresh step-up.');
         } catch (OperationRefusedException $exception) {
@@ -284,7 +284,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
             'confirmed_at'         => CarbonImmutable::now(),
         ]);
 
-        $result = Mfa::verify(Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP);
+        $result = Mfa::verify(self::servedCaller(), Submission::factor($kept->id, AuthenticatorApp::code($kept)), Purpose::STEP_UP);
 
         self::assertTrue($result->isVerified(), (string) $result->reason?->value);
     }

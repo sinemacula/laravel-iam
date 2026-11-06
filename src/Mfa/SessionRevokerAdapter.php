@@ -14,13 +14,15 @@ use SineMacula\Laravel\Mfa\Proofs\RemovalRevocation;
  * identity reset, and carrying the current session's new pending credential
  * back through MFA's removal result (IAM-3.7, mandatory).
  *
- * MFA names the application of neither a removal nor a reset. A removal is made
- * from a sign-in, on the request's application, which MFA names after the
- * default guard, as `Auth::shouldUse()` leaves it: the removal is made from that
- * guard's current session, the sign-in MFA names (`CurrentSession`); another of
- * the identity's sessions, none, or an identity `laravel-authentication` does
- * not sign in is refused by throwing (IAM-8.2), so the removal rolls back
- * rather than sparing a session nobody judged. A reset names no sign-in and is
+ * A removal is made from a sign-in, which MFA names with its application: the
+ * session of that key on the guard of the same name, held by the identity, read
+ * whatever the guard holds now (`CurrentSession::named()`), so a removal made
+ * from a queued job, a console command or a request another guard serves judges
+ * the sign-in MFA named. A sign-in that is no session of the identity's on that
+ * guard, an application that is no guard of `laravel-authentication`'s that
+ * holds sessions, or an identity `laravel-authentication` does not sign in is
+ * refused by throwing (IAM-8.2), so the removal rolls back rather than sparing
+ * a session nobody judged. A reset names no application and no sign-in, and is
  * often made by someone else, from an admin panel's session guard, a console
  * command or a queued job, so it goes through the default guard when that is a
  * `jwt` guard and otherwise through the first `jwt` guard declared
@@ -39,7 +41,7 @@ use SineMacula\Laravel\Mfa\Proofs\RemovalRevocation;
  * savepoints of MFA's transaction, after its locks, so they commit or roll back
  * with the change.
  *
- * Stateless: the guard and its session are read on every call (IAM-8.1).
+ * Stateless: the guard and the session are read on every call (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -65,21 +67,21 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $factorId
+     * @param  string  $application
      * @param  string  $session
      * @return \SineMacula\Laravel\Mfa\Proofs\RemovalRevocation
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\SessionMismatchException
+     * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     #[\Override]
-    public function factorRemoved(MultiFactorAuthenticatable $identity, string $factorId, string $session): RemovalRevocation
+    public function factorRemoved(MultiFactorAuthenticatable $identity, string $factorId, string $application, string $session): RemovalRevocation
     {
         $owner   = $this->sessions->identity($identity);
-        $guard   = $this->sessions->defaultGuard();
-        $current = $this->sessions->of($identity, $guard, $session);
+        $current = $this->sessions->named($identity, $application, $session);
 
-        return RemovalRevocation::judged($this->sessions->sessions($guard)->factorRemoved($owner, $factorId, $current));
+        return RemovalRevocation::judged($this->sessions->sessions($application)->factorRemoved($owner, $factorId, $current));
     }
 
     /**

@@ -152,7 +152,8 @@ trait ChangesSessionsElsewhere
     {
         $this->elsewhere(function () use ($person, $session): void {
 
-            $result = $this->sessions()->reauthenticate(Session::query()->findOrFail($session->getKey()), 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+            $stored = Session::query()->findOrFail($session->getKey());
+            $result = $this->sessions()->reauthenticate($stored, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
             self::assertTrue($result->isIssued(), sprintf('The person did not reauthenticate: [%s].', $result->reason?->value));
         });

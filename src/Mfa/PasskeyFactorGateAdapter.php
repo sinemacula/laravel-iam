@@ -13,6 +13,7 @@ use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBindi
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
@@ -47,8 +48,22 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * state and factor locks come first and the session's row after them, and a
  * passkey is never removed leaving its factor standing, nor a factor made for a
  * passkey that is not stored. MFA refuses by throwing, so the whole change
- * rolls back, and it acts only for the request's validated caller, on its own
- * sign-in.
+ * rolls back. MFA is handed the caller as the values `laravel-authentication`
+ * hands the gate: the identity, on the application it names, as an active
+ * caller (`CallerContext::forIdentity()`), whose sign-in MFA reads from the
+ * proof store and checks the registration's binding against, so it acts only on
+ * that caller's own sign-in. Nothing is read from a request.
+ * `laravel-authentication` hands the gate no pending credential and no client,
+ * so MFA's events about the change name no client, and a registration made on a
+ * pending sign-in (a bootstrap enrolment) is handed to MFA as the identity's
+ * active caller, never as the pending session's (`CallerContext::forPending()`
+ * needs the pending context, which only the credential resolves): MFA finds no
+ * active sign-in of the caller's that the registration's binding names, and
+ * refuses it as `not_found`, so the whole registration rolls back. Passkey
+ * bootstrap enrolment on a pending sign-in is therefore refused until
+ * `laravel-authentication` hands the gate the pending credential and the client
+ * its `register()` and `remove()` already take (a member gap); it is never
+ * served by reading them from a request.
  *
  * A registration whose options were asked for without a binding was not asked
  * for by a factor enrolment, so it stays a sign-in passkey and MFA is not
@@ -111,7 +126,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
             return null;
         }
 
-        $result = $this->gate->registering($identity, $application, $this->registration($passkey, $binding), $name);
+        $result = $this->gate->registering(CallerContext::forIdentity($identity, $application), $this->registration($passkey, $binding), $name);
 
         return $result === null ? null : new PasskeyFactorAssociation($result->factor->id, $result);
     }
@@ -138,7 +153,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
             return null;
         }
 
-        return $this->gate->removing($identity, $application, $credentialId);
+        return $this->gate->removing(CallerContext::forIdentity($identity, $application), $credentialId);
     }
 
     /**

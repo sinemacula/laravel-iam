@@ -7,7 +7,7 @@ namespace Tests\Integration\Mfa;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Foundation\Auth\User;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Orchestra\Testbench\Attributes\WithConfig;
@@ -15,6 +15,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
+use SineMacula\Laravel\Authentication\Events\SignedIn;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind as AuthenticationProofKind;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
@@ -24,6 +25,7 @@ use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PendingCompletion;
@@ -36,11 +38,13 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PendingCompletionTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Fixtures\Mfa\Pending\Concerns\ArrangesPendingSessions;
 use Tests\Fixtures\Models\Person;
@@ -52,8 +56,10 @@ use Tests\TestCase;
  * verified factor activating the pending session or leaving it pending, the
  * session satisfied only as the last write of MFA's transaction (after MFA's
  * locks, rolled back with it, and never answered when its commit fails), the
- * refusals `laravel-authentication` answers thrown as MFA's, and the references
- * that cannot be resolved thrown (IAM-8.2).
+ * refusals `laravel-authentication` answers thrown as MFA's (every completion
+ * on a guard whose refresh token travels in a cookie among them, as
+ * `cross_site_request`), and the references that cannot be resolved thrown
+ * (IAM-8.2).
  *
  * The sessions are real ones, signed in with a password through
  * `laravel-authentication`, whose additional-factor policy and requirement
@@ -69,7 +75,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class PendingCompletionAdapterTest extends TestCase
 {
-    use ArrangesPendingSessions, PendingCompletionTests, RunsAtIsolationLevels;
+    use ArrangesPendingSessions, BindsStrayRequests, PendingCompletionTests, RunsAtIsolationLevels;
 
     /** @var string The detail of a refusal of a proof made for another pending session. */
     private const string NOT_BOUND = 'The proof is not bound to the pending session.';
@@ -308,6 +314,30 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
+     * On a guard whose refresh token travels in a cookie, a completion is
+     * refused as `cross_site_request`, however genuine the request the person
+     * proved their factor in: MFA hands the completion no client, so the one
+     * `satisfy()` is handed carries no same-site facts. It pins the member gap
+     * that `PendingCompletionCheck` refuses such an application at boot for.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACookieGuardsCompletionIsRefusedAsCrossSite(): void
+    {
+        $credential = $this->signInPending($this->createPerson());
+        $pending    = $this->pendingContextFor($credential);
+        $result     = $this->verified($pending, $this->factorProof($pending));
+
+        Config::set('auth.guards.' . self::GUARD . '.refresh_token', ['transport' => 'cookie', 'cookie' => ['path' => '/auth/refresh']]);
+
+        self::assertRefused('laravel-authentication refused the proof as [cross_site_request].', fn (): mixed => $this->completeInTransaction($pending, $result));
+        self::assertSame([], $this->pendingContextFor($credential)->proofs);
+        self::assertNull($this->guard()->session());
+    }
+
+    /**
      * A session already satisfied is no longer pending, so a second completion
      * for it is refused.
      *
@@ -328,9 +358,9 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A request carrying another pending session's credential cannot satisfy
-     * this one: `laravel-authentication` refuses the proof's binding, and
-     * neither session changes.
+     * A pending context keeping another pending session's credential cannot
+     * satisfy this one: `laravel-authentication` refuses the proof's binding,
+     * and neither session changes.
      *
      * @return void
      *
@@ -339,50 +369,27 @@ final class PendingCompletionAdapterTest extends TestCase
     public function testAnotherPendingSessionsCredentialIsRefused(): void
     {
         $person  = $this->createPerson();
-        $pending = $this->pendingContextFor($this->signInPending($person));
         $other   = $this->signInPending($person);
-
-        $this->requestCarrying($other);
-
-        $result = $this->verified($pending, $this->factorProof($pending));
+        $pending = self::keeping($this->pendingContextFor($this->signInPending($person)), $other);
+        $result  = $this->verified($pending, $this->factorProof($pending));
 
         self::assertRefused('laravel-authentication refused the proof as [proof_binding_mismatch].', fn (): mixed => $this->completeInTransaction($pending, $result));
         self::assertSame([], $this->pendingContextFor($other)->proofs);
     }
 
     /**
-     * Rows of `[with a request]` for the calls that carry no credential.
+     * Without a pending credential on the context, the pending session cannot
+     * be resolved, and nothing is satisfied.
      *
-     * @return iterable<string, array{0: bool}>
-     */
-    public static function provideRequestsWithoutACredential(): iterable
-    {
-        yield 'a request without one' => [true];
-
-        yield 'no request' => [false];
-    }
-
-    /**
-     * Without a pending credential on the request, or without a request, the
-     * pending session cannot be resolved, and nothing is satisfied.
-     *
-     * @param  bool  $withRequest
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideRequestsWithoutACredential')]
-    public function testWithoutAPendingCredentialNothingIsSatisfied(bool $withRequest): void
+    public function testWithoutAPendingCredentialNothingIsSatisfied(): void
     {
         $credential = $this->signInPending($this->createPerson());
-        $pending    = $this->pendingContextFor($credential);
+        $pending    = self::keeping($this->pendingContextFor($credential), null);
         $result     = $this->verified($pending, $this->factorProof($pending));
-
-        if ($withRequest) {
-            $this->app?->instance('request', Request::create('/mfa/verify', 'POST'));
-        } else {
-            $this->app?->offsetUnset('request');
-        }
 
         try {
             $this->completeInTransaction($pending, $result);
@@ -391,9 +398,83 @@ final class PendingCompletionAdapterTest extends TestCase
         } catch (UnresolvedReferenceException $exception) {
             self::assertSame(ReferenceKind::SESSION, $exception->kind);
             self::assertSame(self::GUARD, $exception->application);
-            self::assertStringStartsWith('The request carries no pending credential for the guard [api]', $exception->getMessage());
+            self::assertStringStartsWith('The pending context keeps no pending credential for the guard [api]', $exception->getMessage());
         }
 
+        self::assertSame([], $this->pendingContextFor($credential)->proofs);
+    }
+
+    /**
+     * The pending session satisfied is the one the context names, on the guard
+     * its application names, for a client of which nothing is known: a request
+     * bound in the container, carrying another pending session's credential and
+     * coming from another client, names neither the session nor the client, and
+     * the default guard being another changes nothing.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheHandedContextIsSatisfiedWhateverTheRequestCarries(): void
+    {
+        $person  = $this->createPerson();
+        $pending = $this->pendingContextFor($this->signInPending($person));
+        $stray   = $this->signInPending($person);
+        $events  = [];
+
+        $this->bindStrayRequest([self::CREDENTIAL_FIELD => $stray]);
+
+        Config::set('auth.defaults.guard', 'web');
+
+        Event::listen(SignedIn::class, static function (SignedIn $event) use (&$events): void {
+            $events[] = $event;
+        });
+
+        $result = $this->completeInTransaction($pending, $this->verified($pending, $this->factorProof($pending)));
+
+        self::assertTrue($result->isSignedIn());
+        $record = $result->session->record ?? self::fail('No session was signed in.');
+
+        self::assertSame($pending->sessionId, $this->signInReference($record));
+        self::assertNull($record->getAttribute('last_used_ip'));
+        self::assertCount(1, $this->sessions()->pending($stray)?->proofs() ?? []);
+        self::assertCount(1, $events);
+        self::assertSame([null, null], [$events[0]->context->client->ip, $events[0]->context->client->userAgent]);
+    }
+
+    /**
+     * A context that kept no credential is refused by throwing inside MFA's
+     * transaction, which rolls back what it wrote before, though a request
+     * bound in the container carries that very session's credential: the
+     * request is never read in its place.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWithoutACredentialTheBoundRequestIsNotReadInstead(): void
+    {
+        $person     = $this->createPerson();
+        $credential = $this->signInPending($person);
+        $pending    = self::keeping($this->pendingContextFor($credential), null);
+        $result     = $this->verified($pending, $this->factorProof($pending));
+
+        $this->bindStrayRequest([self::CREDENTIAL_FIELD => $credential]);
+
+        try {
+            DB::transaction(function () use ($person, $pending, $result): SignInResult {
+
+                VerificationGeneration::advance($person);
+
+                return $this->pendingCompleter()->complete($pending, $result);
+            });
+
+            self::fail('A pending session was satisfied from the request\'s credential.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertSame(ReferenceKind::SESSION, $exception->kind);
+        }
+
+        self::assertSame(0, VerificationGeneration::current($person));
         self::assertSame([], $this->pendingContextFor($credential)->proofs);
     }
 
@@ -468,9 +549,7 @@ final class PendingCompletionAdapterTest extends TestCase
         $factor     = $this->confirmedFactor($person);
         $credential = $this->signInPending($person);
 
-        $this->requestCarrying($credential);
-
-        $result = Mfa::verify(Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
+        $result = Mfa::verify(CallerContext::fromRequest(self::requestCarrying($credential)), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
 
         self::assertTrue($result->isVerified());
 
@@ -501,12 +580,12 @@ final class PendingCompletionAdapterTest extends TestCase
         $credential = $this->signInPending($person);
         $connection = DB::connection();
 
-        $this->requestCarrying($credential);
+        $caller = CallerContext::fromRequest(self::requestCarrying($credential));
 
         $connection->flushQueryLog();
         $connection->enableQueryLog();
 
-        self::assertTrue(Mfa::verify(Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)))->isVerified());
+        self::assertTrue(Mfa::verify($caller, Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)))->isVerified());
 
         $locks = array_values(array_filter(
             array_map(static fn (array $query): string => strtolower($query['query']), $connection->getQueryLog()),
@@ -579,7 +658,7 @@ final class PendingCompletionAdapterTest extends TestCase
         $factor     = $this->confirmedFactor($person);
         $credential = $this->signInPending($person);
 
-        $this->requestCarrying($credential);
+        $caller = CallerContext::fromRequest(self::requestCarrying($credential));
 
         $failing = true;
 
@@ -593,7 +672,7 @@ final class PendingCompletionAdapterTest extends TestCase
         });
 
         try {
-            Mfa::verify(Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
+            Mfa::verify($caller, Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
 
             self::fail('A verification whose commit failed was answered.');
         } catch (\RuntimeException $exception) {

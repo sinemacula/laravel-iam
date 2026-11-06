@@ -11,6 +11,7 @@ use SineMacula\Laravel\Authentication\Contracts\FactorCodeCounters;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Mfa\Attempts\ChallengeCounters;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
@@ -23,9 +24,16 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
  * the factor code binding names, before `laravel-authentication` locks or
  * writes the challenge, and `report()` asks `ChallengeCounters::report()` once
  * for each attempt `laravel-authentication` counts, with whether the code
- * matched. Both run inside `laravel-authentication`'s transaction on the shared
- * storage connection, so the attempt and MFA's count commit, or roll back, as
- * one. `isUsable()` takes MFA's locks (the identity's state, then its factors)
+ * matched. Each is asked for the caller MFA handed the challenge gateway, kept
+ * beside the binding (`FactorCodeCallers`), so a pending sign-in's first factor
+ * and bootstrap enrolment, and the client an attempt is counted against, are
+ * the caller's; a binding the gateway did not make is asked for as the
+ * binding's identity on the binding's application, with no client known.
+ * Nothing is read from a request, so whatever request the container holds, its
+ * client and any pending credential it carries never reach a count. Both run
+ * inside `laravel-authentication`'s transaction on the shared storage
+ * connection, so the attempt and MFA's count commit, or roll back, as one.
+ * `isUsable()` takes MFA's locks (the identity's state, then its factors)
  * and reads the session's first factor before the challenge's row is locked;
  * `report()` takes no lock those do not already cover. MFA's admission and
  * attempt outcome are translated into `laravel-authentication`'s factor code
@@ -40,8 +48,9 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
  * and destination, are refused as `not_found` without asking MFA, so no code
  * for a factor ever goes anywhere but to that factor. An identity that is not
  * one of MFA's, and a binding naming no session MFA could refer back to, cannot
- * be resolved and throw, inside the transaction (IAM-8.2). It holds nothing
- * between calls (IAM-8.1).
+ * be resolved and throw, inside the transaction (IAM-8.2), as MFA's counters
+ * throw there for a caller kept as nobody. It holds nothing between calls
+ * (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,6 +64,7 @@ final readonly class FactorCodeCountersAdapter implements FactorCodeCounters
      *
      * @param  \SineMacula\Laravel\Mfa\Attempts\ChallengeCounters  $counters
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator  $codes
+     * @param  \SineMacula\Laravel\Iam\Mfa\FactorCodeCallers  $callers
      */
     public function __construct(
 
@@ -63,6 +73,9 @@ final readonly class FactorCodeCountersAdapter implements FactorCodeCounters
 
         /** Translates the binding, the admission and the attempt. */
         private CodeTranslator $codes,
+
+        /** The caller the challenge gateway kept beside the binding. */
+        private FactorCodeCallers $callers,
     ) {}
 
     /**
@@ -86,7 +99,7 @@ final readonly class FactorCodeCountersAdapter implements FactorCodeCounters
 
         return $factor === null
             ? FactorCodeAdmission::refused(FactorCodeRefusal::NOT_FOUND)
-            : $this->codes->admission($this->counters->isUsable($identity, $factor, $bound));
+            : $this->codes->admission($this->counters->isUsable($this->caller($identity, $binding), $factor, $bound));
     }
 
     /**
@@ -113,7 +126,22 @@ final readonly class FactorCodeCountersAdapter implements FactorCodeCounters
 
         return $factor === null
             ? FactorCodeAdmission::refused(FactorCodeRefusal::NOT_FOUND)
-            : $this->codes->attempt($this->counters->report($identity, $factor, $bound, $passed), $passed);
+            : $this->codes->attempt($this->counters->report($this->caller($identity, $binding), $factor, $bound, $passed), $passed);
+    }
+
+    /**
+     * The caller the challenge gateway kept beside the binding, or the
+     * binding's identity on its application when the gateway made none.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  \SineMacula\Laravel\Authentication\Codes\FactorCodeBinding  $binding
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function caller(MultiFactorAuthenticatable $identity, FactorCodeBinding $binding): CallerContext
+    {
+        return $this->callers->of($binding) ?? CallerContext::forIdentity($identity, $binding->binding->application);
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Auth\GenericUser;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
@@ -27,16 +28,20 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurp
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Events\LockoutApplied;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ChallengeCountersTests;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
@@ -67,7 +72,7 @@ use Tests\TestCase;
 #[CoversClass(CodeTranslator::class)]
 final class FactorCodeCountersAdapterTest extends TestCase
 {
-    use ArrangesDeliveredFactors, ChallengeCountersTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use ArrangesDeliveredFactors, BindsStrayRequests, ChallengeCountersTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string A number no factor of the person's sends to. */
     private const string OTHER_PHONE = '+447700900999';
@@ -86,6 +91,9 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
     /** @var ?array{0: string, 1: string} The live challenge and the code delivered for it. */
     private ?array $challenge = null;
+
+    /** @var list<array{0: int|string|null, 1: int|string|null}> The IP address and user agent of each lockout MFA reported, in order. */
+    private array $lockouts = [];
 
     /**
      * Fake the delivery of factor codes.
@@ -116,7 +124,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         [$challenge, $code] = $this->liveChallenge();
 
-        $check = $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code);
+        $check = $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code, self::client());
 
         self::assertSame(FactorCodeOutcome::VERIFIED, $check->outcome);
         self::assertSame(0, $this->failures());
@@ -138,7 +146,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
         self::assertSame(FactorCodeOutcome::INVALID, $this->checkWrongly()->outcome);
         self::assertSame(1, $this->failures());
 
-        $request = $this->codes()->sendFactorCode($this->factorCodeBinding());
+        $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
 
         self::assertSame(CodeRequestStatus::LOCKED, $request->status);
         self::assertNotNull($request->lockedUntil);
@@ -159,7 +167,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         FactorModel::query()->whereKey($factor->getKey())->update([$factor->getLockedUntilName() => $until]);
 
-        $request = $this->codes()->sendFactorCode($this->factorCodeBinding());
+        $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
 
         self::assertSame(CodeRequestStatus::LOCKED, $request->status);
         self::assertTrue($until->equalTo($request->lockedUntil));
@@ -191,8 +199,8 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         $person->forceFill(['is_active' => false])->save();
 
-        $request = $this->codes()->sendFactorCode($this->factorCodeBinding());
-        $check   = $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code);
+        $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
+        $check   = $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code, self::client());
 
         self::assertFalse($person->isMfaActive());
         self::assertSame(CodeRequestStatus::REFUSED, $request->status);
@@ -204,7 +212,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         $person->forceFill(['is_active' => true])->save();
 
-        self::assertTrue($this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code)->isVerified());
+        self::assertTrue($this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code, self::client())->isVerified());
     }
 
     /**
@@ -224,7 +232,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         foreach ([$others->id, 'unknown-factor'] as $factor) {
 
-            $request = $this->codes()->sendFactorCode($this->factorCodeBinding(factor: $factor));
+            $request = $this->codes()->sendFactorCode($this->factorCodeBinding(factor: $factor), self::client());
 
             self::assertSame(CodeRequestStatus::REFUSED, $request->status);
             self::assertSame(FactorCodeRefusal::NOT_FOUND, $request->refusal);
@@ -248,7 +256,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         foreach ([new Channel(ChannelKind::SMS, self::OTHER_PHONE), new Channel(ChannelKind::EMAIL, self::DELIVERED_PHONE)] as $channel) {
 
-            $request = $this->codes()->sendFactorCode($this->factorCodeBinding(channel: $channel));
+            $request = $this->codes()->sendFactorCode($this->factorCodeBinding(channel: $channel), self::client());
 
             self::assertSame(CodeRequestStatus::REFUSED, $request->status);
             self::assertSame(FactorCodeRefusal::NOT_FOUND, $request->refusal);
@@ -278,7 +286,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
         $refusal = null;
 
         try {
-            $this->codes()->sendFactorCode($this->factorCodeBinding(session: 1.5));
+            $this->codes()->sendFactorCode($this->factorCodeBinding(session: 1.5), self::client());
         } catch (UnresolvedReferenceException $exception) {
             $refusal = $exception;
         }
@@ -374,6 +382,98 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         self::assertSame(FactorCodeRefusal::NOT_FOUND, $answer->refusal);
         self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * The counters judge the caller MFA's challenge gateway kept beside the
+     * binding, never the binding's identity in its place: a caller kept as
+     * nobody is refused by MFA's counters, for an admission and for an attempt
+     * alike, though the binding's identity has a factor to count.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheCallerKeptBesideTheBindingIsJudged(): void
+    {
+        $this->countedFactor();
+
+        $app      = $this->app ?? self::fail('The application has not booted.');
+        $counters = $app->make(FactorCodeCountersAdapter::class);
+        $binding  = $this->factorCodeBinding();
+
+        $app->make(FactorCodeCallers::class)->hold($binding, CallerContext::nobody(self::GUARD));
+
+        foreach ([static fn (): mixed => $counters->admit($binding), static fn (): mixed => $counters->report($binding, 'challenge-1', true)] as $call) {
+            try {
+                DB::connection(StorageConnection::name())->transaction($call);
+
+                self::fail('A caller that is nobody was counted.');
+            } catch (\InvalidArgumentException $exception) {
+                self::assertSame('Challenge counters are kept for an identity, and the caller is nobody.', $exception->getMessage());
+            }
+        }
+
+        self::assertSame(0, $this->failures());
+    }
+
+    /**
+     * The caller kept beside the binding is the one an attempt is counted for:
+     * a wrong code that locks the factor is reported by MFA for that caller's
+     * client, though the container holds a request from another client.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnAttemptIsCountedForTheKeptCallersClient(): void
+    {
+        config()->set('mfa.attempts.factor_limit', 1);
+
+        [$challenge, $code] = $this->liveChallenge();
+
+        $app     = $this->app ?? self::fail('The application has not booted.');
+        $binding = $app->make(FactorCodeCallers::class)->hold($this->factorCodeBinding(), self::callerOf($this->person()));
+
+        $this->recordLockouts();
+
+        $this->bindStrayRequest();
+
+        self::assertSame(FactorCodeOutcome::INVALID, $this->codes()->verifyFactorCode($binding, $challenge, self::wrong($code), self::client())->outcome);
+        self::assertSame(1, $this->failures());
+        self::assertSame([[self::CLIENT_IP, self::CLIENT_AGENT]], $this->lockouts);
+    }
+
+    /**
+     * A binding the challenge gateway did not make is judged as its identity's
+     * own on its application, from the binding alone: though the container
+     * holds a request from another client carrying a pending sign-in's
+     * credential of the identity's, the binding's active session is the one
+     * judged, and the attempt is counted for no client known, never the
+     * request's. (`laravel-authentication` hands the counters no client, so MFA
+     * names none; member gap.).
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABindingTheGatewayDidNotMakeIsJudgedFromTheBindingAlone(): void
+    {
+        config()->set('mfa.attempts.factor_limit', 1);
+
+        $this->liveChallenge();
+
+        $pending = $this->attemptSignIn($this->person());
+
+        self::assertTrue($pending->isPending(), (string) $pending->reason?->value);
+        self::assertNotNull($pending->credential);
+
+        $this->recordLockouts();
+        $this->bindStrayRequest(['pending_credential' => $pending->credential->reveal()]);
+
+        self::assertSame(FactorCodeOutcome::INVALID, $this->checkWrongly()->outcome);
+        self::assertSame(1, $this->failures());
+        self::assertSame([[null, null]], $this->lockouts);
     }
 
     /**
@@ -473,12 +573,12 @@ final class FactorCodeCountersAdapterTest extends TestCase
         $binding = $this->factorCodeBinding();
         $codes   = $this->codes();
 
-        self::assertTrue($codes->verifyFactorCode($binding, $challenge, $code)->isVerified());
+        self::assertTrue($codes->verifyFactorCode($binding, $challenge, $code, self::client())->isVerified());
 
         $this->challenge = null;
 
         return static function () use ($codes, $binding, $challenge, $code): void {
-            $codes->verifyFactorCode($binding, $challenge, $code);
+            $codes->verifyFactorCode($binding, $challenge, $code, self::client());
         };
     }
 
@@ -510,9 +610,33 @@ final class FactorCodeCountersAdapterTest extends TestCase
     {
         [$challenge, $code] = $this->liveChallenge();
 
+        return $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, self::wrong($code), self::client());
+    }
+
+    /**
+     * From now on, record the IP address and user agent of each lockout MFA
+     * reports.
+     *
+     * @return void
+     */
+    private function recordLockouts(): void
+    {
+        Event::listen(LockoutApplied::class, function (LockoutApplied $event): void {
+            $this->lockouts[] = [$event->context['ip'] ?? null, $event->context['user_agent'] ?? null];
+        });
+    }
+
+    /**
+     * A code of the same length that is not the one given.
+     *
+     * @param  string  $code
+     * @return string
+     */
+    private static function wrong(#[\SensitiveParameter] string $code): string
+    {
         $zeros = str_repeat('0', strlen($code));
 
-        return $this->codes()->verifyFactorCode($this->factorCodeBinding(), $challenge, $code === $zeros ? str_repeat('1', strlen($code)) : $zeros);
+        return $code === $zeros ? str_repeat('1', strlen($code)) : $zeros;
     }
 
     /**
@@ -529,7 +653,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
             return $this->challenge;
         }
 
-        $request = $this->codes()->sendFactorCode($this->factorCodeBinding());
+        $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
 
         self::assertSame(CodeRequestStatus::SENT, $request->status, (string) $request->refusal?->value);
 

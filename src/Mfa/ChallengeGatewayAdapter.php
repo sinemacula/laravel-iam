@@ -12,11 +12,13 @@ use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
 use SineMacula\Laravel\Iam\Delivery\MfaSenderAdapter;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Attempts\ChallengeOutcome;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\EmailSender;
@@ -29,6 +31,7 @@ use SineMacula\Laravel\Mfa\Drivers\SmsDriver;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 
@@ -63,16 +66,20 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * factor code binding made from MFA's: the factor's owner, the application, the
  * sign-in, the purpose, the factor, its channel (the kind its driver states,
  * naming its destination) and, for an enrolment, the pending factor as the
- * grant (see `Translation\CodeTranslator`). `laravel-authentication` keeps the
- * challenge, its attempts and deliveries and its per-IP limits; it asks MFA's
- * challenge counters, through `FactorCodeCountersAdapter`, before each delivery
- * and each check and once for each attempt it counts, all inside its own
- * transaction on the shared storage connection, a savepoint of MFA's when MFA
- * calls from inside its identity's lock. Its answer is translated into MFA's
- * send result and challenge outcome. `laravel-authentication` answers a used,
- * unknown or malformed challenge as it answers a wrong code, so each fails as
- * MFA's counted `invalid_code`, never `replayed` or `not_found`: never a pass,
- * and never a refusal that would let a wrong code's count roll back.
+ * grant (see `Translation\CodeTranslator`), handed the caller's client
+ * (`Translation\ClientTranslator`) as the client the code is sent to or checked
+ * for. `laravel-authentication` keeps the challenge, its attempts and
+ * deliveries and its per-IP limits; it asks MFA's challenge counters, through
+ * `FactorCodeCountersAdapter`, before each delivery and each check and once for
+ * each attempt it counts, with the caller MFA handed the gateway, kept beside
+ * the binding (`FactorCodeCallers`), so a pending sign-in's code is judged as
+ * the pending caller's; all inside its own transaction on the shared storage
+ * connection, a savepoint of MFA's when MFA calls from inside its identity's
+ * lock. Its answer is translated into MFA's send result and challenge outcome.
+ * `laravel-authentication` answers a used, unknown or malformed challenge as it
+ * answers a wrong code, so each fails as MFA's counted `invalid_code`, never
+ * `replayed` or `not_found`: never a pass, and never a refusal that would let a
+ * wrong code's count roll back.
  *
  * There the code is delivered by `laravel-authentication`'s one-time code
  * sender, from its queued job once the outermost transaction commits, never by
@@ -88,10 +95,22 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * reauthentication proves the first factor, so no code is sent or checked for
  * one. An application that names no guard of `laravel-authentication`'s that
  * holds sessions, and a factor owned by an identity `laravel-authentication`
- * does not sign in, cannot be resolved and throw (IAM-8.2). The session the
- * binding names is MFA's counters' to judge, inside the transaction.
+ * does not sign in, cannot be resolved and throw (IAM-8.2). The caller, and the
+ * session the binding names, are MFA's counters' to judge, inside the
+ * transaction: a caller that is nobody is refused there by throwing, before any
+ * code is issued or checked, and one who is another identity than the binding's
+ * is refused as `not_found`, as MFA's contract asks of a binding that is not
+ * the caller's. A binding of another application than the caller's is refused
+ * on either path, before the code's path is chosen, by throwing an
+ * `OperationRefusedException` carrying `not_accepted`: MFA builds the binding
+ * from the caller, so the two never differ when MFA calls, and a code is never
+ * sent or checked on one application for a caller of another. Nothing is read
+ * from a request: the caller, its pending sign-in and its client are the ones
+ * MFA hands the gateway. MFA's own challenge gateway is handed the caller as it
+ * is.
  *
- * It holds nothing between calls (IAM-8.1).
+ * It holds nothing between calls (IAM-8.1): the caller is kept beside the
+ * binding only while the binding is.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -103,6 +122,9 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     /** @var string The detail of a check refused for a factor that is not the binding's identity's. */
     public const string NOT_FOUND = 'The factor is not one of the binding\'s identity\'s stored factors.';
 
+    /** @var string The detail of a send or check refused for a binding of another application than the caller's. */
+    public const string ANOTHER_APPLICATION = 'The binding names another application than the caller\'s.';
+
     /** @var string The detail of a check refused for a reauthentication. */
     public const string REAUTHENTICATION = 'A reauthentication proves the first factor, so no factor code answers one.';
 
@@ -113,6 +135,7 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator  $codes
      * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \SineMacula\Laravel\Iam\Mfa\FactorCodeCallers  $callers
      */
     public function __construct(
 
@@ -122,11 +145,14 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
         /** Resolves the guard the application names, and the identity as `laravel-authentication`'s. */
         private CurrentSession $sessions,
 
-        /** Translates the binding, the request and the check. */
+        /** Translates the binding, the code request and the check. */
         private CodeTranslator $codes,
 
         /** Tells whether a one-time code sender is bound, and builds MFA's own challenge gateway. */
         private Container $container,
+
+        /** Keeps the caller beside each binding, for the factor code counters. */
+        private FactorCodeCallers $callers,
     ) {}
 
     /**
@@ -134,6 +160,7 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * `laravel-authentication`'s factor codes when that path delivers it as MFA
      * would, and through MFA's own challenge gateway otherwise.
      *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @return \SineMacula\Laravel\Mfa\Codes\SendResult
@@ -141,24 +168,28 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * @throws \InvalidArgumentException
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      * @throws \Throwable
      */
     #[\Override]
-    public function send(Factor $factor, ProofBinding $binding): SendResult
+    public function send(CallerContext $caller, Factor $factor, ProofBinding $binding): SendResult
     {
+        self::assertIsTheCallersApplication($caller, $binding);
+
         $kind = $this->routedKind($factor);
 
         if ($kind === null) {
-            return $this->mfasOwn()->send($factor, $binding);
+            return $this->mfasOwn()->send($caller, $factor, $binding);
         }
 
-        $codes = $this->service($binding->application);
-        $owner = self::owner($factor, $binding);
+        $codes  = $this->service($binding->application);
+        $owner  = self::owner($factor, $binding);
+        $client = ClientTranslator::toAuthentication($caller->client);
 
         return match (true) {
             $owner            === null                    => SendResult::refused(FailureReason::NOT_FOUND),
             $binding->purpose === Purpose::REAUTHENTICATE => SendResult::refused(FailureReason::NOT_ACCEPTED),
-            default                                       => $this->codes->sendResult($codes->sendFactorCode($this->bound($owner, $factor, $kind, $binding))),
+            default                                       => $this->codes->sendResult($codes->sendFactorCode($this->bound($caller, $owner, $factor, $kind, $binding), $client)),
         };
     }
 
@@ -167,6 +198,7 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * path its code was sent on: `laravel-authentication`'s factor codes, or
      * MFA's own challenge gateway.
      *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  string  $challengeId
@@ -175,25 +207,48 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      * @throws \Throwable
      */
     #[\Override]
-    public function verify(Factor $factor, ProofBinding $binding, string $challengeId, #[\SensitiveParameter] string $code): ChallengeOutcome
+    public function verify(CallerContext $caller, Factor $factor, ProofBinding $binding, string $challengeId, #[\SensitiveParameter] string $code): ChallengeOutcome
     {
+        self::assertIsTheCallersApplication($caller, $binding);
+
         $kind = $this->routedKind($factor);
 
         if ($kind === null) {
-            return $this->mfasOwn()->verify($factor, $binding, $challengeId, $code);
+            return $this->mfasOwn()->verify($caller, $factor, $binding, $challengeId, $code);
         }
 
         $codes = $this->service($binding->application);
         $owner = self::owner($factor, $binding);
 
-        return match (true) {
-            $owner            === null                    => ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND),
-            $binding->purpose === Purpose::REAUTHENTICATE => ChallengeOutcome::refused(FailureReason::NOT_ACCEPTED, self::REAUTHENTICATION),
-            default                                       => $this->codes->outcome($codes->verifyFactorCode($this->bound($owner, $factor, $kind, $binding), $challengeId, $code)),
-        };
+        if ($owner === null) {
+            return ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND);
+        }
+
+        $client = ClientTranslator::toAuthentication($caller->client);
+
+        return $binding->purpose === Purpose::REAUTHENTICATE
+            ? ChallengeOutcome::refused(FailureReason::NOT_ACCEPTED, self::REAUTHENTICATION)
+            : $this->codes->outcome($codes->verifyFactorCode($this->bound($caller, $owner, $factor, $kind, $binding), $challengeId, $code, $client));
+    }
+
+    /**
+     * Refuse a binding of another application than the caller's.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     */
+    private static function assertIsTheCallersApplication(CallerContext $caller, ProofBinding $binding): void
+    {
+        if ($caller->application !== $binding->application) {
+            throw new OperationRefusedException(FailureReason::NOT_ACCEPTED, self::ANOTHER_APPLICATION);
+        }
     }
 
     /**
@@ -289,8 +344,9 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     /**
      * The factor code binding the factor's codes are issued and checked under,
      * for its owner as `laravel-authentication`'s identity, on the channel kind
-     * its driver states.
+     * its driver states, with the caller kept beside it for the counters.
      *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $owner
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $kind
@@ -300,9 +356,9 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function bound(MultiFactorAuthenticatable $owner, Factor $factor, ChannelKind $kind, ProofBinding $binding): FactorCodeBinding
+    private function bound(CallerContext $caller, MultiFactorAuthenticatable $owner, Factor $factor, ChannelKind $kind, ProofBinding $binding): FactorCodeBinding
     {
-        return $this->codes->toAuthentication($this->sessions->identity($owner), $factor, $kind, $binding);
+        return $this->callers->hold($this->codes->toAuthentication($this->sessions->identity($owner), $factor, $kind, $binding), $caller);
     }
 
     /**

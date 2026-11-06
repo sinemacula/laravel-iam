@@ -8,16 +8,19 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Models\Passkey;
+use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authentication\Passkeys\PasskeyRegistration;
 use SineMacula\Laravel\Authentication\Passkeys\RegisteredPasskey;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
+use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
 use SineMacula\Laravel\Authentication\Sessions\FactorChangeResult;
 use SineMacula\Laravel\Authentication\Sessions\FactorRemoval;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
@@ -27,12 +30,17 @@ use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
+use SineMacula\Laravel\Mfa\Events\ContextEvent;
+use SineMacula\Laravel\Mfa\Events\EventContext;
+use SineMacula\Laravel\Mfa\Events\FactorRemoved;
+use SineMacula\Laravel\Mfa\Events\PasskeyAssociated;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Models\PasskeyAssociation;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyAssociationResult;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PasskeyChangeGateTests;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RegistersPasskeys;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -65,7 +73,7 @@ use Tests\TestCase;
 #[CoversClass(PasskeyFactorGateAdapter::class)]
 final class PasskeyFactorGateAdapterTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesMembers, PasskeyChangeGateTests, RegistersPasskeys, RunsAtIsolationLevels, SignsInPeople {
+    use ArrangesFactorChanges, BindsStrayRequests, MigratesMembers, PasskeyChangeGateTests, RegistersPasskeys, RunsAtIsolationLevels, SignsInPeople {
         RegistersPasskeys::registerPasskey as registerThroughAuthentication;
     }
 
@@ -152,6 +160,35 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
+     * A registration bound for the enrolment of a pending sign-in (a bootstrap
+     * enrolment, MFA requiring a factor of someone who has none) is refused as
+     * `not_found`, keeping neither the passkey nor any factor and leaving the
+     * session pending: `laravel-authentication` hands the gate no pending
+     * credential, so the gate hands MFA the identity as an active caller, who
+     * holds no active sign-in the binding names. It pins that member gap.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPendingSignInsEnrolmentRegistrationIsRefused(): void
+    {
+        config()->set('mfa.applications.' . self::GUARD . '.requirement', 'always');
+
+        $person  = $this->createPerson();
+        $pending = $this->attemptSignIn($person)->pending ?? self::fail('The sign-in did not wait for a further factor.');
+        $binding = new ProofBinding($person, self::GUARD, $pending->id, Purpose::ENROLLMENT);
+
+        $refusal = self::refusal(fn (): mixed => $this->registerThroughAuthentication($person, self::CREDENTIAL, $binding));
+
+        self::assertSame(FailureReason::NOT_FOUND, $refusal->reason);
+        self::assertSame('The registration is bound to another identity, application or session.', $refusal->getMessage());
+        self::assertFalse($this->isPasskeyStored($person, self::CREDENTIAL));
+        self::assertSame(0, Factor::query()->count());
+        self::assertSame(SessionStatus::PENDING, Session::query()->whereKey($pending->id)->sole()->getStatus());
+    }
+
+    /**
      * A registration MFA refuses, on a session not fresh enough to add a first
      * factor, keeps neither the passkey nor any factor.
      *
@@ -197,7 +234,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
 
         $this->stepUpWith($person, $session, $kept->id);
 
-        $removal = $this->passkeys()->remove($person, $this->passkeyId());
+        $removal = $this->passkeys()->remove($person, $this->passkeyId(), self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertInstanceOf(FactorRemoval::class, $removal->completion);
@@ -225,7 +262,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
 
         [$person, , $factor] = $this->passkeyFactorBesideAnother();
 
-        $refusal = self::refusal(fn (): mixed => $this->passkeys()->remove($person, $this->passkeyId()));
+        $refusal = self::refusal(fn (): mixed => $this->passkeys()->remove($person, $this->passkeyId(), self::client()));
 
         self::assertSame(FailureReason::NOT_FRESH, $refusal->reason);
         self::assertTrue($this->isPasskeyStored($person, self::CREDENTIAL));
@@ -248,7 +285,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
 
         $this->registerThroughAuthentication($person, self::CREDENTIAL);
 
-        $removal = $this->passkeys()->remove($person, $this->passkeyId());
+        $removal = $this->passkeys()->remove($person, $this->passkeyId(), self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNull($removal->completion);
@@ -287,8 +324,63 @@ final class PasskeyFactorGateAdapterTest extends TestCase
 
         DB::flushQueryLog();
 
-        self::assertTrue($this->passkeys()->remove($person, $this->passkeyId())->isRemoved());
+        self::assertTrue($this->passkeys()->remove($person, $this->passkeyId(), self::client())->isRemoved());
         self::assertLocksPrecede('delete from');
+    }
+
+    /**
+     * A request bound in the container never reaches the change: though it
+     * comes from another client and carries another person's pending sign-in
+     * credential, the registration and the removal are judged as the active
+     * caller `laravel-authentication`'s values name, on the application it
+     * names, and MFA's events about both describe that identity on that
+     * application, with no sign-in and no client known, never the request's.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABoundRequestNeverReachesTheChange(): void
+    {
+        $stranger = $this->createPerson();
+
+        $this->confirmedFactor($stranger);
+
+        $pending = $this->attemptSignIn($stranger);
+
+        self::assertTrue($pending->isPending(), (string) $pending->reason?->value);
+        self::assertNotNull($pending->credential);
+
+        [$person, $session] = $this->freshPerson();
+
+        $this->requireNothing();
+
+        $contexts = [];
+
+        Event::listen([PasskeyAssociated::class, FactorRemoved::class], static function (ContextEvent $event) use (&$contexts): void {
+            $contexts[] = $event->context;
+        });
+
+        $this->bindStrayRequest(['pending_credential' => $pending->credential->reveal()]);
+
+        self::assertTrue($this->registerForEnrolment($person, $session)->isRegistered());
+
+        $key    = EventContext::scalarKey($person->getKey());
+        $factor = Factor::query()->where('authenticatable_id', $key)->sole();
+
+        self::assertSame(self::GUARD, $factor->getApplication());
+
+        $this->stepUpWith($person, $session, $this->confirmedFactor($person)->id);
+
+        self::assertTrue($this->passkeys()->remove($person, $this->passkeyId(), self::client())->isRemoved());
+        self::assertNull(Factor::query()->find($factor->id));
+        self::assertCount(2, $contexts);
+
+        foreach ($contexts as $context) {
+            self::assertSame($key, $context['identity_id']);
+            self::assertSame(self::GUARD, $context['application']);
+            self::assertSame([null, null, null], [$context['session_id'], $context['ip'], $context['user_agent']]);
+        }
     }
 
     /**

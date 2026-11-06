@@ -8,16 +8,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\ApplicationResolverAdapter;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ApplicationResolver;
-use SineMacula\Laravel\Mfa\Events\Actor;
-use SineMacula\Laravel\Mfa\Events\FactorsReset;
-use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ApplicationResolverTests;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
@@ -28,9 +25,9 @@ use Tests\TestCase;
  * Integration tests for MFA's application named after the guard that serves the
  * request (IAM-3.12): the default guard as `Auth::shouldUse()` leaves it,
  * whether the request is signed in or a guest's, the same guard MFA would name
- * without a resolver, and the one MFA's own event context then names; a default
- * guard that names nothing throws (IAM-8.2), rolling back the transaction it is
- * asked in.
+ * without a resolver, and the application of the caller MFA then reads from a
+ * request; a default guard that names nothing throws (IAM-8.2), rolling back
+ * the transaction it is asked in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,8 +77,23 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
+     * Nothing the request carries names the application: a path, a host, a
+     * header, a query and a body each naming another guard leave it the guard
+     * that serves the request.
+     *
+     * @return void
+     */
+    public function testNothingTheRequestCarriesNamesTheApplication(): void
+    {
+        $body    = ['guard' => self::ADMIN, 'application' => self::ADMIN];
+        $request = Request::create('https://admin.example.test/admin/mfa?guard=' . self::ADMIN, 'POST', $body, server: ['HTTP_X_GUARD' => self::ADMIN]);
+
+        self::assertSame(self::GUARD, $this->adapter()->resolve($request));
+    }
+
+    /**
      * Bound as MFA's application resolver, the guard it names is the
-     * application MFA's own event context carries.
+     * application of the caller MFA reads from a request.
      *
      * @return void
      *
@@ -91,12 +103,35 @@ final class ApplicationResolverAdapterTest extends TestCase
     {
         $this->app?->bind(ApplicationResolver::class, ApplicationResolverAdapter::class);
 
-        Event::fake([FactorsReset::class]);
         Auth::shouldUse(self::ADMIN);
 
-        Mfa::resetIdentity($this->createPerson(), Actor::of(new Person), 'Lost device');
+        self::assertSame(self::ADMIN, CallerContext::fromRequest($this->request())->application);
+    }
 
-        Event::assertDispatched(FactorsReset::class, static fn (FactorsReset $event): bool => $event->context['application'] === self::ADMIN);
+    /**
+     * A caller MFA reads through another guard than the default is still named
+     * after the default guard while the adapter is bound, though MFA alone
+     * names it after the guard it was read through: MFA's contract hands the
+     * resolver no guard (a member gap), so the application calls
+     * `Auth::shouldUse()` with the route's guard first.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerReadThroughAnotherGuardIsNamedAfterTheDefaultGuard(): void
+    {
+        $this->app?->offsetUnset(ApplicationResolver::class);
+
+        self::assertSame(self::ADMIN, CallerContext::fromRequest($this->request(), self::ADMIN)->application);
+
+        $this->app?->bind(ApplicationResolver::class, ApplicationResolverAdapter::class);
+
+        self::assertSame(self::GUARD, CallerContext::fromRequest($this->request(), self::ADMIN)->application);
+
+        Auth::shouldUse(self::ADMIN);
+
+        self::assertSame(self::ADMIN, CallerContext::fromRequest($this->request(), self::ADMIN)->application);
     }
 
     /**

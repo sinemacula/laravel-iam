@@ -76,6 +76,22 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
+     * Build an exception for a sign-in MFA names that is no session of the
+     * identity asked about on the guard: no session holds its key, or the one
+     * that does is another identity's or another guard's.
+     *
+     * @param  string  $application
+     * @return self
+     */
+    public static function forSignIn(string $application): self
+    {
+        $message = 'The sign-in MFA names is no session of the identity asked about on the guard [%s], so it cannot be resolved;'
+            . ' the change is refused rather than made against another session or none.';
+
+        return new self(sprintf($message, $application), ReferenceKind::SESSION, $application);
+    }
+
+    /**
      * Build an exception for an identity that does not implement
      * `laravel-authentication`'s `Identity` contract, so it is not one
      * `laravel-authentication` signs in, or whose key is neither a non-empty

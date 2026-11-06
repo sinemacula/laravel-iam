@@ -8,10 +8,12 @@ use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Events\Enums\FailureReason as AuthenticationFailureReason;
+use SineMacula\Laravel\Authentication\Events\PasskeyUsed;
 use SineMacula\Laravel\Authentication\Models\Passkey;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
@@ -34,6 +36,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PasskeyGatewayTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
+use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RegistersPasskeys;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -66,7 +69,7 @@ use Tests\TestCase;
 #[CoversClass(PasskeyGatewayAdapter::class)]
 final class PasskeyGatewayAdapterTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesMembers, PasskeyGatewayTests, RegistersPasskeys, RunsAtIsolationLevels, SignsInPeople;
+    use ArrangesFactorChanges, BindsStrayRequests, MigratesMembers, PasskeyGatewayTests, RegistersPasskeys, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string The credential id of the passkey factor, in unpadded base64url. */
     private const string CREDENTIAL = 'cGFzc2tleS1nYXRld2F5';
@@ -111,11 +114,11 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         [, , $factor] = $this->passkeyFactor();
 
-        $request = Mfa::requestAssertion($factor->id, Purpose::STEP_UP);
+        $request = Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP);
 
         self::assertTrue($request->hasStarted(), $request->reason->value ?? '');
 
-        $result = Mfa::verify(Submission::assertion($factor->id, $this->respond($request->options)), Purpose::STEP_UP);
+        $result = Mfa::verify(self::servedCaller(), Submission::assertion($factor->id, $this->respond($request->options)), Purpose::STEP_UP);
 
         self::assertTrue($result->isVerified(), $result->detail ?? '');
         self::assertNotNull($result->proof);
@@ -125,6 +128,39 @@ final class PasskeyGatewayAdapterTest extends TestCase
         self::assertSame($request->options['challenge'], $result->proof->challengeId);
         self::assertInstanceOf(AccessTokenResult::class, $result->completion());
         self::assertSame(0, self::storage()->transactionLevel());
+    }
+
+    /**
+     * A request bound in the container never reaches the assertion: MFA hands
+     * the gateway no client, so `laravel-authentication`'s passkey is used for
+     * a client of which nothing is known, never for the client of the request
+     * the container holds, and the assertion still verifies.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABoundRequestNeverReachesTheAssertion(): void
+    {
+        [, , $factor] = $this->passkeyFactor();
+
+        $caller  = self::servedCaller();
+        $request = Mfa::requestAssertion($caller, $factor->id, Purpose::STEP_UP);
+        $used    = [];
+
+        self::assertTrue($request->hasStarted(), $request->reason->value ?? '');
+
+        Event::listen(PasskeyUsed::class, static function (PasskeyUsed $event) use (&$used): void {
+            $used[] = $event;
+        });
+
+        $this->bindStrayRequest();
+
+        $result = Mfa::verify($caller, Submission::assertion($factor->id, $this->respond($request->options)), Purpose::STEP_UP);
+
+        self::assertTrue($result->isVerified(), $result->detail ?? '');
+        self::assertCount(1, $used);
+        self::assertSame([null, null], [$used[0]->context->client->ip, $used[0]->context->client->userAgent]);
     }
 
     /**

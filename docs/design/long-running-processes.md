@@ -67,6 +67,12 @@ process calls it.
     starts and ends. A reset called by hand between the units of work of a command would otherwise drop the deferred
     callbacks before they ran, the command's `Context` and the audit trail's command frame. Laravel's own workers
     forget every scoped instance only at their own boundaries, once a job's deferred callbacks have run.
+  - `Mfa\FactorCodeCallers`, which this package binds outside the binding rule (it is no member's seam), is scoped
+    under the same `iam.scoped:` prefix and resolved through it, so the reset forgets it with this package's scoped
+    adapters. It keeps the caller MFA handed the challenge gateway only under the factor code binding the gateway made,
+    a weak key, so nothing in it outlives the code's send or check; forgetting it on the explicit reset as well means a
+    caller kept for a binding something still references is never read back after a reset called between units of
+    work.
 - `laravel-mfa` keeps no container instance of any seam between requests (since laravel-mfa#92 every default is bound
   with `bindIf()` and its `mfa` manager with `singletonIf()`, none of them holding request state), so its bindings need
   no reset; its request state is the session-held proofs above, and the identity the guards resolve.
@@ -141,7 +147,8 @@ process calls it.
   by, `bindScoped()` and `unscope()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
-- `src/IamServiceProvider.php`: `registerListeners()`; `src/IamManager.php`: `resetWorkerState()`;
+- `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
+  `src/IamManager.php`: `resetWorkerState()`;
   `config/iam.php`: `workers`.
 
 ## Authoritative Tests
@@ -170,7 +177,8 @@ process calls it.
   `testTheAuditLogsJobFrameOutlivesTheReset`
 - `tests/Feature/IamServiceProviderTest.php` `testTheWorkerResetListenersAreRegistered`,
   `testTheWorkerResetIsOnWhenTheSwitchIsMissing`, `testTurningTheWorkerResetOffRegistersNeitherListener`,
-  `testTheWorkerResetSwitchIsReadAsTheEnvironmentFillsIt`
+  `testTheWorkerResetSwitchIsReadAsTheEnvironmentFillsIt`, `testTheFactorCodeCallersAreScoped`,
+  `testTheWorkerResetForgetsTheFactorCodeCallers`
 
 ## Change Triggers
 

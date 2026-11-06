@@ -10,17 +10,20 @@ use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Requirements\SessionChange;
 
 /**
- * MFA's session transition, judging the guard's current session again through
- * `laravel-authentication` after a factor change on it, so a session that stops
- * meeting its requirement returns to pending (IAM-3.8).
+ * MFA's session transition, judging the session a factor change was made on
+ * again through `laravel-authentication`, so a session that stops meeting its
+ * requirement returns to pending (IAM-3.8).
  *
  * MFA calls it after every enrolment confirmation and passkey factor
  * registration on an active session, shortfall or not, and after a removal its
  * revoker did not judge, which this package's always does (IAM-3.7). The
- * session judged is the guard's current one, when it is the identity's and the
- * sign-in the change was made on (`CurrentSession`); when it is another, or
- * there is none, the change is refused by throwing (IAM-8.2), so it rolls back
- * rather than being committed unjudged.
+ * session judged is the one MFA names (`SessionChange::$session`), read by its
+ * key on the guard the change's application names (`CurrentSession::named()`),
+ * whatever the guard holds now, so a change made from a queued job, a console
+ * command or a request another guard serves judges the sign-in it was made on;
+ * a sign-in that is no session of the identity's on that guard is refused by
+ * throwing (IAM-8.2), so the change rolls back rather than being committed
+ * unjudged.
  *
  * `laravel-authentication` judges it by its own rules, against the requirement
  * it resolves for the identity (IAM-3.1), never MFA's `outstanding` assessment:
@@ -29,7 +32,7 @@ use SineMacula\Laravel\Mfa\Requirements\SessionChange;
  * which reaches the caller in the change's result once the change commits. The
  * change made crosses by its value, which both members spell the same.
  *
- * Stateless: the guard and its session are read on every call (IAM-8.1).
+ * Stateless: the session is read on every call (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,7 +49,7 @@ final readonly class SessionTransitionAdapter implements SessionTransition
      */
     public function __construct(
 
-        /** Resolves the sign-in the change was made on to the guard's session, and the guard's session service. */
+        /** Resolves the sign-in the change was made on to its session, and the guard's session service. */
         private CurrentSession $sessions,
 
         /** Translates MFA's change made to `laravel-authentication`'s. */
@@ -60,7 +63,7 @@ final readonly class SessionTransitionAdapter implements SessionTransition
      * @param  \SineMacula\Laravel\Mfa\Requirements\SessionChange  $change
      * @return \SineMacula\Laravel\Authentication\Sessions\FactorChangeResult
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\SessionMismatchException
+     * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
@@ -68,7 +71,7 @@ final readonly class SessionTransitionAdapter implements SessionTransition
     public function factorChanged(SessionChange $change): FactorChangeResult
     {
         $owner   = $this->sessions->identity($change->identity);
-        $current = $this->sessions->of($change->identity, $change->application, $change->session);
+        $current = $this->sessions->named($change->identity, $change->application, $change->session);
 
         return $this->sessions
             ->sessions($change->application)

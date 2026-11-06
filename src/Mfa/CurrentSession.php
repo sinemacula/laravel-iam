@@ -8,10 +8,13 @@ use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\ConnectionResolverInterface;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Contracts\HasSessions;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
+use SineMacula\Laravel\Authentication\Database\WriteConnection;
 use SineMacula\Laravel\Authentication\Guards\JwtGuard;
+use SineMacula\Laravel\Authentication\SessionRecords\SessionKeyShape;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
@@ -21,33 +24,44 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 
 /**
  * Resolves the sign-in MFA names to `laravel-authentication`'s session: the
- * current session of the guard the MFA application is, held by the identity MFA
- * asks about.
+ * session of the guard the MFA application is, held by the identity MFA asks
+ * about, read by its key where MFA names it and the guard's current one where
+ * MFA names none.
  *
  * MFA names a sign-in by its application and a string; an application is the
- * guard of the same name, and the sign-in is the key of the guard's current
- * session. Nothing is guessed (IAM-8.2): an application that is no session
+ * guard of the same name, and the sign-in is the key of one of its sessions.
+ * Where MFA hands the sign-in, the session is read by that key (`named()`),
+ * whatever the guard holds now; where it hands none, the session is the guard's
+ * current one (`current()`, `held()`), and where a contract asks for the
+ * identity's current sign-in, the named one must be the guard's current one
+ * (`of()`). Nothing is guessed (IAM-8.2): an application that is no session
  * guard (no declared guard of `laravel-authentication`'s `jwt` driver, an
  * `api_key` guard included) throws `UnresolvedReferenceException` of the kind
- * `guard` from every method that resolves a guard alike, a guard holding no
- * session, or one holding another identity's, throws it of the kind `session`,
- * and a guard holding another of the identity's sessions than the one named
- * throws `SessionMismatchException`, each inside whatever transaction the
- * member opened, so the change it was making rolls back.
+ * `guard` from every method that resolves a guard alike, a sign-in that is no
+ * session of the identity's on the guard, a guard holding no session, or one
+ * holding another identity's, throws it of the kind `session`, and a guard
+ * holding another of the identity's sessions than the current one named throws
+ * `SessionMismatchException`, each inside whatever transaction the member
+ * opened, so the change it was making rolls back.
  *
- * It is also where every MFA adapter finds the guard it acts on: the default
- * guard, which MFA names its application after when nothing else names one
- * (`defaultGuard()`), the guard an application names (`guard()`), the identity
- * it serves (`caller()`), `laravel-authentication`'s session service for it
- * (`sessions()`), and the session service a change to the identity as a whole
- * goes through, which names no guard (`identitySessions()`), so every adapter
- * refuses the same misconfiguration the same way. It also tells every adapter
- * that asks `laravel-authentication`'s freshness policy how to ask it
+ * It is also where every MFA adapter finds the guard it acts on: the guard the
+ * application MFA hands it names (`guard()`), the default guard only where MFA
+ * names no application (`defaultGuard()`), the session MFA names
+ * (`named()`), the guard's current session when it is the identity's MFA
+ * hands over (`current()`, `held()`),
+ * `laravel-authentication`'s session service for it (`sessions()`), and the
+ * session service a change to the identity as a whole goes through, which names
+ * no guard (`identitySessions()`), so every adapter refuses the same
+ * misconfiguration the same way. No adapter acts for the identity the guard
+ * serves, since MFA hands each its caller as plain values; only the testing
+ * helper that verifies the acting session, which is handed none, asks for it
+ * (`caller()`). It also tells every adapter that asks
+ * `laravel-authentication`'s freshness policy how to ask it
  * (`isInTransaction()`): current inside a transaction on the session model's
  * connection, plainly outside one.
  *
- * It reads the guard's state on every call and keeps nothing, so it holds no
- * request state between calls (IAM-8.1).
+ * It reads the guard's state and the sessions on every call and keeps nothing,
+ * so it holds no request state between calls (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -100,6 +114,48 @@ final readonly class CurrentSession
     }
 
     /**
+     * The session the sign-in MFA names is, read by its key whatever the guard
+     * holds now: one of the identity's sessions, of the guard the application
+     * names.
+     *
+     * Where MFA hands the sign-in (a step-up's proof binding, a removal, a
+     * change and its judgement), the session is the one it names, never the
+     * guard's current one, so a change made from a queued job, a console
+     * command or a request served by another guard acts on the sign-in MFA
+     * named. It is read through the identity's own `sessions()` relation on the
+     * write connection, so another identity's session is never found, and a key
+     * that cannot be one of the session model's is not queried. A key that
+     * names no session of the identity's, or one of another guard's, throws
+     * `UnresolvedReferenceException` of the kind `session` (IAM-8.2). Whether
+     * the session is still live and active is `laravel-authentication`'s to
+     * judge, under the session's row lock, in the call it is handed to: a read
+     * here would be stale by then.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $session
+     * @return \SineMacula\Laravel\Authentication\Contracts\Session
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function named(MultiFactorAuthenticatable $identity, string $application, string $session): Session
+    {
+        $this->guard($application);
+
+        $owner = $this->identity($identity);
+
+        if (!$owner instanceof HasSessions) {
+            throw UnresolvedReferenceException::forSignIn($application);
+        }
+
+        $query = $owner->sessions();
+        $model = $query->getModel();
+        $found = SessionKeyShape::matches($model, $session) ? WriteConnection::during($owner, static fn (): mixed => WriteConnection::query($query)->find($session)) : null;
+
+        return $found instanceof Session && $found->getGuard() === $application ? $found : throw UnresolvedReferenceException::forSignIn($application);
+    }
+
+    /**
      * The guard's current session, whichever sign-in it is, when it is the
      * identity's.
      *
@@ -111,15 +167,26 @@ final readonly class CurrentSession
      */
     public function current(MultiFactorAuthenticatable $identity, string $application): Session
     {
+        return $this->held($identity, $application) ?? throw UnresolvedReferenceException::forSession($application);
+    }
+
+    /**
+     * The guard's current session, whichever sign-in it is, when it is the
+     * identity's, or `null` when the guard holds none of the identity's.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public function held(MultiFactorAuthenticatable $identity, string $application): ?Session
+    {
         $guard   = $this->guard($application);
         $session = $guard->session();
         $owner   = $guard->identity();
 
-        if ($session === null || $owner === null || !IdentityReference::of($owner)->is(IdentityReference::of($identity))) {
-            throw UnresolvedReferenceException::forSession($application);
-        }
-
-        return $session;
+        return $owner !== null && IdentityReference::of($owner)->is(IdentityReference::of($identity)) ? $session : null;
     }
 
     /**
@@ -141,7 +208,8 @@ final readonly class CurrentSession
 
     /**
      * The identity the application's guard serves, when it is one MFA can hold
-     * factors for.
+     * factors for: asked by the testing helper that verifies the acting session
+     * alone, never by an adapter, which MFA hands its caller.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
@@ -267,7 +335,7 @@ final readonly class CurrentSession
      *
      * @return list<string>
      */
-    private function sessionGuards(): array
+    public function sessionGuards(): array
     {
         $guards = $this->config->get('auth.guards');
         $named  = [];

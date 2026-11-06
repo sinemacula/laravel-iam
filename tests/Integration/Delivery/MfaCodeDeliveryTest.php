@@ -113,7 +113,7 @@ final class MfaCodeDeliveryTest extends TestCase
 
         $factor      = $this->deliveredFactor($person, $type);
         $destination = self::deliveredDestination($person, $type);
-        $sent        = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent        = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertIsString($sent->challengeId);
         self::assertSame([], $other->sent());
@@ -136,7 +136,7 @@ final class MfaCodeDeliveryTest extends TestCase
         $code = $gateway->lastCodeTo($destination, Purpose::ADDITIONAL_FACTOR);
 
         self::assertIsString($code);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
+        self::assertTrue(Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, $sent->challengeId, $code), MfaPurpose::STEP_UP)->isVerified());
     }
 
     /**
@@ -166,12 +166,12 @@ final class MfaCodeDeliveryTest extends TestCase
 
         $gateway->failNext(new \RuntimeException('The provider refused the message.'));
 
-        $this->assertDeliveryFails(static fn () => Mfa::sendCode($factor->id, MfaPurpose::STEP_UP), \RuntimeException::class);
+        $this->assertDeliveryFails(static fn () => Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP), \RuntimeException::class);
 
         self::assertSame(0, $this->codesOf($factor));
         self::assertSame([], $gateway->sent());
 
-        $sent = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
 
         self::assertNull($sent->reason);
         self::assertSame(1, $this->codesOf($factor));
@@ -201,7 +201,7 @@ final class MfaCodeDeliveryTest extends TestCase
 
         $factor = $this->deliveredFactor($person);
 
-        $this->assertDeliveryFails(static fn () => Mfa::sendCode($factor->id, MfaPurpose::STEP_UP), DeliveryNotConfiguredException::class);
+        $this->assertDeliveryFails(static fn () => Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP), DeliveryNotConfiguredException::class);
 
         self::assertSame(0, $this->codesOf($factor));
     }
@@ -241,7 +241,7 @@ final class MfaCodeDeliveryTest extends TestCase
             $gateway->deliver($message);
         }));
 
-        self::assertNull(Mfa::sendCode($factor->id, MfaPurpose::STEP_UP)->reason);
+        self::assertNull(Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP)->reason);
         self::assertIsArray($observed);
 
         [$before, $depth, $codes] = $observed;

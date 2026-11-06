@@ -7,8 +7,11 @@ namespace Tests\Integration\Mfa;
 use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
@@ -23,8 +26,10 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for resolving the sign-in MFA names to the current session
- * of the guard the MFA application is: the identity's session when it is the
+ * Integration tests for resolving the sign-in MFA names to a session of the
+ * guard the MFA application is: by its key whatever the guard holds, where MFA
+ * names it, refused for a key that is no session of the identity's on the
+ * guard; and the guard's current session, the identity's session when it is the
  * one named, and a refusal by throwing for another of its sessions, for another
  * identity's, for none, and for an application that is no session guard
  * (IAM-8.2). A change to the identity as a whole, which names no guard, goes
@@ -65,6 +70,65 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
+     * The session a sign-in names is resolved by its key whatever the guard
+     * holds: another of the identity's sessions than the guard's, and the
+     * identity's session once the guard serves no one.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheNamedSignInIsResolvedWhateverTheGuardHolds(): void
+    {
+        $person  = $this->createPerson();
+        $other   = $this->signIn($person)->record;
+        $current = $this->signInAndActOnSession($person);
+
+        self::assertSame($other->getSessionIdentifier(), $this->currentSession()->named($person, self::GUARD, $this->signInReference($other))->getSessionIdentifier());
+
+        $this->stopActing(self::GUARD);
+
+        self::assertSame($current->getSessionIdentifier(), $this->currentSession()->named($person, self::GUARD, $this->signInReference($current))->getSessionIdentifier());
+    }
+
+    /**
+     * A sign-in that is no session of the identity's on the guard resolves
+     * none: a key no session holds, one that cannot be a key of the session
+     * model, another identity's session, a session of another guard, and any
+     * sign-in of an identity that holds no sessions.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASignInThatIsNoSessionOfTheIdentitysOnTheGuardResolvesNone(): void
+    {
+        $person   = $this->createPerson();
+        $stranger = $this->signIn($this->createPerson())->record;
+
+        $this->declareGuards(['admin' => $this->sessionGuard(), ...$this->guards()]);
+
+        $elsewhere   = $this->signIn($person, 'admin')->record;
+        $sessionless = new class extends User implements Identity, MultiFactorAuthenticatable {
+            use HasFactors;
+        };
+
+        $sessionless->forceFill(['id' => 1]);
+
+        foreach (['987654', 'not-a-key', $this->signInReference($stranger), $this->signInReference($elsewhere, 'admin')] as $signIn) {
+            self::assertUnresolvedSignIn(fn (): mixed => $this->currentSession()->named($person, self::GUARD, $signIn));
+        }
+
+        self::assertUnresolvedSignIn(fn (): mixed => $this->currentSession()->named($sessionless, self::GUARD, $this->signInReference($stranger)));
+
+        DB::enableQueryLog();
+
+        self::assertUnresolvedSignIn(fn (): mixed => $this->currentSession()->named($person, self::GUARD, 'not-a-key'));
+        self::assertSame([], DB::getQueryLog(), 'A key that cannot be one of the session model\'s is never queried.');
+        self::assertUnresolvedGuard('web', fn (): mixed => $this->currentSession()->named($person, 'web', $this->signInReference($elsewhere, 'admin')));
+    }
+
+    /**
      * The guard's current session is resolved whichever sign-in it is, when it
      * is the identity's.
      *
@@ -78,6 +142,7 @@ final class CurrentSessionTest extends TestCase
         $session = $this->signInAndActOnSession($person);
 
         self::assertSame($session->getSessionIdentifier(), $this->currentSession()->current($person, self::GUARD)->getSessionIdentifier());
+        self::assertSame($session->getSessionIdentifier(), $this->currentSession()->held($person, self::GUARD)?->getSessionIdentifier());
     }
 
     /**
@@ -115,6 +180,7 @@ final class CurrentSessionTest extends TestCase
 
         self::assertUnresolvedSession(fn (): mixed => $this->currentSession()->of($person, self::GUARD, '1'));
         self::assertUnresolvedSession(fn (): mixed => $this->currentSession()->current($person, self::GUARD));
+        self::assertNull($this->currentSession()->held($person, self::GUARD));
     }
 
     /**
@@ -130,6 +196,7 @@ final class CurrentSessionTest extends TestCase
         $this->actingAsIdentity($person, guard: self::GUARD);
 
         self::assertUnresolvedSession(fn (): mixed => $this->currentSession()->current($person, self::GUARD));
+        self::assertNull($this->currentSession()->held($person, self::GUARD));
     }
 
     /**
@@ -165,6 +232,7 @@ final class CurrentSessionTest extends TestCase
 
         self::assertUnresolvedSession(fn (): mixed => $this->currentSession()->of($person, self::GUARD, $this->signInReference($session)));
         self::assertUnresolvedSession(fn (): mixed => $this->currentSession()->current($person, self::GUARD));
+        self::assertNull($this->currentSession()->held($person, self::GUARD));
     }
 
     /**
@@ -299,7 +367,10 @@ final class CurrentSessionTest extends TestCase
     {
         $person = $this->createPerson();
 
-        self::assertTrue($this->currentSession()->sessions(self::GUARD)->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD])->isSignedIn());
+        $input    = ['email' => $person->email, 'password' => self::PASSWORD];
+        $signedIn = $this->currentSession()->sessions(self::GUARD)->signIn('password', $input, new SignInContext(self::client()));
+
+        self::assertTrue($signedIn->isSignedIn());
 
         config()->set('auth.guards.keys', ['driver' => 'api_key', 'provider' => 'people']);
 
@@ -445,6 +516,26 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
+     * Assert the resolution refuses a sign-in that is no session of the
+     * identity's on the guard.
+     *
+     * @param  \Closure(): mixed  $resolve
+     * @return void
+     */
+    private static function assertUnresolvedSignIn(\Closure $resolve): void
+    {
+        try {
+            $resolve();
+
+            self::fail('A sign-in was resolved that is no session of the identity\'s on the guard.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertSame(ReferenceKind::SESSION, $exception->kind);
+            self::assertSame(self::GUARD, $exception->application);
+            self::assertStringStartsWith('The sign-in MFA names is no session of the identity asked about on the guard [api]', $exception->getMessage());
+        }
+    }
+
+    /**
      * The guards declared now.
      *
      * @return array<string, mixed>
@@ -487,7 +578,7 @@ final class CurrentSessionTest extends TestCase
      */
     private function signInThroughTheIdentitysService(Person $person): SignInResult
     {
-        return $this->currentSession()->identitySessions()->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        return $this->currentSession()->identitySessions()->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD], new SignInContext(self::client()));
     }
 
     /**

@@ -5,17 +5,22 @@ declare(strict_types = 1);
 namespace Tests\Concerns;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
+use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
+use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
 use Tests\Fixtures\Models\Person;
 
 /**
@@ -30,6 +35,12 @@ use Tests\Fixtures\Models\Person;
  * the guard to it as a later bearer request for it would, until the test acts
  * again or stops acting. The tables come from `MigratesMembers`.
  *
+ * Every action is handed its client as a plain value, as an application's
+ * controller hands it on: `client()` for `laravel-authentication`, and
+ * `callerOf()` for MFA's self-service actions, the person as an active caller
+ * on the guard, or `servedCaller()`, the caller as MFA reads one from a request
+ * served now (`CallerContext::fromRequest()`), whoever the guard serves.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -40,6 +51,12 @@ use Tests\Fixtures\Models\Person;
 trait SignsInPeople
 {
     use InteractsWithAuthenticationContext;
+
+    /** @var string The IP address the tests' client comes from. */
+    protected const string CLIENT_IP = '192.0.2.10';
+
+    /** @var string The user agent the tests' client sends. */
+    protected const string CLIENT_AGENT = 'iam-tests';
 
     /**
      * Create a person who signs in with the tests' password, under the email
@@ -70,7 +87,44 @@ trait SignsInPeople
      */
     protected function attemptSignIn(Person $person, string $guard = self::GUARD): SignInResult
     {
-        return $this->sessions($guard)->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        return $this->sessions($guard)->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD], new SignInContext(self::client()));
+    }
+
+    /**
+     * The client the tests' actions are served to, as `laravel-authentication`
+     * is handed it.
+     *
+     * @return \SineMacula\Laravel\Authentication\Http\ClientContext
+     */
+    protected static function client(): ClientContext
+    {
+        return new ClientContext(self::CLIENT_IP, self::CLIENT_AGENT);
+    }
+
+    /**
+     * The person as MFA's active caller on the guard, served to the tests'
+     * client.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  string  $guard
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     */
+    protected static function callerOf(Person $person, string $guard = self::GUARD): CallerContext
+    {
+        return CallerContext::forIdentity($person, $guard, new MfaClientContext(self::CLIENT_IP, self::CLIENT_AGENT));
+    }
+
+    /**
+     * MFA's caller as it reads one from the request given, or from a request
+     * carrying nothing: the pending session its credential names, or the person
+     * the default guard serves now, or nobody.
+     *
+     * @param  ?\Illuminate\Http\Request  $request
+     * @return \SineMacula\Laravel\Mfa\Context\CallerContext
+     */
+    protected static function servedCaller(?Request $request = null): CallerContext
+    {
+        return CallerContext::fromRequest($request ?? Request::create('/'));
     }
 
     /**

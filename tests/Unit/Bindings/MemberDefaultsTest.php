@@ -317,4 +317,40 @@ final class MemberDefaultsTest extends TestCase
 
         self::assertTrue((new MemberDefaults)->isReplaceable($container, PlainSeam::class, []));
     }
+
+    /**
+     * A seam is bound to a class when it is bound to it by class name, or to a
+     * closure it declares, and to no class when it is bound to another, or not
+     * at all.
+     *
+     * @return void
+     */
+    public function testASeamIsBoundToTheClassItWillBuild(): void
+    {
+        $defaults = new MemberDefaults;
+
+        self::assertFalse($defaults->isBoundTo($this->container, PlainSeam::class, [MemberDefault::class]));
+
+        $this->container->bind(PlainSeam::class, MemberDefault::class);
+
+        self::assertTrue($defaults->isBoundTo($this->container, PlainSeam::class, [MemberDefault::class]));
+        self::assertFalse($defaults->isBoundTo($this->container, PlainSeam::class, [Adapter::class]));
+
+        $this->container->bind(PlainSeam::class, fn (): MemberDefault => new MemberDefault);
+
+        self::assertTrue($defaults->isBoundTo($this->container, PlainSeam::class, [self::class]));
+    }
+
+    /**
+     * An instance, though of the class, is bound to no class: what it holds was
+     * not built from the binding.
+     *
+     * @return void
+     */
+    public function testAnInstanceIsBoundToNoClass(): void
+    {
+        $this->container->instance(PlainSeam::class, new MemberDefault);
+
+        self::assertFalse((new MemberDefaults)->isBoundTo($this->container, PlainSeam::class, [MemberDefault::class]));
+    }
 }

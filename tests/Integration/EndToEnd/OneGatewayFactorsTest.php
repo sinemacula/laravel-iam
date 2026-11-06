@@ -129,7 +129,7 @@ final class OneGatewayFactorsTest extends TestCase
 
         $this->reauthenticate($person, $session);
 
-        $start = Mfa::startEnrollment(EnrollmentRequest::delivered($channel->value, $destination));
+        $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::delivered($channel->value, $destination));
 
         self::assertTrue($start->hasStarted(), (string) $start->reason?->value);
         self::assertNotNull($start->grant);
@@ -140,15 +140,17 @@ final class OneGatewayFactorsTest extends TestCase
         self::assertSame(Purpose::ENROLLMENT, $enrolment->purpose);
         self::assertSame($destination, $enrolment->destination());
         self::assertTrue($person->is($enrolment->recipient()));
-        self::assertTrue(Mfa::confirmEnrollment($start->grant, $enrolment->code->reveal())->isConfirmed());
+        self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
         $factor = Factor::query()->where('destination', $destination)->sole();
-        $sent   = Mfa::sendCode($factor->id, MfaPurpose::STEP_UP);
+        $sent   = Mfa::sendCode(self::servedCaller(), $factor->id, MfaPurpose::STEP_UP);
         $stepUp = $gateway->sent()[1] ?? self::fail('No step-up code arrived at the gateway.');
 
         self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
         self::assertSame(Purpose::ADDITIONAL_FACTOR, $stepUp->purpose);
-        self::assertTrue(Mfa::verify(Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP)->isVerified());
+        $submission = Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal());
+
+        self::assertTrue(Mfa::verify(self::servedCaller(), $submission, MfaPurpose::STEP_UP)->isVerified());
         self::assertSame(0, $this->runDeliveries(), 'No code waits for a delivery job.');
         self::assertSame(0, DB::table('one_time_codes')->count());
         self::assertSame([], $this->otherGatewayThan($channel)->sent());
@@ -212,7 +214,7 @@ final class OneGatewayFactorsTest extends TestCase
      */
     private function reauthenticate(Person $person, EloquentSession&Model $session): void
     {
-        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $result = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The session was not reauthenticated: [%s].', $result->reason->value ?? 'none'));
     }

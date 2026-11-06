@@ -182,12 +182,12 @@ final class ActiveTenantResolverAdapterTest extends TestCase
 
         $this->signInAndActOnSession($person);
 
-        self::assertTrue(Mfa::requirement()->isEmpty());
+        self::assertTrue(Mfa::requirement(self::servedCaller())->isEmpty());
         self::assertSame([], $tenants->tenants);
 
         $this->actInTenant($person, self::TENANT);
 
-        self::assertSame(Requirement::none()->withAdditionalVerification(RecordsTenants::MAX_AGE)->toArray(), Mfa::requirement()->toArray());
+        self::assertSame(Requirement::none()->withAdditionalVerification(RecordsTenants::MAX_AGE)->toArray(), Mfa::requirement(self::servedCaller())->toArray());
         self::assertSame([self::TENANT], $tenants->tenants);
     }
 

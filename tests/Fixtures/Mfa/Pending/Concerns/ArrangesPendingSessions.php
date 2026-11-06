@@ -102,24 +102,19 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * A request carrying the pending credential in its form body, bound as the
-     * request being served.
+     * A request carrying the pending credential in its form body.
      *
      * @param  string  $credential
      * @return \Illuminate\Http\Request
      */
-    protected function requestCarrying(#[\SensitiveParameter] string $credential): Request
+    protected static function requestCarrying(#[\SensitiveParameter] string $credential): Request
     {
-        $request = Request::create(self::VERIFY_PATH, 'POST', [self::CREDENTIAL_FIELD => $credential]);
-
-        $this->app?->instance('request', $request);
-
-        return $request;
+        return Request::create(self::VERIFY_PATH, 'POST', [self::CREDENTIAL_FIELD => $credential]);
     }
 
     /**
-     * The pending context the pending credential resolves to, served on a
-     * request carrying it.
+     * The pending context the pending credential resolves to, read from a
+     * request carrying it, as MFA's `CallerContext::fromRequest()` reads it.
      *
      * @param  string  $credential
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
@@ -128,11 +123,33 @@ trait ArrangesPendingSessions
      */
     protected function pendingContextFor(#[\SensitiveParameter] string $credential): PendingContext
     {
-        $pending = $this->pendingResolver()->resolve($this->requestCarrying($credential));
+        $pending = $this->pendingResolver()->fromRequest(self::requestCarrying($credential));
 
         self::assertNotNull($pending);
 
         return $pending;
+    }
+
+    /**
+     * The pending context, keeping the credential given in place of its own.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
+     * @param  ?string  $credential
+     * @return \SineMacula\Laravel\Mfa\Context\PendingContext
+     */
+    protected static function keeping(PendingContext $pending, #[\SensitiveParameter] ?string $credential): PendingContext
+    {
+        return new PendingContext(
+            $pending->identity,
+            $pending->application,
+            $pending->sessionId,
+            $pending->firstFactor,
+            $pending->requirement,
+            $pending->actions,
+            $pending->expiresAt,
+            $pending->proofs,
+            $credential,
+        );
     }
 
     /**

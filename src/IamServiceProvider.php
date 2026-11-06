@@ -14,8 +14,10 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
+use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Mfa\PendingCompletionCheck;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
@@ -23,9 +25,10 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 
 /**
  * Package service provider: registers the package's configuration, the `iam`
- * manager, the storage connection's alignment, the seam bindings, the storage
- * check's booting and booted callbacks, the worker reset listeners and the
- * publishing tag.
+ * manager, the callers MFA's challenge gateway keeps for its factor codes, the
+ * storage connection's alignment, the seam bindings, the storage check's
+ * booting and booted callbacks, the pending completion's booted check, the
+ * worker reset listeners and the publishing tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -58,21 +61,28 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
  * be aligned; one registered later would read a connection this package never
  * checked.
  *
- * A storage connection mismatch, a member that has not registered, or a
- * connection key that is not a name, refuses boot, except while one of the
- * console commands that list, describe, discover, cache or clear configuration
- * runs, so the problem (a cached one included) can still be inspected and
- * cleared, as `laravel-mfa` skips its own boot check for them. The command is
- * read from the process's arguments; a process that names none runs `list` only
- * when it is Artisan, so any other script started without a command (a test
- * runner, a long-lived worker) is checked.
+ * Once booted, this package's pending completion bound beside a session guard
+ * whose refresh token travels in a cookie refuses boot too
+ * (`PendingCompletionCheck`): no pending sign-in on that guard could ever be
+ * completed through MFA, since MFA hands the completion no client that passes
+ * the guard's same-site check.
+ *
+ * A storage connection mismatch, a member that has not registered, a connection
+ * key that is not a name, or a pending completion no cookie guard can take,
+ * refuses boot, except while one of the console commands that list, describe,
+ * discover, cache or clear configuration runs, so the problem (a cached one
+ * included) can still be inspected and cleared, as `laravel-mfa` skips its own
+ * boot check for them. The command is read from the process's arguments; a
+ * process that names none runs `list` only when it is Artisan, so any other
+ * script started without a command (a test runner, a long-lived worker) is
+ * checked.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  */
 final class IamServiceProvider extends ServiceProvider
 {
-    /** @var list<string> The console commands neither a storage connection mismatch nor a missing member refuses. */
+    /** @var list<string> The console commands no storage connection mismatch, missing member or pending completion no cookie guard can take refuses. */
     private const array UNCHECKED_COMMANDS = [
         'config:cache',
         'config:clear',
@@ -117,6 +127,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../config/iam.php', 'iam');
 
         $this->registerManager();
+        $this->registerFactorCodeCallers();
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
@@ -152,6 +163,25 @@ final class IamServiceProvider extends ServiceProvider
     {
         $this->app->singleton('iam', static fn (Application $app): IamManager => new IamManager($app));
         $this->app->alias('iam', IamManager::class);
+    }
+
+    /**
+     * Register the callers MFA's challenge gateway keeps beside the factor code
+     * bindings it hands `laravel-authentication`, scoped, so they are one
+     * request's or one job's alone (IAM-8.1): scoped under this package's own
+     * key for its scoped adapters, which `Iam::resetWorkerState()` forgets as
+     * it forgets every other one, and resolved through that key, so the
+     * explicit reset never leaves a caller held for a binding something still
+     * references.
+     *
+     * @return void
+     */
+    protected function registerFactorCodeCallers(): void
+    {
+        $key = BindingRule::SCOPED_PREFIX . FactorCodeCallers::class;
+
+        $this->app->scoped($key, static fn (): FactorCodeCallers => new FactorCodeCallers);
+        $this->app->bind(FactorCodeCallers::class, static fn (Application $app): mixed => $app->make($key));
     }
 
     /**
@@ -271,6 +301,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->app->booted(function (): void {
 
             $this->checkStorage(true);
+            $this->checkPendingCompletion();
         });
     }
 
@@ -305,6 +336,29 @@ final class IamServiceProvider extends ServiceProvider
         }
 
         $alignment->assertAligned($config, $app);
+    }
+
+    /**
+     * Refuse an application whose pending sign-ins this package's pending
+     * completion could never complete (a session guard whose refresh token
+     * travels in a cookie, `PendingCompletionCheck`), once the application has
+     * booted, so a binding any provider made of the seam is judged; none is
+     * refused while a configuration command runs.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\CookieTransportUnsupportedException
+     */
+    private function checkPendingCompletion(): void
+    {
+        $app = $this->app;
+
+        if (self::isRunningUncheckedCommand($app)) {
+            return;
+        }
+
+        $app->make(PendingCompletionCheck::class)->assertCompletable($app, $app->make(ConfigRepository::class));
     }
 
     /**

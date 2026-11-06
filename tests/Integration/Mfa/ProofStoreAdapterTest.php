@@ -1148,7 +1148,7 @@ final class ProofStoreAdapterTest extends TestCase
             [$recovery ? 'kba' : 'otp'],
             CarbonImmutable::now(),
             new AuthenticationBinding($person, self::GUARD, $session->getKey(), AuthenticationPurpose::STEP_UP),
-        ));
+        ), self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The step-up was refused: [%s].', $result->reason->value ?? 'none'));
     }

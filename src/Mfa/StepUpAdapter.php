@@ -5,47 +5,54 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
+use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
-use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
  * MFA's step-up, stepping `laravel-authentication`'s session up with the
  * verified proof bound to it for `step_up` (IAM-3.4).
  *
- * The proof's binding names the application, which is the guard of the same
- * name, and the sign-in, which must be that guard's current session, held by
- * the identity the proof names. The proof is translated into the proof result
- * `laravel-authentication` takes, bound to that identity, guard and session for
- * the purpose MFA verified it for, accepted, and multifactor only when MFA says
- * the proof itself refreshes the multifactor evidence of the session's first
- * factor (`VerificationResult::$refreshesMultifactor`), never because of
- * another proof the session holds. It is handed to `stepUp()`, which locks the
- * session's row (after MFA's own locks, as the last write of MFA's
- * transaction), checks the session is still one of the guard's live, active
- * sessions of a person, records the proof and issues the session a new access
- * token. The access token result is MFA's completion, so it reaches the caller
- * as `VerificationResult::$completion`.
+ * MFA hands it the caller, whose identity and application it acts for: never
+ * the identity the guard serves, so the step-up is the caller's own. The caller
+ * must be an active one (a pending caller's proof is the pending completion's,
+ * and nobody has no session to step up), and the proof's binding must name the
+ * caller's application, which is the guard of the same name, and the identity.
+ * The session stepped up is the sign-in the binding names, never the guard's
+ * current one, so a step-up made from a queued job, a console command or a
+ * request another guard serves steps up the sign-in MFA named. The proof is
+ * translated into the proof result `laravel-authentication` takes, bound to
+ * that identity, guard and session for the purpose MFA verified it for,
+ * accepted, and multifactor only when MFA says the proof itself refreshes the
+ * multifactor evidence of the session's first factor
+ * (`VerificationResult::$refreshesMultifactor`), never because of another proof
+ * the session holds. It is handed to `stepUp()`, which locks the row of the
+ * session the proof is bound to (after MFA's own locks, as the last write of
+ * MFA's transaction), checks it is still one of the guard's live, active
+ * sessions of a person, owned by the identity, records the proof and issues the
+ * session a new access token, handed the caller's client (`ClientTranslator`)
+ * as the client it was served to. The access token result is MFA's completion,
+ * so it reaches the caller as `VerificationResult::$completion`.
  *
  * MFA hands over only a proof it accepted after the session's first factor, so
- * nothing here judges the proof again. A failed result, a proof bound to
- * another identity or to another of the identity's sessions, and a proof
- * `laravel-authentication` refuses (one made for another purpose than
- * `step_up`, a sign-in's included, or a session no longer live) are refused
+ * nothing here judges the proof again. A failed result, a caller that is
+ * pending or nobody, a proof bound to another application or to another
+ * identity, and a proof `laravel-authentication` refuses (one made for another
+ * purpose than `step_up`, a sign-in's included, or bound to a session that is
+ * not one of the identity's live, active sessions on the guard) are refused
  * with an `OperationRefusedException` carrying `not_accepted`, as MFA's own
  * completion refuses them, so the code's use and the count roll back;
  * `laravel-authentication`'s reason is kept in the exception's detail. An
- * application that names no guard of `laravel-authentication`'s, and a guard
- * holding no session of a person MFA knows, cannot be resolved and throw
+ * application that names no guard of `laravel-authentication`'s, and a caller
+ * `laravel-authentication` does not sign in, cannot be resolved and throw
  * `UnresolvedReferenceException` (IAM-8.2), inside the same transaction.
  *
- * It holds nothing between calls: the guard and its session are read on every
- * call (IAM-8.1).
+ * It holds nothing between calls (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,7 +69,7 @@ final readonly class StepUpAdapter implements StepUp
      */
     public function __construct(
 
-        /** Resolves the guard, the identity it serves and its current session. */
+        /** Resolves the guard's session service and the caller as `laravel-authentication`'s identity. */
         private CurrentSession $current,
 
         /** Translates the verified proof into `laravel-authentication`'s proof result. */
@@ -73,6 +80,7 @@ final readonly class StepUpAdapter implements StepUp
      * Step the caller's session up with the verified proof, returning
      * `laravel-authentication`'s access token result as MFA's completion.
      *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
      * @return \SineMacula\Laravel\Authentication\Sessions\AccessTokenResult
      *
@@ -82,33 +90,26 @@ final readonly class StepUpAdapter implements StepUp
      * @throws \Throwable
      */
     #[\Override]
-    public function stepUp(VerificationResult $result): AccessTokenResult
+    public function stepUp(CallerContext $caller, VerificationResult $result): AccessTokenResult
     {
         $proof       = $result->proof ?? throw self::refused('A failed verification proves nothing.');
-        $application = $proof->binding->application;
-        $identity    = $this->current->caller($application);
-        $session     = $this->current->current($identity, $application);
+        $identity    = $caller->identity;
+        $application = $caller->application;
 
-        if (!self::isBoundTo($proof->binding, IdentityReference::of($identity), SignIn::reference($session, $application))) {
-            throw self::refused('The proof is not bound to the caller\'s current session.');
+        if ($identity === null || $caller->pending !== null || $proof->binding->application !== $application) {
+            throw self::refused('Only an active caller\'s session is stepped up, with a proof made on its application.');
         }
 
-        $token = $this->current->sessions($application)->stepUp($this->proofs->toResult($result, $identity));
+        $sessions = $this->current->sessions($application);
+
+        if (!IdentityReference::of($identity)->owns($proof->binding)) {
+            throw self::refused('The proof is not bound to the caller.');
+        }
+
+        $proven = $this->proofs->toResult($result, $this->current->identity($identity));
+        $token  = $sessions->stepUp($proven, ClientTranslator::toAuthentication($caller->client));
 
         return $token->isIssued() ? $token : throw self::refused(sprintf('laravel-authentication refused the step-up: [%s].', $token->reason->value ?? ''));
-    }
-
-    /**
-     * Whether the binding names the identity and the sign-in given.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
-     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference  $identity
-     * @param  string  $signIn
-     * @return bool
-     */
-    private static function isBoundTo(ProofBinding $binding, IdentityReference $identity, string $signIn): bool
-    {
-        return $identity->owns($binding) && $binding->sessionId === $signIn;
     }
 
     /**

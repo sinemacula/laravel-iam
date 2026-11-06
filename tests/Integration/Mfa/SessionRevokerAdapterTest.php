@@ -19,7 +19,6 @@ use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
 use SineMacula\Laravel\Authentication\Sessions\FactorRemoval;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
-use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
@@ -42,9 +41,10 @@ use Tests\TestCase;
  * (IAM-3.7): MFA's contract kit, a removal that ends every other session, voids
  * the current session's proofs made with the factor and judges it again,
  * carrying `laravel-authentication`'s result and any new pending credential
- * back as MFA's completion, a reset that ends every session, and a removal from
- * another sign-in, or none, refused by throwing so the removal rolls back
- * (IAM-8.2).
+ * back as MFA's completion, a removal made from the sign-in MFA names whatever
+ * the guard holds, a reset that ends every session, and a removal from a
+ * sign-in that is no session of the identity's refused by throwing so the
+ * removal rolls back (IAM-8.2).
  *
  * MFA's own flows are run too: removing a factor and resetting an identity,
  * with this package's factor-change adapters bound alone, end the sessions in
@@ -83,7 +83,7 @@ final class SessionRevokerAdapterTest extends TestCase
 
         $this->verifyAnotherSession($person);
 
-        $revocation = $this->revoker()->factorRemoved($person, 'factor-removed', $this->currentSessionOf($person));
+        $revocation = $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->currentSessionOf($person));
         $removal    = $revocation->completion();
 
         self::assertTrue($revocation->judgedCurrent);
@@ -109,7 +109,7 @@ final class SessionRevokerAdapterTest extends TestCase
 
         $this->requireAFurtherFactor();
 
-        $removal = $this->revoker()->factorRemoved($person, 'factor-removed', $this->currentSessionOf($person))->completion();
+        $removal = $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->currentSessionOf($person))->completion();
 
         self::assertInstanceOf(FactorRemoval::class, $removal);
         self::assertTrue($removal->isPending());
@@ -135,7 +135,7 @@ final class SessionRevokerAdapterTest extends TestCase
         $this->stepUpWith($person, $this->currentSession(), $kept->id);
         $this->stepUpWith($person, $this->currentSession(), $removed->id);
 
-        $this->revoker()->factorRemoved($person, $removed->id, $this->currentSessionOf($person));
+        $this->revoker()->factorRemoved($person, $removed->id, self::GUARD, $this->currentSessionOf($person));
 
         $proofs = array_map(static fn (RecordedProof $proof): array => [$proof->kind, $proof->factor], $this->proofsOf($this->currentSession()));
 
@@ -162,9 +162,53 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal from a sign-in that is not the guard's session, or with no
-     * session on the guard, is refused inside the removal's transaction, which
-     * rolls back: no session is ended, and what the removal wrote is gone.
+     * A removal is made from the sign-in MFA names, never the guard's session:
+     * from another of the identity's sessions, that one is judged and the
+     * guard's ends with the rest.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARemovalFromAnotherSignInJudgesThatSignIn(): void
+    {
+        $person = $this->revokedPerson();
+
+        $this->verifyAnotherSession($person);
+
+        $removal = $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->otherSessionOf());
+
+        self::assertTrue($removal->judgedCurrent);
+        self::assertTrue($this->doesAnotherSessionCount($person));
+        self::assertFalse($this->doesCurrentSessionCount($person));
+    }
+
+    /**
+     * The sign-in MFA names is judged whatever the guard holds, as a removal
+     * made from a queued job or a console command is: a guard serving no one
+     * still keeps that sign-in and ends the others.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARemovalFromTheNamedSignInIsMadeWhateverTheGuardHolds(): void
+    {
+        $person = $this->revokedPerson();
+
+        $this->verifyAnotherSession($person);
+        $this->stopActing(self::GUARD);
+
+        self::assertTrue($this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->currentSessionOf($person))->judgedCurrent);
+        self::assertTrue($this->doesCurrentSessionCount($person));
+        self::assertFalse($this->doesAnotherSessionCount($person));
+    }
+
+    /**
+     * A removal from a sign-in that is no session of the identity's on the
+     * guard (another identity's session, or a key no session holds) is refused
+     * inside the removal's transaction, which rolls back: no session is ended,
+     * and what the removal wrote is gone.
      *
      * @param  string  $level
      * @return void
@@ -172,27 +216,19 @@ final class SessionRevokerAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testARemovalFromAnotherSignInIsRefusedAndRollsBack(string $level): void
+    public function testARemovalFromASignInThatIsNoSessionOfTheIdentitysIsRefusedAndRollsBack(string $level): void
     {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
 
-        $person = $this->revokedPerson();
+        $person   = $this->revokedPerson();
+        $stranger = $this->signInReference($this->signIn($this->createPerson())->record);
 
         $this->verifyAnotherSession($person);
 
-        $refusals = [
-            SessionMismatchException::class     => fn (): mixed => $this->revoker()->factorRemoved($person, 'factor-removed', $this->otherSessionOf()),
-            UnresolvedReferenceException::class => function () use ($person): mixed {
-                $this->stopActing(self::GUARD);
+        foreach ([$stranger, '987654'] as $signIn) {
 
-                return $this->revoker()->factorRemoved($person, 'factor-removed', $this->currentSessionOf($person));
-            },
-        ];
-
-        foreach ($refusals as $refusal => $removal) {
-
-            $this->assertRolledBack($person, $refusal, $removal);
+            $this->assertRolledBack($person, UnresolvedReferenceException::class, fn (): mixed => $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn));
 
             self::assertTrue($this->doesCurrentSessionCount($person));
             self::assertTrue($this->doesAnotherSessionCount($person));
@@ -211,35 +247,40 @@ final class SessionRevokerAdapterTest extends TestCase
             use HasFactors;
         };
 
-        self::assertSame(ReferenceKind::IDENTITY, self::unresolved(fn (): mixed => $this->revoker()->factorRemoved($stranger, 'factor-removed', 'sign-in'))->kind);
+        self::assertSame(ReferenceKind::IDENTITY, self::unresolved(fn (): mixed => $this->revoker()->factorRemoved($stranger, 'factor-removed', self::GUARD, 'sign-in'))->kind);
         self::assertSame(ReferenceKind::IDENTITY, self::unresolved(function () use ($stranger): void {
             $this->revoker()->revokeAll($stranger);
         })->kind);
     }
 
     /**
-     * A default guard that holds no sessions names no application whose current
-     * session a removal could be made from, so a removal is refused.
+     * A removal is made on the application MFA names with it, never the default
+     * guard: one that holds no sessions names no current session a removal
+     * could be made from, and is refused, and the application's own guard
+     * judges the removal while the default guard is another.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testADefaultGuardThatHoldsNoSessionsRefusesARemoval(): void
+    public function testARemovalIsMadeOnTheApplicationItNames(): void
     {
         $person = $this->revokedPerson();
 
-        Config::set('auth.defaults.guard', 'web');
-
-        $exception = self::unresolved(fn (): mixed => $this->revoker()->factorRemoved($person, 'factor-removed', $this->currentSessionOf($person)));
+        $exception = self::unresolved(fn (): mixed => $this->revoker()->factorRemoved($person, 'factor-removed', 'web', $this->currentSessionOf($person)));
 
         self::assertSame(ReferenceKind::GUARD, $exception->kind);
         self::assertSame('web', $exception->application);
         self::assertStringStartsWith('The application [web] is not a laravel-authentication guard', $exception->getMessage());
-
-        Config::set('auth.defaults.guard', self::GUARD);
-
         self::assertTrue($this->doesCurrentSessionCount($person));
+
+        Config::set('auth.defaults.guard', 'web');
+
+        $this->verifyAnotherSession($person);
+
+        self::assertTrue($this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->currentSessionOf($person))->judgedCurrent);
+        self::assertTrue($this->doesCurrentSessionCount($person));
+        self::assertFalse($this->doesAnotherSessionCount($person));
     }
 
     /**
@@ -357,7 +398,7 @@ final class SessionRevokerAdapterTest extends TestCase
 
         DB::enableQueryLog();
 
-        $result = Mfa::removeFactor($removed->id);
+        $result = Mfa::removeFactor(self::servedCaller(), $removed->id);
 
         $locks = array_values(array_filter(
             array_column(DB::getQueryLog(), 'query'),
@@ -399,6 +440,17 @@ final class SessionRevokerAdapterTest extends TestCase
         self::assertSame(0, Factor::query()->count());
         self::assertFalse($this->doesCurrentSessionCount($person));
         self::assertFalse($this->doesAnotherSessionCount($person));
+    }
+
+    /**
+     * The application the identity's sessions are on: the guard.
+     *
+     * @return string
+     */
+    #[\Override]
+    protected function revokedApplication(): string
+    {
+        return self::GUARD;
     }
 
     /**
@@ -574,7 +626,7 @@ final class SessionRevokerAdapterTest extends TestCase
                 $removal();
             });
 
-            self::fail('A removal was made from a sign-in that is not the guard\'s session.');
+            self::fail('A removal was made from a sign-in that is no session of the identity\'s.');
         } catch (\RuntimeException $exception) {
             self::assertInstanceOf($refusal, $exception);
         }

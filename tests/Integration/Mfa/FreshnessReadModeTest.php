@@ -101,7 +101,7 @@ final class FreshnessReadModeTest extends TestCase
 
         $this->actingOnVerifiedSession($session);
 
-        self::assertTrue(Mfa::isFresh(self::OPERATION));
+        self::assertTrue(Mfa::isFresh(self::servedCaller(), self::OPERATION));
         self::assertAskedOnlyIn($recorder, false);
         self::assertAskedOnlyBy($recorder, FreshnessGateAdapter::class, self::OPERATION);
     }
@@ -126,14 +126,14 @@ final class FreshnessReadModeTest extends TestCase
         $this->bindMfasOwnFactorChangeGate();
 
         $enrolment = $this->recordReadModes();
-        $start     = Mfa::startEnrollment(EnrollmentRequest::totp(self::DESTINATION));
+        $start     = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp(self::DESTINATION));
 
         self::assertTrue($start->hasStarted(), $start->reason->value ?? '');
         self::assertAskedOnlyIn($enrolment, true);
         self::assertAskedOnlyBy($enrolment, FreshnessGateAdapter::class, FactorChange::ADD_FACTOR->value);
 
         $removal = $this->recordReadModes();
-        $removed = Mfa::removeFactor(self::onlyFactorOf($person)->id);
+        $removed = Mfa::removeFactor(self::servedCaller(), self::onlyFactorOf($person)->id);
 
         self::assertTrue($removed->wasMade(), $removed->reason->value ?? '');
         self::assertAskedOnlyIn($removal, true);
@@ -156,14 +156,14 @@ final class FreshnessReadModeTest extends TestCase
         $person  = $this->createPerson();
         $session = $this->signInAndActOnSession($person);
 
-        $reauthenticated = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD]);
+        $reauthenticated = $this->sessions()->reauthenticate($session, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
         self::assertTrue($reauthenticated->isIssued(), $reauthenticated->reason->value ?? '');
 
         $this->bindMfasOwnFactorChangeGate();
 
         $recorder = $this->recordReadModes();
-        $start    = Mfa::startEnrollment(EnrollmentRequest::totp(self::DESTINATION));
+        $start    = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp(self::DESTINATION));
 
         self::assertTrue($start->hasStarted(), $start->reason->value ?? '');
         self::assertAskedOnlyIn($recorder, true);
