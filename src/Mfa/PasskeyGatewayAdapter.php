@@ -204,15 +204,21 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * MFA's failure reason for `laravel-authentication`'s: a challenge no
-     * longer live is `expired`, and every other failure `invalid_code`.
+     * MFA's failure reason for `laravel-authentication`'s: a ceremony whose
+     * challenge expired, or is no live challenge of the binding, is `expired`,
+     * one already answered `replayed`, and every other failure `invalid_code`.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Events\Enums\FailureReason  $reason
      * @return \SineMacula\Laravel\Mfa\Enums\FailureReason
      */
     public static function reason(?AuthenticationFailureReason $reason): FailureReason
     {
-        return $reason === AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID ? FailureReason::EXPIRED : FailureReason::INVALID_CODE;
+        return match ($reason) {
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_EXPIRED,
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID => FailureReason::EXPIRED,
+            AuthenticationFailureReason::PASSKEY_CHALLENGE_USED    => FailureReason::REPLAYED,
+            default                                                => FailureReason::INVALID_CODE,
+        };
     }
 
     /**

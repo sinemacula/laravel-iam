@@ -304,7 +304,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
         self::assertNull(Passkey::query()->sole()->getAttribute('last_used_at'));
 
         self::assertInstanceOf(PasskeyAssertion::class, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
-        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
+        self::assertSame(FailureReason::REPLAYED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
     }
 
     /**
@@ -416,7 +416,11 @@ final class PasskeyGatewayAdapterTest extends TestCase
      */
     public static function provideFailureReasons(): iterable
     {
-        yield 'a challenge no longer live' => [AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID, FailureReason::EXPIRED];
+        yield 'an expired challenge' => [AuthenticationFailureReason::PASSKEY_CHALLENGE_EXPIRED, FailureReason::EXPIRED];
+
+        yield 'a challenge already answered' => [AuthenticationFailureReason::PASSKEY_CHALLENGE_USED, FailureReason::REPLAYED];
+
+        yield 'an unknown challenge, or another binding\'s' => [AuthenticationFailureReason::PASSKEY_CHALLENGE_INVALID, FailureReason::EXPIRED];
 
         yield 'an assertion that does not hold' => [AuthenticationFailureReason::INVALID_CREDENTIALS, FailureReason::INVALID_CODE];
 
