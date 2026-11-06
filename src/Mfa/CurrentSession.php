@@ -6,9 +6,11 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Database\ConnectionResolverInterface;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Guards\JwtGuard;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
@@ -39,7 +41,10 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * it serves (`caller()`), `laravel-authentication`'s session service for it
  * (`sessions()`), and the session service a change to the identity as a whole
  * goes through, which names no guard (`identitySessions()`), so every adapter
- * refuses the same misconfiguration the same way.
+ * refuses the same misconfiguration the same way. It also tells every adapter
+ * that asks `laravel-authentication`'s freshness policy how to ask it
+ * (`isInTransaction()`): current inside a transaction on the session model's
+ * connection, plainly outside one.
  *
  * It reads the guard's state on every call and keeps nothing, so it holds no
  * request state between calls (IAM-8.1).
@@ -59,6 +64,7 @@ final readonly class CurrentSession
      *
      * @param  \Illuminate\Contracts\Auth\Factory  $auth
      * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  \Illuminate\Database\ConnectionResolverInterface  $database
      */
     public function __construct(
 
@@ -67,6 +73,9 @@ final readonly class CurrentSession
 
         /** The configuration the guards are declared in. */
         private Repository $config,
+
+        /** Resolves the connection the session model lives on. */
+        private ConnectionResolverInterface $database,
     ) {}
 
     /**
@@ -224,6 +233,32 @@ final readonly class CurrentSession
         $declared = $this->sessionGuards();
 
         return $this->sessions(in_array($default, $declared, true) ? $default : ($declared[0] ?? $default));
+    }
+
+    /**
+     * Whether a transaction is open on the connection
+     * `laravel-authentication`'s session model lives on (its storage
+     * connection, which it refuses a session model off).
+     *
+     * MFA asks an adapter inside its own transaction on that connection (a
+     * factor change, after its locks) and acts on the answer atomically there,
+     * so inside one the adapter asks the freshness policy current: the
+     * session's row locked until the transaction ends, then its proofs read as
+     * committed, so a proof voided before the call never counts and one
+     * recorded before it does, whatever the transaction read first. Outside one
+     * (MFA's route gate, `Mfa::isFresh()`, its contract kits) nothing acts on
+     * the answer atomically, and the policy refuses a current judgement there,
+     * so the adapter asks plainly and locks nothing. This is the line
+     * `laravel-authentication`'s own reads of a session's proofs and first
+     * factor draw too.
+     *
+     * @return bool
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function isInTransaction(): bool
+    {
+        return $this->database->connection(StorageConnection::name())->transactionLevel() > 0;
     }
 
     /**

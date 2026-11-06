@@ -6,8 +6,6 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use Carbon\CarbonImmutable;
 use SineMacula\Laravel\Authentication\Factors\FactorChangeVerdict;
-use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
-use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
@@ -24,12 +22,22 @@ use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
  * the MFA application is named after (`CurrentSession`); another of the
  * identity's sessions, or none, is refused by throwing (IAM-8.2).
  * `laravel-authentication`'s gate then locks the session's row until MFA's
- * transaction ends, so it is taken last, confirms the session is still one of
- * the guard's live, active sessions and a person's, and judges its freshness
- * for the change: a first additional factor on a fresh reauthentication with
- * the first factor, every other change on a fresh step-up, never one made with
- * the factor a removal names. The requirement the application configures for
- * the change's operation in MFA is held to as well, the stricter applying.
+ * transaction ends, after MFA's locks, confirms the session is still one of the
+ * guard's live, active sessions and a person's, and judges its freshness for
+ * the change: a first additional factor on a fresh reauthentication with the
+ * first factor, every other change on a fresh step-up, never one made with the
+ * factor a removal names. It judges that freshness under the session's lock on
+ * the session's proofs as committed (it asks its freshness policy current), so
+ * a step-up voided before the gate never allows a change and one recorded
+ * before it does, whatever MFA's transaction, or a transaction it runs inside,
+ * read first; the adapter takes that verdict as it is, with no read of its own.
+ * A removal then goes on to lock the identity's other sessions' rows, in the
+ * revoker's `factorRemoved()`, after the session's row and its proofs:
+ * `laravel-authentication`'s order, under which, on MySQL and MariaDB at
+ * REPEATABLE READ, a step-up or reauthentication of a neighbouring session can
+ * deadlock with the removal, and the side the database fails is retried by its
+ * caller. The requirement the application configures for the change's operation
+ * in MFA is held to as well, the stricter applying.
  *
  * That requirement crosses as `laravel-authentication`'s freshness requirement,
  * which holds what a stored proof can show and no more: the shortest of its
@@ -40,18 +48,6 @@ use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
  * requirement that asks for one is refused as a misconfiguration rather than
  * judged without it. The requirement crosses through `RequirementTranslator`,
  * as the freshness gate's does.
- *
- * The proof `laravel-authentication` allowed the change on is then read back
- * among the session's counting proofs, current: inside MFA's transaction the
- * session's row is locked and the proofs are read with a shared lock, so a
- * proof another transaction voided while the change waited no longer counts,
- * and the change is refused as `not_fresh`. `factorChange()` judges freshness
- * with a plain read, which a snapshot fixed before the wait (MySQL's at
- * REPEATABLE READ, when MFA's change runs inside a transaction someone else
- * opened, which is not supported) would answer from what was voided; the read
- * back keeps such a change from being made on it. A proof among more newer
- * proofs of its kind than one read returns is refused the same way, never
- * guessed to count.
  *
  * Every refusal `laravel-authentication` answers with, a session no longer
  * live, active and a person's included, is MFA's `not_fresh`: no step-up could
@@ -69,10 +65,6 @@ use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
  */
 final readonly class FactorChangeGateAdapter implements FactorChangeGate
 {
-    /** @var string Why a change is refused whose fresh proof is not among the session's counting proofs read current. */
-    private const string NOT_COUNTING = 'The proof laravel-authentication allowed the change on is not among the session\'s counting proofs read current,'
-        . ' so it is not taken to count.';
-
     /**
      * Constructor.
      *
@@ -97,7 +89,7 @@ final readonly class FactorChangeGateAdapter implements FactorChangeGate
      * refuse it.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $request
-     * @return ?\Carbon\CarbonImmutable
+     * @return \Carbon\CarbonImmutable
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\SessionMismatchException
@@ -106,40 +98,34 @@ final readonly class FactorChangeGateAdapter implements FactorChangeGate
      * @throws \Throwable
      */
     #[\Override]
-    public function authorize(FactorChangeRequest $request): ?CarbonImmutable
+    public function authorize(FactorChangeRequest $request): CarbonImmutable
     {
         $session     = $this->sessions->of($request->identity, $request->application, $request->session);
         $requirement = $request->requirement === null ? null : $this->requirements->toFreshness($request->requirement);
 
         $service = $this->sessions->sessions($request->application);
         $verdict = $service->factorChange($session, $this->changes->factorChange($request->change), $requirement, $request->factorId);
-        $proof   = self::allowedOn($verdict, $request);
 
-        $counting = $service->proofs($session, $proof->authenticatedAt, [$proof->kind], RequirementSubject::MAX_LIMIT);
-        $current  = array_map(static fn (RecordedProof $counted): string => $counted->id, $counting);
-
-        OperationRefusedException::unless(in_array($proof->id, $current, true), FailureReason::NOT_FRESH, self::NOT_COUNTING);
-
-        return $verdict->freshUntil;
+        return self::allowedUntil($verdict, $request);
     }
 
     /**
-     * The fresh proof `laravel-authentication` allowed the change on, which an
-     * allowed verdict always carries and a refused one never does; the change
-     * is refused, as MFA's `not_fresh`, when it was not allowed.
+     * Until when the session stays fresh for the change, which an allowed
+     * verdict always carries and a refused one never does; the change is
+     * refused, as MFA's `not_fresh`, when it was not allowed.
      *
      * @param  \SineMacula\Laravel\Authentication\Factors\FactorChangeVerdict  $verdict
      * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $request
-     * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof
+     * @return \Carbon\CarbonImmutable
      *
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      */
-    private static function allowedOn(FactorChangeVerdict $verdict, FactorChangeRequest $request): RecordedProof
+    private static function allowedUntil(FactorChangeVerdict $verdict, FactorChangeRequest $request): CarbonImmutable
     {
-        $proof = $verdict->proof;
+        $until = $verdict->freshUntil;
 
-        if ($proof !== null) {
-            return $proof;
+        if ($until !== null) {
+            return $until;
         }
 
         $detail = sprintf('laravel-authentication refused the change [%s] from the session: [%s].', $request->change->value, $verdict->reason->value ?? '');

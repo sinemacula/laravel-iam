@@ -18,7 +18,9 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
  * A combination policy that answers as MFA's default does, except that it rates
  * a sign-in holding a proof that observed presence, user verification, phishing
  * resistance and a hardware-protected key AAL3, as an application whose
- * authenticators it has vetted might.
+ * authenticators it has vetted might. Such a proof is multifactor evidence of
+ * its own, so the freshest evidence of multifactor authentication is the
+ * default's, or that proof's when the default finds none.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,7 +43,8 @@ final class LeveledCombinationPolicy implements CombinationPolicy
     }
 
     /**
-     * As the default answers, at AAL3 when a proof observed all it takes.
+     * As the default answers, at AAL3 when a proof observed all it takes, its
+     * multifactor evidence dated as the default dates it, or by that proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  ...$proofs
@@ -66,6 +69,7 @@ final class LeveledCombinationPolicy implements CombinationPolicy
                     amr: $evaluation->amr,
                     met: [...$evaluation->met, ...$evaluation->unmet],
                     unmet: [],
+                    multifactorAt: $evaluation->multifactorAt ?? $proof->provedAt,
                 );
             }
         }

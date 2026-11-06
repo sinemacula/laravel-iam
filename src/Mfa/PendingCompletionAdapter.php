@@ -35,16 +35,17 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * verification rolls back with them.
  *
  * Otherwise the proof crosses as `laravel-authentication`'s proof result, bound
- * to the pending session's key for the same purpose, with MFA's evaluation of
- * the proof on its own after the pending session's first factor
- * (`ProofEvaluator`), never of every proof the session holds, and is handed to
+ * to the pending session's key for the same purpose, accepted (MFA hands over
+ * only a proof it accepted after the pending session's first factor), and
+ * multifactor only when MFA says the proof itself refreshes the multifactor
+ * evidence of that first factor (`VerificationResult::$refreshesMultifactor`),
+ * never because of another proof the session holds. It is handed to
  * `Auth::sessions()->satisfy()` with the request's own pending credential, read
- * from the body field the resolver reads it from. A proof MFA does not accept
- * after that first factor is refused as `not_accepted`. It is called only
- * inside a transaction on the storage connection, where MFA calls it last:
- * `satisfy()` then stores the proof and activates the session in a savepoint of
- * MFA's transaction, and binds the guard only once that transaction commits, so
- * a rollback, or a commit that fails, leaves the session pending, the proof
+ * from the body field the resolver reads it from. It is called only inside a
+ * transaction on the storage connection, where MFA calls it last: `satisfy()`
+ * then stores the proof and activates the session in a savepoint of MFA's
+ * transaction, and binds the guard only once that transaction commits, so a
+ * rollback, or a commit that fails, leaves the session pending, the proof
  * unstored and the result unreturned. A refusal `laravel-authentication`
  * answers (the session no longer pending, the proof not one it takes, its
  * binding not the credential's session, a tenant requiring single sign-on) is
@@ -71,7 +72,6 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
      * @param  \Illuminate\Database\ConnectionResolverInterface  $database
      * @param  \SineMacula\Laravel\Iam\Mfa\PendingSessionResolverAdapter  $pending
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \SineMacula\Laravel\Iam\Mfa\ProofEvaluator  $evaluator
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      */
     public function __construct(
@@ -87,9 +87,6 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
 
         /** Resolves the guard's session service. */
         private CurrentSession $sessions,
-
-        /** Judges the proof on its own after the pending session's first factor. */
-        private ProofEvaluator $evaluator,
 
         /** Translates the verified proof. */
         private ProofTranslator $proofs,
@@ -125,7 +122,7 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
         }
 
         $application = $pending->application;
-        $proven      = $this->proofs->toResult($result, $identity, $this->evaluator->evaluate($pending->firstFactor, $proof));
+        $proven      = $this->proofs->toResult($result, $identity);
         $outcome     = $this->sessions->sessions($application)->satisfy($this->credential($application), $proven);
 
         $refusal = sprintf('laravel-authentication refused the proof as [%s].', $outcome->reason?->value);
