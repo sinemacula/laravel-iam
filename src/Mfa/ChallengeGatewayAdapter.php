@@ -76,10 +76,10 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * the pending caller's; all inside its own transaction on the shared storage
  * connection, a savepoint of MFA's when MFA calls from inside its identity's
  * lock. Its answer is translated into MFA's send result and challenge outcome.
- * `laravel-authentication` answers a used, unknown or malformed challenge as it
- * answers a wrong code, so each fails as MFA's counted `invalid_code`, never
- * `replayed` or `not_found`: never a pass, and never a refusal that would let a
- * wrong code's count roll back.
+ * A wrong or malformed code fails as MFA's counted `invalid_code`; a challenge
+ * that is not the binding's live one is refused as `not_found`, and one already
+ * used as `replayed`, neither counted, as `laravel-authentication` counts no
+ * attempt at either.
  *
  * There the code is delivered by `laravel-authentication`'s one-time code
  * sender, from its queued job once the outermost transaction commits, never by

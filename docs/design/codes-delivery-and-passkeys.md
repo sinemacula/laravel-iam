@@ -247,9 +247,9 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
 - The rule that a gateway which throws rolls the issued code back holds only for codes MFA sends itself.
   `laravel-authentication` commits its code before its job delivers it, so a failing gateway leaves the code issued
   and retried; MFA factor codes routed through it behave the same, and MFA reports them sent before delivery.
-- `laravel-authentication` answers a used, unknown or malformed challenge `invalid`, as a wrong code, so the adapter
-  answers each as a counted `invalid_code`. MFA's `ChallengeGatewayTests` checks of `replayed` and `not_found` are
-  skipped with the gap named; this package's own tests pin what is answered instead.
+- `laravel-authentication` tells a challenge that is not the binding's live one (`not_found`) and one already used
+  (`used`) apart from a wrong code. The adapter refuses them as MFA's `not_found` and `replayed`, uncounted, and fails
+  only a wrong or malformed code as a counted `invalid_code`. MFA's `ChallengeGatewayTests` checks of both run.
 - A caller who is another identity than the binding's is answered `not_found`, as MFA's `ChallengeGateway` contract
   asks of a challenge that is another binding's, not by throwing: MFA's counters refuse it inside
   `laravel-authentication`'s transaction, which issues and counts nothing for it. A caller that is nobody is refused by

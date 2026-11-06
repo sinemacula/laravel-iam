@@ -76,9 +76,6 @@ final class ChallengeGatewayAdapterTest extends TestCase
 {
     use ArrangesDeliveredFactors, BindsStrayRequests, ChallengeGatewayTests, DeliversFactorCodes, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
-    /** @var string Why the kit's checks of a used and an unknown challenge cannot pass. */
-    private const string INDISTINCT = 'laravel-authentication answers a used, unknown or malformed challenge `invalid`, as it does a wrong code (member gap).';
-
     /** @var string A number no factor of the kit's person's sends to. */
     private const string OTHER_PHONE = '+447700900999';
 
@@ -138,33 +135,6 @@ final class ChallengeGatewayAdapterTest extends TestCase
         foreach ($this->gateways() as $gateway) {
             self::assertSame([], $gateway->sent());
         }
-    }
-
-    /**
-     * The kit's check that a used code answers as `replayed` cannot pass:
-     * `laravel-authentication` answers a used challenge `invalid`, as it does a
-     * wrong code, and says nothing more (member gap, reported).
-     * `testAUsedCodeNeverAnswersAgain` pins what the gateway answers instead.
-     *
-     * @return void
-     */
-    public function testChallengeGatewayConsumesACodeOnce(): void
-    {
-        self::markTestSkipped(self::INDISTINCT);
-    }
-
-    /**
-     * The kit's check that an unknown challenge answers as `not_found` cannot
-     * pass: `laravel-authentication` answers a malformed or unknown challenge
-     * `invalid`, as it does a wrong code, and says nothing more (member gap,
-     * reported). `testAnUnknownChallengeNeverPasses` pins what the gateway
-     * answers instead.
-     *
-     * @return void
-     */
-    public function testChallengeGatewayDoesNotFindAnUnknownChallenge(): void
-    {
-        self::markTestSkipped(self::INDISTINCT);
     }
 
     /**
@@ -480,9 +450,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A used code never answers its challenge again: it fails as an invalid
-     * code, and is counted against nothing, as `laravel-authentication` reports
-     * no attempt at a used challenge.
+     * A used code never answers its challenge again: it is refused as replayed,
+     * and is counted against nothing, as `laravel-authentication` reports no
+     * attempt at a used challenge.
      *
      * @return void
      *
@@ -497,13 +467,14 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         $again = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, $code);
 
-        self::assertSame(FailureReason::INVALID_CODE, $again->reason);
+        self::assertSame(FailureReason::REPLAYED, $again->reason);
+        self::assertFalse($again->hasPassed());
         self::assertSame(0, $this->failures());
     }
 
     /**
-     * A challenge that is not the binding's never passes: it fails as an
-     * invalid code, and is counted against nothing.
+     * A challenge that is not the binding's never passes: it is refused as not
+     * found, and is counted against nothing.
      *
      * @return void
      *
@@ -513,7 +484,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     {
         $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), 'unknown-challenge', '000000');
 
-        self::assertSame(FailureReason::INVALID_CODE, $outcome->reason);
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
         self::assertSame(0, $this->failures());
     }
 
