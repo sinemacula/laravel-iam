@@ -8,8 +8,10 @@ use Illuminate\Auth\GenericUser;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Foundation\Application as FoundationApplication;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
@@ -34,7 +36,9 @@ use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
+use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -513,9 +517,10 @@ final class IamServiceProviderTest extends TestCase
     /**
      * The binding rule's outcome is kept in the container for the checks: it
      * bound every capability's seams over the members' defaults, MFA's, the
-     * passkey factor gate and its context's, and kept none, the application
-     * binding nothing of its own, offering no passkeys and naming no gateway,
-     * so MFA keeps its own challenge gateway and its own passkey gateway.
+     * passkey factor gate, its context's and SSO's, and kept none, the
+     * application binding nothing of its own, offering no passkeys and naming
+     * no gateway, so MFA keeps its own challenge gateway and its own passkey
+     * gateway.
      *
      * @return void
      *
@@ -525,7 +530,7 @@ final class IamServiceProviderTest extends TestCase
     {
         $outcome = $this->app?->make(BindingOutcome::class);
         $mfa     = (new MfaSeams(new DeliverySeams(new Container)))->seams(new Repository);
-        $rows    = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
+        $rows    = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository), ...(new SsoSeams)->seams(new Repository)];
         $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), [ChallengeGateway::class, PasskeyGateway::class]));
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
@@ -806,6 +811,45 @@ final class IamServiceProviderTest extends TestCase
         self::assertContains(ResetWhenWorkerStarts::class, $listeners[ResetWhenWorkerStarts::EVENT] ?? []);
         self::assertContains(ResetBetweenRequests::class, $listeners[ResetBetweenRequests::EVENT] ?? []);
         self::assertContains(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? []);
+    }
+
+    /**
+     * Every outermost commit a connection begins is counted in this request's
+     * record, once however many savepoints it holds, and never for a
+     * transaction rolled back.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testEachOutermostCommitIsCounted(): void
+    {
+        $commits    = $this->app?->make(OutermostCommits::class) ?? self::fail('The application has not booted.');
+        $connection = DB::connection();
+
+        DB::transaction(static fn (): mixed => DB::transaction(static fn (): null => null));
+
+        self::assertSame(1, $commits->count($connection));
+
+        DB::beginTransaction();
+        DB::rollBack();
+
+        self::assertSame(1, $commits->count($connection));
+
+        DB::transaction(static fn (): null => null);
+
+        self::assertSame(2, $commits->count($connection));
+    }
+
+    /**
+     * With the worker reset turned off, outermost commits are still counted.
+     *
+     * @return void
+     */
+    #[DefineEnvironment('turnTheResetOff')]
+    public function testOutermostCommitsAreCountedWithTheWorkerResetOff(): void
+    {
+        self::assertContains([OutermostCommits::class, 'committing'], Event::getRawListeners()[TransactionCommitting::class] ?? []);
     }
 
     /**

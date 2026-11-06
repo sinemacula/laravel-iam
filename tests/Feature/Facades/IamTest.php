@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamManager;
+use SineMacula\Laravel\Iam\Sso\LinkRedemption;
+use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
+use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Tests\TestCase;
 
@@ -45,6 +48,45 @@ final class IamTest extends TestCase
     public function testATransactionRunsThroughTheFacade(): void
     {
         self::assertSame(1, Iam::transaction(static fn (): int => DB::connection()->transactionLevel()));
+    }
+
+    /**
+     * The facade answers each redemption service of SSO's handoff codes.
+     *
+     * @return void
+     */
+    public function testTheRedemptionsAreReachedThroughTheFacade(): void
+    {
+        self::assertInstanceOf(SignInRedemption::class, Iam::signIns());
+        self::assertInstanceOf(ReauthenticationRedemption::class, Iam::reauthentications());
+        self::assertInstanceOf(LinkRedemption::class, Iam::links());
+    }
+
+    /**
+     * The facade annotates exactly the manager's public surface.
+     *
+     * @return void
+     */
+    public function testTheFacadeAnnotatesExactlyTheManagersSurface(): void
+    {
+        $manager = new \ReflectionClass(IamManager::class);
+        $methods = [];
+
+        foreach ($manager->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+
+            if ($method->isConstructor()) {
+                continue;
+            }
+
+            $methods[] = $method->getName();
+        }
+
+        preg_match_all('/@method\s+static\s+\S+\s+(\w+)\(/', (string) (new \ReflectionClass(Iam::class))->getDocComment(), $annotated);
+
+        sort($methods);
+        sort($annotated[1]);
+
+        self::assertSame($methods, $annotated[1]);
     }
 
     /**

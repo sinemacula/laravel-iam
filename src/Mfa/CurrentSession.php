@@ -46,13 +46,14 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  *
  * It is also where every MFA adapter finds the guard it acts on: the guard the
  * application MFA hands it names (`guard()`), the default guard only where MFA
- * names no application (`defaultGuard()`), the session MFA names
- * (`named()`), the guard's current session when it is the identity's MFA
- * hands over (`current()`, `held()`),
- * `laravel-authentication`'s session service for it (`sessions()`), and the
- * session service a change to the identity as a whole goes through, which names
- * no guard (`identitySessions()`), so every adapter refuses the same
- * misconfiguration the same way. No adapter acts for the identity the guard
+ * names no application (`defaultGuard()`), the session MFA names (`named()`),
+ * the guard's current session when it is the identity's MFA hands over
+ * (`current()`, `held()`), `laravel-authentication`'s session service for it
+ * (`sessions()`), and the session service a change to the identity as a whole
+ * goes through, which names no guard (`identitySessions()`), and every guard
+ * that holds sessions, for a session named with no guard (`sessionGuards()`),
+ * so every adapter refuses the same misconfiguration the same way; SSO's
+ * adapters find them here too. No adapter acts for the identity the guard
  * serves, since MFA hands each its caller as plain values; only the testing
  * helper that verifies the acting session, which is handed none, asks for it
  * (`caller()`). It also tells every adapter that asks

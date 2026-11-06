@@ -23,6 +23,9 @@ use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Iam\IamManager;
+use SineMacula\Laravel\Iam\Sso\LinkRedemption;
+use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
+use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -82,6 +85,44 @@ final class IamManagerTest extends TestCase
     public function testTheAttemptsGivenArePassedOn(): void
     {
         self::assertSame(2, $this->failingRuns(2));
+    }
+
+    /**
+     * Each redemption of SSO's handoff codes is reached through its own
+     * service, resolved afresh each time it is asked for, so nothing of one
+     * redemption is kept for the next.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testEachRedemptionIsReachedThroughItsOwnService(): void
+    {
+        $manager = $this->manager();
+
+        self::assertInstanceOf(SignInRedemption::class, $manager->signIns());
+        self::assertInstanceOf(ReauthenticationRedemption::class, $manager->reauthentications());
+        self::assertInstanceOf(LinkRedemption::class, $manager->links());
+        self::assertNotSame($manager->signIns(), $manager->signIns());
+        self::assertNotSame($manager->reauthentications(), $manager->reauthentications());
+        self::assertNotSame($manager->links(), $manager->links());
+    }
+
+    /**
+     * A redemption service the application binds is the one the manager
+     * answers.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheApplicationsRedemptionServiceIsAnswered(): void
+    {
+        $signIns = $this->app?->make(SignInRedemption::class);
+
+        $this->app?->instance(SignInRedemption::class, $signIns);
+
+        self::assertSame($signIns, $this->manager()->signIns());
     }
 
     /**

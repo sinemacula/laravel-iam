@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * Runs an integration test at READ COMMITTED and at REPEATABLE READ on MySQL
  * and PostgreSQL, the two isolation levels an application runs the suite's
- * transactions at, and skips it on SQLite, which has neither.
+ * transactions at, and skips it on SQLite, which has neither; a scenario that
+ * must hold on every engine also runs at the connection's own level, SQLite's
+ * included (`provideEveryIsolationLevel()`).
  *
  * A transaction the package opens, and may open again when it retries, takes
  * the level the connection's session is set to with `useIsolationLevel()`.
@@ -33,6 +35,39 @@ trait RunsAtIsolationLevels
         yield 'read committed' => ['read committed'];
 
         yield 'repeatable read' => ['repeatable read'];
+    }
+
+    /**
+     * Rows of `[isolation level]` for a scenario that holds on every engine:
+     * the connection's own level, which SQLite runs too, then each of the two
+     * levels where the engine has them.
+     *
+     * @return iterable<string, array{0: ?string}>
+     */
+    public static function provideEveryIsolationLevel(): iterable
+    {
+        yield 'the connection\'s own level' => [null];
+
+        yield from self::provideIsolationLevels();
+    }
+
+    /**
+     * Run the test at the isolation level given, skipping it on a connection
+     * without isolation levels to choose between, or at the connection's own
+     * level when none is given.
+     *
+     * @param  ?string  $level
+     * @param  ?string  $connection
+     * @return void
+     */
+    protected static function runAtIsolationLevel(?string $level, ?string $connection = null): void
+    {
+        if ($level === null) {
+            return;
+        }
+
+        self::requireIsolationLevels($connection);
+        self::useIsolationLevel($level, $connection);
     }
 
     /**

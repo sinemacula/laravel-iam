@@ -41,6 +41,13 @@ The current note set is:
   email and SMS gateways as one neutral `CodeMessage`, routed by identifier type or factor channel; where each delivery
   runs, inside MFA's transaction or from `laravel-authentication`'s queued job once the code has committed, and so
   what a gateway that throws rolls back; and the locks each path takes.
+- `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
+  store as its linker and link storage, and the handoff issuer left on SSO's default; how a `sign_in`, a
+  `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
+  connection retried whole and the last through SSO's standalone redemption; which refusals commit and which roll back;
+  the records kept for one request and the one renewal a re-authentication writes; how each of SSO's revocation scopes
+  ends exactly its sessions; how identity and tenant references are resolved; SSO's lock order; and the gaps in the
+  members the adapters work around.
 
 A note is added here with the code it describes.
 

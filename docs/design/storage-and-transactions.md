@@ -71,7 +71,13 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   - With no transaction open on the storage connection, `run()` opens it and, after a concurrency failure, runs the
     whole closure again in a new transaction, up to the attempts given or `iam.transactions.attempts`
     (`Transactions\RetrySettings`: 3 when unset; a whole number of at least 1, the first run included, or an
-    `InvalidArgumentException`). The last failure, or any failure that is not a concurrency failure, is rethrown.
+    `InvalidArgumentException`). The last failure, or any failure that is not a concurrency failure, is rethrown as
+    the database raised it (`Transactions\ConcurrencyFailures::asRaised()`): a concurrency failure met in a member's
+    own nested transaction reaches `run()` as Laravel's `DeadlockException`, which keeps the message but neither the
+    SQLSTATE nor the error code, and which Laravel's detector cannot recognise around PostgreSQL's serialisation
+    failure; with no transaction left for it to tell, it gives way to the first exception in its chain that is no such
+    wrapper and that the detector recognises, the query's own `QueryException` (SQLSTATE 40001, or MySQL's 1213 or
+    1205), so a caller that retries the request on a concurrency failure, or asks Laravel's detector, recognises it.
   - Inside a transaction already open on the storage connection, the closure runs once, in a savepoint inside it, and
     every failure is rethrown for the transaction's owner to retry. A transaction open on another connection does not
     count.
@@ -163,7 +169,7 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `config/iam.php`: `storage`, `transactions`.
 - `src/Transactions/CrossMemberTransaction.php`: `run()`, `runInside()`, `rollBackToSavepoint()`, `isCommitted()`,
   `rolledBack()`;
-  `src/Transactions/ConcurrencyFailures.php`: `isRetryable()`, `forCaller()`;
+  `src/Transactions/ConcurrencyFailures.php`: `isRetryable()`, `forCaller()`, `asRaised()`;
   `src/Transactions/RetrySettings.php`: `attempts()`; `src/IamManager.php`: `transaction()`.
 
 ## Authoritative Tests
@@ -194,6 +200,10 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `tests/Concerns/RunsAtIsolationLevels.php`) `testARealSerialisationFailureIsRetriedFromTheOutermostTransaction`
   (PostgreSQL at REPEATABLE READ), `testARealDeadlockIsRetriedFromTheOutermostTransaction` (MySQL and PostgreSQL at
   READ COMMITTED and REPEATABLE READ),
+  `testTheLastAttemptsFailureInAMembersTransactionReachesTheCallerAsTheDatabaseRaisedIt`,
+  `testARealSerialisationFailureOnTheLastAttemptReachesTheCallerAsTheDatabaseRaisedIt` (PostgreSQL at REPEATABLE
+  READ), `testARealDeadlockOnTheLastAttemptReachesTheCallerAsTheDatabaseRaisedIt` (MySQL and PostgreSQL at READ
+  COMMITTED and REPEATABLE READ),
   `testARealSerialisationFailureInsideACallersRetryingTransactionIsRetriedByTheCaller` (PostgreSQL at REPEATABLE READ),
   `testACommitThatFailsOnALockIsRolledBackAndRetried`,
   `testACommitThatFailsOnItsLastAttemptIsRolledBackBeforeItIsRethrown`,

@@ -10,14 +10,17 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Support\Facades\Facade;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Database\RequiredWork;
+use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
+use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
-use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
-use SineMacula\Laravel\Authorization\Contracts\PolicyStore;
-use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
+use SineMacula\Laravel\Authorization\Context\CheckContextFactory;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
+use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
+use SineMacula\Laravel\Authorization\Support\SessionScopes;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
 use SineMacula\Laravel\Sso\Contracts\DnsResolver;
@@ -37,16 +40,18 @@ use SineMacula\Laravel\Sso\Protocols\DriverScope;
  * current request, creating none, once the auth manager holds the application
  * being reset, flushes the session already resolved, where `laravel-mfa`'s
  * default proof store keeps its proofs, and forgets the scoped instances the
- * members keep their request state in: `laravel-authentication`'s and
- * `laravel-sso`'s scoped seams, and `laravel-authorization`'s resolved tenant,
- * resolution cache, last decision, policy evaluator and manager, and the scoped
- * defaults behind its resolvers, held under its own `authorization.default:`
- * keys, and this package's scoped adapters, held under its own `iam.scoped:`
- * keys. Authorization's own resets (its last decision store, its resolution
- * cache and its tenant scope) are called with its milestone; forgetting its
- * scoped instances needs none of them. It then clears the roots Laravel's
- * facades keep, as the queue worker does once it forgets its scoped instances
- * and Octane does as it switches application: `laravel-authorization`'s
+ * members keep their request state in: `laravel-authentication`'s rehashing,
+ * kept sessions, required work and watched sessions, `laravel-sso`'s scoped
+ * seams, and `laravel-authorization`'s resolved tenant, resolution cache, last
+ * decision, policy evaluator, session scopes, check context factory, the
+ * abilities its Gate hook answers and manager, and every scoped default behind
+ * its contracts, held under its own `authorization.default:` keys, and this
+ * package's scoped adapters, held under its own `iam.scoped:` keys.
+ * Authorization's own resets (its last decision store, its resolution cache and
+ * its tenant scope) are called with its milestone; forgetting its scoped
+ * instances needs none of them. It then clears the roots Laravel's facades
+ * keep, as the queue worker does once it forgets its scoped instances and
+ * Octane does as it switches application: `laravel-authorization`'s
  * `Authorization` facade keeps the manager it first resolved, and the manager
  * holds its last decision, evaluator and resolvers, so through the facade a
  * later unit of work would otherwise keep reading the first one's. It registers
@@ -71,9 +76,12 @@ final readonly class WorkerReset
     /** @var string The prefix of the keys `laravel-authorization` holds the scoped defaults behind its resolvers under. */
     private const string AUTHORIZATION_DEFAULT = 'authorization.default:';
 
-    /** @var list<string> The scoped bindings `laravel-authentication`, `laravel-sso` and `laravel-authorization` keep request state in; this package's scoped adapters are found by the prefix of their keys. */
+    /** @var list<string> The scoped bindings `laravel-authentication`, `laravel-sso` and `laravel-authorization` keep request state in; authorization's scoped defaults and this package's scoped adapters are found by the prefix of their keys. */
     private const array SCOPED_STATE = [
         Rehashing::class,
+        KeptSessions::class,
+        RequiredWork::class,
+        WatchedSessions::class,
         SingleUseStore::class,
         SecretEncrypter::class,
         Fetcher::class,
@@ -87,10 +95,10 @@ final readonly class WorkerReset
         ResolutionCache::class,
         LastDecisionStore::class,
         PolicyEvaluator::class,
+        SessionScopes::class,
+        CheckContextFactory::class,
+        DeclaredAbilities::class,
         'authorization',
-        self::AUTHORIZATION_DEFAULT . SubjectResolver::class,
-        self::AUTHORIZATION_DEFAULT . PolicyStore::class,
-        self::AUTHORIZATION_DEFAULT . PolicyResolver::class,
     ];
 
     /**
@@ -286,15 +294,18 @@ final readonly class WorkerReset
 
     /**
      * Whether the scoped abstract holds the suite's request state: a member's,
-     * as listed, or one of this package's scoped adapters, under the keys the
-     * binding rule scopes them under.
+     * as listed, one of `laravel-authorization`'s scoped defaults, under the
+     * keys it holds them under, or one of this package's scoped adapters, under
+     * the keys the binding rule scopes them under.
      *
      * @param  string  $abstract
      * @return bool
      */
     private static function isSuiteState(string $abstract): bool
     {
-        return in_array($abstract, self::SCOPED_STATE, true) || str_starts_with($abstract, BindingRule::SCOPED_PREFIX);
+        return in_array($abstract, self::SCOPED_STATE, true)
+            || str_starts_with($abstract, self::AUTHORIZATION_DEFAULT)
+            || str_starts_with($abstract, BindingRule::SCOPED_PREFIX);
     }
 
     /**

@@ -5,6 +5,9 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam;
 
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Iam\Sso\LinkRedemption;
+use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
+use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 
@@ -13,7 +16,10 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
  *
  * Each helper hands its call to the capability's own service, resolved when it
  * is called, so the manager keeps no state of its own and is safe to share
- * across requests and jobs.
+ * across requests and jobs. An action with a service of its own (a redemption
+ * of SSO's handoff codes) is reached through an accessor answering that
+ * service, whose one method the application calls with plain values, never
+ * through a second method of the manager's that repeats it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,6 +54,48 @@ final readonly class IamManager
     public function transaction(\Closure $work, ?int $attempts = null): mixed
     {
         return $this->container->make(CrossMemberTransaction::class)->run($work, $attempts);
+    }
+
+    /**
+     * The service that redeems a `sign_in` handoff code SSO issued and signs
+     * the person it links in through `laravel-authentication`, in one
+     * transaction (IAM-4.1).
+     *
+     * @return \SineMacula\Laravel\Iam\Sso\SignInRedemption
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function signIns(): SignInRedemption
+    {
+        return $this->container->make(SignInRedemption::class);
+    }
+
+    /**
+     * The service that redeems a `reauthenticate` handoff code SSO issued and
+     * renews the session it names through `laravel-authentication`, with one
+     * write, in one transaction (IAM-4.2).
+     *
+     * @return \SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function reauthentications(): ReauthenticationRedemption
+    {
+        return $this->container->make(ReauthenticationRedemption::class);
+    }
+
+    /**
+     * The service that redeems a `link` handoff code SSO issued, linking the
+     * caller to the provider's subject through SSO's standalone redemption
+     * (IAM-4.3).
+     *
+     * @return \SineMacula\Laravel\Iam\Sso\LinkRedemption
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function links(): LinkRedemption
+    {
+        return $this->container->make(LinkRedemption::class);
     }
 
     /**

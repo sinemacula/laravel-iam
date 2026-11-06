@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Transactions;
 
+use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\DeadlockException;
@@ -72,6 +73,15 @@ final class CrossMemberTransactionTest extends TestCase
 
     /** @var string The message PostgreSQL fails a transaction that cannot be serialised with. */
     private const string PGSQL_SERIALIZATION_FAILURE = 'SQLSTATE[40001]: Serialization failure: 7 ERROR:  could not serialize access due to concurrent update';
+
+    /** @var string The message MySQL fails a deadlock victim with. */
+    private const string MYSQL_DEADLOCK = 'SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction';
+
+    /** @var string The message PostgreSQL fails a deadlock victim with. */
+    private const string PGSQL_DEADLOCK = 'SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected';
+
+    /** @var int The error code MySQL fails a deadlock victim with. */
+    private const int MYSQL_DEADLOCK_ERROR = 1213;
 
     /** @var string The file SQLite connection whose commit another reader's lock holds up. */
     private const string LOCKING = 'locking';
@@ -214,6 +224,63 @@ final class CrossMemberTransactionTest extends TestCase
         self::assertSame([3, $failure], $this->failingRun($failure));
         self::assertSame([2, $failure], $this->failingRun($failure, 2));
         self::assertSame([1, $failure], $this->failingRun($failure, 1));
+        self::assertSame(0, DB::table(self::TABLE)->count());
+    }
+
+    /**
+     * Rows of `[failure]`: each concurrency failure a member's nested
+     * transaction meets, as the query that met it throws it.
+     *
+     * @return iterable<string, array{0: \Illuminate\Database\QueryException}>
+     */
+    public static function provideQueryConcurrencyFailures(): iterable
+    {
+        yield 'pgsql serialisation failure' => [self::queryFailure('40001', self::PGSQL_SERIALIZATION_FAILURE)];
+
+        yield 'pgsql deadlock' => [self::queryFailure('40P01', self::PGSQL_DEADLOCK)];
+
+        yield 'mysql deadlock' => [self::queryFailure('40001', self::MYSQL_DEADLOCK)];
+
+        yield 'mysql lock wait timeout' => [self::queryFailure('HY000', self::LOCK_WAIT_TIMEOUT)];
+    }
+
+    /**
+     * The last attempt's concurrency failure, met in a member's own nested
+     * transaction, which Laravel wraps in its `DeadlockException`, reaches the
+     * caller as the query threw it, with its SQLSTATE, so the caller and
+     * Laravel's detector recognise it, and nothing the work wrote is kept.
+     *
+     * @param  \Illuminate\Database\QueryException  $failure
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideQueryConcurrencyFailures')]
+    public function testTheLastAttemptsFailureInAMembersTransactionReachesTheCallerAsTheDatabaseRaisedIt(QueryException $failure): void
+    {
+        $runs   = 0;
+        $thrown = null;
+
+        try {
+            $this->transaction()->run(static function () use (&$runs, $failure): void {
+
+                $runs++;
+
+                DB::transaction(static function () use ($runs, $failure): void {
+
+                    DB::table(self::TABLE)->insert(['id' => $runs, 'value' => $runs]);
+
+                    throw $failure;
+                });
+            }, 2);
+        } catch (\Throwable $exception) {
+            $thrown = $exception;
+        }
+
+        self::assertSame($failure, $thrown);
+        self::assertSame(2, $runs);
+        self::assertTrue($this->app?->make(ConcurrencyErrorDetector::class)->causedByConcurrencyError($thrown));
+        self::assertSame(0, DB::transactionLevel());
         self::assertSame(0, DB::table(self::TABLE)->count());
     }
 
@@ -910,6 +977,51 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
+     * A real serialisation failure, on PostgreSQL at REPEATABLE READ, met in a
+     * member's own nested transaction on the last attempt, reaches the caller
+     * as the database raised it, a `QueryException` with SQLSTATE 40001 that
+     * Laravel's detector recognises, not Laravel's `DeadlockException` around
+     * it, and only the other transaction's write is kept.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARealSerialisationFailureOnTheLastAttemptReachesTheCallerAsTheDatabaseRaisedIt(): void
+    {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            self::markTestSkipped('Only PostgreSQL fails a write to a row changed since the snapshot at REPEATABLE READ.');
+        }
+
+        self::useIsolationLevel('repeatable read');
+
+        DB::table(self::TABLE)->insert(['id' => 1, 'value' => 1]);
+
+        $other  = self::otherConnection();
+        $thrown = null;
+
+        try {
+            $this->transaction()->run(static function () use ($other): void {
+
+                DB::table(self::TABLE)->where('id', 1)->value('value');
+
+                $other->exec('update ' . self::TABLE . ' set value = value + 1 where id = 1');
+
+                DB::transaction(static function (): void {
+                    DB::table(self::TABLE)->where('id', 1)->increment('value', 10);
+                });
+            }, 1);
+        } catch (\Throwable $exception) {
+            $thrown = $exception;
+        }
+
+        self::assertNotNull($thrown, 'A run that failed to serialise returned.');
+        $this->assertRaisedByTheDatabase($thrown);
+        self::assertSame('40001', $thrown->getCode());
+        self::assertSame(2, self::valueOf(1));
+    }
+
+    /**
      * A real serialisation failure in the work, run inside a caller's
      * transaction that Laravel retries on PostgreSQL at REPEATABLE READ,
      * reaches the caller's retry, and the caller's second attempt reads and
@@ -1034,6 +1146,98 @@ final class CrossMemberTransactionTest extends TestCase
 
         self::assertSame(2, $attempts);
         self::assertSame([12, 12], [self::valueOf(1), self::valueOf(2)]);
+    }
+
+    /**
+     * A real deadlock, on MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
+     * READ, met in a member's own nested transaction on the last attempt,
+     * reaches the caller as the database raised it, a `QueryException` with its
+     * SQLSTATE (and MySQL's error 1213) that Laravel's detector recognises, not
+     * Laravel's `DeadlockException` around it, and only the other transaction's
+     * writes are kept.
+     *
+     * @param  string  $level
+     * @return void
+     *
+     * @throws \Random\RandomException
+     * @throws \Throwable
+     */
+    #[DataProvider('provideIsolationLevels')]
+    public function testARealDeadlockOnTheLastAttemptReachesTheCallerAsTheDatabaseRaisedIt(string $level): void
+    {
+        self::requireIsolationLevels();
+
+        if (!function_exists('pcntl_fork')) {
+            self::markTestSkipped('Provoking a deadlock needs a second process, through pcntl.');
+        }
+
+        DB::table(self::TABLE)->insert([['id' => 1, 'value' => 1], ['id' => 2, 'value' => 1]]);
+
+        $signal = sys_get_temp_dir() . '/iam-deadlock-' . bin2hex(random_bytes(8));
+        $pid    = pcntl_fork();
+
+        if ($pid === 0) {
+            self::crossFromTheOtherSide($signal, $level);
+        }
+
+        self::useIsolationLevel($level);
+        self::preferThisSideAsTheDeadlockVictim();
+
+        $observer = self::otherConnection();
+        $other    = (int) self::awaitSignal($signal . '.locked');
+        $thrown   = null;
+
+        try {
+            $this->transaction()->run(static function () use ($signal, $observer, $other): void {
+
+                DB::transaction(static function () use ($signal, $observer, $other): void {
+
+                    DB::table(self::TABLE)->where('id', 1)->increment('value', 10);
+
+                    touch($signal . '.cross');
+                    self::awaitLockWait($observer, $other);
+
+                    DB::table(self::TABLE)->where('id', 2)->increment('value', 10);
+                });
+            }, 1);
+        } catch (\Throwable $exception) {
+            $thrown = $exception;
+        } finally {
+            self::awaitSignal($signal . '.done');
+            pcntl_waitpid($pid, $status);
+            array_map(static fn (string $file): bool => unlink($file), glob($signal . '.*') ?: []);
+        }
+
+        self::assertNotNull($thrown, 'A run that deadlocked returned.');
+        $this->assertRaisedByTheDatabase($thrown);
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            self::assertSame('40P01', $thrown->getCode());
+        } else {
+            self::assertSame('40001', $thrown->getCode());
+            self::assertSame(self::MYSQL_DEADLOCK_ERROR, $thrown->errorInfo[1] ?? null);
+        }
+
+        self::assertSame([2, 2], [self::valueOf(1), self::valueOf(2)]);
+    }
+
+    /**
+     * Assert that the failure reached the caller as the database raised it: a
+     * `QueryException`, not Laravel's `DeadlockException` around one, that
+     * Laravel's concurrency detector recognises, so the caller retries.
+     *
+     * @param  \Throwable  $thrown
+     * @return void
+     *
+     * @phpstan-assert \Illuminate\Database\QueryException $thrown
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function assertRaisedByTheDatabase(\Throwable $thrown): void
+    {
+        self::assertNotInstanceOf(DeadlockException::class, $thrown);
+        self::assertInstanceOf(QueryException::class, $thrown);
+        self::assertTrue($this->app?->make(ConcurrencyErrorDetector::class)->causedByConcurrencyError($thrown));
     }
 
     /**

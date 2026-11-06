@@ -54,7 +54,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     public static function forGuard(string $application): self
     {
         $message = 'The application [%s] is not a laravel-authentication guard that holds sessions, so no session of it can be resolved:'
-            . ' each MFA application that verifies further factors is a guard of the jwt driver, named the same.';
+            . ' each application MFA verifies further factors for, or SSO signs people in to, is a guard of the jwt driver, named the same.';
 
         return new self(sprintf($message, $application), ReferenceKind::GUARD, $application);
     }
@@ -122,5 +122,40 @@ final class UnresolvedReferenceException extends \RuntimeException
             . ' which the HasFactors trait provides, so MFA can hold its factors.';
 
         return new self(sprintf($message, $type), ReferenceKind::IDENTITY);
+    }
+
+    /**
+     * Build an exception for an identity SSO names by reference that cannot be
+     * resolved to `laravel-authentication`'s identity: its type names, through
+     * the morph map, no Eloquent model implementing the `Identity` contract, no
+     * stored identity holds its id, or the one found is named another way. The
+     * id is left out of the message, as any identifier of a person is.
+     *
+     * @param  string  $type
+     * @return self
+     */
+    public static function forIdentityReference(string $type): self
+    {
+        $message = 'The identity SSO names, of type [%s], cannot be resolved: its type must name, through the morph map, an Eloquent model'
+            . ' implementing laravel-authentication\'s Identity contract, whose morph class it is, and its id the key of one stored.';
+
+        return new self(sprintf($message, $type), ReferenceKind::IDENTITY);
+    }
+
+    /**
+     * Build an exception for a tenant SSO names by its opaque id that
+     * `laravel-authentication`'s tenant resolver resolves to no tenant, or to
+     * one with another identifier, so the sessions acting in it cannot be
+     * judged.
+     *
+     * @param  string  $tenantId
+     * @return self
+     */
+    public static function forTenant(string $tenantId): self
+    {
+        $message = 'The tenant [%s] cannot be resolved: laravel-authentication\'s tenant resolver must resolve it to the tenant whose identifier it is,'
+            . ' so the sessions acting in it can be judged; the change is refused rather than left unenforced.';
+
+        return new self(sprintf($message, $tenantId), ReferenceKind::TENANT);
     }
 }

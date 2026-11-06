@@ -199,6 +199,92 @@ final class ConcurrencyFailuresTest extends TestCase
     }
 
     /**
+     * Rows of `[failure, raised]`: a concurrency failure the database raised,
+     * as Laravel's `DeadlockException` wraps it in a nested transaction, once
+     * or once at each level of nesting, or further down a chain, whether or not
+     * the detector recognises the wrapper itself, and the failure as the
+     * database raised it.
+     *
+     * @return iterable<string, array{0: \Throwable, 1: \Throwable}>
+     */
+    public static function provideWrappedFailuresAsRaised(): iterable
+    {
+        $mysqlDeadlock       = self::queryFailure('40001', self::MYSQL_DEADLOCK);
+        $mysqlLockWait       = self::queryFailure('HY000', self::MYSQL_LOCK_WAIT_TIMEOUT);
+        $pgsqlSerialisation  = self::queryFailure('40001', self::PGSQL_SERIALIZATION_FAILURE);
+        $pgsqlDeadlock       = self::queryFailure('40P01', self::PGSQL_DEADLOCK);
+        $deeperSerialisation = self::queryFailure('40001', self::PGSQL_SERIALIZATION_FAILURE);
+        $deeper              = new DeadlockException('Linking failed.', 0, new \RuntimeException('Writing failed.', 0, $deeperSerialisation));
+        $twiceNested         = self::queryFailure('40001', self::MYSQL_DEADLOCK);
+
+        yield 'mysql deadlock in a nested transaction' => [self::nested($mysqlDeadlock), $mysqlDeadlock];
+
+        yield 'mysql lock wait timeout in a nested transaction' => [self::nested($mysqlLockWait), $mysqlLockWait];
+
+        yield 'pgsql serialisation failure in a nested transaction' => [self::nested($pgsqlSerialisation), $pgsqlSerialisation];
+
+        yield 'pgsql deadlock in a nested transaction' => [self::nested($pgsqlDeadlock), $pgsqlDeadlock];
+
+        yield 'mysql deadlock two nested transactions deep' => [self::nested(self::nested($twiceNested)), $twiceNested];
+
+        yield 'serialisation failure further down the chain' => [$deeper, $deeperSerialisation];
+    }
+
+    /**
+     * For a caller with no transaction open, Laravel's `DeadlockException`
+     * gives way to the failure the database raised, the first in its chain that
+     * is no such wrapper and that the detector recognises, even where the
+     * detector recognises the wrapper too.
+     *
+     * @param  \Throwable  $failure
+     * @param  \Throwable  $raised
+     * @return void
+     */
+    #[DataProvider('provideWrappedFailuresAsRaised')]
+    public function testAWrappedFailureIsHandedOnAsTheDatabaseRaisedIt(\Throwable $failure, \Throwable $raised): void
+    {
+        self::assertSame($raised, self::failures()->asRaised($failure));
+    }
+
+    /**
+     * Rows of `[failure]` handed on as they are to a caller with no transaction
+     * open: wrappers around nothing the detector recognises but another
+     * wrapper, or around nothing at all, and failures that are not wrappers,
+     * recognisable or not.
+     *
+     * @return iterable<string, array{0: \Throwable}>
+     */
+    public static function provideFailuresAsRaised(): iterable
+    {
+        yield 'wrapper around nothing recognisable' => [new DeadlockException('Writing failed.', 0, new \RuntimeException('Something went wrong.'))];
+
+        yield 'wrapper around nothing but a wrapper' => [new DeadlockException('Writing failed.', 0, new DeadlockException(self::MYSQL_DEADLOCK))];
+
+        yield 'wrapper around nothing' => [new DeadlockException('Writing failed.')];
+
+        yield 'mysql deadlock' => [self::queryFailure('40001', self::MYSQL_DEADLOCK)];
+
+        yield 'plain failure around a serialisation failure' => [new \RuntimeException('Linking failed.', 0, self::queryFailure('40001', self::PGSQL_SERIALIZATION_FAILURE))];
+
+        yield 'unique violation' => [self::queryFailure('23000', self::UNIQUE_VIOLATION)];
+
+        yield 'link candidates changed' => [LinkCandidatesChanged::retryWhole()];
+    }
+
+    /**
+     * Any other failure is handed to a caller with no transaction open as it
+     * is.
+     *
+     * @param  \Throwable  $failure
+     * @return void
+     */
+    #[DataProvider('provideFailuresAsRaised')]
+    public function testAnyOtherFailureIsHandedOnAsRaisedAsItIs(\Throwable $failure): void
+    {
+        self::assertSame($failure, self::failures()->asRaised($failure));
+    }
+
+    /**
      * Build the failures with Laravel's own detector.
      *
      * @return \SineMacula\Laravel\Iam\Transactions\ConcurrencyFailures

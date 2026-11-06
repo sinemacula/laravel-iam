@@ -20,15 +20,23 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Database\RequiredWork;
+use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
+use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
+use SineMacula\Laravel\Authorization\Context\CheckContextFactory;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\PolicyStore;
+use SineMacula\Laravel\Authorization\Contracts\RequestContext;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
+use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
+use SineMacula\Laravel\Authorization\Support\SessionScopes;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
@@ -89,8 +97,8 @@ final class WorkerResetTest extends TestCase
     /**
      * Rows of `[abstract]`: each scoped binding `laravel-authentication`,
      * `laravel-sso` and `laravel-authorization` keep request state in,
-     * authorization's manager and the keys that hold its scoped defaults among
-     * them.
+     * authorization's manager and the keys that hold its scoped defaults, each
+     * found by their prefix, among them.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -98,6 +106,9 @@ final class WorkerResetTest extends TestCase
     {
         $abstracts = [
             Rehashing::class,
+            KeptSessions::class,
+            RequiredWork::class,
+            WatchedSessions::class,
             SingleUseStore::class,
             SecretEncrypter::class,
             Fetcher::class,
@@ -111,10 +122,15 @@ final class WorkerResetTest extends TestCase
             ResolutionCache::class,
             LastDecisionStore::class,
             PolicyEvaluator::class,
+            SessionScopes::class,
+            CheckContextFactory::class,
+            DeclaredAbilities::class,
             'authorization',
             'authorization.default:' . SubjectResolver::class,
             'authorization.default:' . PolicyStore::class,
             'authorization.default:' . PolicyResolver::class,
+            'authorization.default:' . TenantTree::class,
+            'authorization.default:' . RequestContext::class,
         ];
 
         foreach ($abstracts as $abstract) {
@@ -170,13 +186,22 @@ final class WorkerResetTest extends TestCase
     /**
      * Rows of `[abstract]`: scoped instances outside the members' request
      * state, Laravel's `Context` and deferred callbacks, the audit log's
-     * execution frames and the application's own.
+     * execution frames and the application's own, one of them under a key that
+     * only holds authorization's prefix further in.
      *
      * @return iterable<string, array{0: string}>
      */
     public static function provideOtherScopedInstances(): iterable
     {
-        foreach ([ContextRepository::class, DeferredCallbackCollection::class, ExecutionFrames::class, 'application-scoped'] as $abstract) {
+        $abstracts = [
+            ContextRepository::class,
+            DeferredCallbackCollection::class,
+            ExecutionFrames::class,
+            'application-scoped',
+            'application.authorization.default:' . TenantTree::class,
+        ];
+
+        foreach ($abstracts as $abstract) {
             yield $abstract => [$abstract];
         }
     }

@@ -31,6 +31,13 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
  * transactions leave it, since running the work again would apply its change
  * twice.
  *
+ * What it rethrows from the outermost transaction is the failure as the
+ * database raised it (`ConcurrencyFailures::asRaised()`): a concurrency failure
+ * met in a member's own nested transaction reaches it wrapped in Laravel's
+ * `DeadlockException`, which loses the SQLSTATE and the error code, so the
+ * caller, with no transaction left to retry it, is handed the query's own
+ * `QueryException` instead, which it and Laravel's detector recognise.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -65,8 +72,9 @@ final readonly class CrossMemberTransaction
      * Run the work in one transaction on the storage connection and return what
      * it returns. When no transaction is open there, the work is retried as a
      * whole after a concurrency failure, up to the given attempts or the
-     * configured ones; inside an open transaction it runs once and every
-     * failure is rethrown.
+     * configured ones, and the last failure, or any other, is rethrown as the
+     * database raised it; inside an open transaction it runs once and every
+     * failure is rethrown as that transaction's retry recognises it.
      *
      * @template T
      *
@@ -104,6 +112,9 @@ final readonly class CrossMemberTransaction
             } catch (\Throwable $exception) {
 
                 if (!$this->isRetriedAfter($exception, $connection, $attempt < $attempts)) {
+
+                    $exception = $this->failures->asRaised($exception);
+
                     throw $exception;
                 }
             }

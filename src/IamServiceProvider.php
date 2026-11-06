@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam;
 
 use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -17,7 +18,11 @@ use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
+use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
+use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -25,9 +30,10 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * storage connection's alignment, the seam bindings, the storage check's
- * booting and booted callbacks, the worker reset listeners and the publishing
- * tag.
+ * records SSO's redemptions keep for one request, the storage connection's
+ * alignment, the seam bindings, the storage check's booting and booted
+ * callbacks, the listener counting outermost commits, the worker reset
+ * listeners and the publishing tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -120,6 +126,7 @@ final class IamServiceProvider extends ServiceProvider
 
         $this->registerManager();
         $this->registerFactorCodeCallers();
+        $this->registerRedemptionRecords();
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
@@ -130,7 +137,8 @@ final class IamServiceProvider extends ServiceProvider
     /**
      * Settle the storage connections if the booting phase passed before this
      * provider registered (it was registered while the application booted, or
-     * after), then bootstrap the worker reset listeners and the publishing tag.
+     * after), then bootstrap the listener counting outermost commits, the
+     * worker reset listeners and the publishing tag.
      *
      * @return void
      *
@@ -142,6 +150,7 @@ final class IamServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->settle();
+        $this->registerCommitCounting();
         $this->registerListeners();
         $this->registerPublishing();
     }
@@ -174,6 +183,31 @@ final class IamServiceProvider extends ServiceProvider
 
         $this->app->scoped($key, static fn (): FactorCodeCallers => new FactorCodeCallers);
         $this->app->bind(FactorCodeCallers::class, static fn (Application $app): mixed => $app->make($key));
+    }
+
+    /**
+     * Register the records SSO's redemptions keep for one request: the
+     * redemption admitted, which `laravel-authentication`'s external identity
+     * links contract answers from, the renewal a re-authentication records
+     * before its one write, and the outermost commits each connection has
+     * begun, which a standalone `link` reads to tell whether its attempt
+     * reached its commit before it failed. Each is scoped, so it is one
+     * request's or one job's alone (IAM-8.1), under this package's own key for
+     * its scoped adapters, which `Iam::resetWorkerState()` forgets as it
+     * forgets every other one, and resolved through that key, so the explicit
+     * reset never leaves a record held where something still resolves it.
+     *
+     * @return void
+     */
+    protected function registerRedemptionRecords(): void
+    {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, OutermostCommits::class] as $record) {
+
+            $key = BindingRule::SCOPED_PREFIX . $record;
+
+            $this->app->scoped($key, static fn (): object => new $record);
+            $this->app->bind($record, static fn (Application $app): mixed => $app->make($key));
+        }
     }
 
     /**
@@ -240,6 +274,19 @@ final class IamServiceProvider extends ServiceProvider
         Event::listen(ResetWhenWorkerStarts::EVENT, ResetWhenWorkerStarts::class);
         Event::listen(ResetBetweenRequests::EVENT, ResetBetweenRequests::class);
         Event::listen(JobProcessing::class, ResetBeforeJob::class);
+    }
+
+    /**
+     * Count every outermost commit a connection begins, in this request's or
+     * this job's record (`OutermostCommits`), resolved on each event. It is
+     * always on, whatever the worker reset's switch: a standalone `link` is
+     * never run again once its attempt has reached its commit.
+     *
+     * @return void
+     */
+    protected function registerCommitCounting(): void
+    {
+        Event::listen(TransactionCommitting::class, [OutermostCommits::class, 'committing']);
     }
 
     /**
@@ -443,6 +490,7 @@ final class IamServiceProvider extends ServiceProvider
             PasskeySeams::class,
             ContextSeams::class,
             DeliverySeams::class,
+            SsoSeams::class,
         ];
     }
 }
