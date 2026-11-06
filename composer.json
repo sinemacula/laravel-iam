@@ -21,7 +21,7 @@
         "php": "^8.3",
         "laravel/framework": "^12.40|^13.3",
         "sinemacula/laravel-audit-log": "dev-master",
-        "sinemacula/laravel-authentication": "dev-feat/one-plain-method-per-session-action as dev-master",
+        "sinemacula/laravel-authentication": "dev-master",
         "sinemacula/laravel-authorization": "dev-master",
         "sinemacula/laravel-mfa": "dev-master",
         "sinemacula/laravel-sso": "dev-master"
