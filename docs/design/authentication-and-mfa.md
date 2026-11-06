@@ -6,7 +6,7 @@ This note describes how the package joins `laravel-authentication` and `laravel-
 IAM-3.14 and IAM-5.2). It covers the twelve seams `Mfa\MfaSeams` binds, how an MFA sign-in is resolved to one of
 `laravel-authentication`'s sessions, how the members' value types are translated, how each adapter answers and
 refuses, and the transactions and lock order the adapters run in. Code challenges, passkeys, the context resolvers and
-the `mfa` context contributor come later (M3, M10) and are not described here.
+code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context contributor comes later (M10).
 
 ## Invariants
 
@@ -454,8 +454,8 @@ Update this note when:
 - MFA stops deleting a factor before it calls `forgetFactor()`, or changes what a proof's reference names;
 - `laravel-mfa`'s `VerifiedSignIn` gains a hook for a store whose proofs only the authentication layer records, or
   changes the evidence it records for a level (`actingOnVerifiedSession()` records the same evidence);
-- MFA gains an application parameter on the freshness gate or the session revoker, or an application resolver adapter
-  lands (M3);
+- MFA gains an application parameter on the freshness gate or the session revoker, or the application resolver
+  adapter (`codes-delivery-and-passkeys.md`) stops naming the default guard;
 - either member changes a value both spell the same, adds a proof kind, channel, level or requirement part, or changes
   the lock order of its transactions;
 - `laravel-authentication`'s freshness requirement gains an additional verification or a level, or the mapping of

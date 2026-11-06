@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Feature;
 
 use Illuminate\Config\Repository;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Foundation\Application as FoundationApplication;
 use Illuminate\Queue\Events\JobProcessing;
@@ -16,15 +17,20 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
+use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\IamServiceProvider;
+use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
+use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
+use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
@@ -451,8 +457,10 @@ final class IamServiceProviderTest extends TestCase
 
     /**
      * The binding rule's outcome is kept in the container for the checks: it
-     * bound every capability's seams over the members' defaults, and kept none,
-     * the application binding nothing of its own.
+     * bound every capability's seams over the members' defaults, MFA's, the
+     * passkey factor gate and its context's, and kept none, the application
+     * binding nothing of its own, offering no passkeys and naming no gateway,
+     * so MFA keeps its own challenge gateway and its own passkey gateway.
      *
      * @return void
      *
@@ -461,7 +469,9 @@ final class IamServiceProviderTest extends TestCase
     public function testTheBindingRulesOutcomeIsKeptForTheChecks(): void
     {
         $outcome = $this->app?->make(BindingOutcome::class);
-        $seams   = array_map(static fn (SeamBinding $binding): string => $binding->abstract, (new MfaSeams)->seams(new Repository));
+        $mfa     = (new MfaSeams(new DeliverySeams(new Container)))->seams(new Repository);
+        $rows    = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
+        $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), [ChallengeGateway::class, PasskeyGateway::class]));
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
         self::assertSame($seams, $outcome->bound);

@@ -34,6 +34,14 @@ The current note set is:
   recorded with; and the lock order, identity state and factors before the session row, with what each isolation level
   does to a change that waited and why MFA's changes are never wrapped in another transaction.
 
+- `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
+  `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
+  `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
+  subject type and application MFA reads from the validated session; how both members' codes reach the application's
+  email and SMS gateways as one neutral `CodeMessage`, routed by identifier type or factor channel; where each delivery
+  runs, inside MFA's transaction or from `laravel-authentication`'s queued job once the code has committed, and so
+  what a gateway that throws rolls back; and the locks each path takes.
+
 A note is added here with the code it describes.
 
 These documents are secondary to the code and tests, not a replacement for them. If a note and a cited test disagree,
