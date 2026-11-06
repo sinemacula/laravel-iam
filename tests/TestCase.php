@@ -22,7 +22,10 @@ use Tests\Fixtures\Models\Person;
  * registered, then this package's, and the database `DB_CONNECTION` names
  * (in-memory SQLite when unset), with a `jwt` guard people sign in on with a
  * password (`api`, the default guard, over the fixtures' `Person`) and the MFA
- * application of the same name. Subclasses may override `defineEnvironment` to
+ * application of the same name, offering the factor types `mfaTypes()` names,
+ * and a relying party for passkeys. Subclasses may override `mfaTypes()` and
+ * `signInMethods()` to change what the application offers before any provider
+ * registers (so the binding rule's switches read it), `defineEnvironment` to
  * add per-test config and `defineDatabaseMigrations` (or use `setUp`, or
  * `Concerns\MigratesMembers`) to create tables, and may boot the application
  * again with the providers in another order through `reorderProviders`.
@@ -48,6 +51,12 @@ abstract class TestCase extends OrchestraTestCase
 
     /** @var string The guard people sign in on, and the MFA application of the same name. */
     protected const string GUARD = 'api';
+
+    /** @var string The relying party id passkeys are registered with. */
+    protected const string RELYING_PARTY = 'iam.test';
+
+    /** @var string The origin passkey ceremonies run on. */
+    protected const string ORIGIN = 'https://app.iam.test';
 
     /** @var string The password every person the tests create signs in with. */
     protected const string PASSWORD = 'correct horse battery staple';
@@ -184,16 +193,42 @@ abstract class TestCase extends OrchestraTestCase
 
         assert($app instanceof Application);
 
-        self::defineSignIn($app->make(ConfigRepository::class));
+        $this->defineSignIn($app->make(ConfigRepository::class));
+    }
+
+    /**
+     * The factor types the MFA application people sign in on offers: TOTP,
+     * unless the test offers more. A test that offers `sms` or `email` binds a
+     * sender or names a gateway for it before the application boots, since MFA
+     * refuses to boot while one of them is offered with its own senders.
+     *
+     * @return list<string>
+     */
+    protected function mfaTypes(): array
+    {
+        return ['totp'];
+    }
+
+    /**
+     * The sign-in methods the guard people sign in on allows: a password,
+     * unless the test allows more (`passkey`, say).
+     *
+     * @return list<string>
+     */
+    protected function signInMethods(): array
+    {
+        return ['password'];
     }
 
     /**
      * Configure the guard people sign in on: a `jwt` guard of
      * `laravel-authentication`'s, the default, over the fixtures' people,
-     * signing in with a password, and the MFA application of the same name,
-     * which offers TOTP to anyone who enrols and declares the password its
-     * first factor. Hashing and the credential timebox are cut to the least, so
-     * a sign-in costs a test next to nothing.
+     * signing in with the methods `signInMethods()` names, with the relying
+     * party passkeys are registered with, and the MFA application of the same
+     * name, which offers the factor types `mfaTypes()` names to anyone who
+     * enrols and declares the password its first factor. Hashing and the
+     * credential timebox are cut to the least, so a sign-in costs a test next
+     * to nothing.
      *
      * A member merges its packaged configuration one level deep beneath the
      * application's as it registers, so each member block set here is set
@@ -203,19 +238,21 @@ abstract class TestCase extends OrchestraTestCase
      * @param  \Illuminate\Config\Repository  $config
      * @return void
      */
-    private static function defineSignIn(ConfigRepository $config): void
+    private function defineSignIn(ConfigRepository $config): void
     {
         $config->set('auth.defaults.guard', self::GUARD);
         $config->set('auth.guards.' . self::GUARD, [
             'driver'      => 'jwt',
             'provider'    => 'people',
-            'application' => ['methods' => ['password']],
+            'application' => ['methods' => $this->signInMethods()],
         ]);
         $config->set('auth.providers.people', ['driver' => 'model', 'model' => Person::class]);
         $config->set('hashing.bcrypt.rounds', 4);
 
+        $packaged = self::packagedConfiguration(AuthenticationServiceProvider::class, 'authentication');
+
         /** @var array<string, mixed> $jwt */
-        $jwt = self::packagedConfiguration(AuthenticationServiceProvider::class, 'authentication')['jwt'];
+        $jwt = $packaged['jwt'];
 
         $config->set('authentication.jwt', [
             ...$jwt,
@@ -225,9 +262,17 @@ abstract class TestCase extends OrchestraTestCase
         ]);
         $config->set('authentication.timebox', ['credentials_microseconds' => 1]);
 
+        /** @var array<string, mixed> $passkeys */
+        $passkeys = $packaged['passkeys'];
+
+        $config->set('authentication.passkeys', [
+            ...$passkeys,
+            'relying_party' => ['id' => self::RELYING_PARTY, 'name' => 'IAM', 'origins' => [self::ORIGIN]],
+        ]);
+
         $config->set('mfa.applications', [
             self::GUARD => [
-                'types'        => ['totp'],
+                'types'        => $this->mfaTypes(),
                 'requirement'  => 'enrolled',
                 'first_factor' => ['method' => 'password', 'channel' => 'password'],
             ],

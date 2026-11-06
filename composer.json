@@ -23,7 +23,7 @@
         "sinemacula/laravel-audit-log": "dev-master",
         "sinemacula/laravel-authentication": "dev-master",
         "sinemacula/laravel-authorization": "dev-master",
-        "sinemacula/laravel-mfa": "dev-master",
+        "sinemacula/laravel-mfa": "dev-master#ac379d63cff87521d1643eaefd7fa3345aafc35e",
         "sinemacula/laravel-sso": "dev-master"
     },
     "require-dev": {

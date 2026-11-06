@@ -11,6 +11,8 @@ use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
+use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
@@ -40,7 +42,9 @@ use Tests\TestCase;
  * code a minute later; three hours on, they step up with an email code, which
  * MFA accepts after the password but which is no multifactor combination with
  * it. MFA's evaluation of the whole session is still multifactor, through the
- * old authenticator app code.
+ * old authenticator app code. The email code is sent and checked by MFA's own
+ * challenge gateway, bound as the application's, so its delivery is MFA's
+ * synchronous sender: the test is about the evidence, not the delivery.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -76,6 +80,8 @@ final class MultifactorEvidenceTest extends TestCase
     {
         CarbonImmutable::setTestNow(CarbonImmutable::now()->startOfSecond());
         config()->set('mfa.applications.' . self::GUARD . '.types', ['totp', 'email']);
+
+        $this->app?->bind(ChallengeGateway::class, PackageChallengeGateway::class);
 
         $sender  = FakeEmailSender::fake($this->app);
         $person  = $this->createPerson();

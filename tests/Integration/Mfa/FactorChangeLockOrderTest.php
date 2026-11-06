@@ -34,6 +34,8 @@ use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
+use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
+use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
 use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
@@ -907,7 +909,8 @@ final class FactorChangeLockOrderTest extends TestCase
 
     /**
      * A step-up with a code delivered to an email factor of the person's, sent
-     * now, ready to verify.
+     * now, ready to verify, by MFA's own challenge gateway, bound as the
+     * application's, whose codes MFA keeps itself.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Closure(): bool
@@ -917,6 +920,8 @@ final class FactorChangeLockOrderTest extends TestCase
     private function deliveredCodeStepUp(Person $person): \Closure
     {
         config()->set('mfa.applications.' . self::GUARD . '.types', ['totp', 'email']);
+
+        $this->app?->bind(ChallengeGateway::class, PackageChallengeGateway::class);
 
         $sender = FakeEmailSender::fake($this->app);
         $factor = Factor::query()->create([
