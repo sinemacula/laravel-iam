@@ -120,19 +120,20 @@ trait RunsSsoFlows
     }
 
     /**
-     * Create and enable an OIDC connection of the tenant trusting the provider,
-     * and answer its id.
+     * Create and enable an OIDC connection of the tenant given, the tests' own
+     * unless another is named, trusting the provider, and answer its id.
      *
+     * @param  string  $tenant
      * @return string
      */
-    protected function makeConnection(): string
+    protected function makeConnection(string $tenant = self::TENANT): string
     {
         $provider    = $this->provider                             ?? self::fail('SSO is not arranged.');
         $connections = $this->app?->make(ConnectionService::class) ?? self::fail('The application has not booted.');
 
         $provider->serve($this->fetcher ?? self::fail('SSO is not arranged.'));
 
-        $created = $connections->create(self::TENANT, 'oidc', 'Example OIDC', self::ssoClient(), [
+        $created = $connections->create($tenant, 'oidc', 'Example OIDC', self::ssoClient(), [
             'issuer'                 => $provider->issuer,
             'authorization_endpoint' => $provider->endpoint('authorization'),
             'token_endpoint'         => $provider->endpoint('token'),
@@ -143,7 +144,7 @@ trait RunsSsoFlows
 
         $connectionId = (string) $created->connection?->id;
 
-        self::assertTrue($connections->enable(self::TENANT, $connectionId, self::ssoClient())->isSucceeded());
+        self::assertTrue($connections->enable($tenant, $connectionId, self::ssoClient())->isSucceeded());
 
         return $connectionId;
     }

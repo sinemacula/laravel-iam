@@ -236,8 +236,9 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * Until freshness is bound to `laravel-authentication`'s (IAM-4.6), SSO's
-     * default refuses every link as not fresh, and the code is spent.
+     * SSO's default freshness, which this package replaces with
+     * `laravel-authentication`'s (IAM-4.6) and an application may bind again,
+     * refuses every link as not fresh, and the code is spent.
      *
      * @return void
      *
