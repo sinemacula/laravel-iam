@@ -103,6 +103,6 @@ final class TenantMfaRuleTest extends TestCase
         self::assertNull(TenantMfaRule::none()->version);
         self::assertSame('3', TenantMfaRule::none('3')->version);
         self::assertEquals(new Requirement, TenantMfaRule::none()->requirement);
-        self::assertFalse(new TenantMfaRule(new Requirement(additionalVerification: new RequirementPart))->isEmpty());
+        self::assertFalse((new TenantMfaRule(new Requirement(additionalVerification: new RequirementPart)))->isEmpty());
     }
 }
