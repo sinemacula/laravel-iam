@@ -5,12 +5,15 @@ declare(strict_types = 1);
 namespace Tests\Feature\Workers;
 
 use Illuminate\Container\Container;
+use Illuminate\Database\Connection;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Database\RequiredWork;
 use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Iam\Facades\Iam;
+use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use Tests\TestCase;
 
@@ -41,6 +44,42 @@ final class WorkerResetTest extends TestCase
 
     /** @var string The namespace of `laravel-audit-log`, whose scoped execution frames it enters and leaves itself, and which the reset keeps. */
     private const string AUDIT_LOG_NAMESPACE = 'SineMacula\Laravel\AuditLog\\';
+
+    /**
+     * The reset first runs the work a commit left held, a commit callback
+     * having failed, before it forgets the record holding it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testResetRunsTheWorkACommitLeftHeldFirst(): void
+    {
+        /** @var \ArrayObject<int, true> $runs */
+        $runs       = new \ArrayObject;
+        $connection = DB::connection();
+
+        self::assertInstanceOf(Connection::class, $connection);
+
+        try {
+            $connection->transaction(static function () use ($connection, $runs): void {
+
+                (new AfterConnectionCommits)->run($connection, static function () use ($runs): void {
+                    $runs->append(true);
+                });
+
+                $connection->afterCommit(static fn () => throw new \LogicException('A callback failed.'));
+            });
+        } catch (\LogicException) {
+            // The commit finished with the work held.
+        }
+
+        self::assertCount(0, $runs);
+
+        Iam::resetWorkerState();
+
+        self::assertCount(1, $runs);
+    }
 
     /**
      * The reset forgets every scoped instance the installed members and this

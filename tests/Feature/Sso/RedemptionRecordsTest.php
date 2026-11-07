@@ -10,7 +10,9 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
+use SineMacula\Laravel\Iam\Transactions\CommittedWork;
 use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use Tests\TestCase;
 
@@ -40,6 +42,10 @@ final class RedemptionRecordsTest extends TestCase
         yield 'the renewal recorder' => [RenewalRecorder::class];
 
         yield 'the outermost commits' => [OutermostCommits::class];
+
+        yield 'the link callers' => [LinkCallers::class];
+
+        yield 'the committed work' => [CommittedWork::class];
     }
 
     /**

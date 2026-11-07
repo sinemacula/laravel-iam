@@ -1,0 +1,305 @@
+# Tenant Authentication Policy
+
+## Purpose
+
+This note describes how the package answers `laravel-authentication`'s tenant authentication policy (IAM-4.5,
+AUTH-2.12) from SSO's enforcement, SSO's exemption gate and the application's one tenant MFA requirement, and routes
+that same requirement to MFA's tenant requirement (MFA-10.2). It covers the application's contract and its rule, how
+the policy's answer and its version are composed, which reads it makes and on which connection, when the exemption gate
+is asked, how an enforcement change and a changed requirement reach existing sessions, the testing kit and fake the
+package ships for the application's requirement, and the gaps in the members the adapters work around. The redemptions
+and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the binding rule that applies every row in
+`binding-precedence.md`.
+
+## Invariants
+
+- Which tenants require which further factors is the application's own data. The application implements
+  `Contracts\TenantMfaRequirement::requirementFor(Tenant $tenant, string $application): Tenancy\TenantMfaRule` once,
+  names it in `iam.tenancy.mfa_requirement` (or binds it in the container, which wins, IAM-8.4), and the package hands
+  its one answer to both members (`Tenancy\TenantMfaRequirements`). With none named or bound (`null`, or blank text),
+  no tenant requires a further factor. A class named that implements no requirement, a value that is no class name at
+  all (`true`, `false`, a number, an array), or a binding that resolves to no requirement, throws
+  `TenantMfaRequirementMisconfiguredException`, never an empty answer: only `null` or blank text is a choice of none.
+- The requirement answers for exactly the tenant asked: the package applies no inheritance down a tenant tree
+  (Decision Q6 (a)). It is asked inside `WriteConnection::during()` for the tenant, so a model read it makes is pinned
+  to the write connection, by MFA's path as much as by `laravel-authentication`'s, and is resolved from the container
+  on every call. Whatever it throws propagates.
+- `Tenancy\TenantMfaRule(Requirement $requirement, ?string $version = null)` carries `laravel-authentication`'s
+  requirement and a version of 1 to 64 characters (`TenantRequirement::VERSION_MAX_LENGTH`, counted as
+  `laravel-authentication` counts them) or none; `none()` requires nothing.
+- The seams, and the default each replaces:
+
+  | Member seam                                | Bound to                                    | Member default replaced   | Lifetime  | Switch                                    |
+  | ------------------------------------------ | ------------------------------------------- | ------------------------- | --------- | ----------------------------------------- |
+  | AUTH `TenantAuthenticationPolicy`          | `Tenancy\TenantAuthenticationPolicyAdapter` | `RequireNothingOfTenants` | transient | `iam.adapters.sso`                        |
+  | MFA `TenantRequirement`                    | `Mfa\TenantRequirementAdapter`              | `NoTenantRequirement`     | transient | `iam.adapters.mfa`                        |
+
+  The policy's row is declared in `Tenancy\TenancySeams`, apart from either capability, since it is the one answer for
+  both of its sources. It is bound while `iam.adapters.sso` is on, whatever `iam.adapters.mfa` says: a sign-in's
+  connection is found through the redemption this package's SSO capability admitted in the request
+  (`AdmittedRedemptions`), which nothing records with that capability off, so the adapter would take every SSO
+  sign-in for one through no connection, ask SSO's exemption gate of a compliant one (an `ExemptionUsed` for a
+  sign-in that needed none) and record a version no later judgement of the session answers. It is mandatory while
+  SSO's `sso.features.enforcement` is on or the application names or binds a tenant MFA requirement, kept as data for
+  the checks: left on the default then, no tenant's enforcement or requirement would reach a session. It is bound
+  whatever those say, since either may be turned on while the application runs. With `iam.adapters.sso` off the policy
+  is the application's to bind, beside the SSO seams it binds, as a mandatory one under the same conditions, MFA's
+  tenant requirement still answered from `iam.tenancy.mfa_requirement` while `iam.adapters.mfa` is on; with both
+  switches off nothing of the package's reads it, and both seams are the application's to bind. The packaged
+  configuration says so (`config/iam.php`, `adapters` and `tenancy`).
+- The policy's answer, on every call and with nothing cached (`TenantAuthenticationPolicyAdapter::requirementFor()`):
+  1. SSO's `Enforcement::policy($tenantId, $application)`, the tenant named by its identifier as a string and the
+     application by the guard; with the `enforcement` feature off it reads nothing;
+  2. where the rule is required and the session (or the sign-in) was not established through one of its satisfying
+     connections, SSO's `ExemptionGate::admit()`, the only place the exemption is asked;
+  3. the application's requirement for the tenant.
+
+  The connections are the rule's satisfying connections, unless the rule requires none (`null`) or the identity is
+  exempt (`null`); a rule whose every connection has gone requires `[]`, which none satisfies. The further factor is
+  the application's requirement.
+- The version (`Tenancy\TenantPolicyVersion::of()`) is the SHA-256 digest, in hexadecimal (64 characters), of every
+  input in one canonical form: SSO's policy as it serialises itself (the tenant, the enforcing tenant, whether a
+  connection is required, the satisfying connections in id order, the rule's version), the exemption's outcome where
+  the gate was asked, and the application's rule (its version and its requirement part by part). SSO's own version
+  changes only with the enforcing tenant's rule, not when a satisfying connection is disabled, and an exemption has no
+  version, so the digest is what changes whenever anything the answer depends on does. A rule that requires something
+  with no version makes the whole version `null`, never taken as already checked.
+- The connection a session was established through is the one its recorded provenance names, read on the write
+  connection. Inside a transaction on `laravel-authentication`'s storage connection, where it asks the policy under the
+  session's row lock (a refresh, a switch, an external re-authentication, `tenantPolicyChanged()`), the provenance is
+  read current, as `laravel-authentication` reads it there (`SessionProofs::connectionId($session, true)`): on MySQL at
+  REPEATABLE READ a plain read answers from the transaction's snapshot, which may be older than the session its
+  locking read found, so a session committed after that snapshot (an SSO sign-in committing while an enforcement
+  change's transaction has read and not yet revoked) would be taken for one through no connection. Outside a
+  transaction it is read plainly, nothing acting on the answer atomically. A sign-in, whose session is not written
+  yet, is established through the connection of the redemption SSO admitted for the identity in this request
+  (`AdmittedRedemptions::connectionFor()`); any other sign-in through none. So the gate is asked only for a session the
+  rule would refuse, and an exempt identity's compliant session reports no exemption.
+- The policy only reads. Its current read of the provenance takes a shared lock of the session's provenance row on
+  MySQL and MariaDB, held until the transaction ends, as `laravel-authentication`'s own current reads do; that comes
+  after the session's row in `laravel-authentication`'s order (the session's row, then its proofs), so it inverts
+  nothing. It takes no other lock, so none of its own can invert the order that ends with the session's row.
+- No request is read. `laravel-authentication` hands the policy no client. Where the judgement is that of a sign-in or a
+  re-authentication this package redeems, the gate is handed the client of that redemption, the one SSO was handed for
+  its admission and `AdmittedRedemptions` keeps with it (`clientFor()`): it answers only for the identity the
+  redemption links and the session it names, none for a sign-in, so it is the client of the request being judged and an
+  `ExemptionUsed` the gate reports carries that request's IP address and user agent, as SSO's guide asks. Every other
+  judgement (a refresh, a switch, `tenantPolicyChanged()`, a password or passkey sign-in) hands the gate SSO's
+  `new ClientContext(null, null)`, as a job's is: an `ExemptionUsed` it reports then carries no IP address or user
+  agent.
+  The identity is named to SSO through the morph map (`Sso\IdentityReferences`); a tenant whose identifier is neither a
+  non-empty string nor an integer throws `UnresolvedReferenceException::forTenantIdentifier()` inside the caller's
+  transaction (IAM-8.2).
+- MFA's tenant requirement (`Mfa\TenantRequirementAdapter`) is the same answer: MFA's opaque tenant id is resolved
+  through `laravel-authentication`'s tenant resolver to the tenant of exactly that identifier (`TenantReferences`), the
+  application's requirement is asked for it and the application, and its requirement is translated part by part
+  (`RequirementTranslator::toMfa()`). The identity MFA hands over is not asked about. With no requirement named or
+  bound, nothing is resolved, so a session acting in a tenant the resolver does not know is not refused for a
+  requirement nobody asked for.
+
+## Success Path
+
+1. A password sign-in in a tenant with SSO's enforcement off and no requirement: the policy reads nothing and answers
+   no requirement at a version of its own; the session records it.
+2. A sign-in through SSO in an enforcing tenant: SSO's redemption locks the enforcing tenant's rule and admits the
+   connection; `signInExternally()` asks the policy, which reads the rule and its connections, finds the sign-in's
+   connection in the redemption admitted in the request, asks no exemption, and answers the connections, the
+   requirement and the version. The session's provenance names the enforcement version SSO judged under its locks
+   (`policy_version`, and `sso.enforcement_version` in the provider context), and the session records the policy's
+   own version as its `tenant_policy_version`.
+3. A refresh of that session: the policy reads the rule, its connections and the session's recorded connection, and
+   answers as before; `laravel-authentication` judges the session and keeps it.
+4. An enforcement change (`EnforcementService::update()`): SSO calls the session revocation inside its transaction,
+   which calls `tenantPolicyChanged($tenant)` (IAM-4.4); `laravel-authentication` locks the tenant's sessions committed
+   by then and asks the policy for each. A session through a satisfying connection meets it, an exempt identity's
+   session is answered with no connection (and its exemption reported once the change commits), and every other
+   active session it locked is revoked in the change's transaction, whatever any setting says. Once the change
+   commits, the revocation calls `tenantPolicyChanged($tenant)` a second time, as `laravel-authentication` asks for a
+   strict cut-off: every session the first pass recorded at the version it answered is skipped, and a session that
+   entered the tenant while the first pass ran (a password or passkey sign-in, a switch into the tenant, a sign-in
+   through another tenant's connection, none of which takes SSO's lock of the rule) is judged and, falling short,
+   revoked (`sso-redemption-and-revocation.md`). Both passes go through `Tenancy\TenantPolicyChanges::changed()`. The
+   second pass runs only once every callback queued on the change's transaction has run, so SSO reports the change
+   (`EnforcementChanged`) once, before it; what the second pass throws propagates from `EnforcementService::update()`
+   once the change is durable and reported, its first pass's revocations standing. A commit callback that fails, before
+   it or after it (a synchronous listener of `EnforcementChanged`), leaves the change durable and the second pass held
+   until the request, the command or the job ends, where it runs (`AfterConnectionCommits::settle()`).
+5. A changed tenant requirement: the application changes its data and, inside the transaction that publishes the
+   change, on the storage connection (`Iam::transaction()` opens one), reports it with
+   `Iam::tenantPolicies()->changed($tenant)`. That is `laravel-authentication`'s strict cut-off: the first
+   `tenantPolicyChanged($tenant)` runs there, as a savepoint, so it commits or rolls back with the change, and judges
+   every session committed by then; the version changed with the answer, so each is judged again, and one without the
+   further factor is revoked. A sign-in into the tenant that read the requirement before the change committed (from its
+   snapshot on MySQL at REPEATABLE READ, at READ COMMITTED before the commit) and commits its session after the first
+   pass locked the tenant's sessions is not among them, so a second `tenantPolicyChanged($tenant)` runs once the
+   transaction commits, as for an enforcement change, and revokes it; the change rolled back runs none. An application
+   that calls `Auth::sessions()->tenantPolicyChanged($tenant)` itself makes the same two calls, the first inside that
+   transaction and the second after it commits: one call alone leaves such a session acting on its access tokens until
+   they expire, since bearer requests never recheck the tenant's policy. MFA, asked for the session's requirement,
+   composes the same requirement once the session acts in the tenant.
+6. A changed exemption: the application's `EnforcementExemption` is its own data, which neither SSO nor this package
+   watches, so whenever its answer changes for an identity (a grant or a withdrawal) the application reports the change
+   the same way, `Iam::tenantPolicies()->changed($tenant)` inside the transaction that publishes it, for every tenant
+   whose enforcement the identity was, or is now, exempted from. The gate's outcome is part of the version, so the
+   identity's sessions there are judged again at once and once more after the commit: a withdrawn exemption's password
+   session is revoked, one that entered the tenant while the first pass ran included, and a granted one's is recorded
+   at the new version.
+
+## Failure / Edge Cases
+
+- A password sign-in in an enforcing tenant is refused as `sso_required`, with no session and no pending continuation,
+  unless the identity is exempt.
+- Turning a rule off revokes nothing: SSO calls no revocation then, and the policy answers no connection.
+- An exemption withdrawn, or a requirement changed, without a report leaves the sessions in the tenant standing: bearer
+  requests never recheck the tenant's policy, so they keep acting on their access tokens until those expire, and are
+  refused only at their next refresh. Nothing in SSO or this package starts that judgement. A report made with one
+  `tenantPolicyChanged()` call alone misses a session that entered the tenant while the call ran, the same way.
+- With `iam.adapters.sso` off the policy is not bound: an application binding SSO's seams itself binds the policy too,
+  since only this package's SSO capability records the redemption a sign-in's connection is found through.
+- An exempt identity signing in, or re-authenticating, through another tenant's connection to act in an enforcing
+  tenant whose rule does not list it (SSO judges the redemption against the connection's tenant's rule alone) is
+  admitted by the gate, and the `ExemptionUsed` it reports carries the IP address and user agent the redemption was
+  made for; a later judgement of that session (a refresh, a reported change) reports it with no client.
+- Each pass of an enforcement change asks the policy for an exempt identity's session (the second to learn the version
+  it skips), and so the gate, which reports `ExemptionUsed` each time it grants: the exemption is reported once by
+  each pass.
+- A session acting in another tenant is never judged by a tenant's change.
+- Inside a transaction that has already read, on MySQL at REPEATABLE READ, SSO's `policy()` answers as of the
+  transaction's snapshot. A redemption's sign-in is judged by SSO against the rule it locked, as it is now, and named on
+  the provenance at that rule's version; were the rule changed between the redemption's first read and SSO's lock, the
+  policy's answer would be the older rule's, so it could only refuse what SSO admitted (`sso_required`, rolled back, the
+  code left unspent) or record a version the next judgement does not skip, never admit what SSO refused. The change's
+  own revocation, which waited on SSO's lock, judges every session as the rule then is.
+- On MySQL at REPEATABLE READ, an enforcement change whose transaction read before a sign-in through SSO committed,
+  and whose first pass then finds that session through `laravel-authentication`'s locking reads, judges it by its
+  provenance read current, never from the change's older snapshot, which holds no provenance row for it: a session
+  through a satisfying connection is answered as compliant, the gate is not asked, no `ExemptionUsed` is reported for
+  an exempt identity, and the version it records is the one the next judgement answers. At READ COMMITTED each
+  statement reads what is committed, and on PostgreSQL at REPEATABLE READ the locking read never finds a session
+  committed after the snapshot (the second pass judges it), so there a plain read would agree with the locking one.
+- A tenant MFA requirement that cannot answer for a tenant throws, and the sign-in, refresh or change fails rather than
+  proceed as though nothing were required; a requirement named that implements no requirement throws
+  `TenantMfaRequirementMisconfiguredException`.
+- Gaps in the members the adapters work around:
+  - `laravel-authentication`'s `TenantPolicyContext` carries no `ClientContext`, though every caller of the policy
+    holds one. A sign-in or a re-authentication this package redeems hands the gate the client it keeps with the
+    admitted redemption, but where `laravel-authentication` alone holds the client (a refresh, a switch, a password or
+    passkey sign-in, and `tenantPolicyChanged()`, which judges stored sessions for no request), SSO's `ExemptionUsed`
+    carries none.
+  - `laravel-authentication` has no public read of the connection a session was established through:
+    `SessionProofs::connectionId()` is `@internal`, and the adapter calls it; nor is the sign-in's connection handed to
+    the policy before the session is written.
+  - `laravel-authentication`'s `TenantPolicyContext` carries neither its `ProofSource::$current` nor the session's
+    connection, so the adapter cannot read the session's provenance as `laravel-authentication` asked of that very
+    judgement: it reads it current whenever a transaction is open on the storage connection, where every caller that
+    holds the session's row lock asks it, and plainly otherwise.
+  - `laravel-sso`'s `EnforcementPolicy::$version` does not change when a satisfying connection is disabled, and an
+    exemption has no version (`EnforcementExemption`), so the adapter versions SSO's whole serialised policy and the
+    gate's outcome rather than SSO's version alone.
+  - Neither member ships a contract kit for `TenantAuthenticationPolicy`; MFA's `TenantRequirementTests` is extended
+    for MFA's seam (IAM-8.3).
+
+## Implementation Anchors
+
+- `src/Contracts/TenantMfaRequirement.php`; `src/Tenancy/TenantMfaRule.php`: `none()`, `isEmpty()`;
+  `src/Tenancy/TenantMfaRequirements.php`: `ruleFor()`, `isConfigured()`, `isNamed()`, `KEY`; `config/iam.php`:
+  `tenancy.mfa_requirement`.
+- `src/Tenancy/TenantAuthenticationPolicyAdapter.php`: `requirementFor()`; `src/Tenancy/TenantPolicyVersion.php`:
+  `of()`; `src/Sso/AdmittedRedemptions.php`: `connectionFor()`, `clientFor()`, `record()`;
+  `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`: `redeem()`, recording the client.
+- `src/Tenancy/TenancySeams.php`: `seams()`, `ENFORCEMENT`; `src/Mfa/MfaSeams.php`: the tenant requirement row;
+  `src/IamServiceProvider.php`: `seamProviders()`.
+- `src/Mfa/TenantRequirementAdapter.php`: `requirementFor()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
+- `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`;
+  `src/Transactions/AfterConnectionCommits.php`: `run()`, `committed()`, `settle()`.
+- `src/Exceptions/TenantMfaRequirementMisconfiguredException.php`: `forClass()`, `forValue()`, `forBinding()`;
+  `src/Exceptions/UnresolvedReferenceException.php`: `forTenantIdentifier()`.
+- `src/Testing/FakeTenantMfaRequirement.php`: `fake()`, `require()`, `requireNothing()`, `failFor()`, `asked()`;
+  `src/Testing/Seams/TenantMfaRequirementContract.php`; `src/Testing/Seams/Concerns/TenantMfaRequirementTests.php`.
+- `benchmarks/Tenancy/TenantAuthenticationPolicyBench.php`, `benchmarks/Support/TenantAuthenticationPolicyBenchHarness.php`.
+
+## Authoritative Tests
+
+- `tests/Integration/Tenancy/TenantAuthenticationPolicyAdapterTest.php` (MySQL and PostgreSQL at READ COMMITTED and
+  REPEATABLE READ for the lock) `testTheAdapterIsThePolicyBound`, `testWithNothingOnNothingIsRequiredAndNothingRead`,
+  `testAnEnforcedTenantRequiresItsConnections`, `testASessionTheRuleWouldRefuseIsJudgedByTheGate`,
+  `testAnExemptIdentitysSessionNeedsNoConnection`, `testAnExemptIdentitysCompliantSessionReportsNoExemption`,
+  `testASignInThroughTheAdmittedRedemptionNeedsNoGate`, `testASignInThroughNoAdmittedRedemptionIsJudgedByTheGate`,
+  `testARuleWithNoConnectionLeftIsSatisfiedByNone`, `testTheApplicationsRequirementIsTheFurtherFactor`,
+  `testTheVersionChangesWhenAnyInputChanges`, `testAnUnversionedRequirementIsAnsweredAtNoVersion`,
+  `testTheApplicationsRequirementIsReadOnTheWriteConnection`, `testItReadsTheConnectionCurrentUnderTheSessionsLock`,
+  `testItTakesNoLockOutsideATransaction`, `testATenantThatCannotBeNamedThrows`,
+  `testARequirementThatCannotBeBuiltThrows`; the locks are counted from the moment the session's own lock is taken, or
+  the question asked outside a transaction (`Tests\Concerns\CountsLockingReads`)
+- `tests/Integration/Tenancy/EnforcementThroughTenantPolicyTest.php` (every isolation level where it commits)
+  `testASignInNamesTheEnforcementVersionJudgedUnderTheLocks`, `testAPasswordSignInInTheEnforcingTenantIsRefused`,
+  `testAnExemptPersonSignsInWithAPassword`, `testAnExemptRedemptionReportsTheExemptionWithItsClient`,
+  `testAnEnforcementChangeRevokesTheSessionsTheRuleNoLongerAllows`,
+  `testAWithdrawnExemptionReportedAsAPolicyChangeRevokesTheExemptSession`, `testAnotherTenantsSessionsAreNotJudged`,
+  `testATenantRequirementRevokesTheSessionsWithoutItsFactor`, `testAnUnchangedPolicyIsRecordedAsTheVersionAnswered`,
+  `testASecondPassThatThrowsLeavesTheChangeDurableAndReported`,
+  `testThePolicyTakesNoLockButTheProvenancesUnderTheSessionsLock` (MySQL and PostgreSQL at READ COMMITTED and
+  REPEATABLE READ, SSO's own enforcement reading its stored rule and connections under the session's lock)
+- `tests/Integration/Tenancy/CompliantSessionUnderAnOlderSnapshotTest.php` (MySQL and PostgreSQL at READ COMMITTED and
+  REPEATABLE READ, an exempt person's sign-in through the rule's connection committed on another connection after the
+  judging transaction read) `testACompliantSessionCommittedAfterTheSnapshotIsJudgedWithoutTheGate`
+- `tests/Integration/Tenancy/EnforcementSecondPassTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
+  READ) `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`
+- `tests/Integration/Tenancy/RequirementChangeSecondPassTest.php` (MySQL and PostgreSQL at READ COMMITTED and
+  REPEATABLE READ, the requirement read from the application's own table)
+  `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`;
+  `tests/Integration/Tenancy/TenantPolicyChangesTest.php` `testInsideATransactionTheTenantIsJudgedNowAndOnceItCommits`,
+  `testARolledBackChangeRunsNoSecondPass`, `testWithNoTransactionOpenBothPassesRunAtOnce`;
+  `tests/Feature/IamManagerTest.php` `testTheTenantPolicyChangesAreReachedThroughTheirOwnService`
+- `tests/Integration/Tenancy/EnforcementRaceTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE READ, the
+  change committed on another connection after the redemption read its code and before it locked)
+  `testARuleThatNoLongerAdmitsTheConnectionRefusesTheSignIn`,
+  `testARuleThatStillAdmitsTheConnectionSignsInAndIsJudgedAsItIsNow`
+- `tests/Integration/Mfa/TenantRequirementAdapterTest.php` (MFA's `TenantRequirementTests`)
+  `testTenantRequirementKeepsNoStateBetweenCalls`, `testTheAdapterIsMfasTenantRequirementBound`,
+  `testTheApplicationsAnswerIsTranslatedForMfa`, `testMfaIsGivenTheAnswerAuthenticationsPolicyIsGiven`,
+  `testMfaComposesTheTenantsRequirementOnceTheSessionActsInIt`, `testWithNoRequirementNamedATenantRequiresNothing`,
+  `testATenantThatResolvesToNoneThrows`, `testWhatTheApplicationsRequirementThrowsPropagates`
+- `tests/Feature/Tenancy/TenancySeamsTest.php` `testTheAdapterIsBoundOverTheDefaultInEveryProviderOrder`,
+  `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
+  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testBothSwitchesOffBindNothing`,
+  `testMfaOnWithSsoOffBindsNothing`, `testTheBindingIsOnWhileTheSsoSwitchIs`, `testTheBindingIsTransientOverTheDefault`,
+  `testTheBindingIsMandatoryWhileEnforcementOrARequirementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
+  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`;
+  `tests/Feature/Bindings/AdaptersDocumentationTest.php` `testTheAdaptersSectionNamesEverySeamTheSwitchesBind`,
+  `testTheAdaptersSectionSaysWhenTheTenantPolicyIsTheApplicationsToBind`,
+  `testTheTenancySectionSaysWhichSwitchesTheRequirementReachesThrough`, `testTheTenancySectionAsksForTheStrictCutOff`
+- `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
+  `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`,
+  `testAnUnversionedRequirementMakesTheVersionNone`; `tests/Unit/Tenancy/TenantMfaRuleTest.php`
+  `testAVersionWithinItsBoundsIsCarried`, `testAVersionOutOfBoundsIsRefused`, `testARuleThatRequiresNothingIsEmpty`;
+  `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testWithNoRequirementNoTenantRequiresAFactor`,
+  `testTheClassNamedIsAsked`, `testTheApplicationsBindingWinsOverTheClassNamed`,
+  `testAClassNamedThatIsNoRequirementFailsClosed`, `testABindingThatResolvesToNoRequirementFailsClosed`,
+  `testARequirementIsConfiguredOnceBoundOrNamed`; `tests/Unit/Sso/AdmittedRedemptionsTest.php`
+  `testTheConnectionIsNamedForTheIdentityLinkedAlone`, `testASignInsClientIsAnsweredForItsIdentityAndNoSessionAlone`,
+  `testAReauthenticationsClientIsAnsweredForItsIdentityAndSessionAlone`, `testTheNextRedemptionAnswersItsOwnClient`
+- `tests/Unit/Testing/FakeTenantMfaRequirementTest.php` (this package's `TenantMfaRequirementTests`)
+  `testTenantMfaRequirementIsDeterministic`, `testTenantMfaRequirementVersionChangesWithTheAnswer`,
+  `testTenantMfaRequirementThrowsRatherThanAnswersNothing`, `testTheVersionCountsTheChangesToTheTenantsRequirement`,
+  `testTheKitFailsAChangedAnswerAtTheSameVersion`, `testTheKitFailsAnAnswerForAnUnanswerableTenant`
+- `tests/Performance/Tenancy/TenantPolicyQueryBudgetTest.php` `testAPasswordSignInWithNothingOn`,
+  `testALinkedSignInInAnEnforcingTenant`, `testARefreshWithNothingOn`, `testARefreshInAnEnforcingTenant`
+
+## Change Triggers
+
+Update this note when:
+
+- `laravel-authentication` changes `TenantAuthenticationPolicy`, `TenantPolicyContext` or `TenantRequirement`, hands the
+  policy a client (the gate is then handed it on every path, and the admitted redemption's client is dropped) or the
+  connection a session or a sign-in is established through (the `@internal` read and the admitted redemption are then
+  dropped), changes how a version is compared or recorded, or rechecks the policy as a session is written (the second
+  pass of every policy change may then be dropped), or hands the policy the connection a sign-in is established through
+  (the binding may then follow `iam.adapters.mfa` too);
+- SSO changes `Enforcement::policy()`, `EnforcementPolicy`, its version's meaning or `ExemptionGate::admit()`, or
+  starts versioning or watching exemptions (the application's obligation to report a changed exemption then goes);
+- MFA changes `TenantRequirement` or ships a kit for another seam here;
+- the application's tenant tree arrives (M6) and a tree move reports a policy change (`TenantPolicyChanges`) for the
+  moved subtree
+  (Decision Q7), or inheritance of a requirement down the tree is decided otherwise than Q6 (a);
+- the checks (M8) read the binding's mandate.

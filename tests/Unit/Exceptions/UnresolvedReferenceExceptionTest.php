@@ -155,6 +155,25 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
+     * A tenant whose identifier cannot name it names neither the tenant nor its
+     * identifier, of which nothing printable may be known.
+     *
+     * @return void
+     */
+    public function testItNamesATenantWhoseIdentifierCannotNameIt(): void
+    {
+        $exception = UnresolvedReferenceException::forTenantIdentifier();
+
+        self::assertSame(
+            'The tenant cannot be named by its identifier: a tenant\'s identifier must be a non-empty string or an integer,'
+            . ' so its authentication policy can be asked; the session is refused rather than judged against no policy.',
+            $exception->getMessage(),
+        );
+        self::assertSame(ReferenceKind::TENANT, $exception->kind);
+        self::assertNull($exception->application);
+    }
+
+    /**
      * It is a runtime exception, so every member that refuses with one (MFA's
      * session revoker and session transition among them) takes it.
      *

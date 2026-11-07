@@ -89,11 +89,19 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * the code was not started for is SSO's `application_mismatch`, answered once
  * SSO has consumed the code.
  *
- * It reads no request, nor the guard's current user or session. SSO's
- * redemption and the request's count of outermost commits are resolved on each
- * call. The code and the verifier are handed to the caller's transaction's work
- * wrapped in a `SensitiveParameterValue`, and unwrapped only inside it, so the
- * trace of anything thrown there never holds either in the clear.
+ * It reads no request, nor the guard's current user or session. While SSO
+ * redeems the code, the application and the caller are kept in this request's
+ * record of callers (`LinkCallers`), which SSO's freshness contract is judged
+ * for under SSO's locks (`FreshnessAdapter`), since SSO hands that contract
+ * neither. Inside the caller's transaction, that transaction's snapshot may be
+ * older than the redemption and the session's row cannot be locked where SSO
+ * asks, so the record says so and the freshness adapter answers `stale`: such a
+ * `link` is SSO's `freshness_required`, unless the application binds a
+ * freshness contract of its own. SSO's redemption, the request's count of
+ * outermost commits and the record are resolved on each call. The code and the
+ * verifier are handed to the caller's transaction's work wrapped in a
+ * `SensitiveParameterValue`, and unwrapped only inside it, so the trace of
+ * anything thrown there never holds either in the clear.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -169,10 +177,19 @@ final readonly class LinkRedemption
 
         $reference  = $this->identities->reference($caller);
         $connection = $this->database->connection($this->storage->name());
+        $callers    = $this->container->make(LinkCallers::class);
 
-        return $connection->transactionLevel() > 0
-            ? $this->inCallersTransaction($application, $connectionId, $code, $verifier, $client, $reference)
-            : $this->standalone($connection, $application, $connectionId, $code, $verifier, $client, $reference);
+        $inCallersTransaction = $connection->transactionLevel() > 0;
+
+        $callers->open($application, $reference, $inCallersTransaction);
+
+        try {
+            return $inCallersTransaction
+                ? $this->inCallersTransaction($application, $connectionId, $code, $verifier, $client, $reference)
+                : $this->standalone($connection, $application, $connectionId, $code, $verifier, $client, $reference);
+        } finally {
+            $callers->close();
+        }
     }
 
     /**

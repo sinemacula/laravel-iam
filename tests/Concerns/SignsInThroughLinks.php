@@ -14,6 +14,7 @@ use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Flows\RequestReference;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
+use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Results\AuthenticationContext;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
@@ -105,7 +106,7 @@ trait SignsInThroughLinks
             linkedIdentity: self::referenceOf($person),
             linkId: $linkId,
             admitted: true,
-        ));
+        ), new SsoClientContext(null, null));
 
         return $records;
     }
