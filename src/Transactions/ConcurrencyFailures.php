@@ -20,7 +20,8 @@ use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
  * It also hands a failure met inside a caller's transaction on in a form the
  * caller's own retry recognises: Laravel's wrapper keeps the message but not
  * the SQLSTATE, and PostgreSQL's serialisation failure says nothing Laravel's
- * detector matches without it.
+ * detector matches without it. A failure that reaches a caller with no
+ * transaction open is handed on as the database raised it, unwrapped.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,10 +63,9 @@ final readonly class ConcurrencyFailures
     /**
      * Return the failure as the caller's transaction should see it: Laravel's
      * `DeadlockException` that its detector cannot recognise, as when it wraps
-     * PostgreSQL's serialisation failure, gives way to the first exception in
-     * its chain the detector does recognise, so a caller's transaction that
-     * retries on a concurrency failure retries; anything else is returned as it
-     * is.
+     * PostgreSQL's serialisation failure, gives way to the failure the database
+     * raised (`asRaised()`), so a caller's transaction that retries on a
+     * concurrency failure retries; anything else is returned as it is.
      *
      * @param  \Throwable  $exception
      * @return \Throwable
@@ -76,9 +76,30 @@ final readonly class ConcurrencyFailures
             return $exception;
         }
 
+        return $this->asRaised($exception);
+    }
+
+    /**
+     * Return the failure as the database raised it, for a caller with no
+     * transaction open: Laravel's `DeadlockException`, which only tells an
+     * enclosing transaction that a nested one met a concurrency failure, and
+     * keeps neither its SQLSTATE nor its error code, gives way to the first
+     * exception in its chain that is no such wrapper and that the detector
+     * recognises (the query's own `QueryException`, with SQLSTATE 40001, or
+     * MySQL's 1213 or 1205); anything else is returned as it is.
+     *
+     * @param  \Throwable  $exception
+     * @return \Throwable
+     */
+    public function asRaised(\Throwable $exception): \Throwable
+    {
+        if (!$exception instanceof DeadlockException) {
+            return $exception;
+        }
+
         for ($link = $exception->getPrevious(); $link !== null; $link = $link->getPrevious()) {
 
-            if ($this->detector->causedByConcurrencyError($link)) {
+            if (!$link instanceof DeadlockException && $this->detector->causedByConcurrencyError($link)) {
                 return $link;
             }
         }

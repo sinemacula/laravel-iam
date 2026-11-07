@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\Facade;
  * @phpcs:disable Generic.Files.LineLength.TooLong
  *
  * @method static mixed transaction(\Closure(): mixed $work, ?int $attempts = null)
+ * @method static \SineMacula\Laravel\Iam\Sso\SignInRedemption signIns()
+ * @method static \SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption reauthentications()
+ * @method static \SineMacula\Laravel\Iam\Sso\LinkRedemption links()
  * @method static void resetWorkerState()
  *
  * @phpcs:enable Generic.Files.LineLength.TooLong

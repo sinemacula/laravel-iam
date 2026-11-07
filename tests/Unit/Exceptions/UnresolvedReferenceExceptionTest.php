@@ -23,7 +23,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
 {
     /**
      * The exception for an application that is no session guard names it, and
-     * says what each MFA application must be.
+     * says what each application MFA or SSO acts for must be.
      *
      * @return void
      */
@@ -33,7 +33,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
 
         self::assertSame(
             'The application [web] is not a laravel-authentication guard that holds sessions, so no session of it can be resolved:'
-            . ' each MFA application that verifies further factors is a guard of the jwt driver, named the same.',
+            . ' each application MFA verifies further factors for, or SSO signs people in to, is a guard of the jwt driver, named the same.',
             $exception->getMessage(),
         );
         self::assertSame(ReferenceKind::GUARD, $exception->kind);
@@ -113,6 +113,44 @@ final class UnresolvedReferenceExceptionTest extends TestCase
             $exception->getMessage(),
         );
         self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
+        self::assertNull($exception->application);
+    }
+
+    /**
+     * The exception for an identity SSO names by reference names its type and
+     * what it must name, never its id, on no application.
+     *
+     * @return void
+     */
+    public function testItNamesAnIdentityReferenceThatCannotBeResolved(): void
+    {
+        $exception = UnresolvedReferenceException::forIdentityReference('person');
+
+        self::assertSame(
+            'The identity SSO names, of type [person], cannot be resolved: its type must name, through the morph map, an Eloquent model'
+            . ' implementing laravel-authentication\'s Identity contract, whose morph class it is, and its id the key of one stored.',
+            $exception->getMessage(),
+        );
+        self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
+        self::assertNull($exception->application);
+    }
+
+    /**
+     * The exception for a tenant names its id and what the tenant resolver must
+     * answer, on no application.
+     *
+     * @return void
+     */
+    public function testItNamesATenantThatCannotBeResolved(): void
+    {
+        $exception = UnresolvedReferenceException::forTenant('tenant-1');
+
+        self::assertSame(
+            'The tenant [tenant-1] cannot be resolved: laravel-authentication\'s tenant resolver must resolve it to the tenant whose identifier it is,'
+            . ' so the sessions acting in it can be judged; the change is refused rather than left unenforced.',
+            $exception->getMessage(),
+        );
+        self::assertSame(ReferenceKind::TENANT, $exception->kind);
         self::assertNull($exception->application);
     }
 

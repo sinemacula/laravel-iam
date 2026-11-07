@@ -44,10 +44,24 @@ return [
     | a factor type, and the members' defaults leave both undone. A value it
     | does not recognise leaves it on.
     |
+    | `sso` binds `laravel-authentication` and SSO: SSO's re-authentication
+    | sessions, answered from `laravel-authentication`'s sessions; its session
+    | revocation, ending `laravel-authentication`'s sessions inside SSO's own
+    | change; `laravel-authentication`'s external identity links, answered from
+    | the redemption SSO admitted in the request alone; and SSO's own link
+    | store as its linker and link storage. SSO keeps its own handoff codes
+    | either way. Turn it off (`false`, `0`, `off`) only to bind every one of
+    | those seams yourself: revocation is mandatory, since SSO's default leaves
+    | every session standing when a tenant's enforcement changes, a connection
+    | is disabled or deleted, a link is removed or a scope widened, and
+    | `laravel-authentication`'s default links nothing, so no SSO sign-in
+    | succeeds. A value it does not recognise leaves it on.
+    |
     */
 
     'adapters' => [
         'mfa' => env('IAM_ADAPTERS_MFA', true),
+        'sso' => env('IAM_ADAPTERS_SSO', true),
     ],
 
     /*

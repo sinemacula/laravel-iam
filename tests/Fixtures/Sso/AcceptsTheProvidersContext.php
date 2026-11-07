@@ -1,0 +1,44 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Tests\Fixtures\Sso;
+
+use Carbon\CarbonImmutable;
+use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
+use SineMacula\Laravel\Sso\Contracts\SsoConnection;
+use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
+use SineMacula\Laravel\Sso\Results\VerifiedResult;
+
+/**
+ * A stand-in for the application's evidence contract that accepts whatever the
+ * provider's own assertion stated: its methods and its raw context class, as
+ * they were verified, at the provider's authentication time. SSO's default
+ * accepts nothing, so no raw context class reaches a session until one is
+ * bound.
+ *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
+ * @copyright   2026 Sine Macula Limited
+ *
+ * @internal
+ */
+final readonly class AcceptsTheProvidersContext implements EvidencePolicy
+{
+    /**
+     * Accept the result's own authentication context as evidence.
+     *
+     * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
+     * @param  \SineMacula\Laravel\Sso\Contracts\SsoConnection  $connection
+     * @param  \Carbon\CarbonImmutable  $now
+     * @return \SineMacula\Laravel\Sso\Evidence\AcceptedEvidence
+     */
+    #[\Override]
+    public function evaluate(VerifiedResult $result, SsoConnection $connection, CarbonImmutable $now): AcceptedEvidence
+    {
+        unset($connection);
+
+        $context = $result->authenticationContext;
+
+        return new AcceptedEvidence($result->connectionId, $context->authenticatedAt ?? $now, $context->methods, $context->contextClass);
+    }
+}
