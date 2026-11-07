@@ -23,13 +23,16 @@ use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
+use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Transactions\CommittedWork;
 use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
@@ -41,11 +44,12 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * records SSO's redemptions keep for one request, the storage connection's
- * alignment, the seam bindings, the storage check's booting and booted
- * callbacks, the `sso` authentication context contributor, the listeners
- * counting outermost commits and releasing the work held for a commit to
- * finish, the worker reset listeners and the publishing tag.
+ * records SSO's redemptions keep for one request, the grant half of SSO's
+ * principal scope, the storage connection's alignment, the seam bindings, the
+ * storage check's booting and booted callbacks, the `sso` authentication
+ * context contributor, the listeners counting outermost commits and releasing
+ * the work held for a commit to finish, the listener provisioning SSO's
+ * unlinked results, the worker reset listeners and the publishing tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -58,9 +62,14 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * beneath the application's, so a member that has not merged its configuration
  * yet switches them as it will once it has.
  *
- * One step still waits for the booting phase, from a `booting()` callback that
- * runs once every provider has registered and before any boots: the storage
- * connection. It is not there for any member's bindings. A member key can be
+ * Two steps still wait for the booting phase, from a `booting()` callback that
+ * runs once every provider has registered and before any boots. The first is
+ * SSO's seams answered from the application's memberships and tenant tree,
+ * whose switches read whether the application has bound either, which it does
+ * in its own provider's `register()`, after the packages': the rule is applied
+ * to them once more there, over the very bindings of SSO's defaults it reserved
+ * in `register()` only, so an application's binding of one of them made in
+ * between is kept. The second is the storage connection. A member key can be
  * written only once its member has merged its configuration, which a member
  * registering after this package does only then, since a key written before
  * would replace the member's whole `storage` block; and an application provider
@@ -69,14 +78,14 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * registered once the booting callbacks have run settles from its own `boot()`,
  * which Laravel runs for it at once.
  *
- * The step runs once more when the application has booted, from a `booted()`
- * callback the settling queues, because a provider's `boot()` can still change
- * what the booting phase settled: it can register a member, which merges its
- * configuration only then, or name another shared connection, or point a member
- * key elsewhere. Once booted, a member whose provider has still not registered
- * refuses boot (every member is required, IAM-1.3), since its key could never
- * be aligned; one registered later would read a connection this package never
- * checked.
+ * The storage step runs once more when the application has booted, from a
+ * `booted()` callback the settling queues, because a provider's `boot()` can
+ * still change what the booting phase settled: it can register a member, which
+ * merges its configuration only then, or name another shared connection, or
+ * point a member key elsewhere. Once booted, a member whose provider has still
+ * not registered refuses boot (every member is required, IAM-1.3), since its
+ * key could never be aligned; one registered later would read a connection this
+ * package never checked.
  *
  * A storage connection mismatch, a member that has not registered, or a
  * connection key that is not a name, refuses boot, except while one of the
@@ -122,11 +131,12 @@ final class IamServiceProvider extends ServiceProvider
     private bool $ssoOn = false;
 
     /**
-     * Register the configuration and the manager, write the shared storage
-     * connection into every member key that is unset and whose member has
-     * registered, apply the binding rule to every seam binding, and register
-     * the callback that aligns and checks the storage connections once every
-     * provider has registered.
+     * Register the configuration, the manager, the request's records and the
+     * grant half of SSO's principal scope, write the shared storage connection
+     * into every member key that is unset and whose member has registered,
+     * apply the binding rule to every seam binding, and register the callback
+     * that aligns and checks the storage connections once every provider has
+     * registered.
      *
      * @return void
      *
@@ -155,7 +165,8 @@ final class IamServiceProvider extends ServiceProvider
      * after), then queue the `sso` authentication context contributor's
      * registration for when every provider has booted, and bootstrap the
      * listeners counting outermost commits and releasing the work held for a
-     * commit to finish, the worker reset listeners and the publishing tag.
+     * commit to finish, the listener provisioning SSO's unlinked results, the
+     * worker reset listeners and the publishing tag.
      *
      * @return void
      *
@@ -164,12 +175,14 @@ final class IamServiceProvider extends ServiceProvider
      * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
      * @throws \LogicException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function boot(): void
     {
         $this->settle();
         $this->registerContextContributors();
         $this->registerCommitListeners();
+        ProvisionOnUnlinkedResult::listen();
         $this->registerListeners();
         $this->registerPublishing();
     }
@@ -264,7 +277,23 @@ final class IamServiceProvider extends ServiceProvider
     /**
      * Apply the binding rule to every capability's seam bindings, and keep its
      * outcome for the checks, and whether the SSO capability's switch was on
-     * for the `sso` contributor's registration.
+     * for the `sso` contributor's registration; and bind the default of this
+     * package's own port for the grant half of SSO's principal scope (IAM-6.8),
+     * only while nothing is bound to it, so an application's or a test's
+     * binding, made before or after, is kept: `laravel-authorization`'s grant
+     * scope query (AUTHZ-14.2) has not shipped, so it is `UnknownGrantScope`,
+     * which answers `unknown` for everyone (Q9), shared, since it reads and
+     * keeps nothing. It is no member's seam, so the binding rule has no default
+     * of a member's to tell it from.
+     *
+     * While the SSO capability's switch is on, the seams answered from the
+     * application's memberships and tenant tree that the rule left off are
+     * reserved for the rule applied again once every provider has registered
+     * (`BindingRule::reserve()`): the exact binding of SSO's default each holds
+     * is recorded, SSO's default bound there first where SSO has not registered
+     * yet, as SSO would bind it, so that only a seam still holding it then is
+     * bound over, and any binding the application makes over it meanwhile is
+     * kept.
      *
      * The rule reads the bindings and their switches from the configuration
      * every member will hold once registered, whichever of them has not
@@ -283,9 +312,16 @@ final class IamServiceProvider extends ServiceProvider
         $app          = $this->app;
         $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), self::seamProviders());
 
-        $app->instance(BindingOutcome::class, $app->make(BindingRule::class)->apply($app, ...$capabilities));
-
+        $rule        = $app->make(BindingRule::class);
+        $outcome     = $rule->apply($app, ...$capabilities);
         $this->ssoOn = SsoSeams::isOn($app->make(ConfigRepository::class));
+
+        if ($this->ssoOn) {
+            $outcome = $rule->reserve($app, $outcome, $app->make(TenancySeams::class));
+        }
+
+        $app->instance(BindingOutcome::class, $outcome);
+        $app->singletonIf(GrantScope::class, UnknownGrantScope::class);
     }
 
     /**
@@ -413,10 +449,23 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Align the storage connections again and refuse a mismatch, once only,
-     * whichever phase reaches it first, and queue the same once more for when
-     * the application has booted, refusing then a member that has still not
-     * registered.
+     * Apply the binding rule once more to the seams answered from the
+     * application's memberships and tenant tree, then align the storage
+     * connections again and refuse a mismatch, once only, whichever phase
+     * reaches it first, and queue the same once more for when the application
+     * has booted, refusing then a member that has still not registered.
+     *
+     * The seams answered from the memberships and the tree are applied again
+     * only while the SSO capability's switch was on when the binding rule first
+     * read it, and follow the switch as it read then, whatever a provider
+     * registering later wrote, so they and SSO's other seams are bound together
+     * or not at all: a membership contract or a tree the application binds in
+     * its own provider's `register()`, which Laravel runs after the packages',
+     * is bound only by now, and binds the adapters it answers over the very
+     * bindings of SSO's defaults reserved as the rule first ran, never over a
+     * binding of SSO's seam the application has made meanwhile, even one of
+     * SSO's own default class. The outcome kept for the checks gains whatever
+     * this binds or keeps.
      *
      * Neither can be done in `register()` alone: a member that registers after
      * this package merges its configuration only then, so its key can be
@@ -430,6 +479,7 @@ final class IamServiceProvider extends ServiceProvider
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
@@ -438,6 +488,13 @@ final class IamServiceProvider extends ServiceProvider
     {
         if ($this->settled) {
             return;
+        }
+
+        if ($this->ssoOn) {
+            $tenancy = $this->app->make(TenancySeams::class, ['ssoOn' => $this->ssoOn]);
+            $outcome = $this->app->make(BindingRule::class)->applyAgain($this->app, $this->app->make(BindingOutcome::class), $tenancy);
+
+            $this->app->instance(BindingOutcome::class, $outcome);
         }
 
         $this->checkStorage(false);

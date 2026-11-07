@@ -19,6 +19,7 @@ use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
+use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason;
@@ -40,13 +41,14 @@ use Tests\TestCase;
  * `laravel-authentication`'s for it; the connection and removed-link scopes
  * follow `laravel-authentication`'s own switches, while an enforcement change
  * and a widened scope are never skipped and a widened scope revoked twice
- * revokes nothing the second time; an enforcement change judges the tenant's
- * sessions once more when the caller's transaction on the storage connection
- * commits, once every callback queued on it has run, whatever another
- * connection's transaction does, and, when another commit callback fails, as
- * the unit of work ends; and a tenant or identity that cannot be resolved, or a
- * scope missing what its kind names, throws inside the caller's transaction, so
- * the change rolls back (IAM-8.2).
+ * revokes nothing the second time; an enforcement change judges the sessions of
+ * the enforcing tenant, and of every tenant below it in the application's
+ * tenant tree, once more when the caller's transaction on the storage
+ * connection commits, once every callback queued on it has run, whatever
+ * another connection's transaction does, and, when another commit callback
+ * fails, as the unit of work ends; and a tenant or identity that cannot be
+ * resolved, or a scope missing what its kind names, throws inside the caller's
+ * transaction, so the change rolls back (IAM-8.2).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -69,6 +71,15 @@ final class SessionRevocationAdapterTest extends TestCase
 
     /** @var string Another link of the same person's through the same connection. */
     private const string OTHER_LINK = 'link-2';
+
+    /** @var string The enforcing tenant's parent in the tree. */
+    private const string PARENT = 'tenant-1-parent';
+
+    /** @var string The enforcing tenant's child in the tree. */
+    private const string CHILD = 'tenant-1-child';
+
+    /** @var string The child's own child. */
+    private const string GRANDCHILD = 'tenant-1-grandchild';
 
     /**
      * Rows of `[reason, switch]`: each reason a connection's sessions are
@@ -265,6 +276,104 @@ final class SessionRevocationAdapterTest extends TestCase
 
         $this->assertRevoked($revoked);
         $this->assertStanding($kept);
+    }
+
+    /**
+     * With the application's tenant tree, an enforcement change ends the
+     * sessions the policy no longer allows in the enforcing tenant and in every
+     * tenant below it, at any depth, and leaves every tenant's outside the
+     * subtree standing; without one, only the enforcing tenant's.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAnEnforcementChangeRevokesThroughTheEnforcingTenantsSubtree(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->bindTenancy();
+
+        [$ada, $grace] = [$this->createPerson(), $this->createPerson()];
+
+        $below   = [$this->inTenant($this->signInThrough($ada), self::CHILD), $this->inTenant($this->signInThrough($grace, guard: self::ADMIN), self::GRANDCHILD)];
+        $outside = [$this->inTenant($this->signInThrough($ada), self::PARENT), $this->inTenant($this->signInThrough($grace), 'tenant-2')];
+        $scope   = RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7'));
+
+        $this->revokeInTransaction($scope);
+
+        $this->assertStanding([...$below, ...$outside]);
+
+        FakeTenantTree::fake($this->app)->place(self::PARENT)->place(self::SSO_TENANT, self::PARENT)->place(self::CHILD, self::SSO_TENANT)->place(self::GRANDCHILD, self::CHILD);
+
+        $this->revokeInTransaction($scope);
+
+        $this->assertRevoked($below);
+        $this->assertStanding($outside);
+    }
+
+    /**
+     * The second pass judges the whole subtree once the caller's transaction
+     * commits, so a session that entered a tenant below the enforcing one once
+     * the first pass had run is revoked then.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheSecondPassJudgesTheSubtreeOnceItCommits(): void
+    {
+        $this->bindTenancy();
+
+        FakeTenantTree::fake($this->app)->place(self::SSO_TENANT)->place(self::CHILD, self::SSO_TENANT);
+
+        $late = $this->signInThrough($this->createPerson());
+
+        DB::connection(StorageConnection::name())->transaction(function () use ($late): void {
+
+            $this->adapter()->revoke(RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7')));
+
+            $this->inTenant($late, self::CHILD);
+
+            $this->assertStanding([$late]);
+        });
+
+        $this->assertRevoked([$late]);
+    }
+
+    /**
+     * A tenant below the enforcing one that `laravel-authentication`'s tenant
+     * resolver cannot resolve throws inside the caller's transaction before any
+     * tenant is judged, so SSO's change rolls back and every session stands.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnUnresolvableTenantBelowTheEnforcingOneRollsTheChangeBack(): void
+    {
+        $this->bindTenancy();
+
+        FakeTenantTree::fake($this->app)->place(self::SSO_TENANT)->place(self::CHILD, self::SSO_TENANT)->place(self::GRANDCHILD, self::CHILD);
+
+        $session  = $this->inTenant($this->signInThrough($this->createPerson()), self::SSO_TENANT);
+        $resolver = \Mockery::mock(TenantResolver::class);
+
+        $resolver->allows('resolve')->andReturnUsing(static fn (string $tenantId): ?ClaimedTenant => $tenantId === self::GRANDCHILD ? null : new ClaimedTenant($tenantId));
+
+        $this->app?->instance(TenantResolver::class, $resolver);
+
+        try {
+            $this->revokeInTransaction(RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7')));
+
+            self::fail('An unresolvable tenant below the enforcing one was judged around.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertSame(ReferenceKind::TENANT, $exception->kind);
+        }
+
+        $this->assertStanding([$session]);
     }
 
     /**

@@ -30,7 +30,9 @@ use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
+use SineMacula\Laravel\Iam\Tenancy\ScopeWidenings;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges;
+use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -151,6 +153,38 @@ final class IamManagerTest extends TestCase
     }
 
     /**
+     * The service a principal's scope widening is reported through is its own,
+     * resolved on each call.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheScopeWideningsAreReachedThroughTheirOwnService(): void
+    {
+        $manager = $this->manager();
+
+        self::assertInstanceOf(ScopeWidenings::class, $manager->scopeWidenings());
+        self::assertNotSame($manager->scopeWidenings(), $manager->scopeWidenings());
+    }
+
+    /**
+     * The service a change of the tenant tree is reported through is its own,
+     * resolved on each call.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheTreeChangesAreReachedThroughTheirOwnService(): void
+    {
+        $manager = $this->manager();
+
+        self::assertInstanceOf(TreeChanges::class, $manager->treeChanges());
+        self::assertNotSame($manager->treeChanges(), $manager->treeChanges());
+    }
+
+    /**
      * The manager resolved once in the worker's application, before Octane
      * clones it for a request, resolves every service in the request's own
      * sandbox, never in the worker's application: the services the sandbox
@@ -175,11 +209,15 @@ final class IamManagerTest extends TestCase
             $links    = $sandbox->make(LinkRedemption::class);
             $renewals = $sandbox->make(ReauthenticationRedemption::class);
             $changes  = $sandbox->make(TenantPolicyChanges::class);
+            $widening = $sandbox->make(ScopeWidenings::class);
+            $tree     = $sandbox->make(TreeChanges::class);
 
             $sandbox->instance(SignInRedemption::class, $signIns);
             $sandbox->instance(LinkRedemption::class, $links);
             $sandbox->instance(ReauthenticationRedemption::class, $renewals);
             $sandbox->instance(TenantPolicyChanges::class, $changes);
+            $sandbox->instance(ScopeWidenings::class, $widening);
+            $sandbox->instance(TreeChanges::class, $tree);
 
             self::assertSame($manager, $sandbox->make('iam'));
             self::assertSame($signIns, $manager->signIns());
@@ -187,6 +225,8 @@ final class IamManagerTest extends TestCase
             self::assertSame($links, Iam::links());
             self::assertSame($renewals, Iam::reauthentications());
             self::assertSame($changes, Iam::tenantPolicies());
+            self::assertSame($widening, Iam::scopeWidenings());
+            self::assertSame($tree, Iam::treeChanges());
 
             $person = new Person;
 

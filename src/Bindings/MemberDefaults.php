@@ -53,15 +53,17 @@ final readonly class MemberDefaults
 
     /**
      * Return the closure the container's binding table holds for the seam, or
-     * `null` when there is none to read: the seam is an alias, holds a shared
-     * instance (one bound with `instance()` or one already resolved), or the
-     * container keeps no table this can read.
+     * `null` when there is none to read: the seam is unbound or an alias, holds
+     * a shared instance (one bound with `instance()` or one already resolved),
+     * or the container keeps no table this can read. Each binding the container
+     * makes is a closure of its own, so the closure tells one binding of the
+     * seam from any later one, even of the same class.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
      * @return ?\Closure(mixed...): mixed
      */
-    private function bindingOf(Container $container, string $abstract): ?\Closure
+    public function bindingOf(Container $container, string $abstract): ?\Closure
     {
         if (!$container instanceof IlluminateContainer || $container->isAlias($abstract) || ($container->resolved($abstract) && $container->isShared($abstract))) {
             return null;

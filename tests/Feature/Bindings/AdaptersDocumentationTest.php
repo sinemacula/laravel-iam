@@ -38,13 +38,17 @@ use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Contracts\SubjectTypeResolver;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
+use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
+use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\LinkStorage;
+use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
+use SineMacula\Laravel\Sso\Contracts\TenantMembership;
 use Tests\TestCase;
 
 /**
@@ -98,6 +102,10 @@ final class AdaptersDocumentationTest extends TestCase
         LinkEmailMatcher::class               => 'link email matcher',
         EvidencePolicy::class                 => 'SSO\'s per-connection evidence policy',
         TenantAuthenticationPolicy::class     => '`laravel-authentication`\'s tenant authentication policy',
+        TenantMembership::class               => 'SSO\'s tenant membership',
+        LinkEligibility::class                => 'its link eligibility',
+        PrincipalScope::class                 => 'its principal scope',
+        EnforcementInheritance::class         => 'SSO\'s enforcement inheritance',
     ];
 
     /** @var list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>> The capabilities `adapters.mfa` or `adapters.sso` governs. */

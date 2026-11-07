@@ -4,6 +4,8 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Exceptions;
 
+use SineMacula\Laravel\Iam\Bindings\Contracts\ReportsMisconfiguration;
+
 /**
  * Thrown when the application's tenant MFA requirement cannot be built
  * (IAM-4.5): `iam.tenancy.mfa_requirement` names what is no class implementing
@@ -21,7 +23,7 @@ namespace SineMacula\Laravel\Iam\Exceptions;
  *
  * @api
  */
-final class TenantMfaRequirementMisconfiguredException extends \LogicException
+final class TenantMfaRequirementMisconfiguredException extends \LogicException implements ReportsMisconfiguration
 {
     /**
      * Build an exception for a requirement named by something that is not a
@@ -32,6 +34,7 @@ final class TenantMfaRequirementMisconfiguredException extends \LogicException
      * @param  class-string  $contract
      * @return self
      */
+    #[\Override]
     public static function forClass(string $key, string $named, string $contract): self
     {
         $message = '%s names [%s], which is not a class implementing %s, so no tenant\'s MFA requirement can be answered.';
@@ -51,6 +54,7 @@ final class TenantMfaRequirementMisconfiguredException extends \LogicException
      * @param  class-string  $contract
      * @return self
      */
+    #[\Override]
     public static function forValue(string $key, string $type, string $contract): self
     {
         $message = '%s holds a value of type [%s], which names no class implementing %s,'
@@ -69,6 +73,7 @@ final class TenantMfaRequirementMisconfiguredException extends \LogicException
      * @param  class-string  $contract
      * @return self
      */
+    #[\Override]
     public static function forBinding(string $abstract, string $resolved, string $contract): self
     {
         $message = 'The container binding of %s resolves to [%s], which is no tenant MFA requirement,'

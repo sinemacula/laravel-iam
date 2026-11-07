@@ -4,15 +4,18 @@ declare(strict_types = 1);
 
 namespace Tests\Performance;
 
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\CoversNothing;
 
 /**
  * What a budget itself promises: it counts reads and writes exactly, and every
  * transaction or savepoint begun, committed and rolled back, only while the
- * path runs, and refuses a statement that is neither a read nor a write. It
- * runs the base class and none of the package's source, so it covers nothing.
+ * path runs, counts a setting of the open transaction's isolation level apart,
+ * and refuses a statement that is none of them. It runs the base class and none
+ * of the package's source, so it covers nothing.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -105,14 +108,54 @@ final class QueryBudgetContractTest extends PerformanceContractTestCase
     }
 
     /**
-     * A statement that is neither a read nor a write fails whatever the counts.
+     * A setting of the open transaction's isolation level is counted as a
+     * setting, neither a read nor a write, and is budgeted: one made where the
+     * budget allows none fails. It is reported as the connection reports a
+     * statement it ran, since SQLite has no such statement to run.
+     *
+     * @return void
+     */
+    public function testATransactionSettingIsCountedApart(): void
+    {
+        $setting = static function (): void {
+            Event::dispatch(new QueryExecuted('SET TRANSACTION ISOLATION LEVEL READ COMMITTED', [], 0.0, DB::connection()));
+        };
+
+        $this->assertQueryBudget(0, 0, $setting, settings: 1);
+
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('The path left its query budget.');
+
+        $this->assertQueryBudget(0, 0, $setting);
+    }
+
+    /**
+     * A statement that is neither a read, a write nor a transaction setting
+     * fails whatever the counts; a `set` of anything else than a transaction
+     * among them.
+     *
+     * @return void
+     */
+    public function testASetOfAnythingElseIsUnclassified(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('A statement is neither a read, a write nor a transaction setting: [set lock_timeout');
+
+        $this->assertQueryBudget(0, 0, static function (): void {
+            Event::dispatch(new QueryExecuted('set lock_timeout = \'1s\'', [], 0.0, DB::connection()));
+        });
+    }
+
+    /**
+     * A statement that is neither a read, a write nor a transaction setting
+     * fails whatever the counts.
      *
      * @return void
      */
     public function testAStatementNobodyClassifiedFails(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('A statement is neither a read nor a write');
+        $this->expectExceptionMessage('A statement is neither a read, a write nor a transaction setting');
 
         $this->assertQueryBudget(0, 0, static fn (): bool => DB::statement('create index iam_budget_rows_value on ' . self::TABLE . ' (value)'));
     }

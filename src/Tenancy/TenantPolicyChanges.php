@@ -30,15 +30,19 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  * A rollback of the change drops it. With no transaction open, both passes run
  * at once.
  *
- * Every change of a tenant's policy goes through here: SSO's enforcement
- * changes, through the session revocation (`SessionRevocationAdapter`), and the
- * changes the application reports itself, of its tenant MFA requirement and of
- * its SSO exemptions (`Iam::tenantPolicies()->changed($tenant)`). The passes go
- * through `laravel-authentication`'s session service for a change to the
- * identity as a whole (`CurrentSession::identitySessions()`), which ends the
- * sessions of every guard alike. What either pass throws propagates: the first
- * from this call, inside the change's transaction, so it rolls back; the second
- * from the commit, the change already durable. Stateless (IAM-8.1).
+ * Every change of one tenant's policy the application reports itself goes
+ * through here, of its tenant MFA requirement and of its SSO exemptions
+ * (`Iam::tenantPolicies()->changed($tenant)`). A change that may reach a whole
+ * subtree, SSO's enforcement changes through the session revocation
+ * (`SessionRevocationAdapter`) and the application's reported tree moves, makes
+ * the same two passes through `SubtreePolicyChanges`, whose pass after the
+ * commit lists the subtree again rather than judge the tenants its first pass
+ * listed. The passes go through `laravel-authentication`'s session service for
+ * a change to the identity as a whole (`CurrentSession::identitySessions()`),
+ * which ends the sessions of every guard alike. What either pass throws
+ * propagates: the first from this call, inside the change's transaction, so it
+ * rolls back; the second from the commit, the change already durable. Stateless
+ * (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

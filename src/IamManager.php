@@ -9,7 +9,9 @@ use SineMacula\Laravel\Iam\Sso\CallerScope;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
+use SineMacula\Laravel\Iam\Tenancy\ScopeWidenings;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges;
+use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 
@@ -22,10 +24,10 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
  * and jobs: resolved once in a long-lived process, before Octane clones the
  * application for a request, it still resolves each service in that request's
  * own sandbox, with the request's own records. An action with a service of its
- * own (a redemption of SSO's handoff codes, a tenant's policy change) is
- * reached through an accessor answering that service, whose one method the
- * application calls with plain values, never through a second method of the
- * manager's that repeats it.
+ * own (a redemption of SSO's handoff codes, a tenant's policy change, a change
+ * of the tenant tree) is reached through an accessor answering that service,
+ * whose one method the application calls with plain values, never through a
+ * second method of the manager's that repeats it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -122,6 +124,37 @@ final readonly class IamManager
     public function tenantPolicies(): TenantPolicyChanges
     {
         return self::container()->make(TenantPolicyChanges::class);
+    }
+
+    /**
+     * The service that reports, first inside the transaction that gives a
+     * person a principal, that they come to hold it, through SSO's scope
+     * widening: a membership created or accepted, or a platform principal
+     * created (IAM-7.3).
+     *
+     * @return \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function scopeWidenings(): ScopeWidenings
+    {
+        return self::container()->make(ScopeWidenings::class);
+    }
+
+    /**
+     * The service that applies a change of the application's tenant tree it
+     * reports itself, a tenant moved (a child of a removed tenant included), to
+     * the sessions acting in that tenant and every tenant below it, inside the
+     * transaction that writes the change, after the write, and once more once
+     * that commits (IAM-7.5).
+     *
+     * @return \SineMacula\Laravel\Iam\Tenancy\TreeChanges
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function treeChanges(): TreeChanges
+    {
+        return self::container()->make(TreeChanges::class);
     }
 
     /**

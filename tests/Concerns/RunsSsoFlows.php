@@ -42,17 +42,18 @@ use Tests\Fixtures\Sso\Handoff;
  * application of the same name, allowing sign-in through an external provider),
  * answers SSO's outbound requests with the fake provider, and creates and
  * enables an OIDC connection of the tenant trusting it. It binds stand-ins only
- * for the seams this package answers in later milestones: freshness
- * (`FakeFreshness`, fresh) and link eligibility (`EveryoneMayLink`), whose
- * defaults refuse every `link`. Every other seam is the one the package binds.
- * A flow is started (`handoff()`) and answered at the provider, which completes
- * it and hands back the code and verifier the client presents. A SAML
- * connection of the same tenant, trusting a fake SAML identity provider, is
- * made on demand (`makeSamlConnection()`), and its flows run the same way
- * (`samlHandoff()`): the provider's response carries an eight-hour
- * `SessionNotOnOrAfter`, which SSO's default deadline contract lets limit the
- * session, so a SAML sign-in is the one whose redemption carries a session
- * deadline.
+ * for freshness (`FakeFreshness`, fresh), which judges a caller this package is
+ * handed, and link eligibility (`EveryoneMayLink`), which this package answers
+ * from the application's memberships only once they are configured; without
+ * either, SSO refuses every `link`. A test of link eligibility itself forgets
+ * the stand-in. Every other seam is the one the package binds. A flow is
+ * started (`handoff()`) and answered at the provider, which completes it and
+ * hands back the code and verifier the client presents. A SAML connection of
+ * the same tenant, trusting a fake SAML identity provider, is made on demand
+ * (`makeSamlConnection()`), and its flows run the same way (`samlHandoff()`):
+ * the provider's response carries an eight-hour `SessionNotOnOrAfter`, which
+ * SSO's default deadline contract lets limit the session, so a SAML sign-in is
+ * the one whose redemption carries a session deadline.
  *
  * The guard allows `external_provider` alongside the password, which every test
  * that signs someone in through SSO needs. It is used with `SignsInPeople` and
