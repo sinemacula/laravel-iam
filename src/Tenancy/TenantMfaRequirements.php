@@ -8,6 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Database\WriteConnection;
+use SineMacula\Laravel\Iam\Bindings\ConfiguredImplementations;
 use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Exceptions\TenantMfaRequirementMisconfiguredException;
 
@@ -87,7 +88,7 @@ final readonly class TenantMfaRequirements
      */
     public function isConfigured(): bool
     {
-        return $this->container->bound(TenantMfaRequirement::class) || self::isNamed($this->config);
+        return ConfiguredImplementations::isConfigured($this->container, $this->config, TenantMfaRequirement::class, self::KEY);
     }
 
     /**
@@ -102,9 +103,7 @@ final readonly class TenantMfaRequirements
      */
     public static function isNamed(Repository $config): bool
     {
-        $class = $config->get(self::KEY);
-
-        return $class !== null && (!is_string($class) || trim($class) !== '');
+        return ConfiguredImplementations::isNamed($config, self::KEY);
     }
 
     /**
@@ -117,42 +116,6 @@ final readonly class TenantMfaRequirements
      */
     private function requirement(): ?TenantMfaRequirement
     {
-        if ($this->container->bound(TenantMfaRequirement::class)) {
-            return $this->resolved(TenantMfaRequirement::class);
-        }
-
-        if (!self::isNamed($this->config)) {
-            return null;
-        }
-
-        $named = $this->config->get(self::KEY);
-
-        if (!is_string($named)) {
-            throw TenantMfaRequirementMisconfiguredException::forValue(self::KEY, get_debug_type($named), TenantMfaRequirement::class);
-        }
-
-        if (!is_subclass_of($named, TenantMfaRequirement::class)) {
-            throw TenantMfaRequirementMisconfiguredException::forClass(self::KEY, $named, TenantMfaRequirement::class);
-        }
-
-        return $this->resolved($named);
-    }
-
-    /**
-     * Build the requirement the container resolves by the abstract given, which
-     * must implement the contract.
-     *
-     * @param  string  $abstract
-     * @return \SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenantMfaRequirementMisconfiguredException
-     */
-    private function resolved(string $abstract): TenantMfaRequirement
-    {
-        $requirement = $this->container->make($abstract);
-
-        return $requirement instanceof TenantMfaRequirement
-            ? $requirement
-            : throw TenantMfaRequirementMisconfiguredException::forBinding($abstract, get_debug_type($requirement), TenantMfaRequirement::class);
+        return ConfiguredImplementations::find($this->container, $this->config, TenantMfaRequirement::class, self::KEY, TenantMfaRequirementMisconfiguredException::class);
     }
 }

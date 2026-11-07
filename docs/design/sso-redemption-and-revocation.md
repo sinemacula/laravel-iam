@@ -12,9 +12,9 @@ application calls, the records they keep for one request, the transaction and th
 refusals commit and which roll back, how SSO's identity and tenant references are resolved, and the gaps in the members
 the adapters work around. The tenant authentication policy SSO's enforcement is folded into is described in
 `tenant-authentication-policy.md`; link eligibility, tenant membership and principal scope (IAM-7.4, IAM-6.8), the
-tenant tree and scope widening's trigger (M6), provisioning (M7) and link confirmation (M10) are not described here;
-the binding rule that applies every row is in `binding-precedence.md`, and the storage connection and retry helper the
-redemptions run through are in `storage-and-transactions.md`.
+tenant tree and scope widening's trigger, and provisioning, are described in `provisioning-and-tenancy.md`, and link
+confirmation (M10) is not described here; the binding rule that applies every row is in `binding-precedence.md`, and
+the storage connection and retry helper the redemptions run through are in `storage-and-transactions.md`.
 
 ## Invariants
 
@@ -269,8 +269,10 @@ redemptions run through are in `storage-and-transactions.md`.
   second time once SSO's transaction commits, as `laravel-authentication` asks for a strict cut-off (Decision, M5:
   the second pass is held for the storage connection's own transaction and runs once every callback queued on it has
   run, SSO's report of the change among them, or, when one of those callbacks fails, as the unit of work ends; see
-  Failure / Edge Cases). Both passes go through `Tenancy\TenantPolicyChanges::changed()`, the one path every change of
-  a tenant's policy takes, the application's own reports included (`tenant-authentication-policy.md`).
+  Failure / Edge Cases). Both passes go through `laravel-authentication`'s `tenantPolicyChanged()` as
+  `Tenancy\TenantPolicyChanges::changed()` makes them, the application's own reports included
+  (`tenant-authentication-policy.md`); for the enforcement change they are made for the enforcing tenant's subtree by
+  `Tenancy\SubtreePolicyChanges`, whose pass after the commit lists the subtree again (`provisioning-and-tenancy.md`).
 - References (IAM-8.2):
   - `IdentityReferences::identity()` maps SSO's `IdentityReference` through the morph map
     (`Relation::getMorphedModel($type) ?? $type`) to an Eloquent model implementing `laravel-authentication`'s
@@ -352,9 +354,9 @@ redemptions run through are in `storage-and-transactions.md`.
   tenant, or a sign-in through another tenant's connection takes no lock of SSO's rule, so one that judged the policy
   before the change and commits its session while the change runs is not among them (on MySQL at REPEATABLE READ the
   first pass's gap lock holds its write until the change commits). So the adapter, through
-  `Tenancy\TenantPolicyChanges`, holds a second `tenantPolicyChanged()` for the storage connection
+  `Tenancy\SubtreePolicyChanges`, holds a second `tenantPolicyChanged()` for the storage connection
   (`Transactions\AfterConnectionCommits`, for that connection's own innermost transaction, never another
-  connection's), which runs once the outermost transaction there commits, for the tenant resolved for the first, skips
+  connection's), which runs once the outermost transaction there commits, for the tenant resolved anew, skips
   every session the first pass recorded at the version it answered, and revokes the sessions that entered the tenant
   meanwhile; a rollback callback of the transaction it was queued in drops it when the change rolls back. It runs only
   once every callback queued on that transaction has run: SSO queues its report of the change (`EnforcementChanged`)
@@ -377,17 +379,22 @@ redemptions run through are in `storage-and-transactions.md`.
   policy for an exempt identity's session, so its exemption is reported once by each. A sign-in that judged the policy
   before the change committed and writes its session only after the second pass has run is judged at its first refresh
   (a member gap, below).
-  SSO names only the enforcing tenant and cannot list the tenants that inherit its rule, so only the enforcing tenant
-  is judged until the application's tenant tree arrives (M6): SSO's `EnforcementInheritance` maps a tenant up to its
-  enforcing tenant only, and cannot list the tenants below it.
+  SSO names only the enforcing tenant and cannot list the tenants that inherit its rule, so the tenants below it come
+  from the application's tenant tree: with one configured, the sessions of the enforcing tenant and of every tenant
+  below it are judged, each resolved before any is (`Tenancy\SubtreePolicyChanges`, `provisioning-and-tenancy.md`),
+  broader than the tenants that inherit and never narrower; without one, only the enforcing tenant's. The second pass
+  then lists and resolves the subtree again from the tree as it stands after the commit, rather than judge the tenants
+  the first pass listed, so a tenant moved under the enforcing tenant while the change was open is judged against the
+  rule that has committed.
 - A `link` whose caller signed in longer ago than SSO's maximum age for `sso.link.create` (300 seconds by default) is
   refused as `freshness_required` under SSO's locks, and so is one whose application's guard does not serve the caller,
   and one redeemed inside the caller's own transaction, whose snapshot may be older than the redemption. A `link` flow
   started with no caller handed in (`Iam::callers()->run()`) is refused for freshness at its start. A plain read inside
   SSO's own transaction may answer as of its snapshot, which a `link` redemption takes as it starts, a moment before.
-  Until link eligibility is bound (M6), SSO's default refuses every link (`link_ineligible`); the integration
-  tests stand in a fixture that lets everyone link, and SSO's `Testing\FakeFreshness` where freshness is not their
-  subject.
+  Link eligibility is answered from the application's memberships (`Tenancy\LinkEligibilityAdapter`,
+  `provisioning-and-tenancy.md`) once they are named or bound; without them SSO's default refuses every link
+  (`link_ineligible`). The redemption tests stand in a fixture that lets everyone link where eligibility is not their
+  subject, and SSO's `Testing\FakeFreshness` where freshness is not.
 - Evidence from a connection a tenant does not trust never meets that tenant's requirement, however MFA's policy judges
   it; a tenant whose identifier is neither a non-empty string nor an integer throws
   `UnresolvedReferenceException(tenant)`, and an identity whose key cannot be named throws, inside
@@ -410,7 +417,8 @@ redemptions run through are in `storage-and-transactions.md`.
   - `laravel-sso`'s `ReauthenticationSessions::standing()` names no application although `StartEligibility` knows it,
     so every `jwt` guard is asked (one read per guard, at flow start only).
   - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, and nothing lists the tenants that
-    inherit its rule.
+    inherit its rule: the adapter judges every tenant below it in the application's tree, so without a tree (an
+    inheritance of the application's own) those tenants are left unjudged.
   - `laravel-authentication`'s sign-ins and switches judge the tenant authentication policy with plain reads and take
     no lock a policy change waits on, and `tenantPolicyChanged()` judges only the sessions committed when it reads
     them, so even its second pass, after the change commits, misses a sign-in that judged the policy before the change
@@ -628,16 +636,17 @@ Update this note when:
   starts binding `LinkStorage` or stops finding it through the bound `Linker`;
 - `laravel-sso` adds the application to `ReauthenticationSessions::standing()` (the adapter then asks that guard
   alone), or `laravel-authentication`'s `externalStanding()` gains an application parameter (IAM-13.8);
-- `laravel-sso` lists the tenants that inherit an enforcing tenant's rule, or the application's tenant tree arrives
-  (M6), so the tenant revocation covers them;
+- `laravel-sso` lists the tenants that inherit an enforcing tenant's rule in its tenant scope (the subtree from the
+  application's tree may then go), or the tree contract changes;
 - `laravel-authentication` gains a public identity resolver or key-shape check (`IdentityReferences` then uses it);
 - either member ships a contract kit for one of these seams (IAM-8.3);
 - a member changes the lock order, adds a lock to a redemption (the requirements' authorisation request lock among
   them), changes which refusals it answers and which it throws, or changes what a `RedemptionResult`, `ExternalResult`,
   `Provenance` or either `ClientContext` carries;
 - SSO's `admit()` or `redeem()`, `signInExternally()` or `reauthenticateExternally()` changes its parameters;
-- link eligibility is bound (M6), which changes what a link does, or the tenant authentication policy
-  (`tenant-authentication-policy.md`) changes what an enforcement change revokes;
+- link eligibility stops being answered from the application's memberships (`provisioning-and-tenancy.md`), which
+  changes what a link does, or the tenant authentication policy (`tenant-authentication-policy.md`) changes what an
+  enforcement change revokes;
 - `laravel-sso` hands its freshness contract the caller or the application (the adapter then judges that caller's
   session alone, and `Iam::callers()` is no longer needed), or asks it after the guards in its lock order (the adapter
   can then judge current under the session's row lock), `laravel-mfa`'s proofs carry a provider's methods (a rebound

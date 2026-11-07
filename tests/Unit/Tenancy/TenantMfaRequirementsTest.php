@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
+use SineMacula\Laravel\Iam\Bindings\ConfiguredImplementations;
 use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Exceptions\TenantMfaRequirementMisconfiguredException;
 use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
@@ -30,6 +31,7 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
  * @internal
  */
 #[CoversClass(TenantMfaRequirements::class)]
+#[CoversClass(ConfiguredImplementations::class)]
 final class TenantMfaRequirementsTest extends TestCase
 {
     /** @var \Illuminate\Container\Container The container the requirement is bound and built in. */

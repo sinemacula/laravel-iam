@@ -20,10 +20,13 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   no tenant requires a further factor. A class named that implements no requirement, a value that is no class name at
   all (`true`, `false`, a number, an array), or a binding that resolves to no requirement, throws
   `TenantMfaRequirementMisconfiguredException`, never an empty answer: only `null` or blank text is a choice of none.
-- The requirement answers for exactly the tenant asked: the package applies no inheritance down a tenant tree
-  (Decision Q6 (a)). It is asked inside `WriteConnection::during()` for the tenant, so a model read it makes is pinned
-  to the write connection, by MFA's path as much as by `laravel-authentication`'s, and is resolved from the container
-  on every call. Whatever it throws propagates.
+- The requirement answers for exactly the tenant asked: the package applies no inheritance down a tenant tree (Decision
+  Q6 (a)), even with the application's tree configured, which reaches SSO's enforcement alone; an application whose
+  requirement passes down its tree works that out itself, and a move it reports
+  (`Iam::treeChanges()->changed($tenantId)`) judges the moved tenant's subtree against what the requirement then answers
+  (Decision Q7, `provisioning-and-tenancy.md`). It is asked inside `WriteConnection::during()` for the tenant, so a
+  model read it makes is pinned to the write connection, by MFA's path as much as by `laravel-authentication`'s, and is
+  resolved from the container on every call. Whatever it throws propagates.
 - `Tenancy\TenantMfaRule(Requirement $requirement, ?string $version = null)` carries `laravel-authentication`'s
   requirement and a version of 1 to 64 characters (`TenantRequirement::VERSION_MAX_LENGTH`, counted as
   `laravel-authentication` counts them) or none; `none()` requires nothing.
@@ -110,15 +113,18 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
 3. A refresh of that session: the policy reads the rule, its connections and the session's recorded connection, and
    answers as before; `laravel-authentication` judges the session and keeps it.
 4. An enforcement change (`EnforcementService::update()`): SSO calls the session revocation inside its transaction,
-   which calls `tenantPolicyChanged($tenant)` (IAM-4.4); `laravel-authentication` locks the tenant's sessions committed
-   by then and asks the policy for each. A session through a satisfying connection meets it, an exempt identity's
-   session is answered with no connection (and its exemption reported once the change commits), and every other
-   active session it locked is revoked in the change's transaction, whatever any setting says. Once the change
+   which calls `tenantPolicyChanged($tenant)` (IAM-4.4) for the enforcing tenant and, with the application's tenant tree
+   configured, for every tenant below it (`provisioning-and-tenancy.md`), whose policy SSO's enforcement inheritance
+   answers from the nearest tenant up that has a rule, on or off; `laravel-authentication` locks the tenant's sessions
+   committed by then and asks the policy for each. A session through a satisfying connection meets it, an exempt
+   identity's session is answered with no connection (and its exemption reported once the change commits), and every
+   other active session it locked is revoked in the change's transaction, whatever any setting says. Once the change
    commits, the revocation calls `tenantPolicyChanged($tenant)` a second time, as `laravel-authentication` asks for a
    strict cut-off: every session the first pass recorded at the version it answered is skipped, and a session that
    entered the tenant while the first pass ran (a password or passkey sign-in, a switch into the tenant, a sign-in
    through another tenant's connection, none of which takes SSO's lock of the rule) is judged and, falling short,
-   revoked (`sso-redemption-and-revocation.md`). Both passes go through `Tenancy\TenantPolicyChanges::changed()`. The
+   revoked (`sso-redemption-and-revocation.md`). Both passes go through `Tenancy\SubtreePolicyChanges::changed()`,
+   whose pass after the commit lists the enforcing tenant's subtree again (`provisioning-and-tenancy.md`). The
    second pass runs only once every callback queued on the change's transaction has run, so SSO reports the change
    (`EnforcementChanged`) once, before it; what the second pass throws propagates from `EnforcementService::update()`
    once the change is durable and reported, its first pass's revocations standing. A commit callback that fails, before
@@ -149,7 +155,10 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
 
 - A password sign-in in an enforcing tenant is refused as `sso_required`, with no session and no pending continuation,
   unless the identity is exempt.
-- Turning a rule off revokes nothing: SSO calls no revocation then, and the policy answers no connection.
+- Turning a rule off revokes nothing: SSO calls no revocation then, and the policy answers no connection. With the
+  application's tenant tree configured this still holds: a rule turned off is still its tenant's rule, so the tenant and
+  every tenant inheriting from it stay on it, never moving onto a stricter ancestor's rule
+  (`provisioning-and-tenancy.md`).
 - An exemption withdrawn, or a requirement changed, without a report leaves the sessions in the tenant standing: bearer
   requests never recheck the tenant's policy, so they keep acting on their access tokens until those expire, and are
   refused only at their next refresh. Nothing in SSO or this package starts that judgement. A report made with one
@@ -202,7 +211,8 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
 ## Implementation Anchors
 
 - `src/Contracts/TenantMfaRequirement.php`; `src/Tenancy/TenantMfaRule.php`: `none()`, `isEmpty()`;
-  `src/Tenancy/TenantMfaRequirements.php`: `ruleFor()`, `isConfigured()`, `isNamed()`, `KEY`; `config/iam.php`:
+  `src/Tenancy/TenantMfaRequirements.php`: `ruleFor()`, `isConfigured()`, `isNamed()`, `KEY`, found through
+  `src/Bindings/ConfiguredImplementations.php`: `find()` (`provisioning-and-tenancy.md`); `config/iam.php`:
   `tenancy.mfa_requirement`.
 - `src/Tenancy/TenantAuthenticationPolicyAdapter.php`: `requirementFor()`; `src/Tenancy/TenantPolicyVersion.php`:
   `of()`; `src/Sso/AdmittedRedemptions.php`: `connectionFor()`, `clientFor()`, `record()`;
@@ -299,7 +309,7 @@ Update this note when:
 - SSO changes `Enforcement::policy()`, `EnforcementPolicy`, its version's meaning or `ExemptionGate::admit()`, or
   starts versioning or watching exemptions (the application's obligation to report a changed exemption then goes);
 - MFA changes `TenantRequirement` or ships a kit for another seam here;
-- the application's tenant tree arrives (M6) and a tree move reports a policy change (`TenantPolicyChanges`) for the
-  moved subtree
-  (Decision Q7), or inheritance of a requirement down the tree is decided otherwise than Q6 (a);
+- a reported tree move (`Iam::treeChanges()`, `provisioning-and-tenancy.md`) stops judging the moved tenant's whole
+  subtree through `SubtreePolicyChanges` while SSO's enforcement or a requirement is on (Decision Q7), or inheritance of
+  a requirement down the tree is decided otherwise than Q6 (a);
 - the checks (M8) read the binding's mandate.

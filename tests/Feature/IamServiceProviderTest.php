@@ -41,7 +41,9 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
+use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Transactions\CommittedWork;
 use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
@@ -51,7 +53,11 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
+use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
+use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
+use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
+use SineMacula\Laravel\Sso\Contracts\TenantMembership;
 use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
@@ -164,6 +170,30 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertNotSame($callers, $app->make(FactorCodeCallers::class));
         self::assertNull($app->make(FactorCodeCallers::class)->of($binding));
+    }
+
+    /**
+     * The grant half of SSO's principal scope is this package's
+     * `UnknownGrantScope`, one shared instance, while nothing else is bound to
+     * it, and an instance bound once the package has registered is kept.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheGrantScopeIsUnknownUntilSomethingElseIsBound(): void
+    {
+        $app   = $this->application();
+        $scope = $app->make(GrantScope::class);
+
+        self::assertInstanceOf(UnknownGrantScope::class, $scope);
+        self::assertSame($scope, $app->make(GrantScope::class));
+
+        $bound = new UnknownGrantScope;
+
+        $app->instance(GrantScope::class, $bound);
+
+        self::assertSame($bound, $app->make(GrantScope::class));
     }
 
     /**
@@ -527,8 +557,10 @@ final class IamServiceProviderTest extends TestCase
      * bound every capability's seams over the members' defaults, MFA's, the
      * passkey factor gate, its context's and SSO's, and kept none, the
      * application binding nothing of its own, offering no passkeys, naming no
-     * gateway and leaving SSO's evidence off, so MFA keeps its own challenge
-     * gateway and its own passkey gateway, and SSO its own evidence policy.
+     * gateway, no memberships and no tree, and leaving SSO's evidence off, so
+     * MFA keeps its own challenge gateway and its own passkey gateway, and SSO
+     * its own evidence policy, tenant membership, link eligibility, principal
+     * scope and enforcement inheritance.
      *
      * @return void
      *
@@ -540,7 +572,8 @@ final class IamServiceProviderTest extends TestCase
         $mfa     = (new MfaSeams(new DeliverySeams(new Container)))->seams(new Repository);
         $sso     = [...(new SsoSeams)->seams(new Repository), ...(new TenancySeams(new Container))->seams(new Repository)];
         $rows    = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository), ...$sso];
-        $unbound = [ChallengeGateway::class, PasskeyGateway::class, EvidencePolicy::class];
+        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class, EnforcementInheritance::class];
+        $unbound = [ChallengeGateway::class, PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
         $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), $unbound));
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
@@ -677,6 +710,7 @@ final class IamServiceProviderTest extends TestCase
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function testThePackageSettlesOnlyOnce(): void
     {

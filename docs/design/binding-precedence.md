@@ -15,8 +15,9 @@ before that member has merged it, and why the storage connection alone still wai
   `Bindings\Contracts\ProvidesSeams`, named in `IamServiceProvider::seamProviders()`, and one `Bindings\BindingRule`
   collects every capability's rows (`apply()`) and applies them all. Nothing else in the package binds over a member.
   M1 lists no capability: it ships the rule, and each later milestone adds its rows.
-- The rule runs once, in `IamServiceProvider::register()` (`registerSeams()`), whenever the provider registers: with
-  the other package providers, while the application boots, or after it has booted.
+- The rule runs over every row once, in `IamServiceProvider::register()` (`registerSeams()`), whenever the provider
+  registers: with the other package providers, while the application boots, or after it has booted. Only the tenancy
+  rows that pass left open are applied once more, from the booting phase (below).
 - Every member binds its defaults only where nothing is bound yet, with `bindIf()`, `singletonIf()` or `scopedIf()`
   (`laravel-mfa` since laravel-mfa#92, IAM-13.11), so the order the providers register in decides nothing:
   - A member that registers before this package has bound its default by then; the rule recognises it from the
@@ -89,9 +90,25 @@ before that member has merged it, and why the storage connection alone still wai
   `IamServiceProvider::registerSeams()` keeps in the container for `iam:check` to report (M8). It records the rule's
   own decision as it ran; a binding made afterwards replaces the adapter without changing it, so the check reads the
   live binding of each mandatory seam as well.
-- One step still waits for the booting phase: the storage connection (`storage-and-transactions.md`). It is not there
-  for any member's bindings (the callback that once applied the rule there, while `laravel-mfa` still bound its
-  defaults unconditionally, is gone), and nothing in it binds anything. It stays for reasons of its own:
+- The rule is applied once more from the booting phase, to the rows the first pass left open and only those
+  (`BindingRule::applyAgain()`, from `IamServiceProvider::settle()`): the tenancy rows `Tenancy\TenancySeams` declares
+  over SSO's `TenantMembership`, `LinkEligibility`, `PrincipalScope` and `EnforcementInheritance`
+  (`provisioning-and-tenancy.md`), whose switch reads the container as well as the configuration. Memberships or a
+  tenant tree an application binds in its own provider's `register()`, which Laravel runs after the packages', are there
+  only then, so the callback binds the adapters they answer over SSO's defaults, and an application's own binding of
+  SSO's seam made by then is kept; the outcome kept for the checks gains them. A seam the first pass bound or kept is
+  not decided again. Because a class-string binding to SSO's default class made by the application reads, by its class,
+  exactly as SSO's own, the first pass reserves each of these rows it leaves off (`BindingRule::reserve()`): the exact
+  closure the seam holds for SSO's default is recorded in the outcome, and where SSO has not registered yet, SSO's
+  default is bound there first, shared, as SSO's `singletonIf()` would bind it, which SSO's own binding then leaves.
+  Applied again, the rule binds over a seam only while it holds exactly that closure (`MemberDefaults::bindingOf()`);
+  one bound over since, whatever its class, is the application's and is kept. It runs only while `iam.adapters.sso` was
+  on when the rule first read it, and the rows follow the switch as it read then, so a value a later provider writes
+  still comes too late, off as much as on, and SSO's seams and these rows are bound together or not at all. Nothing else
+  is bound from the booting phase: the callback that once applied the whole rule there, while `laravel-mfa` still bound
+  its defaults unconditionally, is gone.
+- One more step waits for the booting phase: the storage connection (`storage-and-transactions.md`), which binds
+  nothing. It stays for reasons of its own:
   - A member key is written, unlike a switch, which is only read, and it can be written only once the member has merged
     its configuration: a key written before would make the member's `mergeConfigFrom()` keep the application's
     `storage` block whole, dropping the member's other storage keys and their environment values. A member that
@@ -117,6 +134,9 @@ before that member has merged it, and why the storage connection alone still wai
   unbound, leave it in place.
 - An application binds a seam in a provider that registers before this package's: the rule finds the application's
   binding and keeps it, and the members leave it in place.
+- An application binds its memberships or tenant tree in a `register()` of its own, with `iam.adapters.sso` on as
+  this package registered: the booting callback applies the tenancy rows again and binds SSO's tenancy adapters over
+  SSO's defaults; a binding of SSO's seam it made there too is kept.
 - An application binds a seam in a `boot()`: the binding lands after the rule and replaces the adapter.
 - An application aliases a seam or binds an instance: before this package registers, it is kept; after, it wins.
 - A provider that registers this package while the application boots, or after it has booted, gets the same rule as
@@ -162,10 +182,12 @@ before that member has merged it, and why the storage connection alone still wai
 ## Implementation Anchors
 
 - `src/IamServiceProvider.php`: `register()`, `registerSeams()`, `seamProviders()`; `registerStorageCheck()`,
-  `settle()`, `checkStorage()` and `boot()` for the storage step that waits for the booting phase and runs again once
-  the application has booted.
-- `src/Bindings/BindingRule.php`: `apply()`, `switches()`, `MEMBER_CONFIGURATION`; `src/Bindings/MemberDefaults.php`:
-  `isReplaceable()`.
+  `settle()` (which also applies the tenancy rows again, with the SSO switch as it read in `registerSeams()`),
+  `checkStorage()` and `boot()` for the storage step that waits for the booting phase and runs again once the
+  application has booted.
+- `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `switches()`, `MEMBER_CONFIGURATION`;
+  `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `bindingOf()`; `src/Tenancy/TenancySeams.php` for the rows
+  applied again.
 - `src/Bindings/SeamBinding.php`, `src/Bindings/Enums/Lifetime.php`, `src/Bindings/BindingOutcome.php`,
   `src/Bindings/Contracts/ProvidesSeams.php`.
 - `benchmarks/Bindings/BindingRuleBench.php`: the rule over a 40-seam table on the members' real binding table, binding
@@ -198,7 +220,17 @@ before that member has merged it, and why the storage connection alone still wai
   `testAMembersSwitchTheApplicationsConfigurationTurnsOffBindsNothingInEveryProviderOrder`,
   `testTheSwitchesReadEveryMembersConfigurationAsTheBootedApplicationHoldsIt` (each in every provider order, the
   first, second and fourth with the configuration cached too), `testACachedConfigurationIsReadAsItIs`,
-  `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`
+  `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`,
+  `testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen`, `testReservingRecordsTheMembersDefaultEachSeamHolds`,
+  `testABindingMadeOverAReservedSeamIsKept`
+- `tests/Feature/Tenancy/TenancySeamsTest.php` (the rows applied again from the booting phase, by register order)
+  `testMembershipsAndATreeBoundAfterRegisteringBindTheAdapters`,
+  `testAnApplicationProviderBindingTenancyWhileRegisteringBindsTheAdapters`,
+  `testAnApplicationsOwnBindingMadeAfterRegisteringIsKept`,
+  `testAnApplicationsBindingOfSsosDefaultClassMadeWithItsTenancyIsKept`,
+  `testMembershipsAndATreeBoundWhileBootingBindNothing`,
+  `testWithTheSsoSwitchOffTenancyBoundLaterBindsNothing`, `testTheSsoSwitchTurnedOnAfterRegisteringBindsNoTenancy`,
+  `testTheSsoSwitchTurnedOffAfterRegisteringStillBindsTheTenancy`
 - `tests/Feature/IamServiceProviderTest.php` `testTheBindingRuleAppliesAsThePackageRegisters`,
   `testThePackageSettlesBeforeAnyProviderBoots`, `testARegistrationWhileTheApplicationBootsAppliesTheBindingRule`,
   `testALateRegistrationSettlesAtOnceAndLeavesNoBootingCallback`, `testThePackageSettlesOnlyOnce`,

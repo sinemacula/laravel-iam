@@ -17,6 +17,7 @@ use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\IamServiceProvider;
@@ -439,6 +440,114 @@ final class BindingRuleTest extends TestCase
         $this->assertResolvesTo(Adapter::class, PlainSeam::class);
         $this->assertResolvesTo(ApplicationImplementation::class, TransientSeam::class, SharedSeam::class, ScopedSeam::class, ClosureSeam::class, FeatureSeam::class);
         $this->assertOutcome([PlainSeam::class], [TransientSeam::class, SharedSeam::class, ScopedSeam::class, ClosureSeam::class, FeatureSeam::class]);
+    }
+
+    /**
+     * Applied again once every provider has registered, the rule binds or keeps
+     * only the seams the outcome given lists neither as bound nor as kept: it
+     * binds over a seam that still holds the member's default it reserved, and
+     * keeps one it never reserved, the application's; a seam switched off is
+     * left with the member's default reserved there. It answers the outcome
+     * with them added, and with nothing left to decide the same outcome.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen(): void
+    {
+        $app  = $this->application();
+        $kept = new ApplicationImplementation;
+
+        $app->instance(ScopedSeam::class, $kept);
+
+        $capability = self::fiveSeams(static fn (): bool => false);
+        $rule       = $app->make(BindingRule::class);
+        $reserved   = $rule->reserve($app, new BindingOutcome([SharedSeam::class], [TransientSeam::class]), $capability);
+        $outcome    = $rule->applyAgain($app, $reserved, $capability);
+
+        self::assertSame([SharedSeam::class, PlainSeam::class], $outcome->bound);
+        self::assertSame([TransientSeam::class, ScopedSeam::class], $outcome->kept);
+        self::assertSame($reserved->reserved, $outcome->reserved);
+        self::assertInstanceOf(Adapter::class, $app->make(PlainSeam::class));
+        self::assertSame($kept, $app->make(ScopedSeam::class));
+        self::assertFalse($app->bound(SharedSeam::class));
+        self::assertFalse($app->bound(TransientSeam::class));
+        self::assertInstanceOf(MemberDefault::class, $app->make(ClosureSeam::class));
+        self::assertSame($outcome, $rule->applyAgain($app, $outcome, $capability));
+    }
+
+    /**
+     * The rule reserves each seam the outcome left open that is unbound or
+     * bound to the member's default, recording the exact binding it holds: the
+     * member's default it binds there, shared, where the seam is unbound, which
+     * the member's own `*If()` binding then leaves, or the member's own
+     * binding. A seam bound to anything else, or with no member default to
+     * bind, is not reserved, and reserving again changes nothing.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testReservingRecordsTheMembersDefaultEachSeamHolds(): void
+    {
+        $app = $this->application();
+
+        $app->singleton(SharedSeam::class, MemberDefault::class);
+        $app->bind(TransientSeam::class, ApplicationImplementation::class);
+
+        $member     = $app->getBindings()[SharedSeam::class]['concrete'];
+        $capability = self::fiveSeams(static fn (): bool => true, []);
+        $rule       = $app->make(BindingRule::class);
+        $outcome    = $rule->reserve($app, new BindingOutcome([], []), $capability);
+
+        self::assertSame([SharedSeam::class, PlainSeam::class, ClosureSeam::class], array_keys($outcome->reserved));
+        self::assertSame($member, $outcome->reserved[SharedSeam::class]);
+        self::assertSame([], $outcome->bound);
+        self::assertSame([], $outcome->kept);
+        self::assertFalse($app->bound(ScopedSeam::class));
+
+        $app->singletonIf(PlainSeam::class, ApplicationImplementation::class);
+
+        self::assertInstanceOf(MemberDefault::class, $app->make(PlainSeam::class));
+        self::assertSame($app->make(PlainSeam::class), $app->make(PlainSeam::class));
+        self::assertSame($outcome, $rule->reserve($app, $outcome, $capability));
+    }
+
+    /**
+     * Anything bound over a reserved seam before the rule is applied again is
+     * the application's and is kept, even a binding of the member's own default
+     * class, which by its class alone reads as the member's; so is a reserved
+     * seam whose default something has resolved and holds. A seam still holding
+     * its reserved binding is bound over.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testABindingMadeOverAReservedSeamIsKept(): void
+    {
+        $app        = $this->application();
+        $capability = self::fiveSeams(static fn (): bool => true);
+        $rule       = $app->make(BindingRule::class);
+        $outcome    = $rule->reserve($app, new BindingOutcome([], []), $capability);
+        $resolved   = $app->make(TransientSeam::class);
+
+        $app->singleton(SharedSeam::class, MemberDefault::class);
+        $app->bind(ClosureSeam::class, static fn (): ApplicationImplementation => new ApplicationImplementation);
+
+        $outcome = $rule->applyAgain($app, $outcome, $capability);
+
+        self::assertSame([ScopedSeam::class, PlainSeam::class], $outcome->bound);
+        self::assertSame([SharedSeam::class, TransientSeam::class, ClosureSeam::class], $outcome->kept);
+        self::assertInstanceOf(MemberDefault::class, $app->make(SharedSeam::class));
+        self::assertSame($resolved, $app->make(TransientSeam::class));
+        self::assertInstanceOf(ApplicationImplementation::class, $app->make(ClosureSeam::class));
+        self::assertInstanceOf(Adapter::class, $app->make(ScopedSeam::class));
+        self::assertInstanceOf(Adapter::class, $app->make(PlainSeam::class));
     }
 
     /**
@@ -1001,6 +1110,53 @@ final class BindingRuleTest extends TestCase
         $this->bootInOrder($providers);
 
         self::assertTrue($this->application()->configurationIsCached());
+    }
+
+    /**
+     * A capability declaring five fixture seams, each over the member's default
+     * given (`MemberDefault` unless another list is given), the last switched
+     * as given.
+     *
+     * @param  \Closure(): bool  $closureSeamOn
+     * @param  ?list<class-string>  $scopedDefaults
+     * @return \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams
+     */
+    private static function fiveSeams(\Closure $closureSeamOn, ?array $scopedDefaults = null): ProvidesSeams
+    {
+        return new readonly class ($closureSeamOn, $scopedDefaults ?? [MemberDefault::class]) implements ProvidesSeams {
+            /**
+             * Constructor.
+             *
+             * @param  \Closure(): bool  $closureSeamOn
+             * @param  list<class-string>  $scopedDefaults
+             */
+            public function __construct(
+
+                /** The switch of the closure seam's binding. */
+                private \Closure $closureSeamOn,
+
+                /** The scoped seam's member defaults. */
+                private array $scopedDefaults,
+            ) {}
+
+            /**
+             * Five seams over the member's default.
+             *
+             * @param  \Illuminate\Contracts\Config\Repository  $config
+             * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
+             */
+            #[\Override]
+            public function seams(Repository $config): array
+            {
+                return [
+                    new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class]),
+                    new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class]),
+                    new SeamBinding(ScopedSeam::class, Adapter::class, $this->scopedDefaults),
+                    new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class]),
+                    new SeamBinding(ClosureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: $this->closureSeamOn),
+                ];
+            }
+        };
     }
 
     /**

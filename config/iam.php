@@ -77,6 +77,12 @@ return [
     | bound, since `laravel-authentication`'s default requires nothing of any
     | tenant, so no enforcement and no requirement would reach a session.
     |
+    | While `sso` is on and the application names its memberships
+    | (`tenancy.memberships`), the package binds SSO's tenant membership, its
+    | link eligibility and its principal scope, answered from them; while it
+    | names a tenant tree (`tenancy.tree`), SSO's enforcement inheritance,
+    | answered from the tree. Without them SSO's defaults stay, and refuse.
+    |
     */
 
     'adapters' => [
@@ -124,10 +130,85 @@ return [
     | exemption's sessions would otherwise keep acting in the tenant on their
     | access tokens until those expire.
     |
+    | `memberships` names the application's memberships, a class implementing
+    | `SineMacula\Laravel\Iam\Contracts\Memberships`: every tenant an
+    | identity is a current member of, a platform principal among them, and
+    | when the person, never an administrator, accepted each, or the set marked
+    | incomplete when it cannot all be read. While `adapters.sso` is on, the
+    | package answers SSO's tenant membership, its link eligibility (a `link`
+    | only by an accepted membership of the connection's tenant) and the
+    | membership half of its principal scope from it. The grant half waits for
+    | `laravel-authorization`'s grant scope query, so until then the principal
+    | scope is never `within_tenant` and SSO links nobody by a verified
+    | domain; a complete set reaching beyond the tenant is `outside_tenant`,
+    | which suspends a verified domain link for good. Name none and SSO's
+    | defaults stay: no membership, no `link`, no linking by a domain.
+    |
+    | `tree` names the application's tenant tree, a class implementing
+    | `SineMacula\Laravel\Iam\Contracts\TenantTree`. While `adapters.sso` is
+    | on, a tenant inherits SSO's enforcement from the nearest tenant, from
+    | itself up through its ancestors, that has a rule stored, on or off: a
+    | rule turned off keeps its tenant, and every tenant inheriting from it,
+    | out of an ancestor's rule, so turning one off only loosens, and an
+    | enforcement change judges the sessions of the enforcing tenant and
+    | every tenant below it. Report every move of a tenant inside the transaction that
+    | writes it, after the write, and a removal as the move of each child moved
+    | out from under the removed tenant:
+    | `Iam::treeChanges()->changed($tenantId)` judges the sessions of that
+    | tenant and every tenant below it while SSO's enforcement or a tenant MFA
+    | requirement is on. Name none and every tenant stands alone.
+    |
+    | Either bound in the container counts as named when it is bound by the
+    | time every service provider has registered (in a provider's
+    | `register()`, the application's own included); one bound from a
+    | provider's `boot()` is still the one asked, but binds no adapter. Any
+    | value that is no class name (true, false, a number) fails closed.
+    |
     */
 
     'tenancy' => [
         'mfa_requirement' => null,
+        'memberships'     => null,
+        'tree'            => null,
+    ],
+
+    /*
+    |---------------------------------------------------------------------------
+    | Provisioning
+    |---------------------------------------------------------------------------
+    |
+    | `provisioner` names the application's provisioner, a class implementing
+    | `SineMacula\Laravel\Iam\Contracts\Provisioner`: what a person who signs
+    | in through an SSO connection for the first time is made into, a new
+    | identity and its membership of the connection's tenant. A provisioner
+    | bound in the container counts as named, whenever it is bound. Name none
+    | (leave it null) and provisioning is off: a `sign_in` that resolves to no
+    | identity ends as SSO's `unlinked`. Any value that is no class name (true,
+    | false, a number) fails closed.
+    |
+    | The package's one listener of SSO's `ResultUnlinked` asks it, only for a
+    | result that resolved to no identity and holds no reservation, never for
+    | `laravel-authentication`'s informational `ExternalResultUnlinked`. In
+    | one transaction on the storage connection, attempted once, it creates
+    | the identity (always a new one, inserted then, never one found by an
+    | email address or any other attribute), reports the new principal
+    | through SSO's scope widening, creates the membership, and links the
+    | result to the identity through SSO's provisioning helper. A refusal from
+    | the helper, or anything thrown, rolls all three back; once it commits,
+    | they stay made even if the sign-in then fails, and the next sign-in
+    | resolves through the link. Register no provisioning listener of your
+    | own beside it: every listener shares SSO's one grant.
+    |
+    | Any other change that gives a person a principal (a membership created
+    | or accepted, a platform principal created) reports it first, inside its
+    | own transaction on the storage connection, before it writes the
+    | principal: `Iam::scopeWidenings()->widen($identity, $tenantId, $client)`,
+    | with `null` for a platform principal.
+    |
+    */
+
+    'provisioning' => [
+        'provisioner' => null,
     ],
 
     /*

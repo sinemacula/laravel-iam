@@ -57,6 +57,16 @@ The current note set is:
   changed requirement reach existing sessions; the testing kit and fake for the application's requirement; and the gaps
   in the members the adapters work around.
 
+- `provisioning-and-tenancy.md`: the application's provisioner and the one listener of SSO's unlinked result that
+  provisions a new identity, its membership and its link in one transaction attempted once, reading committed rows on
+  PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
+  rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
+  its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
+  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half stays unknown
+  until `laravel-authorization` answers it) and enforcement inheritance; how an enforcement change and a reported move
+  of a tenant judge its whole subtree, a broken tree refused; the testing kits and fakes for the application's
+  contracts; and the gaps in the members the adapters work around.
+
 A note is added here with the code it describes.
 
 These documents are secondary to the code and tests, not a replacement for them. If a note and a cited test disagree,
