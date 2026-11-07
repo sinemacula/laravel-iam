@@ -158,4 +158,19 @@ final class UnresolvedReferenceException extends \RuntimeException
 
         return new self(sprintf($message, $tenantId), ReferenceKind::TENANT);
     }
+
+    /**
+     * Build an exception for a tenant `laravel-authentication` asks about whose
+     * identifier is neither a non-empty string nor an integer, so it cannot be
+     * named to the member that answers for it.
+     *
+     * @return self
+     */
+    public static function forTenantIdentifier(): self
+    {
+        $message = 'The tenant cannot be named by its identifier: a tenant\'s identifier must be a non-empty string or an integer,'
+            . ' so its authentication policy can be asked; the session is refused rather than judged against no policy.';
+
+        return new self($message, ReferenceKind::TENANT);
+    }
 }

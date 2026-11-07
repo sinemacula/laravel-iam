@@ -5,11 +5,16 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam;
 
 use Illuminate\Config\Repository as ConfigRepository;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionCommitting;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
@@ -19,21 +24,28 @@ use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
+use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
+use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
+use SineMacula\Laravel\Iam\Transactions\CommittedWork;
 use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
  * records SSO's redemptions keep for one request, the storage connection's
  * alignment, the seam bindings, the storage check's booting and booted
- * callbacks, the listener counting outermost commits, the worker reset
- * listeners and the publishing tag.
+ * callbacks, the `sso` authentication context contributor, the listeners
+ * counting outermost commits and releasing the work held for a commit to
+ * finish, the worker reset listeners and the publishing tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -106,6 +118,9 @@ final class IamServiceProvider extends ServiceProvider
     /** @var bool Whether the storage connections have been settled, and their check once the application has booted queued. */
     private bool $settled = false;
 
+    /** @var bool Whether the SSO capability's switch was on when the binding rule read it, which the `sso` contributor's registration follows. */
+    private bool $ssoOn = false;
+
     /**
      * Register the configuration and the manager, write the shared storage
      * connection into every member key that is unset and whose member has
@@ -137,8 +152,10 @@ final class IamServiceProvider extends ServiceProvider
     /**
      * Settle the storage connections if the booting phase passed before this
      * provider registered (it was registered while the application booted, or
-     * after), then bootstrap the listener counting outermost commits, the
-     * worker reset listeners and the publishing tag.
+     * after), then queue the `sso` authentication context contributor's
+     * registration for when every provider has booted, and bootstrap the
+     * listeners counting outermost commits and releasing the work held for a
+     * commit to finish, the worker reset listeners and the publishing tag.
      *
      * @return void
      *
@@ -146,23 +163,26 @@ final class IamServiceProvider extends ServiceProvider
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
+     * @throws \LogicException
      */
     public function boot(): void
     {
         $this->settle();
-        $this->registerCommitCounting();
+        $this->registerContextContributors();
+        $this->registerCommitListeners();
         $this->registerListeners();
         $this->registerPublishing();
     }
 
     /**
-     * Register the `iam` manager singleton behind the facade.
+     * Register the `iam` manager singleton behind the facade, which resolves
+     * every service from the application current when it is called.
      *
      * @return void
      */
     protected function registerManager(): void
     {
-        $this->app->singleton('iam', static fn (Application $app): IamManager => new IamManager($app));
+        $this->app->singleton('iam', static fn (): IamManager => new IamManager);
         $this->app->alias('iam', IamManager::class);
     }
 
@@ -189,19 +209,21 @@ final class IamServiceProvider extends ServiceProvider
      * Register the records SSO's redemptions keep for one request: the
      * redemption admitted, which `laravel-authentication`'s external identity
      * links contract answers from, the renewal a re-authentication records
-     * before its one write, and the outermost commits each connection has
-     * begun, which a standalone `link` reads to tell whether its attempt
-     * reached its commit before it failed. Each is scoped, so it is one
-     * request's or one job's alone (IAM-8.1), under this package's own key for
-     * its scoped adapters, which `Iam::resetWorkerState()` forgets as it
-     * forgets every other one, and resolved through that key, so the explicit
-     * reset never leaves a record held where something still resolves it.
+     * before its one write, the outermost commits each connection has begun,
+     * which a standalone `link` reads to tell whether its attempt reached its
+     * commit before it failed, and the caller of the `link` redemption running,
+     * whose session SSO's freshness contract judges, and the work held until a
+     * connection's commit has finished. Each is scoped, so it is one request's
+     * or one job's alone (IAM-8.1), under this package's own key for its scoped
+     * adapters, which `Iam::resetWorkerState()` forgets as it forgets every
+     * other one, and resolved through that key, so the explicit reset never
+     * leaves a record held where something still resolves it.
      *
      * @return void
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, OutermostCommits::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, OutermostCommits::class, LinkCallers::class, CommittedWork::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 
@@ -211,13 +233,45 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
+     * Register this package's contributor of the `sso` namespace with
+     * `laravel-authentication`'s authentication context, once, while the SSO
+     * capability's switch is on (IAM-4.8), as the binding rule read it when
+     * this package registered, so the contributor and the capability's adapters
+     * are bound together or not at all, whatever a later provider writes to the
+     * switch, from a `booted()` callback, which runs once every provider has
+     * booted (at once when the application already has).
+     * `laravel-authentication` asks for a registration from `boot()`, and a
+     * member may be registered from another provider's `boot()`, after this
+     * package's has run: its provider binds its contributors only then, so a
+     * registration made from this package's `boot()` would go to an instance
+     * nobody keeps and be lost without a word. A contributor the application
+     * registered under `sso` before the application finished booting, from any
+     * provider's `boot()`, is kept, as an application's binding of a seam is
+     * (IAM-8.4); one it registers once the application has booted is
+     * `laravel-authentication`'s `LogicException`, since a namespace is taken
+     * once.
+     *
+     * @return void
+     */
+    protected function registerContextContributors(): void
+    {
+        $this->app->booted(function (): void {
+
+            $this->registerSsoContributor();
+        });
+    }
+
+    /**
      * Apply the binding rule to every capability's seam bindings, and keep its
-     * outcome for the checks.
+     * outcome for the checks, and whether the SSO capability's switch was on
+     * for the `sso` contributor's registration.
      *
      * The rule reads the bindings and their switches from the configuration
      * every member will hold once registered, whichever of them has not
      * registered yet, so every provider order, and a cached configuration, bind
-     * the same.
+     * the same. The switch is this package's own, merged before the rule runs,
+     * so it reads the same here as the rule reads it: a value a later provider
+     * writes comes too late for either.
      *
      * @return void
      *
@@ -230,6 +284,8 @@ final class IamServiceProvider extends ServiceProvider
         $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), self::seamProviders());
 
         $app->instance(BindingOutcome::class, $app->make(BindingRule::class)->apply($app, ...$capabilities));
+
+        $this->ssoOn = SsoSeams::isOn($app->make(ConfigRepository::class));
     }
 
     /**
@@ -278,15 +334,42 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Count every outermost commit a connection begins, in this request's or
-     * this job's record (`OutermostCommits`), resolved on each event. It is
-     * always on, whatever the worker reset's switch: a standalone `link` is
-     * never run again once its attempt has reached its commit.
+     * this job's record (`OutermostCommits`), release the work held until a
+     * connection's commit has finished, every callback queued on it run
+     * (`AfterConnectionCommits::committed()`), and release what a commit left
+     * held, a commit callback having failed, as the request, the console
+     * command or the queued job ends (`AfterConnectionCommits::settle()`). Each
+     * listener resolves what it calls from the application current when it
+     * runs, never from the events dispatcher's container: under Octane that is
+     * the worker's own application, while the request's records are its
+     * sandbox's. All are always on, whatever the worker reset's switch: a
+     * standalone `link` is never run again once its attempt has reached its
+     * commit, and an enforcement change's or a reported policy change's second
+     * pass waits for the change to commit.
      *
      * @return void
      */
-    protected function registerCommitCounting(): void
+    protected function registerCommitListeners(): void
     {
-        Event::listen(TransactionCommitting::class, [OutermostCommits::class, 'committing']);
+        Event::listen(TransactionCommitting::class, static function (TransactionCommitting $event): void {
+
+            Container::getInstance()->make(OutermostCommits::class)->committing($event);
+        });
+
+        Event::listen(TransactionCommitted::class, static function (TransactionCommitted $event): void {
+
+            Container::getInstance()->make(AfterConnectionCommits::class)->committed($event);
+        });
+
+        Event::listen([JobProcessed::class, JobExceptionOccurred::class], static function (): void {
+
+            self::settleHeldWork();
+        });
+
+        $this->app->terminating(static function (): void {
+
+            self::settleHeldWork();
+        });
     }
 
     /**
@@ -303,6 +386,30 @@ final class IamServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/iam.php' => config_path('iam.php'),
         ], 'iam-config');
+    }
+
+    /**
+     * Register the `sso` contributor while the SSO capability's switch was on
+     * when the binding rule read it and nothing else holds the namespace.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \LogicException
+     */
+    private function registerSsoContributor(): void
+    {
+        if (!$this->ssoOn) {
+            return;
+        }
+
+        $contributors = $this->app->make(ContextContributors::class);
+
+        if (array_key_exists(AuthenticationContext::NAMESPACE, $contributors->registered())) {
+            return;
+        }
+
+        $contributors->register(AuthenticationContext::NAMESPACE, SsoContextContributor::class);
     }
 
     /**
@@ -406,6 +513,19 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
+     * Release the work a commit left held, as a unit of work ends, through the
+     * application current then.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private static function settleHeldWork(): void
+    {
+        Container::getInstance()->make(AfterConnectionCommits::class)->settle();
+    }
+
+    /**
      * Whether the worker reset's switch leaves the reset on, read leniently, as
      * the members read a switch an environment variable fills: `false`, as a
      * boolean or as text, `0`, `off` and `no` turn it off. Anything else leaves
@@ -491,6 +611,7 @@ final class IamServiceProvider extends ServiceProvider
             ContextSeams::class,
             DeliverySeams::class,
             SsoSeams::class,
+            TenancySeams::class,
         ];
     }
 }

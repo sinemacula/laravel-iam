@@ -28,12 +28,14 @@ use SineMacula\Laravel\Mfa\Contracts\Reauthenticator;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Http\MiddlewareSessionTransition;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Proofs\ProofBindings;
 use SineMacula\Laravel\Mfa\Proofs\ProofStoreCompletion;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
+use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
 
 /**
@@ -41,9 +43,11 @@ use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
  * IAM-3.11): requirements, pending sessions and their completion, step-up,
  * reauthentication and freshness, factor changes, revocation, the return to
  * pending, code challenges and their counters, the proof store and the first
- * factor. Passkeys as factors (IAM-3.10) and MFA's context (IAM-3.12) are
- * declared beside them, in `PasskeySeams` and `ContextSeams`, under the same
- * switch.
+ * factor, and MFA's tenant requirement, answered from the application's tenant
+ * MFA requirement (IAM-4.5), the same answer `laravel-authentication`'s tenant
+ * authentication policy is given (`Tenancy\TenancySeams`). Passkeys as factors
+ * (IAM-3.10) and MFA's context (IAM-3.12) are declared beside them, in
+ * `PasskeySeams` and `ContextSeams`, under the same switch.
  *
  * Each adapter replaces the member's own default only; an application's binding
  * is kept (IAM-8.4). MFA's proof store default is bound with a closure its
@@ -117,6 +121,7 @@ final readonly class MfaSeams implements ProvidesSeams
             new SeamBinding(FirstFactorResolver::class, FirstFactorResolverAdapter::class, [DeclaredFirstFactorResolver::class], appliesWhen: $on),
             new SeamBinding(ChallengeGateway::class, ChallengeGatewayAdapter::class, [PackageChallengeGateway::class], appliesWhen: $routed),
             new SeamBinding(FactorCodeCounters::class, FactorCodeCountersAdapter::class, [RefuseFactorCodes::class], appliesWhen: $on),
+            new SeamBinding(TenantRequirement::class, TenantRequirementAdapter::class, [NoTenantRequirement::class], appliesWhen: $on),
         ];
     }
 

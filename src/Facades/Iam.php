@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\Facade;
  * @method static \SineMacula\Laravel\Iam\Sso\SignInRedemption signIns()
  * @method static \SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption reauthentications()
  * @method static \SineMacula\Laravel\Iam\Sso\LinkRedemption links()
+ * @method static \SineMacula\Laravel\Iam\Sso\CallerScope callers()
+ * @method static \SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges tenantPolicies()
  * @method static void resetWorkerState()
  *
  * @phpcs:enable Generic.Files.LineLength.TooLong

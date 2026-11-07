@@ -8,6 +8,15 @@ process calls it.
 
 ## Invariants
 
+- Before `reset()` (or `Iam::resetWorkerState()`) forgets anything, it releases the work this package held for a
+  commit that finished without running it, a commit callback having failed
+  (`Transactions\AfterConnectionCommits::settle()`, a policy change's second pass among it), on every connection with
+  no transaction open, reporting what it throws; the request's or the command's termination and a queued job's end
+  release it the same way (`sso-redemption-and-revocation.md`).
+- The `iam` manager, and this package's commit listeners, resolve every service and record from the application
+  current when they run, never from a container kept since, so a manager resolved in the worker's application before
+  Octane clones it, and the events dispatcher Octane keeps on the worker's application, still reach each request's
+  sandbox and its scoped records.
 - One reset flushes every member's request state, `Workers\WorkerReset::reset()` (or `Iam::resetWorkerState()`), in
   two halves:
   - `forgetMemberState()` resets every `laravel-authentication` guard already resolved to the current request, through
@@ -33,7 +42,8 @@ process calls it.
     `laravel-authorization` keep request state in, listed in `WorkerReset::SCOPED_STATE`. Authorization is installed
     and active from M1, binding its request state with `scoped()`: its `ResolvedTenant` holder, `ResolutionCache`,
     `LastDecisionStore`, `PolicyEvaluator`, `SessionScopes`, `CheckContextFactory`, the `DeclaredAbilities` its Gate
-    hook answers and `authorization` manager, and
+    hook answers, the `SchemaInspector` that reads, once a request or job, the tables and connections its
+    `whereAuthorized()` query scope reads, and its `authorization` manager, and
     every default behind its contracts (its subject resolver, policy store and policy resolver, its tenant tree, its
     check contexts among them) under its own `authorization.default:` keys, which `WorkerReset::isSuiteState()` finds
     by that prefix, so a default authorization adds is forgotten with the rest (the contracts themselves resolve
@@ -156,7 +166,7 @@ process calls it.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
-  `src/IamManager.php`: `resetWorkerState()`;
+  `src/IamManager.php`: `resetWorkerState()`; `src/Transactions/AfterConnectionCommits.php`: `settle()`;
   `config/iam.php`: `workers`.
 
 ## Authoritative Tests
@@ -171,8 +181,10 @@ process calls it.
   `testAnotherSessionStoreIsLeftAlone`
 - `tests/Feature/Workers/WorkerResetTest.php` `testResetForgetsEveryScopedInstanceTheMembersBind` (every scoped
   binding of `laravel-authentication`, `laravel-authorization`, `laravel-mfa`, `laravel-sso` and this package, as the
-  installed members make them), `testResetKeepsEveryOtherScopedInstance` (`laravel-audit-log`'s and Laravel's own)
-- `tests/Feature/IamManagerTest.php` `testResettingTheWorkerStateForgetsTheAuthorizationRequestState`,
+  installed members make them), `testResetKeepsEveryOtherScopedInstance` (`laravel-audit-log`'s and Laravel's own),
+  `testResetRunsTheWorkACommitLeftHeldFirst`
+- `tests/Feature/IamManagerTest.php` `testEachServiceIsResolvedFromTheCurrentApplication`,
+  `testResettingTheWorkerStateForgetsTheAuthorizationRequestState`,
   `testResettingTheWorkerStateForgetsTheDecisionTheAuthorizationFacadeHolds`,
   `testResettingTheWorkerStateByHandKeepsWhatTheCommandHolds`
 - `tests/Feature/Workers/ResetWhenWorkerStartsTest.php` `testTheListenerIsRegisteredByTheEventsName`,

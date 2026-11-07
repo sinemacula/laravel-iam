@@ -46,8 +46,16 @@ The current note set is:
   `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
   connection retried whole and the last through SSO's standalone redemption; which refusals commit and which roll back;
   the records kept for one request and the one renewal a re-authentication writes; how each of SSO's revocation scopes
-  ends exactly its sessions; how identity and tenant references are resolved; SSO's lock order; and the gaps in the
+  ends exactly its sessions; how identity and tenant references are resolved; the provider's evidence through SSO's
+  evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
+  link e-mail matching on verified identifiers and the `sso` context namespace; SSO's lock order; and the gaps in the
   members the adapters work around.
+- `tenant-authentication-policy.md`: the application's one tenant MFA requirement and its rule, routed to MFA's
+  tenant requirement and into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's
+  enforcement, SSO's exemption gate and that requirement together; the version that changes whenever any of them does;
+  when the exemption gate is asked; the reads it makes and the lock it never takes; how an enforcement change and a
+  changed requirement reach existing sessions; the testing kit and fake for the application's requirement; and the gaps
+  in the members the adapters work around.
 
 A note is added here with the code it describes.
 

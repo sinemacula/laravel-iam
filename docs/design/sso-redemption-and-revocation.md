@@ -4,26 +4,41 @@
 
 This note describes how the package joins `laravel-authentication` and `laravel-sso` for redeeming SSO's handoff
 codes (IAM-4.1 sign-in, IAM-4.2 re-authentication, IAM-4.3 links), for ending sessions when SSO changes what they rest
-on (IAM-4.4) and for SSO's own link store (IAM-4.9). It covers the seams `Sso\SsoSeams` binds, the three redemption
-services the application calls, the records they keep for one request, the transaction and the lock order each runs
-in, which refusals commit and which roll back, how SSO's identity and tenant references are resolved, and the gaps in
-the members the adapters work around. The enforcement policy, freshness, link e-mail matching, the `sso` context
-contributor (M5), the tenant tree and scope widening's trigger (M6) and provisioning (M7) come later and are not
-described here; the binding rule that applies every row is in `binding-precedence.md`, and the storage connection and
-retry helper the redemptions run through are in `storage-and-transactions.md`.
+on (IAM-4.4) and for SSO's own link store (IAM-4.9), and how SSO's judgements are answered from
+`laravel-authentication` and `laravel-mfa`: the provider's evidence through two gates (IAM-4.6, IAM-5.1), freshness and
+the application's external sign-in (IAM-4.6), link e-mail matching (IAM-4.7) and the `sso` namespace of the
+authentication context (IAM-4.8). It covers the seams `Sso\SsoSeams` binds, the three redemption services the
+application calls, the records they keep for one request, the transaction and the lock order each runs in, which
+refusals commit and which roll back, how SSO's identity and tenant references are resolved, and the gaps in the members
+the adapters work around. The tenant authentication policy SSO's enforcement is folded into is described in
+`tenant-authentication-policy.md`; link eligibility, tenant membership and principal scope (IAM-7.4, IAM-6.8), the
+tenant tree and scope widening's trigger (M6), provisioning (M7) and link confirmation (M10) are not described here;
+the binding rule that applies every row is in `binding-precedence.md`, and the storage connection and retry helper the
+redemptions run through are in `storage-and-transactions.md`.
 
 ## Invariants
 
 - `Sso\SsoSeams` declares every binding, and the binding rule applies them in `register()`. Each row replaces only its
   member's own default, and a binding the application made before or after the members register is kept (IAM-8.4).
 
-  | Member seam                         | Bound to                          | Member default replaced      | Lifetime  |
-  | ----------------------------------- | --------------------------------- | ---------------------------- | --------- |
-  | SSO `ReauthenticationSessions`      | `ReauthenticationSessionsAdapter` | `NoReauthenticationSessions` | transient |
-  | SSO `SessionRevocation` (mandatory) | `SessionRevocationAdapter`        | `NoSessionRevocation`        | transient |
-  | AUTH `ExternalIdentityLinks`        | `ExternalIdentityLinksAdapter`    | `NoExternalLinks`            | transient |
-  | SSO `Linker`                        | SSO's `Links\LinkStore`           | `NoLinks`                    | scoped    |
-  | SSO `LinkStorage`                   | `BoundLinkStorage`                | none (while unbound)         | scoped    |
+  | Member seam                         | Bound to                          | Member default replaced       | Lifetime  |
+  | ----------------------------------- | --------------------------------- | ----------------------------- | --------- |
+  | SSO `ReauthenticationSessions`      | `ReauthenticationSessionsAdapter` | `NoReauthenticationSessions`  | transient |
+  | SSO `SessionRevocation` (mandatory) | `SessionRevocationAdapter`        | `NoSessionRevocation`         | transient |
+  | AUTH `ExternalIdentityLinks`        | `ExternalIdentityLinksAdapter`    | `NoExternalLinks`             | transient |
+  | SSO `Linker`                        | SSO's `Links\LinkStore`           | `NoLinks`                     | scoped    |
+  | SSO `LinkStorage`                   | `BoundLinkStorage`                | none (while unbound)          | scoped    |
+  | AUTH `ExternalEvidencePolicy`       | `ExternalEvidencePolicyAdapter`   | `InsufficientEvidence`        | transient |
+  | SSO `Freshness`                     | `FreshnessAdapter`                | `RefusingFreshness`           | transient |
+  | SSO `ApplicationPolicy`             | `ApplicationPolicyAdapter`        | `ConfiguredApplicationPolicy` | transient |
+  | SSO `LinkEmailMatcher`              | `LinkEmailMatcherAdapter`         | `NoEmailMatches`              | transient |
+  | SSO `EvidencePolicy` (opt-in)       | SSO's `ConnectionEvidencePolicy`  | `InsufficientEvidence`        | scoped    |
+
+  The `sso` namespace of the authentication context is no seam: `SsoContextContributor` is registered with
+  `laravel-authentication`'s `ContextContributors` under `sso` from a `booted()` callback `IamServiceProvider::boot()`
+  queues, once every provider has booted, under the same switch, as it read when the binding rule ran in
+  `register()`: a later provider that turns the switch over comes too late for the bindings and for the contributor
+  alike, so the two never disagree.
 
 - Session revocation is the one mandatory row (IAM-4.4): left on SSO's default, an enforcement change, a disabled or
   deleted connection, a removed link or a widened scope would leave every session it concerns standing.
@@ -42,6 +57,79 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
   holds the container (the store and its event dispatcher resolve from it), so both are scoped under this package's
   scoped prefix (as SSO's own guide binds the store), forgotten by `Iam::resetWorkerState()`, and a long-lived worker
   never reaches one request's container from another (IAM-8.1), as it would through a shared instance.
+- The provider's evidence passes two gates, and neither is the other (IAM-4.6, IAM-5.1, SSO-8.7):
+  - The first is SSO's evidence contract, asked at redemption. It stays on SSO's default, which accepts nothing, unless
+    `iam.sso.evidence` (`IAM_SSO_EVIDENCE`) is on as well as the capability, read strictly (only `true`, `1`, `on` and
+    `yes`): then it is SSO's own `Evidence\ConnectionEvidencePolicy`, which accepts what each connection's evidence
+    settings list within `sso.linking.evidence_max_age_seconds`, bound scoped as SSO binds it. An evidence policy the
+    application binds is kept either way. Only what it accepted reaches `laravel-authentication`
+    (`ExternalResults`), never the result's raw authentication context.
+  - The second is MFA's combination policy, which `ExternalEvidencePolicyAdapter` asks about the sign-in's first factor
+    as MFA records it: a `first_factor` proof by the `external_provider` method on an `external_provider` channel naming
+    the connection, observing nothing, made at the evidence's time, bound to the identity and the application for the
+    sign-in no session key names (`SignIn::UNNAMED`). MFA's default classifies nothing a provider reports, so by
+    default a provider's `mfa` is never multifactor authentication, an additional verification, a level or phishing
+    resistance; an application trusts a provider by rebinding MFA's combination policy to trust its connection. MFA's
+    proof carries no `amr`, so a rebound policy trusts the connection, never the methods.
+  - `accepts()` counts evidence only as exactly what SSO accepted in the redemption admitted in this request through
+    the subject's connection, for the identity that redemption linked (`AdmittedRedemptions::acceptedEvidence()`: its
+    methods in order, its raw context, and its time as `laravel-authentication` judges it at the subject's time, to the
+    whole second and dated at the subject's time when it is after it), then as MFA's policy finds it credible for the
+    probe requirement. Evidence handed to `laravel-authentication` by any other path, for another identity, of another
+    time, or once the redemption is over, is never accepted, so nothing is recorded.
+  - `meets()` asks MFA's policy for the whole requirement, each part within its maximum age; for a tenant, the
+    connection must also be one the tenant trusts: its own (SSO's connection records its tenant) or one its
+    enforcement on the application names (`Contracts\Enforcement::policy()`), read on the write connection only once
+    MFA's policy has answered met. A requirement that asks for nothing is never met nor accepted for. Neither method
+    locks or writes, so both may be asked under the session's row lock.
+  - A `reauthenticate` redemption records, through `laravel-authentication`, an `external_reauthentication` proof by
+    the `external_provider` method for the `reauthenticate` purpose on a channel naming the connection, which MFA reads
+    as a `first_factor_reauthentication` for its own `reauthenticate` purpose, never as a sign-in's first factor. A
+    `link` redemption records no proof.
+- SSO's freshness (`FreshnessAdapter`, IAM-4.6, SSO-2.12) asks `laravel-authentication`'s freshness policy for the
+  operation SSO names (`sso.link.create` and the rest, valid operation names there) with SSO's maximum age as the
+  caller's requirement (`FreshnessRequirement::within()`), so the stricter of it and whatever the application
+  configures applies. It is `fresh` only when the policy finds a proof that meets it. SSO hands the contract no caller,
+  and the adapter never takes one from the request, the default guard or whoever a guard serves: only a caller handed
+  in as a plain value is judged, kept with its application in `LinkCallers` for SSO's call, the `link` caller while
+  `LinkRedemption` runs, or the caller the application hands in around its own call into SSO with
+  `Iam::callers()->run($application, $caller, $work)` (`CallerScope`), as SSO's management helpers and a `link` flow's
+  start ask freshness. The session judged is the caller's own on its application's guard; a guard that serves another
+  identity, or none, is `stale`. With no caller handed in (a queued job, a console command, any call into SSO the
+  application hands none in around), the answer is `stale`, however fresh the session the request is served with. The
+  policy is asked plainly, never current: SSO asks inside its own transactions, a `link`'s after its link locks and
+  before the application's eligibility and confirmation contracts, whose guards come before the session's row, and a
+  current judgement would lock the session's row there. A plain read is trusted only from a transaction opened after
+  the caller was handed in, such as SSO's own, whose snapshot is no older than the call: a caller handed in while a
+  transaction was already open on the storage connection (a `link` redeemed inside the caller's transaction) is
+  `stale` while a transaction is open, and the policy is not asked, since that snapshot may still count a proof voided
+  or a session revoked before the call.
+- SSO's application policy (`ApplicationPolicyAdapter`, IAM-4.6, SSO-5.1) answers `allowed` exactly when
+  `laravel-authentication`'s application policy lets the guard of the application's name start sessions by the
+  `external_provider` method; SSO's own `external_sign_in` setting is not read. A guard `laravel-authentication` does
+  not know is its `InvalidArgumentException`, which propagates.
+- SSO's link e-mail matcher (`LinkEmailMatcherAdapter`, IAM-4.7, SSO-8.8) puts the asserted e-mail through
+  `laravel-authentication`'s `email` normaliser and nothing more (no subaddress or dot removal, Unicode folding or
+  confusable matching), and searches each identity model a session guard's provider names that reports its
+  identifiers' verification, once each, for that normal form, on the write connection with the model's own query. A
+  row counts only when the identity reports its e-mail verified and the address is the normal form byte for byte. One
+  is `exactly one`, none is `none`, more than one is `ambiguous`; an e-mail the normaliser refuses names nobody without
+  a query. It takes no lock and relies on the application's uniqueness of a verified e-mail (or a guard every writer
+  takes after SSO's locks); the tenant SSO names is link eligibility's to judge (IAM-7.4), not the matcher's.
+- The `sso` namespace (`SsoContextContributor`, IAM-4.8, SSO-9.7): the contributor reads the stored form a sign-in
+  handed `laravel-authentication` as the provider context (`$subject->provenance()?->providerContext?->toArray()`),
+  projects it through SSO's `AuthenticationContext::fromStored()` and answers each key without its `sso.` prefix. No
+  stored form contributes no key; a stored form contributes all twelve, `null` where the sign-in stated nothing. A
+  stored form SSO cannot restore (`UnexpectedValueException`), a provenance `laravel-authentication` cannot read and a
+  database error propagate. It is registered once, while the capability's switch is on as the binding rule read it in
+  `register()` (a value a later provider writes changes neither), from a `booted()` callback,
+  so once every provider has booted (at once when the application already has): a member may be registered from
+  another provider's `boot()`, after this package's has run, and `laravel-authentication` binds its contributors only
+  as its provider registers, so a registration from this package's own `boot()` would go to an instance the container
+  builds and nobody keeps, and be lost without a word. A contributor the application registered under `sso` before
+  the application finished booting, from any provider's `boot()`, is kept, and one registered once it has booted is
+  `laravel-authentication`'s `LogicException`. A re-authentication records no provider context, so it never changes
+  the keys.
 - One core method for each action, taking plain values:
   - `SignInRedemption::redeem(string $application, string $connectionId, string $code, string $verifier,
     SignInContext $context): RedemptionResult|SignInResult`. It takes `laravel-authentication`'s `SignInContext`, not
@@ -61,7 +149,9 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
     and user agent, the two values SSO's carries.
   - The application reaches each service through an accessor of the manager and the facade (`Iam::signIns()`,
     `Iam::reauthentications()`, `Iam::links()`), never through a second method that repeats one's signature. No
-    service, adapter or record reads a request, a cookie, a header, the guard's current user or its current session.
+    service, adapter or record reads a request, a cookie, a header, the guard's current user or its current session,
+    except SSO's freshness contract, which SSO hands no caller at all, and which reads a guard's current session only
+    to judge a caller handed in (below).
 - The application SSO names is the guard of the same name, which must be a declared guard of the `jwt` driver
   (`CurrentSession::sessions()`, `CurrentSession::guard()`); anything else throws `UnresolvedReferenceException(guard)`.
   Every redemption resolves it before SSO is asked, so the code is never touched for an application that is no guard:
@@ -97,7 +187,7 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
     the code replayed, answer a refusal of a link that was made, report a spurious `FlowFailed(replayed)` and spend
     another attempt. Laravel fires `TransactionCommitting` just before it commits an outermost transaction, and this
     package counts each one for the request (`Transactions\OutermostCommits`, listened for in
-    `IamServiceProvider::registerCommitCounting()`); an attempt during which the storage connection's count moved
+    `IamServiceProvider::registerCommitListeners()`); an attempt during which the storage connection's count moved
     rethrows its failure as it was thrown. A commit that itself failed is counted too, which errs on the side of not
     retrying: the caller retries the request.
   - Inside a caller's transaction a `link` runs once, through `CrossMemberTransaction::run()`, in a savepoint of the
@@ -112,12 +202,21 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
     `link` captures neither in any closure.
   - SSO's flow starts and completions are never wrapped in a transaction.
 - Records for one request (IAM-8.1): `AdmittedRedemptions` holds at most one admitted redemption, with the identity and
-  the link SSO resolved, `RenewalRecorder` at most one renewal, and `Transactions\OutermostCommits` the outermost
-  commits each connection has begun. All three are bound scoped under `BindingRule::SCOPED_PREFIX` and resolved
-  through that key (`IamServiceProvider::registerRedemptionRecords()`), so the worker reset forgets them, and every
-  adapter, listener and redemption resolves them from the container on each call. Each redemption forgets the
-  admitted redemption and the renewal as each attempt starts and again as it ends, so a retried attempt never meets a
-  record of one rolled back, and nothing later in the request answers from a redemption that is over.
+  the link SSO resolved and the client SSO was handed for it (which the tenant authentication policy hands SSO's
+  exemption gate while that sign-in or re-authentication is judged, `tenant-authentication-policy.md`),
+  `RenewalRecorder` at most one renewal, `Transactions\OutermostCommits` the outermost commits each connection has
+  begun, `LinkCallers` the caller and application of each `link` redemption or caller scope open, with whether a
+  transaction was already open when it was handed in, opened before SSO is asked and closed once it answers or throws,
+  and `Transactions\CommittedWork` the work held until a connection's commit has finished (an enforcement change's
+  second pass, and a reported policy change's). All five are bound scoped under
+  `BindingRule::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
+  the worker reset forgets them, and every adapter, listener and redemption resolves them from the container on each
+  call. Each commit listener, and the `iam` manager (`IamManager`), resolves what it calls from the application
+  current when it runs (`Container::getInstance()`), never from a container kept since: under Octane the events
+  dispatcher, and the manager when it was resolved before the worker cloned the application, belong to the worker's
+  own application, while each request's records are its sandbox's. Each redemption forgets the admitted redemption
+  and the renewal as each attempt starts and again as it ends, so a retried attempt never meets a record of one rolled
+  back, and nothing later in the request answers from a redemption that is over.
 - A `reauthenticate` code is redeemed through `Iam::reauthentications()` alone. The renewal recorder is open only while
   one of its attempts runs (`RenewalRecorder::open()`, `close()`, which count the openings, so a redemption run while
   another is open in the same container leaves the other open), and a renewal SSO asks for while it is closed, as
@@ -158,7 +257,7 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
 
   | Scope kind (reason)                    | Helper                                      | Switch                     |
   | -------------------------------------- | ------------------------------------------- | -------------------------- |
-  | `tenant` (`enforcement_changed`)       | `tenantPolicyChanged($tenant)`              | none (mandatory)           |
+  | `tenant` (`enforcement_changed`)       | `tenantPolicyChanged($tenant)`, twice       | none (mandatory)           |
   | `connection` (`connection_disabled`)   | `connectionDisabled()`                      | `laravel-authentication`'s |
   | `connection` (`connection_deleted`)    | `connectionDeleted()`                       | `laravel-authentication`'s |
   | `identity_connection` (`link_removed`) | `linkRemoved()`                             | `laravel-authentication`'s |
@@ -166,7 +265,12 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
 
   Each helper runs as a savepoint of SSO's transaction on the shared connection, throws on failure, and reports a
   revocation only once SSO's change commits, so nothing is reported that was not done. A connection scope with any
-  other reason, and a scope missing what its kind names, throws a `LogicException`.
+  other reason, and a scope missing what its kind names, throws a `LogicException`. The tenant scope's helper runs a
+  second time once SSO's transaction commits, as `laravel-authentication` asks for a strict cut-off (Decision, M5:
+  the second pass is held for the storage connection's own transaction and runs once every callback queued on it has
+  run, SSO's report of the change among them, or, when one of those callbacks fails, as the unit of work ends; see
+  Failure / Edge Cases). Both passes go through `Tenancy\TenantPolicyChanges::changed()`, the one path every change of
+  a tenant's policy takes, the application's own reports included (`tenant-authentication-policy.md`).
 - References (IAM-8.2):
   - `IdentityReferences::identity()` maps SSO's `IdentityReference` through the morph map
     (`Relation::getMorphedModel($type) ?? $type`) to an Eloquent model implementing `laravel-authentication`'s
@@ -208,7 +312,8 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
    writes the link in a savepoint of that transaction instead); no session is written.
 4. Revocation: an SSO change (a connection disabled or deleted, a link removed, a scope widened, an enforcement change)
    calls `revoke()` inside its own transaction; the adapter resolves the identity or tenant and ends exactly the
-   sessions the scope names, which commit, or roll back, with SSO's change.
+   sessions the scope names, which commit, or roll back, with SSO's change; an enforcement change's tenant is judged
+   once more when that commits.
 
 ## Failure / Edge Cases
 
@@ -239,13 +344,56 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
 - An identity reference SSO hands a revocation or a standing that names nobody throws, and rolls SSO's change or the
   redemption back: a link whose identity was deleted is kept rather than removed with its sessions standing.
 - With `laravel-authentication`'s default `ResolveNoTenant`, every enforcement change throws until the application
-  binds a tenant resolver. Until a `TenantAuthenticationPolicy` is bound (M5), `tenantPolicyChanged()` revokes nothing.
+  binds a tenant resolver. `tenantPolicyChanged()` judges every session acting in the tenant against the tenant
+  authentication policy this package binds (`tenant-authentication-policy.md`), SSO's enforcement as it now answers
+  folded in with its exemption gate and the application's tenant MFA requirement: a session through a satisfying
+  connection, or an exempt identity's, stays, and every other active one the first pass locks is revoked in SSO's
+  transaction. Those are the sessions committed when it reads them: a password or passkey sign-in, a switch into the
+  tenant, or a sign-in through another tenant's connection takes no lock of SSO's rule, so one that judged the policy
+  before the change and commits its session while the change runs is not among them (on MySQL at REPEATABLE READ the
+  first pass's gap lock holds its write until the change commits). So the adapter, through
+  `Tenancy\TenantPolicyChanges`, holds a second `tenantPolicyChanged()` for the storage connection
+  (`Transactions\AfterConnectionCommits`, for that connection's own innermost transaction, never another
+  connection's), which runs once the outermost transaction there commits, for the tenant resolved for the first, skips
+  every session the first pass recorded at the version it answered, and revokes the sessions that entered the tenant
+  meanwhile; a rollback callback of the transaction it was queued in drops it when the change rolls back. It runs only
+  once every callback queued on that transaction has run: SSO queues its report of the change (`EnforcementChanged`)
+  after the revocation, and drops an event whose callback finds an outermost transaction begun after the one it was
+  queued in (its `TransactionGenerations`), so a second pass run from a commit callback, which opens a transaction,
+  would leave every enforcement change unreported. It is held instead (`Transactions\CommittedWork`), from the moment
+  it is queued, for Laravel's `TransactionCommitted` event, which the connection fires once every callback has run, and
+  is released only by a commit that leaves no transaction open on the connection, never a savepoint's (a connection
+  with no events dispatcher fires none, and there a commit callback releases it). A commit callback that fails, queued
+  before it (the first pass's own revocation reports) or after it (a synchronous listener of `EnforcementChanged`),
+  stops Laravel running the rest, and the connection then fires no `TransactionCommitted`: the change is durable, the
+  callback's failure propagates from `EnforcementService::update()`, and the second pass stays held until the unit of
+  work ends, where it runs (`AfterConnectionCommits::settle()`: the application's termination, at the end of a request
+  or a console command, a queued job's end, `JobProcessed` or `JobExceptionOccurred`, and `Iam::resetWorkerState()`),
+  or until the connection's next outermost commit in the same unit of work, whichever comes first; what it throws there
+  is reported, the caller's own work being over. A session that entered the tenant meanwhile acts on its access tokens
+  until then. What it throws from the commit propagates, out of `EnforcementService::update()`, once the change is
+  durable and SSO has reported it: the rule stays changed, the first pass's revocations stand, and the sessions only the
+  second pass would have judged wait for the next `tenantPolicyChanged()` or their first refresh. Each pass asks the
+  policy for an exempt identity's session, so its exemption is reported once by each. A sign-in that judged the policy
+  before the change committed and writes its session only after the second pass has run is judged at its first refresh
+  (a member gap, below).
   SSO names only the enforcing tenant and cannot list the tenants that inherit its rule, so only the enforcing tenant
   is judged until the application's tenant tree arrives (M6): SSO's `EnforcementInheritance` maps a tenant up to its
   enforcing tenant only, and cannot list the tenants below it.
-- Until freshness (M5) and link eligibility (M6) are bound, SSO's defaults refuse every link (`freshness_required`,
-  `link_ineligible`); the integration tests stand in SSO's `Testing\FakeFreshness` and a fixture that lets everyone
-  link.
+- A `link` whose caller signed in longer ago than SSO's maximum age for `sso.link.create` (300 seconds by default) is
+  refused as `freshness_required` under SSO's locks, and so is one whose application's guard does not serve the caller,
+  and one redeemed inside the caller's own transaction, whose snapshot may be older than the redemption. A `link` flow
+  started with no caller handed in (`Iam::callers()->run()`) is refused for freshness at its start. A plain read inside
+  SSO's own transaction may answer as of its snapshot, which a `link` redemption takes as it starts, a moment before.
+  Until link eligibility is bound (M6), SSO's default refuses every link (`link_ineligible`); the integration
+  tests stand in a fixture that lets everyone link, and SSO's `Testing\FakeFreshness` where freshness is not their
+  subject.
+- Evidence from a connection a tenant does not trust never meets that tenant's requirement, however MFA's policy judges
+  it; a tenant whose identifier is neither a non-empty string nor an integer throws
+  `UnresolvedReferenceException(tenant)`, and an identity whose key cannot be named throws, inside
+  `laravel-authentication`'s transaction (IAM-8.2).
+- Two identities holding the same verified e-mail make linking by a verified domain `ambiguous`, which SSO refuses;
+  an e-mail a case- or accent-insensitive collation merely matches is no match.
 - On PostgreSQL at REPEATABLE READ, a sign-in racing a connection disable or a link removal, and two re-authentications
   racing for one session, make the later of each pair fail to serialise; the retry helper runs it again from its start
   and it sees what the other committed. A `link` racing another holder of the identity's guard fails to serialise the
@@ -263,29 +411,60 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
     so every `jwt` guard is asked (one read per guard, at flow start only).
   - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, and nothing lists the tenants that
     inherit its rule.
+  - `laravel-authentication`'s sign-ins and switches judge the tenant authentication policy with plain reads and take
+    no lock a policy change waits on, and `tenantPolicyChanged()` judges only the sessions committed when it reads
+    them, so even its second pass, after the change commits, misses a sign-in that judged the policy before the change
+    committed and writes its session after that pass has run; the session stands, on its access tokens, until its
+    first refresh judges it. Only a recheck of the policy's version as the session is written would close it.
   - `laravel-authentication` has no public helper to resolve an identity from a morph type and key or to check a key's
     shape; `IdentityReferences` reuses `SessionKeyShape::matches()`, which works on any model.
   - Neither member ships a contract kit for `ReauthenticationSessions`, `SessionRevocation`, `Linker`/`LinkStorage` or
     `ExternalIdentityLinks`, so IAM-8.3 has none to extend here.
+  - `laravel-sso`'s `Freshness::check()` is handed neither the caller nor the application, so the adapter judges only
+    a caller handed in to this package (a `link` it redeems, or `Iam::callers()->run()` around the application's own
+    call), and is `stale` otherwise; SSO's contract expects the caller of the request being served to be read.
+  - `laravel-sso` asks freshness inside its transactions before the guards that come before the session's row in its
+    lock order, and `laravel-authentication`'s policy can judge as committed only by locking that row, so the adapter
+    cannot judge current there: it trusts a plain read only from a transaction opened after the caller was handed in,
+    and a `link` inside the caller's own transaction is `stale`.
+  - `laravel-mfa`'s `Proof` carries no provider methods, so a rebound combination policy can trust a provider only by
+    its connection, not by the methods SSO accepted.
+  - `laravel-authentication` has no public lookup of an identity by a verified identifier, and the verified-at column
+    is protected (`getVerifiedAtName()`), so the matcher filters the rows holding the normal form by
+    `hasVerifiedIdentifier()` in PHP, and assumes the identifier is the attribute named after its type.
+  - `laravel-authentication`'s `EvidenceSubject` names no tenant's trust in a connection, and its `ExternalEvidence`
+    no connection's tenant, so the adapter reads SSO's connection and enforcement for a tenant's requirement.
+  - Neither member ships a contract kit for `ExternalEvidencePolicy`, `Freshness`, `ApplicationPolicy`,
+    `LinkEmailMatcher` or a context contributor.
   - `laravel-sso`'s guide for this package shows `signInExternally()` without its `SignInContext`,
     `reauthenticateExternally()` without its `ClientContext`, and `Auth::sessions()` with no guard, the default guard
     only; the adapters pass both contexts and use the application's guard.
 
 ## Implementation Anchors
 
-- `src/Sso/SsoSeams.php`: `seams()`, `isOn()`, `SWITCH`; `src/Sso/BoundLinkStorage.php`; `config/iam.php`:
-  `adapters.sso`;
-  `src/IamServiceProvider.php`: `registerRedemptionRecords()`, `registerCommitCounting()`, `seamProviders()`;
+- `src/Sso/SsoSeams.php`: `seams()`, `isOn()`, `isEvidenceOn()`, `SWITCH`, `EVIDENCE_SWITCH`;
+  `src/Sso/BoundLinkStorage.php`; `config/iam.php`: `adapters.sso`, `sso.evidence`;
+  `src/IamServiceProvider.php`: `registerRedemptionRecords()`, `registerContextContributors()`,
+  `registerSsoContributor()`, `registerCommitListeners()`, `seamProviders()`;
   `src/Transactions/OutermostCommits.php`: `committing()`, `count()`;
   `src/Transactions/ConcurrencyFailures.php`: `asRaised()`, what a redemption's last failure reaches the caller as.
 - `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`, `src/Sso/LinkRedemption.php`: `redeem()`;
   `src/IamManager.php`: `signIns()`, `reauthentications()`, `links()`; `src/Facades/Iam.php`.
-- `src/Sso/AdmittedRedemptions.php`: `record()`, `matching()`, `forget()`; `src/Sso/RenewalRecorder.php`:
-  `open()`, `close()`, `record()`, `take()`, `isHolding()`; `src/Sso/Renewal.php`.
+- `src/Sso/AdmittedRedemptions.php`: `record()`, `matching()`, `acceptedEvidence()`, `clientFor()`, `forget()`;
+  `src/Sso/RenewalRecorder.php`: `open()`, `close()`, `record()`, `take()`, `isHolding()`; `src/Sso/Renewal.php`;
+  `src/Sso/LinkCallers.php`: `open()`, `close()`, `current()`; `src/Sso/CallerScope.php`: `run()`;
+  `src/IamManager.php`: `callers()`.
+- `src/Sso/ExternalEvidencePolicyAdapter.php`: `accepts()`, `meets()`; `src/Sso/FreshnessAdapter.php`: `check()`;
+  `src/Sso/ApplicationPolicyAdapter.php`: `externalSignIn()`; `src/Sso/LinkEmailMatcherAdapter.php`: `match()`;
+  `src/Sso/SsoContextContributor.php`: `contribute()`.
 - `src/Sso/ExternalResults.php`: `from()`, `renewing()`; `src/Sso/Translation/ClientTranslator.php`: `toSso()`.
 - `src/Sso/ReauthenticationSessionsAdapter.php`: `standing()`, `lockedStanding()`, `renewAuthentication()`;
   `src/Mfa/CurrentSession.php`: `sessions()`, `sessionGuards()`, `identitySessions()`, `isInTransaction()`.
-- `src/Sso/ExternalIdentityLinksAdapter.php`: `find()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`.
+- `src/Sso/ExternalIdentityLinksAdapter.php`: `find()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`;
+  `src/Transactions/AfterConnectionCommits.php`: `run()`, `committed()`, `settle()`, the second pass held for the
+  storage connection's own transaction; `src/Tenancy/TenantPolicyChanges.php`: `changed()`;
+  `src/Transactions/CommittedWork.php`: `hold()`, `drop()`, `release()`, `connections()`, the second pass held until
+  every callback of the commit has run; `src/IamServiceProvider.php`: `registerCommitListeners()`.
 - `src/Sso/IdentityReferences.php`: `identity()`, `reference()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
 - `src/Exceptions/UnlinkedSignInException.php`, `src/Exceptions/ExternalSignInRefusedException.php`,
   `src/Exceptions/ExternalReauthenticationRefusedException.php`; `src/Exceptions/UnresolvedReferenceException.php`:
@@ -293,6 +472,52 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
 
 ## Authoritative Tests
 
+- `tests/Feature/Sso/SsoSeamsTest.php` `testTheEvidenceSwitchBindsSsosConnectionEvidencePolicyInEveryProviderOrder`,
+  `testTheApplicationsEvidencePolicyIsKeptWithTheSwitchOn`,
+  `testTheEvidencePolicyIsScopedAndForgottenWhenTheWorkerResets`,
+  `testTheEvidenceSwitchBindsNothingWithTheCapabilityOff`, `testTheEvidenceSwitchIsReadStrictly`
+- `tests/Feature/Sso/ContextContributorRegistrationTest.php`
+  `testTheContributorIsRegisteredUnderSsoInEveryProviderOrder`, `testTheSwitchOffRegistersNothing`,
+  `testTheSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn`,
+  `testTheSwitchTurnedOnLaterLeavesTheBindingsAndTheContributorOff`,
+  `testAnApplicationsEarlierContributorIsKept`, `testAnApplicationsContributorRegisteredAfterThisPackageBootedIsKept`,
+  `testAnApplicationsContributorRegisteredOnceBootedIsRefused`,
+  `testTheContributorIsRegisteredWhenAuthenticationRegistersWhileBooting`
+- `tests/Integration/Sso/ExternalEvidencePolicyAdapterTest.php` (every isolation level where a sign-in commits)
+  `testWithSsosDefaultNoEvidenceReachesAuthenticationOrMfa`, `testWithMfasDefaultAProvidersMfaIsNotMultifactor`,
+  `testOnlyARebindingThatTrustsTheConnectionCountsItsMfa`, `testARebindingThatTrustsAnotherConnectionCountsNothing`,
+  `testAReauthenticationRecordsAFirstFactorReauthenticationForMfasReauthenticatePurpose`, `testALinkRecordsNoProof`,
+  `testAdmittedEvidenceIsCredibleAsMfasPolicySays`,
+  `testMfaIsHandedTheSignInsFirstFactor`, `testEvidenceNoRedemptionAdmittedIsNeverAccepted`,
+  `testEvidenceOtherThanSsoAcceptedIsNeverAccepted`, `testEvidenceAdmittedForAnotherIdentityIsNeverAccepted`,
+  `testEvidenceOfAnotherTimeIsNeverAccepted`, `testEvidenceDatedAfterTheSubjectsTimeIsAcceptedAsOfIt`,
+  `testAcceptedEvidenceMeetsARequirementWithinItsMaximumAge`,
+  `testARequirementThatAsksForNothingIsNeverMet`, `testATenantTrustsItsOwnConnectionsAlone`,
+  `testATenantTrustsTheConnectionsItsEnforcementNames`
+- `tests/Integration/Sso/FreshnessAdapterTest.php` `testSsosMaximumAgeIsTheCallersRequirement`,
+  `testTheApplicationsStricterRequirementApplies`, `testNoCallerIsStale`,
+  `testASignedInSessionIsStaleWithoutACallerHandedIn`, `testTheCallerScopeHandsTheCallerInForItsWorkAlone`,
+  `testACallerOnAGuardThatHoldsNoSessionsThrowsBeforeTheWorkRuns`,
+  `testALinkCallerIsJudgedOnItsApplicationsGuardAlone`, `testThePolicyIsAskedPlainlyInsideSsosTransaction`,
+  `testACallerHandedInInsideATransactionIsStaleWhileOneIsOpen`, `testALinkIsRedeemedForACallerFreshEnough`,
+  `testALinkIsRefusedForACallerNoLongerFresh`, `testALinkWhoseCallerTheGuardDoesNotServeIsRefused`,
+  `testALinkInsideTheCallersTransactionIsRefused`, `testALinkFlowStartedWithoutACallerHandedInIsRefused`
+- `tests/Unit/Sso/ApplicationPolicyAdapterTest.php` `testTheGuardsMethodListAloneDecides`,
+  `testAGuardAuthenticationCannotJudgePropagates`
+- `tests/Integration/Sso/LinkEmailMatcherAdapterTest.php` `testTheOneVerifiedIdentityIsExactlyOneMatch`,
+  `testOnlyAVerifiedAddressMatches`, `testNoAddressIsFoldedIntoAnother`,
+  `testAnEmailTheNormaliserRefusesMatchesNobodyWithoutAQuery`, `testTwoVerifiedIdentitiesAreAmbiguous`,
+  `testEachKindOfIdentityIsSearchedOnce`, `testEveryHolderOfOneKindIsJudged`,
+  `testAnAddressACollationMerelyMatchesIsNoMatch`, `testTheIdentitiesAreReadOnTheWriteConnection`
+- `tests/Integration/Sso/SsoContextContributorTest.php` `testASessionThroughSsoContributesEverySsoKey`,
+  `testAFactTheSignInDidNotStateIsHeldAsNull`, `testAnyOtherSessionContributesNoKey`,
+  `testAnExternalSessionWithNoStoredFormContributesNoKey`,
+  `testAReauthenticationLeavesEveryKeyAsItWas`, `testAStoredFormSsoCannotRestoreFailsTheBuild`,
+  `testADatabaseErrorFailsTheBuild`
+- `tests/Performance/Sso/SsoJudgementsQueryBudgetTest.php` `testALinkEmailMatch`, `testAFreshnessCheck`,
+  `testAnApplicationsExternalSignIn`, `testEvidenceMfasDefaultFindsMeetsNothing`
+- `tests/Unit/Sso/LinkCallersTest.php` `testTheLatestRedemptionOpenNamesItsCaller`;
+  `tests/Unit/Sso/AdmittedRedemptionsTest.php` `testTheAcceptedEvidenceIsAnsweredForItsConnectionAndIdentityAlone`
 - `tests/Feature/Sso/SsoSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
   `testTheHandoffIssuerKeepsSsosOwnStoreInEveryProviderOrder`,
   `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
@@ -302,9 +527,12 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
   `testTheSwitchIsReadLeniently`, `testEachBindingsLifetimeDefaultsAndMandate`
 - `tests/Feature/Sso/RedemptionRecordsTest.php` `testTheRecordIsOneInstanceForTheUnitOfWork`,
   `testTheWorkerResetForgetsTheRecord`; `tests/Feature/IamServiceProviderTest.php` `testEachOutermostCommitIsCounted`,
-  `testOutermostCommitsAreCountedWithTheWorkerResetOff`; `tests/Unit/Transactions/OutermostCommitsTest.php`
+  `testOutermostCommitsAreCountedWithTheWorkerResetOff`, `testHeldWorkRunsOnceTheConnectionCommits`,
+  `testWorkACommitLeftHeldRunsAsTheApplicationTerminates`, `testWorkACommitLeftHeldRunsAsAJobEnds`,
+  `testTheCommitListenersReachAnOctaneSandboxsRecords`; `tests/Unit/Transactions/OutermostCommitsTest.php`
   `testEachCommitIsCountedForItsOwnConnection`
-- `tests/Feature/IamManagerTest.php` `testEachRedemptionIsReachedThroughItsOwnService`;
+- `tests/Feature/IamManagerTest.php` `testEachRedemptionIsReachedThroughItsOwnService`,
+  `testEachServiceIsResolvedFromTheCurrentApplication`;
   `tests/Feature/Facades/IamTest.php` `testTheRedemptionsAreReachedThroughTheFacade`,
   `testTheFacadeAnnotatesExactlyTheManagersSurface`
 - `tests/Integration/Sso/SignInRedemptionTest.php` `testALinkedSignInSignsThePersonIn`,
@@ -351,11 +579,30 @@ retry helper the redemptions run through are in `storage-and-transactions.md`.
   `testAWidenedScopesSessionsAreRevokedWhateverTheSwitchSays`,
   `testAWidenedScopeRevokedTwiceRevokesNothingTheSecondTime`,
   `testAnEnforcementChangeRevokesTheSessionsThePolicyNoLongerAllows`,
+  `testAnEnforcementChangeJudgesTheTenantAgainOnceItCommits`, `testTheSecondPassRunsOnceEveryCallbackOfTheCommitHasRun`,
+  `testTheSecondPassWaitsForTheStorageConnectionAlone`, `testTheSecondPassStillRunsWhenAnotherCommitCallbackFails`,
   `testAnUnresolvedTenantThrowsAndTheChangeRollsBack`, `testAnIncompleteScopeIsRefused`,
   `testARevocationRollsBackWithTheCallersChange`
+- `tests/Integration/Tenancy/EnforcementSecondPassTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
+  READ, the session written on another connection once the change's first pass has read)
+  `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`;
+  `tests/Integration/Transactions/AfterConnectionCommitsTest.php` `testWithNoTransactionOpenTheWorkRunsAtOnce`,
+  `testTheWorkRunsOnceTheOutermostTransactionCommits`, `testTheWorkRunsOnceEveryCallbackOfTheCommitHasRun`,
+  `testWhatTheWorkThrowsPropagatesOnceTheCommitHasFinished`, `testTheWorkIsDroppedWhenItsTransactionRollsBack`,
+  `testAnotherConnectionsTransactionNeitherDelaysNorTakesTheWork`, `testWithoutATransactionsManagerTheWorkRunsAtOnce`,
+  `testWithoutAnEventsDispatcherTheCallbackRunsTheWork`, `testAFailingCallbackLeavesTheWorkForTheEndOfTheUnitOfWork`,
+  `testLeftoverWorkWaitsForTheNextOutermostCommit`, `testTheEndOfTheUnitOfWorkLeavesAConnectionWithATransactionOpen`,
+  `testTheEndOfTheUnitOfWorkRunsNothingRolledBack`, `testTheEndOfTheUnitOfWorkReportsWhatTheWorkThrows`;
+  `tests/Unit/Transactions/CommittedWorkTest.php` `testAReleaseRunsItsOwnConnectionsWorkInOrder`,
+  `testWorkIsReleasedOnce`, `testADroppedPieceIsDroppedAlone`, `testDroppingEveryPieceForgetsTheConnection`,
+  `testTheFirstFailureIsRethrownOnceEveryPieceHasRun`
 - `tests/Integration/Sso/RevocationThroughSsoTest.php` `testAConnectionsChangeEndsItsSessions`,
   `testAConnectionsChangeFollowsAuthenticationsSwitch`, `testRemovingALinkEndsExactlyItsSessions`,
   `testARevocationThatThrowsRollsSsosChangeBack`
+- `tests/Integration/Tenancy/EnforcementThroughTenantPolicyTest.php` (every isolation level where it commits)
+  `testASignInNamesTheEnforcementVersionJudgedUnderTheLocks`,
+  `testAnEnforcementChangeRevokesTheSessionsTheRuleNoLongerAllows`,
+  `testASecondPassThatThrowsLeavesTheChangeDurableAndReported`
 - `tests/Integration/Sso/IdentityReferencesTest.php` `testAPersonIsNamedByItsAliasThroughTheMorphMap`,
   `testAClassNameIsNotTheAliasTheMorphMapNames`, `testAnIdNoPersonHoldsResolvesToNobody`,
   `testAStringOrUuidKeyedIdentityResolvesFromItsOwnReference`,
@@ -389,7 +636,15 @@ Update this note when:
   them), changes which refusals it answers and which it throws, or changes what a `RedemptionResult`, `ExternalResult`,
   `Provenance` or either `ClientContext` carries;
 - SSO's `admit()` or `redeem()`, `signInExternally()` or `reauthenticateExternally()` changes its parameters;
-- freshness, link eligibility or the tenant authentication policy are bound (M5, M6), which changes what a link and an
-  enforcement change do;
+- link eligibility is bound (M6), which changes what a link does, or the tenant authentication policy
+  (`tenant-authentication-policy.md`) changes what an enforcement change revokes;
+- `laravel-sso` hands its freshness contract the caller or the application (the adapter then judges that caller's
+  session alone, and `Iam::callers()` is no longer needed), or asks it after the guards in its lock order (the adapter
+  can then judge current under the session's row lock), `laravel-mfa`'s proofs carry a provider's methods (a rebound
+  combination policy can then trust them), `laravel-authentication` gains a lookup by verified identifier or names a
+  connection's tenant to the evidence policy, or SSO's `AuthenticationContext` keys or stored form change;
 - the rate-limit counters move off the storage connection by default, which changes what an authentication refusal
-  rolls back.
+  rolls back;
+- Laravel runs a transaction's remaining commit callbacks, or fires `TransactionCommitted`, when one of them fails
+  (the second pass's release at the end of the unit of work may then go), or Octane gives its events dispatcher each
+  request's sandbox (the commit listeners may then be resolved by the dispatcher again).

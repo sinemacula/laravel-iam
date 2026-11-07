@@ -36,9 +36,10 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *    commits, so the code is spent and one `FlowFailed` follows the commit;
  * 3. an admitted result that links no identity throws
  *    `UnlinkedSignInException`, rolling the consumption back (SSO-8.6);
- * 4. the admitted redemption is recorded for this request, so
- *    `laravel-authentication`'s link contract answers exactly the link it
- *    resolved (`AdmittedRedemptions`);
+ * 4. the admitted redemption is recorded for this request, with the client SSO
+ *    was handed for it, so `laravel-authentication`'s link contract answers
+ *    exactly the link it resolved, and SSO's exemption gate, should the tenant
+ *    policy ask it, is handed this sign-in's client (`AdmittedRedemptions`);
  * 5. `laravel-authentication` signs the person in once, on the guard, with the
  *    result built from the redemption alone (`ExternalResults::from()`) and the
  *    context the caller handed over, the redemption's session deadline capping
@@ -159,8 +160,9 @@ final readonly class SignInRedemption
         SignInContext $context,
     ): RedemptionResult|SignInResult {
         $sessions   = $this->sessions->sessions($application);
+        $ssoClient  = ClientTranslator::toSso($context->client);
         $redemption = $this->container->make(HandoffRedemption::class)
-            ->admit(Purpose::SIGN_IN, $application, $connectionId, $code, $verifier, ClientTranslator::toSso($context->client));
+            ->admit(Purpose::SIGN_IN, $application, $connectionId, $code, $verifier, $ssoClient);
 
         if (!$redemption->isRedeemed()) {
             return $redemption;
@@ -170,7 +172,7 @@ final readonly class SignInRedemption
             throw UnlinkedSignInException::forConnection($application, $connectionId);
         }
 
-        $admitted->record($redemption);
+        $admitted->record($redemption, $ssoClient);
 
         $signIn = $sessions->signInExternally(ExternalResults::from($redemption), $context);
 

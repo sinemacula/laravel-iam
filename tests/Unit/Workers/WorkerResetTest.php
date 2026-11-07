@@ -38,6 +38,7 @@ use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Authorization\Support\SessionScopes;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
 use SineMacula\Laravel\Sso\Contracts\DnsResolver;
@@ -529,6 +530,7 @@ final class WorkerResetTest extends TestCase
         $container->shouldReceive('resolved')->with('auth')->andReturnTrue();
         $container->shouldReceive('resolved')->with(Session::class)->andReturnFalse();
         $container->shouldReceive('make')->with('auth')->andReturn($this->managerForgettingOnce());
+        $container->shouldReceive('make')->with(AfterConnectionCommits::class)->andReturn(new AfterConnectionCommits);
 
         (new WorkerReset($container))->reset();
     }

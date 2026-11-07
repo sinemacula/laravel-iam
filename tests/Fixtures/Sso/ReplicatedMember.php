@@ -1,0 +1,62 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Tests\Fixtures\Sso;
+
+use Illuminate\Foundation\Auth\User;
+use SineMacula\Laravel\Authentication\Casts\NormalizedIdentifier;
+use SineMacula\Laravel\Authentication\Concerns\ProvidesIdentifierVerification;
+use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+
+/**
+ * An identity kept on a connection whose reads go to a replica of their own,
+ * which sees nothing written to the primary, so a test can tell a read made on
+ * the write connection from one a lagging replica serves.
+ *
+ * Its connection and table are declared by the test that needs it.
+ *
+ * @property int $id
+ * @property string $email
+ * @property ?\Illuminate\Support\Carbon $email_verified_at
+ *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
+ * @copyright   2026 Sine Macula Limited
+ *
+ * @internal
+ */
+final class ReplicatedMember extends User implements HasVerifiableIdentifiers, Identity
+{
+    use ProvidesIdentifierVerification;
+
+    /** @var string The connection members are kept on. */
+    public const string CONNECTION = 'replicated';
+
+    /** @var string The table members are kept in. */
+    public const string TABLE = 'iam_replicated_members';
+
+    /** @var string|\UnitEnum|null The connection members are kept on. */
+    protected $connection = self::CONNECTION;
+
+    /** @var ?string The table members are kept in. */
+    protected $table = self::TABLE;
+
+    /** @var list<string> The attributes a test may fill. */
+    protected $fillable = ['email', 'email_verified_at'];
+
+    /**
+     * The attributes cast on read and write: the email address, kept in its
+     * normal form, and when it was verified.
+     *
+     * @return array<string, string>
+     */
+    #[\Override]
+    protected function casts(): array
+    {
+        return [
+            'email'             => NormalizedIdentifier::using('email'),
+            'email_verified_at' => 'datetime',
+        ];
+    }
+}
