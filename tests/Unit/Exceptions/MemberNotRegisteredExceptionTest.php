@@ -6,6 +6,7 @@ namespace Tests\Unit\Exceptions;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 
@@ -39,6 +40,27 @@ final class MemberNotRegisteredExceptionTest extends TestCase
         );
         self::assertSame('sso.storage.connection', $exception->key);
         self::assertSame(SsoServiceProvider::class, $exception->provider);
+    }
+
+    /**
+     * The exception for the audit trail names audit-log's provider and the key
+     * recording the registration, and says what goes unrecorded and how to
+     * resolve it.
+     *
+     * @return void
+     */
+    public function testTheAuditTrailsNamesAuditLogsProvider(): void
+    {
+        $exception = MemberNotRegisteredException::forAuditTrail('iam.audit.registered', AuditLogServiceProvider::class);
+
+        self::assertSame(
+            AuditLogServiceProvider::class . ' had not registered when the application finished booting, so laravel-iam\'s audit mappers, codes and'
+            . ' caller context contributor could not be registered with it: no authentication, MFA or SSO event would be recorded. Register every'
+            . ' member\'s service provider before the application finishes booting.',
+            $exception->getMessage(),
+        );
+        self::assertSame('iam.audit.registered', $exception->key);
+        self::assertSame(AuditLogServiceProvider::class, $exception->provider);
     }
 
     /**

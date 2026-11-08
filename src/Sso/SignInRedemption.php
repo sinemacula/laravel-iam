@@ -49,6 +49,12 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *    stays unspent and nothing reports a sign-in that did not happen. A pending
  *    session is a success, and commits.
  *
+ * `laravel-authentication` reports its refusal (`AuthenticationFailed`) at
+ * once, inside the transaction; the audit trail holds that report while the
+ * transaction is open and records it once the transaction has rolled back
+ * (`Audit\DeferredRefusals`), so the refused sign-in is recorded once, and
+ * never in the transaction that rolls it back (IAM-9.5).
+ *
  * The admitted redemption is forgotten as each attempt starts and ends, so a
  * retried attempt never answers from one rolled back. What it answers leaves
  * only once the transaction has committed, so a credential is never handed out

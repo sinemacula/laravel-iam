@@ -6,13 +6,16 @@ namespace Tests;
 
 use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Str;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
+use SineMacula\Laravel\AuditLog\Testing\FakeAuditStore;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
+use Tests\Concerns\MigratesAuditLog;
 use Tests\Fixtures\Models\Person;
 
 /**
@@ -29,6 +32,13 @@ use Tests\Fixtures\Models\Person;
  * add per-test config and `defineDatabaseMigrations` (or use `setUp`, or
  * `Concerns\MigratesMembers`) to create tables, and may boot the application
  * again with the providers in another order through `reorderProviders`.
+ *
+ * Every member's event is recorded in `laravel-audit-log` through this
+ * package's mappers, so audit-log's fake store is bound for every test that
+ * does not create audit-log's tables (`Concerns\MigratesAuditLog`): without
+ * them, each record would fail to write, and be spilled and reported, on every
+ * event of every flow. A test of the trail binds a fresh fake itself
+ * (`AuditLog::fake()`) or creates the tables.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -75,6 +85,29 @@ abstract class TestCase extends OrchestraTestCase
 
     /** @var ?list<string> The process's arguments before the test replaced them, restored once its application is destroyed. */
     private ?array $argv = null;
+
+    /**
+     * Boot the application, then bring the process's UUIDv7 generator back to
+     * the present.
+     *
+     * The generator keeps one monotonic state for the whole process, and
+     * audit-log names each record with a UUIDv7 of the time the record says it
+     * occurred, which sets that state to that time, even an earlier one. A test
+     * that moved the clock forward and recorded leaves the state ahead of the
+     * clock, so the next test's ids would follow it, and the first record that
+     * test writes would set it back, so two of `laravel-authentication`'s rows
+     * of one second, whose order falls to their ids, would come in the wrong
+     * order. A UUIDv7 made for the present starts each test from it.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Str::uuid7(new \DateTimeImmutable);
+    }
 
     /**
      * Destroy the application, then close its database connections and restore
@@ -157,8 +190,8 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
-     * Seed the database connection, and the guard and MFA application people
-     * sign in on.
+     * Seed the database connection, and bind audit-log's fake store unless the
+     * test creates audit-log's tables.
      *
      * Reads `DB_CONNECTION` from the environment to select the driver. Defaults
      * to in-memory SQLite when unset, so local development needs no extra
@@ -176,6 +209,14 @@ abstract class TestCase extends OrchestraTestCase
         $config->set('app.key', 'base64:' . base64_encode('laravel-iam test key!!!!!!!!!!!!'));
         $config->set('database.default', self::CONNECTION);
         $config->set('database.connections.' . self::CONNECTION, $this->databaseConnection());
+
+        if (in_array(MigratesAuditLog::class, class_uses_recursive($this), true)) {
+            return;
+        }
+
+        assert($app instanceof Application);
+
+        FakeAuditStore::fake($app);
     }
 
     /**

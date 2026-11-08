@@ -324,10 +324,13 @@ the storage connection and retry helper the redemptions run through are in `stor
   follows the commit. A rate-limited redemption is answered the same way.
 - `laravel-authentication`'s refusal rolls back: a failed `SignInResult` throws `ExternalSignInRefusedException` and a
   failed `AccessTokenResult` throws `ExternalReauthenticationRefusedException`, each carrying the result, so the code
-  stays unspent, no reservation is activated and no `HandoffRedeemed` or `ReauthenticationCompleted` is reported. A
-  result naming another link than the session's is `link_mismatch`, and rolls back the same way, and so does a session
-  write that throws, which reaches the caller as it was thrown, undoing the connection's first completed sign-in SSO
-  acknowledged in the transaction with the consumption. SSO counts the attempt on the storage connection unless
+  stays unspent, no reservation is activated and no `HandoffRedeemed` or `ReauthenticationCompleted` is reported.
+  `laravel-authentication`'s own report of the refusal (`AuthenticationFailed`), dispatched at once inside the
+  transaction, is recorded in the audit trail once the transaction has rolled back, never inside it
+  (`Audit\DeferredRefusals`, see `audit-mapping.md`). A result naming another link than the session's is
+  `link_mismatch`, and rolls back the same way, and so does a session write that throws, which reaches the caller as
+  it was thrown, undoing the connection's first completed sign-in SSO acknowledged in the transaction with the
+  consumption. SSO counts the attempt on the storage connection unless
   `sso.rate_limits.connection` names another, so that attempt's count rolls back too; only a code admitted with its
   verifier reaches `laravel-authentication`, so no guess is forgiven.
 - An admitted `sign_in` linked to no identity (issued only to an application allowing unlinked handoffs) throws
