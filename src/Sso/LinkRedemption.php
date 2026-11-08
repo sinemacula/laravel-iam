@@ -7,7 +7,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
-use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
@@ -70,19 +70,19 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * (`ConcurrencyFailures::forCaller()`), for the caller to retry its whole
  * transaction. This package refuses neither path: which one runs is SSO's.
  *
- * The caller is the identity the application has authenticated, handed over as
- * a plain value: the identity of the session the request is served with, which
- * the application reads where it reads the request, never from the request's
- * body. It is named to SSO as an Eloquent identity's morph class and its key
- * (`IdentityReferences::reference()`), the reference SSO started the flow for;
- * an identity that is no Eloquent model, or whose key is neither a non-empty
- * string nor an integer, throws `UnresolvedReferenceException` before the code
- * is touched (IAM-8.2). A code started for another identity is SSO's
- * `identity_mismatch`.
+ * The caller is `laravel-authentication`'s `Caller`, handed over as a plain
+ * value: the caller of the request, as `Auth::caller()` reads it where the
+ * application reads the request, never from the request's body. Its guard is
+ * the application, and its identity is named to SSO as an Eloquent identity's
+ * morph class and its key (`IdentityReferences::reference()`), the reference
+ * SSO started the flow for; an identity that is no Eloquent model, or whose key
+ * is neither a non-empty string nor an integer, throws
+ * `UnresolvedReferenceException` before the code is touched (IAM-8.2). A code
+ * started for another identity is SSO's `identity_mismatch`.
  *
- * The application is resolved to its guard before SSO is asked, standalone or
- * inside the caller's transaction, as a sign-in's and a re-authentication's
- * application is: it must be a declared guard of the `jwt` driver
+ * The caller's guard is resolved before SSO is asked, standalone or inside the
+ * caller's transaction, as a sign-in's and a re-authentication's application
+ * is: it must be a declared guard of the `jwt` driver
  * (`CurrentSession::guard()`), or an `UnresolvedReferenceException` is thrown
  * before the code is touched (IAM-8.2), and the code stays unspent. A `link`
  * writes no session, so the guard is resolved and never asked anything. A guard
@@ -90,18 +90,18 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * SSO has consumed the code.
  *
  * It reads no request, nor the guard's current user or session. While SSO
- * redeems the code, the application and the caller are kept in this request's
- * record of callers (`LinkCallers`), which SSO's freshness contract is judged
- * for under SSO's locks (`FreshnessAdapter`), since SSO hands that contract
- * neither. Inside the caller's transaction, that transaction's snapshot may be
- * older than the redemption and the session's row cannot be locked where SSO
- * asks, so the record says so and the freshness adapter answers `stale`: such a
- * `link` is SSO's `freshness_required`, unless the application binds a
- * freshness contract of its own. SSO's redemption, the request's count of
- * outermost commits and the record are resolved on each call. The code and the
- * verifier are handed to the caller's transaction's work wrapped in a
- * `SensitiveParameterValue`, and unwrapped only inside it, so the trace of
- * anything thrown there never holds either in the clear.
+ * redeems the code, the caller is kept in this request's record of callers
+ * (`LinkCallers`), whose session SSO's freshness contract judges under SSO's
+ * locks (`FreshnessAdapter`), since SSO hands that contract no caller. Inside
+ * the caller's transaction, that transaction's snapshot may be older than the
+ * redemption and the session's row cannot be locked where SSO asks, so the
+ * record says so and the freshness adapter answers `stale`: such a `link` is
+ * SSO's `freshness_required`, unless the application binds a freshness contract
+ * of its own. SSO's redemption, the request's count of outermost commits and
+ * the record are resolved on each call. The code and the verifier are handed to
+ * the caller's transaction's work wrapped in a `SensitiveParameterValue`, and
+ * unwrapped only inside it, so the trace of anything thrown there never holds
+ * either in the clear.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -150,15 +150,15 @@ final readonly class LinkRedemption
     ) {}
 
     /**
-     * Redeem the `link` code for the application through the connection, with
-     * its verifier, for the client, as the caller, and answer SSO's result.
+     * Redeem the `link` code for the caller's application through the
+     * connection, with its verifier, for the client, as the caller, and answer
+     * SSO's result.
      *
-     * @param  string  $application
      * @param  string  $connectionId
      * @param  string  $code
      * @param  string  $verifier
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $caller
+     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
@@ -166,22 +166,23 @@ final readonly class LinkRedemption
      * @throws \Throwable
      */
     public function redeem(
-        string $application,
         string $connectionId,
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $verifier,
         ClientContext $client,
-        Identity $caller,
+        Caller $caller,
     ): RedemptionResult {
+        $application = $caller->guard;
+
         $this->sessions->guard($application);
 
-        $reference  = $this->identities->reference($caller);
+        $reference  = $this->identities->reference($caller->identity);
         $connection = $this->database->connection($this->storage->name());
         $callers    = $this->container->make(LinkCallers::class);
 
         $inCallersTransaction = $connection->transactionLevel() > 0;
 
-        $callers->open($application, $reference, $inCallersTransaction);
+        $callers->open($caller, $inCallersTransaction);
 
         try {
             return $inCallersTransaction

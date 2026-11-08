@@ -16,10 +16,13 @@ use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Evaluation\Decision;
+use SineMacula\Laravel\Authorization\Evaluation\DecisionProvenance;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionStage;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
@@ -253,7 +256,8 @@ final class IamManagerTest extends TestCase
 
             $person->forceFill(['id' => 7]);
 
-            $held = Iam::callers()->run(self::GUARD, $person, static fn (): ?array => $sandbox->make(LinkCallers::class)->current());
+            $caller = new Caller(self::GUARD, CallerCredential::ACCESS, $person, null, null, null);
+            $held   = Iam::callers()->run($caller, static fn (): ?array => $sandbox->make(LinkCallers::class)->current());
 
             self::assertNotNull($held, 'The caller was held where the sandbox does not read it.');
         });
@@ -342,7 +346,7 @@ final class IamManagerTest extends TestCase
     {
         Authorization::getFacadeRoot();
 
-        $this->app?->make(LastDecisionStore::class)->put(Decision::deny(DecisionReason::NO_MATCH, DecisionStage::IMPLICIT));
+        $this->app?->make(LastDecisionStore::class)->put(Decision::deny(DecisionReason::NO_MATCH, DecisionStage::IMPLICIT), new DecisionProvenance);
 
         self::assertNotNull(Authorization::lastDecision());
 

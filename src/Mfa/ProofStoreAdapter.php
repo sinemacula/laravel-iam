@@ -13,6 +13,7 @@ use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
@@ -36,7 +37,12 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  * kept anywhere. The proofs are the session's counting proofs, read through
  * `Auth::sessions($guard)->proofs()`, oldest first, translated to MFA's proofs
  * bound to the sign-in and stamped with the identity's current verification
- * generation.
+ * generation. An SSO sign-in's first factor, or a reauthentication at the
+ * provider, names its connection to MFA only when it carries evidence SSO's
+ * evidence contract accepted and the session's tenant, if any, trusts the
+ * connection (`ProviderTrust::accepted()`), so a combination policy that trusts
+ * a connection never counts a sign-in SSO's evidence gate refused, nor one
+ * tenant's trust for another.
  *
  * `laravel-authentication` is the only writer of a session's proofs: it records
  * the first factor when the session is signed in, in the same transaction as
@@ -214,7 +220,9 @@ final readonly class ProofStoreAdapter implements ProofStore
         $recorded = Auth::sessions($application)->proofs($session, limit: RequirementSubject::MAX_LIMIT);
         $signIn   = $this->signIn($identity, $application, $session);
 
-        return self::held($identity, array_values(array_filter(array_map(fn (RecordedProof $proof): ?Proof => $this->translated($proof, $signIn), array_reverse($recorded)))));
+        $proofs = array_map(fn (RecordedProof $proof): ?Proof => $this->translated($proof, $signIn, $session), array_reverse($recorded));
+
+        return self::held($identity, array_values(array_filter($proofs)));
     }
 
     /**
@@ -241,7 +249,7 @@ final readonly class ProofStoreAdapter implements ProofStore
         }
 
         $recorded = Auth::sessions($application)->firstFactor($session);
-        $proof    = $recorded === null ? null : $this->translated($recorded, $this->signIn($identity, $application, $session));
+        $proof    = $recorded === null ? null : $this->translated($recorded, $this->signIn($identity, $application, $session), $session);
 
         return $proof === null ? null : (self::held($identity, [$proof])[0] ?? null);
     }
@@ -463,16 +471,19 @@ final readonly class ProofStoreAdapter implements ProofStore
 
     /**
      * MFA's proof for one the session recorded, or `null` when MFA cannot
-     * express it, so it does not count.
+     * express it, so it does not count. An external provider's proof names its
+     * connection only when it carries evidence SSO accepted and the session's
+     * tenant, if any, trusts the connection (`ProviderTrust::accepted()`).
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\SignIn  $signIn
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @return ?\SineMacula\Laravel\Mfa\Proofs\Proof
      */
-    private function translated(RecordedProof $proof, SignIn $signIn): ?Proof
+    private function translated(RecordedProof $proof, SignIn $signIn, Session $session): ?Proof
     {
         try {
-            return $this->proofs->toMfa($proof, $signIn);
+            return $this->proofs->toMfa($proof, $signIn, ProviderTrust::accepted($session->getTenantId()));
         } catch (\InvalidArgumentException) {
             return null;
         }

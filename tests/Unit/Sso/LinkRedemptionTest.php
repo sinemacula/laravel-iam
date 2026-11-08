@@ -14,6 +14,8 @@ use Illuminate\Foundation\Auth\User;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
@@ -103,7 +105,7 @@ final class LinkRedemptionTest extends TestCase
         });
 
         try {
-            self::redemption($container, $connection)->redeem('api', 'connection-1', 'code', 'verifier', new ClientContext(null, null), self::caller());
+            self::redemption($container, $connection)->redeem('connection-1', 'code', 'verifier', new ClientContext(null, null), self::caller());
 
             self::fail('A failure once the attempt had begun its commit was swallowed.');
         } catch (\RuntimeException $thrown) {
@@ -161,7 +163,7 @@ final class LinkRedemptionTest extends TestCase
             }
         });
 
-        self::assertSame($refused, self::redemption($container, $connection)->redeem('api', 'connection-1', 'code', 'verifier', new ClientContext(null, null), self::caller()));
+        self::assertSame($refused, self::redemption($container, $connection)->redeem('connection-1', 'code', 'verifier', new ClientContext(null, null), self::caller()));
         self::assertCount(2, $calls);
     }
 
@@ -207,12 +209,13 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * The caller a link is redeemed as: an Eloquent identity with a key.
+     * The caller a link is redeemed as: an Eloquent identity with a key, on the
+     * `api` guard, holding no session.
      *
-     * @return \SineMacula\Laravel\Authentication\Contracts\Identity
+     * @return \SineMacula\Laravel\Authentication\Callers\Caller
      */
-    private static function caller(): Identity
+    private static function caller(): Caller
     {
-        return (new class extends User implements Identity {})->forceFill(['id' => 7]);
+        return new Caller('api', CallerCredential::ACCESS, (new class extends User implements Identity {})->forceFill(['id' => 7]), null, null, null);
     }
 }

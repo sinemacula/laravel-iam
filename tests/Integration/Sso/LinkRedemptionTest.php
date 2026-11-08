@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
@@ -115,7 +117,7 @@ final class LinkRedemptionTest extends TestCase
 
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
-        $linked  = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        $linked  = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
         $links   = $this->app?->make(LinkService::class)->list(self::referenceOf($person)) ?? [];
 
         self::assertTrue($linked->isRedeemed());
@@ -150,7 +152,7 @@ final class LinkRedemptionTest extends TestCase
         $person   = $this->createPerson();
         $stranger = $this->createPerson();
         $handoff  = $this->handoff(Purpose::LINK, $person);
-        $refused  = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $stranger);
+        $refused  = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($stranger));
         $service  = $this->app?->make(LinkService::class) ?? self::fail('The application has not booted.');
 
         self::assertTrue($refused->isRefused());
@@ -176,7 +178,7 @@ final class LinkRedemptionTest extends TestCase
         $caller  = new class (['id' => $person->getKey()]) extends GenericUser implements Identity {};
 
         try {
-            Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $caller);
+            Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($caller));
 
             self::fail('A caller that cannot be named was linked.');
         } catch (UnresolvedReferenceException $exception) {
@@ -184,7 +186,7 @@ final class LinkRedemptionTest extends TestCase
         }
 
         self::assertSame([], $this->reportedEvents());
-        self::assertTrue(Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person)->isRedeemed());
+        self::assertTrue(Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person))->isRedeemed());
     }
 
     /**
@@ -202,7 +204,7 @@ final class LinkRedemptionTest extends TestCase
         $handoff = $this->handoff(Purpose::LINK, $person);
 
         try {
-            Iam::links()->redeem('web', $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+            Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), new Caller('web', CallerCredential::ACCESS, $person, null, null, null));
 
             self::fail('A link was redeemed for an application that is no session guard.');
         } catch (UnresolvedReferenceException $exception) {
@@ -211,7 +213,7 @@ final class LinkRedemptionTest extends TestCase
 
         self::assertSame([], $this->reportedEvents());
         self::assertSame([], $this->app?->make(LinkService::class)->list(self::referenceOf($person)));
-        self::assertTrue(Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person)->isRedeemed());
+        self::assertTrue(Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person))->isRedeemed());
     }
 
     /**
@@ -226,8 +228,9 @@ final class LinkRedemptionTest extends TestCase
     {
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
+        $caller  = $this->requestCallerOf($person);
 
-        self::assertTrue(Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, new ClientContext(null, null), $person)->isRedeemed());
+        self::assertTrue(Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, new ClientContext(null, null), $caller)->isRedeemed());
 
         $event = $this->reported[0];
 
@@ -251,7 +254,7 @@ final class LinkRedemptionTest extends TestCase
 
         $this->app?->instance(Freshness::class, new RefusingFreshness);
 
-        $refused = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        $refused = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
 
         self::assertTrue($refused->isRefused());
         self::assertSame(FailureReason::FRESHNESS_REQUIRED, $refused->reason);
@@ -545,7 +548,7 @@ final class LinkRedemptionTest extends TestCase
      */
     private function redeem(Handoff $handoff, Person $person): RedemptionResult
     {
-        return Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        return Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
     }
 
     /**

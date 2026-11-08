@@ -14,6 +14,7 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -38,6 +39,15 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
  * reauthentication at the external provider is not read:
  * `laravel-authentication` counts no part of a requirement met by one, and on
  * its own it is all such a proof could meet.
+ *
+ * An external provider's first factor is handed to MFA naming no connection
+ * (`ProviderTrust::withheld()`), so no combination policy can trust it by its
+ * connection here: `laravel-authentication` asks its external evidence policy
+ * first, with the tenant whose requirement it is, and that policy
+ * (`ExternalEvidencePolicyAdapter::meets()`) counts only the evidence SSO
+ * accepted, from a connection that tenant trusts. The check is told neither, so
+ * trusting the connection here would count every sign-in through it, for every
+ * tenant, whatever SSO accepted (IAM-4.6, IAM-5.1).
  *
  * Each proof is bound to the session judged (its key, as MFA names a sign-in),
  * or, at sign-in, before the session is written, to the sign-in no session key
@@ -110,7 +120,7 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
         $signIn     = new SignIn(IdentityReference::of($identity), $subject->application, $reference, VerificationGeneration::current($identity));
 
         $further = array_reverse($subject->proofs(self::since($translated, $subject->now), self::FURTHER_KINDS, RequirementSubject::MAX_LIMIT));
-        $proofs  = array_map(fn (RecordedProof $proof): Proof => $this->proofs->toMfa($proof, $signIn), [$subject->firstFactor, ...$further]);
+        $proofs  = array_map(fn (RecordedProof $proof): Proof => $this->proofs->toMfa($proof, $signIn, ProviderTrust::withheld()), [$subject->firstFactor, ...$further]);
 
         return $this->requirements->evaluation($this->check->check($translated, ...$proofs));
     }

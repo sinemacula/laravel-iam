@@ -6,6 +6,7 @@ namespace Tests\Unit\Mfa\Translation;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
+use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -25,6 +26,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Attempts\AttemptOutcome;
 use SineMacula\Laravel\Mfa\Attempts\ChallengeAdmission;
 use SineMacula\Laravel\Mfa\Attempts\Lockout;
@@ -525,6 +527,6 @@ final class CodeTranslatorTest extends TestCase
     {
         $channels = new ChannelTranslator;
 
-        return new CodeTranslator(new ProofTranslator($channels), $channels);
+        return new CodeTranslator(new ProofTranslator($channels, new ConnectionTrust(new Container)), $channels);
     }
 }

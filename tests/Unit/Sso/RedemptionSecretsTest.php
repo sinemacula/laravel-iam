@@ -16,6 +16,8 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
@@ -111,7 +113,7 @@ final class RedemptionSecretsTest extends TestCase
         ))->redeem('api', 'connection-1', self::CODE, self::VERIFIER, $client)];
 
         yield 'a link inside the caller\'s transaction' => [static fn (): mixed => self::linkInsideTheCallersTransaction()
-            ->redeem('api', 'connection-1', self::CODE, self::VERIFIER, $client, self::caller())];
+            ->redeem('connection-1', self::CODE, self::VERIFIER, $client, self::caller())];
     }
 
     /**
@@ -249,12 +251,13 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * The caller a link is redeemed as: an Eloquent identity with a key.
+     * The caller a link is redeemed as: an Eloquent identity with a key, on the
+     * `api` guard, holding no session.
      *
-     * @return \SineMacula\Laravel\Authentication\Contracts\Identity
+     * @return \SineMacula\Laravel\Authentication\Callers\Caller
      */
-    private static function caller(): Identity
+    private static function caller(): Caller
     {
-        return (new class extends User implements Identity {})->forceFill(['id' => 7]);
+        return new Caller('api', CallerCredential::ACCESS, (new class extends User implements Identity {})->forceFill(['id' => 7]), null, null, null);
     }
 }

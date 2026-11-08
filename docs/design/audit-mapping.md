@@ -272,7 +272,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `laravel-authentication`'s `jwt` guard dispatches Laravel's `Login`, `Failed` and `Logout` beside its own events,
   which the mappers record under audit-log's own codes; audit-log's listener of Laravel's events records each a second
   time unless the guard is in `audit-log.capture.laravel.except_guards`. `laravel-authorization` is always installed
-  beside this package, so audit-log's Gate capture stays off.
+  beside this package, so audit-log's Gate capture stays off. Until M11 maps `laravel-authorization`'s events no
+  authorization decision is recorded at all, the application's own Gate checks included: the guides say so, and point
+  an application that needs the records now to listening to `AuthorizationFailed` itself.
 - An `api_key` guard has no mapped twin to duplicate: its `logout()` dispatches Laravel's `Logout` alone (an API key has
   no session, so no `SessionRevoked` is reported beside it), and so does a trusted `login()` with `Login`. Without the
   exclusion such a sign-out is recorded once, as `authentication.signed_out`, by audit-log's own capture; with it, which
@@ -307,11 +309,13 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   (`audit_write_failed`, `audit_capture_failed`, `integrity_check_failed`, `key_nearing_expiry`): a class name or a
   list of them, read at each dispatch, resolved from the application current then (under Octane, the request's
   sandbox), and called through `handle()`, or invoked, synchronously and in order. The package sends nothing itself.
-- A value that names no listener, and an `iam.audit.alerts` that is no map at all, is refused at the dispatch, never
-  at boot, so a malformed cached configuration can still be cleared and a broken one is never read as naming none;
-  `validate()` refuses it beforehand, with an alert that does not exist and a listener that is neither bound nor a
-  class, for `iam:check`. What a listener throws propagates to the dispatch: audit-log reports a
-  failure of its own events' listeners and goes on, and SSO's expiry report, a console command, fails.
+- A value that names no listener, and an `iam.audit.alerts` that is no map at all, is refused at the dispatch, never at
+  boot, so a malformed cached configuration can still be cleared and a broken one is never read as naming none;
+  `validate()` refuses it beforehand, with an alert that does not exist, a listener that is neither bound nor a class,
+  and a class, not bound, with neither `handle()` nor `__invoke()`, for `iam:check`; it builds nothing, so the shape of
+  a name bound in the container is refused only at the dispatch. What a listener throws propagates to the dispatch:
+  audit-log reports a failure of its own events' listeners and goes on, and SSO's expiry report, a console command,
+  fails.
 - Audit-log dispatches `AuditWriteFailed` and `AuditCaptureFailed` inside its write guard, so a record their listener
   makes is refused. It raises `IntegrityCheckFailed` (from `audit-log:seal` and `audit-log:verify`) outside it, and
   SSO's `KeyNearingExpiry` knows no write guard, so a listener of either could record one, for an integrity failure

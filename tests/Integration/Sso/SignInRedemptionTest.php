@@ -358,7 +358,7 @@ final class SignInRedemptionTest extends TestCase
         $connectionId = $this->makeSamlConnection();
         $link         = $this->samlHandoff($connectionId, Purpose::LINK, $person);
 
-        self::assertTrue(Iam::links()->redeem(self::GUARD, $connectionId, $link->code, $link->verifier, self::client(), $person)->isRedeemed());
+        self::assertTrue(Iam::links()->redeem($connectionId, $link->code, $link->verifier, self::client(), $this->requestCallerOf($person))->isRedeemed());
 
         $handoff  = $this->samlHandoff($connectionId);
         $notAfter = StoredCode::query()->where('code_digest', HandoffCode::fromString($handoff->code)->digest())->firstOrFail()->session_not_after;

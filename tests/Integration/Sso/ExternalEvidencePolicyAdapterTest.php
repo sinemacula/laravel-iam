@@ -29,6 +29,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Iam\Sso\ExternalEvidencePolicyAdapter;
 use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
@@ -87,6 +88,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ExternalEvidencePolicyAdapter::class)]
+#[CoversClass(ConnectionTrust::class)]
 final class ExternalEvidencePolicyAdapterTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -249,7 +251,8 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
      * for the `reauthenticate` purpose on a channel naming the connection, and
      * MFA reads it as a `first_factor_reauthentication` for its own
      * `reauthenticate` purpose, never as a sign-in's first factor, beside the
-     * sign-in's own first factor.
+     * sign-in's own first factor; with SSO's default evidence policy it carries
+     * no accepted evidence, so MFA sees it naming no connection.
      *
      * @param  ?string  $level
      * @return void
@@ -290,7 +293,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
         $reauthentication = $proofs[1];
 
         self::assertSame(MfaChannelKind::EXTERNAL_PROVIDER, $reauthentication->channel?->kind);
-        self::assertSame($this->connectionId, $reauthentication->channel->reference());
+        self::assertNull($reauthentication->channel->reference());
         self::assertSame(now()->getTimestamp(), $reauthentication->provedAt->getTimestamp());
     }
 

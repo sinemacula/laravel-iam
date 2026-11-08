@@ -428,12 +428,43 @@ final class InstallCommandTest extends TestCase
 
         self::assertStringContainsString('iam.delivery.email', $owed);
         self::assertStringContainsString('iam.tenancy', $owed);
+        self::assertStringContainsString('Bind laravel-authentication\'s `TenantResolver`', $owed);
+        self::assertStringContainsString('even if your principals act only in their own tenant', $owed);
         self::assertStringContainsString('iam.provisioning.provisioner', $owed);
         self::assertStringContainsString('routes', $owed);
+        self::assertStringContainsString('laravel-iam\'s example application guide (docs/guides/example-application.md)', $owed);
+        self::assertStringContainsString('redeem SSO\'s handoffs through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`', $owed);
+        self::assertStringContainsString('never `HandoffRedemption` directly', $owed);
+        self::assertStringNotContainsString('laravel-sso\'s example application guide', $owed);
+        self::assertStringContainsString('`AuditLog::define()`', $owed);
+        self::assertStringContainsString('`audit-log.definitions.require_registered`', $owed);
         self::assertStringContainsString('Iam::schedule', $owed);
         self::assertStringContainsString('`ApplicationAccess`, `TenantAccess`, `ScopeRegistry`', $owed);
         self::assertStringContainsString('authentication.freshness', $owed);
         self::assertStringContainsString('external_provider', $owed);
+    }
+
+    /**
+     * The worker item asks for a queue worker for `laravel-authentication`'s
+     * delivery of every one-time code, MFA's email and SMS codes among them,
+     * whether or not SSO is in use, and for SSO's metadata refresh while it is.
+     *
+     * @return void
+     */
+    public function testTheWorkerItemAsksForAWorkerThatDeliversEveryCode(): void
+    {
+        [, $output] = $this->install();
+
+        $owed = substr($output, (int) strpos($output, 'Still to do:'));
+
+        self::assertStringContainsString(
+            ' - Run a queue worker for laravel-authentication\'s delivery of one-time codes (`authentication.delivery.queue.connection`'
+                . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through once the gateways are named,'
+                . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
+                . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
+            $owed,
+        );
+        self::assertStringNotContainsString('and run a queue worker for laravel-sso\'s metadata refresh', $owed);
     }
 
     /**

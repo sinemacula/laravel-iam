@@ -18,6 +18,7 @@ use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\CheckContextFactory;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
+use SineMacula\Laravel\Authorization\Preview\Previewing;
 use SineMacula\Laravel\Authorization\Query\SchemaInspector;
 use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
@@ -107,6 +108,7 @@ final readonly class WorkerReset
         CheckContextFactory::class,
         DeclaredAbilities::class,
         SchemaInspector::class,
+        Previewing::class,
         'authorization',
     ];
 

@@ -25,9 +25,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
-use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
-use SineMacula\Laravel\Sso\Models\Connection;
 
 /**
  * `laravel-authentication`'s external evidence policy, answered from the
@@ -48,7 +46,11 @@ use SineMacula\Laravel\Sso\Models\Connection;
  * is accepted or recorded; an application that trusts a provider rebinds MFA's
  * combination policy to trust that connection. The provider's methods
  * themselves never reach MFA: its proof carries none, so a rebound policy
- * trusts a provider by its connection, never by its `amr`.
+ * trusts a provider by its connection, never by its `amr`. Everywhere else a
+ * session's recorded first factor reaches MFA, the proof translator names the
+ * connection only under the same two gates and the same tenant trust
+ * (`Mfa\Translation\ProviderTrust`), so a policy that trusts the connection
+ * never counts, by another path, what this policy would refuse.
  *
  * `accepts()` is asked inside the sign-in or re-authentication this package
  * redeems, and counts the evidence only as the evidence SSO's evidence contract
@@ -74,8 +76,8 @@ use SineMacula\Laravel\Sso\Models\Connection;
  * connection records its tenant), or one its enforcement on the application
  * names (`Contracts\Enforcement::policy()`, as an inheriting tenant's rule
  * names the enforcing tenant's connections); one tenant's trust in a connection
- * is never another's. That is read only once MFA's policy has answered met, on
- * the write connection, without a lock.
+ * is never another's (`ConnectionTrust`). That is read only once MFA's policy
+ * has answered met, on the write connection, without a lock.
  *
  * A requirement that asks for nothing is never met: `laravel-authentication`
  * never asks with one, and evidence accepted for nothing would count for
@@ -100,10 +102,11 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator  $requirements
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
+     * @param  \SineMacula\Laravel\Iam\Sso\ConnectionTrust  $connections
      */
     public function __construct(
 
-        /** Resolves MFA's combination policy, SSO's enforcement and this request's admitted redemption on each call. */
+        /** Resolves MFA's combination policy and this request's admitted redemption on each call. */
         private Container $container,
 
         /** Translates the requirement into MFA's. */
@@ -111,6 +114,9 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
 
         /** Names the subject's identity as SSO names the identity a redemption linked. */
         private IdentityReferences $identities,
+
+        /** Whether the subject's tenant trusts its connection. */
+        private ConnectionTrust $connections,
     ) {}
 
     /**
@@ -255,31 +261,12 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
      */
     private function trusts(Tenant $tenant, EvidenceSubject $subject): bool
     {
-        $tenantId     = IdentifierCoercion::stringify($tenant->getTenantIdentifier());
-        $connectionId = $subject->connectionId;
+        $tenantId = IdentifierCoercion::stringify($tenant->getTenantIdentifier());
 
         if ($tenantId === null || $tenantId === '') {
             throw UnresolvedReferenceException::forTenantIdentifier();
         }
 
-        if (self::tenantOf($connectionId) === $tenantId) {
-            return true;
-        }
-
-        return in_array($connectionId, $this->container->make(Enforcement::class)->policy($tenantId, $subject->application)->connectionIds, true);
-    }
-
-    /**
-     * The tenant SSO records the connection as belonging to, read on the write
-     * connection, or `null` when there is no such connection.
-     *
-     * @param  string  $connectionId
-     * @return ?string
-     */
-    private static function tenantOf(string $connectionId): ?string
-    {
-        $connection = Connection::query()->useWritePdo()->whereKey($connectionId)->first();
-
-        return $connection?->getTenantId();
+        return $this->connections->trusts($tenantId, $subject->connectionId, $subject->application);
     }
 }

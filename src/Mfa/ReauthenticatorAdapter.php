@@ -11,6 +11,7 @@ use SineMacula\Laravel\Authentication\Freshness\Operations;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\Reauthenticator;
@@ -35,7 +36,9 @@ use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
  * allows one to authorise a change, so the application's own setting for the
  * operation can only make it stricter. The proof is MFA's reauthentication with
  * the first factor, bound to the identity, the application and the session for
- * `reauthenticate`, under the identity's current verification generation.
+ * `reauthenticate`, under the identity's current verification generation; a
+ * reauthentication at the provider names its connection as the proof store's
+ * proofs do (`ProviderTrust::accepted()`, with the session's tenant).
  *
  * MFA asks it from its own factor-change gate, inside MFA's transaction, after
  * MFA's own locks, and grants the change on the answer: before the proof is
@@ -111,7 +114,7 @@ final readonly class ReauthenticatorAdapter implements Reauthenticator
 
         $signIn = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
 
-        return $this->proofs->toMfa($proof, $signIn);
+        return $this->proofs->toMfa($proof, $signIn, ProviderTrust::accepted($session->getTenantId()));
     }
 
     /**

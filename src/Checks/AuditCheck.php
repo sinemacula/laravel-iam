@@ -35,8 +35,10 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
  *
  * The operational alerts (`iam.audit.alerts`) are validated whatever the
  * mappers say (`OperationalAlerts::validate()`): an alert that does not exist,
- * or a listener that is neither bound nor a class, would otherwise be found
- * only at the dispatch, when the alert it carries is lost.
+ * a listener that is neither bound nor a class, or a class, not bound, with
+ * neither a `handle()` method nor `__invoke()`, would otherwise be found only
+ * at the dispatch, when the alert it carries is lost. A name bound in the
+ * container is not built here, so its shape is found only at the dispatch.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -57,7 +59,8 @@ final readonly class AuditCheck implements Check
     private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice; `iam:install` writes them.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
-    private const string GATE_CAPTURE_ON = '`%s` must be false: laravel-authorization\'s decisions are recorded through their own events.';
+    private const string GATE_CAPTURE_ON = '`%s` must be false, so each authorization decision is recorded once, after a later release maps laravel-authorization\'s events;'
+        . ' until then no authorization decision is recorded, the application\'s own Gate checks included.';
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNCHECKED_CODES = '`%s` must be true, so a code without a definition is refused rather than recorded unchecked; '
