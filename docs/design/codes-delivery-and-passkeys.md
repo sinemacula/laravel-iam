@@ -36,7 +36,7 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
   | MFA `SmsSender`            | `SmsSenderAdapter`            | `NullSmsSender`               | `DeliverySeams` |
   | MFA `EmailSender`          | `EmailSenderAdapter`          | `NullEmailSender`             | `DeliverySeams` |
 
-- The passkey factor gate is the one mandatory row, and it is bound whenever MFA's switch is on, whether or not any
+- The passkey factor gate is mandatory always, and it is bound whenever MFA's switch is on, whether or not any
   application offers passkeys now: a passkey enrolled as a factor while the type was offered stays one after the
   application withdraws the type, and left on `NoPasskeyFactors`, its removal through `laravel-authentication` would
   leave its MFA factor and association standing (MFA has no listener for a removed passkey, and its boot check judges
@@ -45,6 +45,9 @@ are in `authentication-and-mfa.md`, and the binding rule that applies every row 
   passkeys, and MFA's `removing()` answers `null` after one plain read when the credential has no association. So a
   passkey that is still a factor is either removed with its factor or the removal is refused and rolls back. Only the
   passkey gateway, which runs MFA's ceremonies, waits for the type to be offered.
+- MFA's active tenant resolver is mandatory while SSO's enforcement is on or the application names or binds a tenant
+  MFA requirement (IAM-10.2, `Tenancy\TenancySeams::isEnforcedOrRequired()`): left on `NoActiveTenant` then, no
+  tenant's requirement would reach MFA. `iam:check` reads both mandates from the rows (`install-and-check.md`).
 - Code challenges (IAM-3.9):
   - The challenge gateway adapter decides on every call which path a factor's code takes, against the container as it
     stands then: `laravel-authentication`'s factor codes only while its one-time code sender is bound and the factor is

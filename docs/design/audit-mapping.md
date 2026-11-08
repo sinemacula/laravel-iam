@@ -341,9 +341,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - Decision this note records, beyond the plan's: IAM-9.9 rests on this package never reading the trail itself, not on
   audit-log's refusal, which is a second line only while audit-log stores on the storage connection. Audit-log's
   storage connection is left as the application chooses: the alignment (IAM-2.3, decision D4) names the members' keys,
-  and audit-log's is none of them. `iam:check` (M8) is the place to report an audit-log storage connection other than
-  `iam.storage.connection`, so an application that reads the trail inside its own changes knows the refusal does not
-  cover it; nothing here writes or refuses audit-log's key.
+  and audit-log's is none of them. `iam:check` notes an audit-log storage connection other than
+  `iam.storage.connection` (`Checks\StorageCheck`), so an application that reads the trail inside its own changes knows
+  the refusal does not cover it; nothing here writes or refuses audit-log's key.
 
 ## Success Path
 
@@ -369,7 +369,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 ## Failure / Edge Cases
 
 - Without the exclusions, each sign-in, refused sign-in and sign-out on a `jwt` guard is recorded twice; `iam:check`
-  refuses that configuration (M8).
+  refuses that configuration (`Checks\AuditCheck`, `install-and-check.md`).
 - With them, an `api_key` guard's `logout()` and trusted `login()` are recorded by nothing, since only Laravel's event,
   which the exclusion leaves uncaptured, reports them.
 - With them, a successful `attempt()` or `login()` on a `jwt` guard is recorded by nothing, since only Laravel's
@@ -603,8 +603,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   way.
 - MFA gives `EnrollmentAbandoned` a cause and a reset's operator: the mapper names the operator from the event and
   records the attempt ceiling's by no one.
-- `iam:install` and `iam:check` (M8) write and enforce `CaptureExclusions`' answers and
-  `AuditSettings::refusesUnregisteredCodes()`, and call `OperationalAlerts::validate()`.
+- `iam:install` or `iam:check` changes what it writes or enforces from `CaptureExclusions`' answers and
+  `AuditSettings::refusesUnregisteredCodes()`, or how it calls `OperationalAlerts::validate()` (`install-and-check.md`).
 - A member closes one of the gaps listed above: the workaround it names goes.
 - `laravel-authentication` reports a refusal once the outermost transaction has ended, or audit-log offers a capture
   that waits for a transaction to end either way: `DeferredRefusals` goes, and `RefusedRedemptionsTest` and

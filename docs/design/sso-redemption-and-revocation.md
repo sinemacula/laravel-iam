@@ -40,8 +40,14 @@ the storage connection and retry helper the redemptions run through are in `stor
   `register()`: a later provider that turns the switch over comes too late for the bindings and for the contributor
   alike, so the two never disagree.
 
-- Session revocation is the one mandatory row (IAM-4.4): left on SSO's default, an enforcement change, a disabled or
-  deleted connection, a removed link or a widened scope would leave every session it concerns standing.
+- Session revocation is mandatory always (IAM-4.4): left on SSO's default, an enforcement change, a disabled or
+  deleted connection, a removed link or a widened scope would leave every session it concerns standing. The external
+  identity links, the linker and the link storage are mandatory while SSO is in use (a protocol switched on, or its
+  switch malformed, `SsoSeams::isInUse()`, as SSO's `Features::isInUse()` reads it): left on their defaults, or
+  unbound, no sign-in through SSO finds its identity and no link is made. The re-authentication sessions are mandatory
+  while SSO's enforcement is on or the application names or binds a tenant MFA requirement (IAM-10.2): left on SSO's
+  default then, nobody held to a tenant's rule could renew a session through the connection the rule names. Each
+  mandate is read by `iam:check` whatever `iam.adapters.sso` says (`install-and-check.md`).
 - The whole capability is switched by `iam.adapters.sso` (`IAM_ADAPTERS_SSO`), read in `register()` and leniently, as
   `iam.adapters.mfa` is: `false` (as a boolean or as text), `0`, `off` and `no` turn it off, and anything else, a
   missing or empty value included, leaves it on. Off, nothing here is bound and each member keeps its own default.

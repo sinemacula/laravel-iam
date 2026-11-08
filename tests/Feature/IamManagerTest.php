@@ -4,8 +4,11 @@ declare(strict_types = 1);
 
 namespace Tests\Feature;
 
+use Illuminate\Console\Application as Artisan;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Console\Scheduling\Event as ScheduledEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +28,7 @@ use SineMacula\Laravel\Authorization\Facades\Authorization;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamManager;
+use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 use SineMacula\Laravel\Iam\Sso\CallerScope;
 use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
@@ -182,6 +186,23 @@ final class IamManagerTest extends TestCase
 
         self::assertInstanceOf(TreeChanges::class, $manager->treeChanges());
         self::assertNotSame($manager->treeChanges(), $manager->treeChanges());
+    }
+
+    /**
+     * The members' scheduled work is registered on the schedule handed in, by
+     * this package's own schedule.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheScheduleIsRegisteredOnTheScheduleHandedIn(): void
+    {
+        $schedule = new Schedule;
+
+        $this->manager()->schedule($schedule);
+
+        self::assertSame([Artisan::formatCommandString(IamSchedule::MFA_PRUNE)], array_map(static fn (ScheduledEvent $event): ?string => $event->command, $schedule->events()));
     }
 
     /**

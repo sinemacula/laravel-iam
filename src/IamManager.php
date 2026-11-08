@@ -4,7 +4,9 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Container;
+use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 use SineMacula\Laravel\Iam\Sso\CallerScope;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
@@ -155,6 +157,25 @@ final readonly class IamManager
     public function treeChanges(): TreeChanges
     {
         return self::container()->make(TreeChanges::class);
+    }
+
+    /**
+     * Register the members' scheduled work they leave to the application on its
+     * schedule (IAM-2.6), from `withSchedule()` or a service provider:
+     * `mfa:prune`, SSO's operations schedule and, while audit-log delivers
+     * through its outbox, `audit-log:drain`; never audit-log's own seal, sweep,
+     * verify or prune, which it schedules itself.
+     *
+     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     */
+    public function schedule(Schedule $schedule): void
+    {
+        self::container()->make(IamSchedule::class)->register($schedule);
     }
 
     /**

@@ -43,9 +43,10 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   (`AdmittedRedemptions`), which nothing records with that capability off, so the adapter would take every SSO
   sign-in for one through no connection, ask SSO's exemption gate of a compliant one (an `ExemptionUsed` for a
   sign-in that needed none) and record a version no later judgement of the session answers. It is mandatory while
-  SSO's `sso.features.enforcement` is on or the application names or binds a tenant MFA requirement, kept as data for
-  the checks: left on the default then, no tenant's enforcement or requirement would reach a session. It is bound
-  whatever those say, since either may be turned on while the application runs. With `iam.adapters.sso` off the policy
+  SSO's `sso.features.enforcement` is on or the application names or binds a tenant MFA requirement, a mandate
+  `iam:check` reads from the row (`Checks\MandatorySeamsCheck`): left on the default then, no tenant's enforcement or
+  requirement would reach a session. It is bound whatever those say, since either may be turned on while the
+  application runs. With `iam.adapters.sso` off the policy
   is the application's to bind, beside the SSO seams it binds, as a mandatory one under the same conditions, MFA's
   tenant requirement still answered from `iam.tenancy.mfa_requirement` while `iam.adapters.mfa` is on; with both
   switches off nothing of the package's reads it, and both seams are the application's to bind. The packaged
@@ -312,4 +313,4 @@ Update this note when:
 - a reported tree move (`Iam::treeChanges()`, `provisioning-and-tenancy.md`) stops judging the moved tenant's whole
   subtree through `SubtreePolicyChanges` while SSO's enforcement or a requirement is on (Decision Q7), or inheritance of
   a requirement down the tree is decided otherwise than Q6 (a);
-- the checks (M8) read the binding's mandate.
+- `iam:check` stops reading the policy's mandate from its row (`Checks\MandatorySeamsCheck`, `install-and-check.md`).

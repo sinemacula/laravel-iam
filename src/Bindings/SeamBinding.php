@@ -40,6 +40,7 @@ final readonly class SeamBinding
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  bool  $mandatory
+     * @param  list<class-string>  $accepted
      */
     public function __construct(
 
@@ -60,5 +61,8 @@ final readonly class SeamBinding
 
         /** Whether the seam must be bound off its permissive default for the suite to be safe, as the checks report. */
         public bool $mandatory = false,
+
+        /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
+        public array $accepted = [],
     ) {}
 }
