@@ -4,25 +4,35 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Checks;
 
+use Illuminate\Contracts\Foundation\Application;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
+use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
+use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
+use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Config\Checks\EndpointsCheck;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 use Tests\Concerns\RunsChecks;
+use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
  * Feature tests for the configuration that crosses the members (IAM-2.5),
- * bullet by bullet: the ones this check holds (MFA's applications and the
- * members' freshness operations), and the ones held where they belong, SSO's by
- * the check SSO's own runs and audit-log's by the audit check, so every bullet
- * is pinned here.
+ * bullet by bullet: the ones this check holds (MFA's applications, the members'
+ * freshness operations and the tenant resolver a tenant's rule needs), and the
+ * ones held where they belong, SSO's by the check SSO's own runs and
+ * audit-log's by the audit check, so every bullet is pinned here.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,6 +46,11 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
     /** @var string Why MFA's operations undeclared for the guard the tests sign in on are refused. */
     private const string UNDECLARED = 'MFA\'s freshness operations [%s] are not declared for guard [api] under `authentication.freshness` or the guard\'s `freshness`.';
+
+    /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
+    private const string NO_TENANT_RESOLVER = 'SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to'
+        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on or a tenant MFA requirement is named:'
+        . ' bind a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is that id.';
 
     /**
      * MFA's operations, undeclared under `laravel-authentication`'s freshness
@@ -99,6 +114,34 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
+     * An MFA application on a guard of another driver than `jwt`, which holds
+     * no session for MFA to act on, is refused at deploy, whatever its other
+     * driver or none, rather than by every MFA call at runtime; on a `jwt`
+     * guard it passes.
+     *
+     * @return void
+     */
+    public function testEveryMfaApplicationMustBeAJwtGuard(): void
+    {
+        $config  = $this->app?->make('config');
+        $refusal = '`mfa.applications.machines` names a guard in `auth.guards` whose driver is not `jwt`: MFA\'s application is a guard that holds sessions.';
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $config?->set('mfa.applications.machines', ['types' => ['totp']]);
+
+        foreach ([['driver' => 'api_key', 'provider' => 'people'], ['driver' => 'session'], ['provider' => 'people']] as $guard) {
+            $config?->set('auth.guards.machines', $guard);
+
+            self::assertSame([$refusal], self::problems($this->check()->checks()));
+        }
+
+        $config?->set('auth.guards.machines', ['driver' => 'jwt', 'provider' => 'people']);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
      * With no MFA application and SSO out of use, nothing is required.
      *
      * @return void
@@ -108,6 +151,83 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $this->app?->make('config')->set('mfa.applications', null);
 
         self::assertSame([], $this->check()->checks());
+    }
+
+    /**
+     * Rows of how a tenant's rule comes to reach a session: a tenant MFA
+     * requirement named, one bound, and SSO's enforcement turned on.
+     *
+     * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
+     */
+    public static function provideTenantRules(): iterable
+    {
+        yield 'a requirement named' => [static function (Application $app): void {
+            $app->make('config')->set('iam.tenancy.mfa_requirement', FakeTenantMfaRequirement::class);
+        }];
+
+        yield 'a requirement bound' => [static function (Application $app): void {
+            $app->bind(TenantMfaRequirement::class, FakeTenantMfaRequirement::class);
+        }];
+
+        yield 'SSO\'s enforcement on' => [static function (Application $app): void {
+            $app->make('config')->set(TenancySeams::ENFORCEMENT, true);
+        }];
+    }
+
+    /**
+     * While a tenant's rule reaches a session, `laravel-authentication`'s
+     * tenant resolver left on its `ResolveNoTenant` is refused, since MFA's
+     * tenant requirement, the tree's changes and SSO's revocation resolve the
+     * session's tenant through it; a resolver of the application's own, as an
+     * instance, a class name or a closure, passes.
+     *
+     * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
+     * @return void
+     */
+    #[DataProvider('provideTenantRules')]
+    public function testTheTenantResolverMustResolveWhileATenantsRuleReachesASession(\Closure $rule): void
+    {
+        $app = $this->app;
+
+        assert($app instanceof Application);
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $rule($app);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->instance(TenantResolver::class, new OpenTenancy);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $app->singleton(TenantResolver::class, OpenTenancy::class);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $app->singleton(TenantResolver::class, static fn (): TenantResolver => new OpenTenancy);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * With no tenant MFA requirement and SSO's enforcement off, no tenant's
+     * rule reaches a session, so `ResolveNoTenant` is the application's choice,
+     * even with a tenant tree named, whose changes then resolve nothing.
+     *
+     * @return void
+     */
+    public function testNoTenantsRuleRequiresNoResolver(): void
+    {
+        $config = $this->app?->make('config');
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $config?->set('iam.tenancy.tree', StoredTenantTree::class);
+        $config?->set(TenancySeams::ENFORCEMENT, false);
+
+        self::assertSame(ResolveNoTenant::class, $this->app?->make(SeamHolders::class)->of($this->app, TenantResolver::class));
+        self::assertSame([], self::problems($this->check()->checks()));
     }
 
     /**

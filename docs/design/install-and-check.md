@@ -75,13 +75,22 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   member's tables are created on (`laravel-authentication`'s, MFA's and SSO's on `iam.storage.connection`, which the
   storage alignment shares; audit-log's on `audit-log.storage.connection` and `laravel-authorization`'s on
   `authorization.connection`, which it never writes, each the default connection when unset); its email and SMS
-  gateways; its tenant MFA requirement, memberships and tenant tree; its provisioner; the routes from the members'
-  guides; `Iam::schedule()` and a queue worker for SSO's metadata refresh; allowing SSO's Composer plugin in its own
+  gateways; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
+  before a tenant MFA requirement is named or SSO's enforcement turned on, since MFA's tenant requirement, the tree's
+  changes and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
+  principal's own tenant without one, so an application that never needed a resolver needs one then; its provisioner;
+  the routes, following this package's example application guide, so SSO's handoffs are redeemed through
+  `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly (the adapters
+  answer only a redemption or a caller those core methods recorded, and `iam:check` cannot see a route);
+  `Iam::schedule()`; a queue worker for `laravel-authentication`'s delivery of one-time codes
+  (`authentication.delivery.queue.*`), which MFA's email and SMS codes go through once the gateways are named, whether
+  or not SSO is in use, and for SSO's metadata refresh while it is; allowing SSO's Composer plugin in its own
   `composer.json`; binding `laravel-authentication`'s access contracts (`ApplicationAccess`, `TenantAccess`,
-  `ScopeRegistry`), which stay on its permissive defaults until M11 answers them from `laravel-authorization`
-  (IAM-2.1); declaring MFA's and SSO's freshness operations for their applications' guards, and allowing
-  `external_provider` on each SSO application's guard, which `iam:check` refuses but the install cannot write; keeping
-  every guard it adds excluded; and `iam:check` on every deploy.
+  `ScopeRegistry`), which stay on its permissive defaults until M11 answers them from `laravel-authorization` (IAM-2.1);
+  declaring MFA's and SSO's freshness operations for their applications' guards, and allowing `external_provider` on
+  each SSO application's guard, which `iam:check` refuses but the install cannot write; keeping every guard it adds
+  excluded; defining every audit code the application records itself, which `definitions.require_registered` otherwise
+  refuses; and `iam:check` on every deploy.
 
 ### Scheduling (IAM-2.6)
 
@@ -117,14 +126,17 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - This package's own checks follow, each behind the internal `Checks\Contracts\Check` contract, which mirrors SSO's
   `ConfigurationCheck` (`applies()`, `checks()`, plus the `subject()` it is reported under): each closure throws for a
   problem, returns a note for something worth knowing that is no failure, and returns nothing otherwise; every closure
-  runs, so one run reports every problem. Each check reads configuration and the container only, never a guard's
-  caller, a request or the database, and names keys, seams and guards in its messages, never a configured value:
+  runs, so one run reports every problem. Each of this package's checks reads configuration and the container only,
+  never a guard's caller, a request or the database (the members' checks read what their own notes say, audit-log's the
+  schema of its tables, so `iam:check` runs after `migrate`), and names keys, seams, guards, connections and classes in
+  its messages, never a secret or credential (a connection's or a model's name may appear):
   - `StorageCheck` (IAM-2.3): every member whose storage key the alignment reads (`laravel-authentication`, MFA and
     SSO) registered, every member key on the shared connection, the shared connection configured in
     `database.connections`, and the model of each user provider a `jwt` or `api_key` guard uses on it, read from the
     model's own connection without a query. A guard naming no provider uses the default one (`auth.defaults.provider`),
     as `laravel-authentication` hands its provider to Laravel, so that provider's model is read for it. No setting names
-    the principal models, so they stay with the guide. Audit-log's storage connection, when another, is a note
+    the principal models, so they stay with the installation guide (`docs/guides/installation.md`, which `checks.md`
+    repeats). Audit-log's storage connection, when another, is a note
     (`audit-mapping.md`).
   - `MandatorySeamsCheck` (IAM-10.2): every row the capabilities declare mandatory now (`SeamBinding::$mandatory`, read
     again from the configuration and the container as they stand) is bound, and its live binding (`Checks\SeamHolders`,
@@ -181,16 +193,24 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     its class, never built; and a channel has a gateway while something sends on it through this package, a `jwt`
     guard allowing `email_code` or `phone_code` routed to it, or an MFA application enabling `sms` or `email`, while
     the member's sender is this package's, the member's null default or unbound.
-  - `CrossMemberConfigurationCheck` (IAM-2.5): every MFA application names a guard; every operation MFA names
+  - `CrossMemberConfigurationCheck` (IAM-2.5): every MFA application names a guard of the `jwt` driver, the one that
+    holds sessions, so one on an `api_key` or `session` guard, which every MFA adapter refuses at runtime
+    (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names
     (`Mfa\Enums\Operation`) is declared under `authentication.freshness`, or the guard's own block, for each MFA
     application's guard, and, while SSO is in use, every operation SSO names (`FreshnessOperation`) for each SSO
-    application's guard. SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
+    application's guard; while SSO's enforcement is on or a tenant MFA requirement is named or bound
+    (`TenancySeams::isEnforcedOrRequired()`), `laravel-authentication`'s `TenantResolver` is no longer its
+    `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the tree's changes
+    and SSO's revocation resolve the session's tenant through it (`Tenancy\TenantReferences`) while
+    `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
+    read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
     `Sso\SsoBridgeCheck` (or `SsoBridgeFallbackCheck` while SSO's check does not run it), `sso.endpoints.base_url` by
     SSO's own `EndpointsCheck` (which `sso:check` runs while SSO is in use, refusing more than an unset value), and
     `sso.storage.connection` by the storage alignment, at boot and in `StorageCheck`; audit-log's are `AuditCheck`'s, so
     nothing is reported twice; `laravel-authorization`'s resolvers wait for M11; a provider attribute beyond SSO's
-    standard mapping depends on each connection's mapping, a database row, so it stays with the guide, as SSO's routes
-    do.
+    standard mapping depends on each connection's mapping, a database row, so it stays with the guides
+    (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
+    (`docs/guides/example-application.md`).
   - `PlatformCheck` (IAM-2.8): every extension `composer.json` declares is loaded in the PHP running the check, and
     SSO's Composer plugin is installed with the registry of every installed `simplesamlphp-xmlprovider` package linked
     into its directory, compared by content. It fails closed: a provider Composer lists without an install path, without
@@ -436,8 +456,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testACodeMethodWhoseTypeIsUnroutedIsRefused`,
   `testACodeFactorNeedsAGatewayOnItsChannel`, `testANamedGatewayMustImplementTheContract`
 - `tests/Feature/Checks/CrossMemberConfigurationCheckTest.php` `testMfasOperationsMustBeDeclared`,
-  `testEveryMfaApplicationMustBeAGuard`, `testSsosOperationsMustBeDeclaredWhileSsoIsInUse`,
-  `testSsosBulletsAreHeldBySsosCheck`, `testAuditLogsBulletsAreHeldByTheAuditCheck`
+  `testEveryMfaApplicationMustBeAGuard`, `testEveryMfaApplicationMustBeAJwtGuard`,
+  `testSsosOperationsMustBeDeclaredWhileSsoIsInUse`,
+  `testSsosBulletsAreHeldBySsosCheck`, `testAuditLogsBulletsAreHeldByTheAuditCheck`,
+  `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testNoTenantsRuleRequiresNoResolver`
 - `tests/Unit/Checks/PlatformCheckTest.php` `testAMissingExtensionIsReported`,
   `testAProviderWhoseRegistryIsNotLinkedIsReported`, `testAProviderWhoseRegistryCannotBeReadIsReported`
 - `tests/Feature/Checks/SchedulesCheckTest.php` `testAuditLogsRunsSwitchedOffAreNotedUntilSomethingRunsThem`,

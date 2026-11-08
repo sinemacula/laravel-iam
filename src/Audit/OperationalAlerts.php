@@ -38,8 +38,9 @@ use SineMacula\Laravel\Sso\Events\KeyNearingExpiry;
  * commands that clear a cached configuration among them), and is refused when
  * its event is dispatched, naming the key and never the value, as is an
  * `iam.audit.alerts` that is no map at all; `validate()`
- * refuses it beforehand, for `iam:check`. A key that names no alert is reported
- * by `validate()` and otherwise unread.
+ * refuses it beforehand, for `iam:check`, with a listener class that could
+ * never be handed the event. A key that names no alert is reported by
+ * `validate()` and otherwise unread.
  *
  * Audit-log dispatches `AuditWriteFailed` and `AuditCaptureFailed` inside its
  * write guard, so a record their listener makes is refused, never written. It
@@ -103,8 +104,12 @@ final readonly class OperationalAlerts
 
     /**
      * Refuse a configuration naming an alert that does not exist, a value that
-     * is no listener's class name nor a list of them, or a listener that is
-     * neither bound nor a class, for `iam:check`.
+     * is no listener's class name nor a list of them, a listener that is
+     * neither bound nor a class, or a class, not bound, that has neither a
+     * `handle()` method nor `__invoke()`, so could never be handed the event,
+     * for `iam:check`. Nothing is built: a name bound in the container is built
+     * only at the dispatch, which refuses what it builds when it cannot be
+     * handed the event.
      *
      * @return void
      *
@@ -119,12 +124,45 @@ final readonly class OperationalAlerts
             }
 
             foreach ($this->listeners($alert) as $listener) {
-
-                if (!$this->container->bound($listener) && !class_exists($listener)) {
-                    throw new \InvalidArgumentException(sprintf('A listener named in `%s.%s` is neither bound nor a class.', self::KEY, $alert));
-                }
+                $this->validateListener($alert, $listener);
             }
         }
+    }
+
+    /**
+     * Refuse a listener that is neither bound nor a class, and a class, not
+     * bound, that has neither a `handle()` method nor `__invoke()`.
+     *
+     * @param  string  $alert
+     * @param  string  $listener
+     * @return void
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function validateListener(string $alert, string $listener): void
+    {
+        if ($this->container->bound($listener)) {
+            return;
+        }
+
+        if (!class_exists($listener)) {
+            throw new \InvalidArgumentException(sprintf('A listener named in `%s.%s` is neither bound nor a class.', self::KEY, $alert));
+        }
+
+        if (!method_exists($listener, 'handle') && !method_exists($listener, '__invoke')) {
+            throw new \InvalidArgumentException(self::unhandled($alert));
+        }
+    }
+
+    /**
+     * Why a listener named for the alert could not be handed the event.
+     *
+     * @param  string  $alert
+     * @return string
+     */
+    private static function unhandled(string $alert): string
+    {
+        return sprintf('The listener named in `%s.%s` has neither a handle() method nor __invoke().', self::KEY, $alert);
     }
 
     /**
@@ -149,7 +187,7 @@ final readonly class OperationalAlerts
             }
 
             if (!is_callable($listener)) {
-                throw new \LogicException(sprintf('The listener named in `%s.%s` has neither a handle() method nor __invoke().', self::KEY, $alert));
+                throw new \LogicException(self::unhandled($alert));
             }
 
             $listener($event);

@@ -5,8 +5,12 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Checks;
 
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 
@@ -15,9 +19,12 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  * (IAM-2.5), at deploy.
  *
  * - MFA's applications are `laravel-authentication`'s guards: every key of
- *   `mfa.applications` names a guard in `auth.guards`, since MFA's application
- *   is the guard of the same name (IAM-3.12). A guard with no MFA application
- *   is the application's choice, and enables no factor.
+ *   `mfa.applications` names a guard in `auth.guards` of the `jwt` driver,
+ *   since MFA's application is the guard of the same name (IAM-3.12) and only a
+ *   `jwt` guard holds sessions, so an application on a guard of another driver
+ *   is refused at deploy rather than by every MFA call at runtime
+ *   (`Mfa\CurrentSession`). A guard with no MFA application is the
+ *   application's choice, and enables no factor.
  * - Every operation MFA names (`Mfa\Enums\Operation`) is declared under
  *   `laravel-authentication`'s freshness configuration for each MFA
  *   application's guard, and, while SSO is in use, every operation SSO names
@@ -25,6 +32,16 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   `authentication.freshness`, or in the guard's own `freshness` block, where
  *   `null` removes one. Operations are read as array keys, never as
  *   configuration paths, since their names hold dots.
+ * - `laravel-authentication`'s tenant resolver resolves tenants while SSO's
+ *   enforcement is on or the application names or binds a tenant MFA
+ *   requirement: MFA's tenant requirement, the tree's changes and SSO's
+ *   revocation resolve the session's tenant through it
+ *   (`Tenancy\TenantReferences`), while `laravel-authentication` admits a
+ *   principal's own tenant without one, so an application that never needed a
+ *   resolver would otherwise refuse every MFA-gated request from a session in a
+ *   tenant at runtime. Its live binding (`SeamHolders`) still naming
+ *   `laravel-authentication`'s `ResolveNoTenant` is refused; a resolver bound
+ *   through a closure is not built, so it is the application's to answer.
  *
  * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
  * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`, which SSO's
@@ -56,8 +73,18 @@ final readonly class CrossMemberConfigurationCheck implements Check
     /** @var string The key of `laravel-authentication`'s freshness operations. */
     private const string FRESHNESS = 'authentication.freshness';
 
+    /** @var string The guard driver whose guards hold sessions, the one MFA's applications are. */
+    private const string SESSION_DRIVER = 'jwt';
+
     /** @var string Why an MFA application naming no guard is refused. */
     private const string NO_GUARD = '`%s.%s` names no guard in `%s`: MFA\'s application is the guard of the same name.';
+
+    /** @var string Why an MFA application naming a guard of another driver is refused. */
+    private const string NOT_SESSION_GUARD = '`%s.%s` names a guard in `%s` whose driver is not `%s`: MFA\'s application is a guard that holds sessions.';
+
+    /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
+    private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on or a tenant MFA requirement is named:'
+        . ' bind a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is that id.';
 
     /** @var string Why a member's operations the guard's freshness does not declare are refused. */
     private const string UNDECLARED = '%s\'s freshness operations [%s] are not declared for guard [%s] under `%s` or the guard\'s `freshness`.';
@@ -66,11 +93,19 @@ final readonly class CrossMemberConfigurationCheck implements Check
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \SineMacula\Laravel\Iam\Checks\SeamHolders  $holders
      */
     public function __construct(
 
         /** The configuration every member's settings are read from. */
         private Repository $config,
+
+        /** The container the tenant resolver and a tenant MFA requirement are bound in. */
+        private Container $container,
+
+        /** Names the class the tenant resolver's live binding answers with. */
+        private SeamHolders $holders,
     ) {}
 
     /**
@@ -97,15 +132,18 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Every MFA application a guard, then the freshness operations of MFA's
-     * applications and, while SSO is in use, of SSO's.
+     * The tenant resolver while a tenant's rule reaches a session, every MFA
+     * application a guard, then the freshness operations of MFA's applications
+     * and, while SSO is in use, of SSO's.
      *
      * @return list<\Closure(): mixed>
      */
     #[\Override]
     public function checks(): array
     {
-        $checks = [];
+        $checks = TenancySeams::isEnforcedOrRequired($this->config, $this->container)
+            ? [fn () => $this->assertTenantsResolve()]
+            : [];
 
         foreach (self::names($this->config->get(self::MFA_APPLICATIONS)) as $application) {
             $checks[] = fn () => $this->assertGuard($application);
@@ -124,7 +162,25 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Refuse an MFA application that names no guard.
+     * Refuse a tenant resolver whose live binding is still
+     * `laravel-authentication`'s `ResolveNoTenant`, which resolves no tenant.
+     *
+     * @return void
+     *
+     * @throws \LogicException
+     */
+    private function assertTenantsResolve(): void
+    {
+        if ($this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
+            return;
+        }
+
+        throw new \LogicException(sprintf(self::NO_TENANT_RESOLVER, TenantResolver::class, ResolveNoTenant::class));
+    }
+
+    /**
+     * Refuse an MFA application that names no guard, or a guard of a driver
+     * other than `jwt`, which holds no session for MFA to act on.
      *
      * @param  string  $application
      * @return void
@@ -133,11 +189,17 @@ final readonly class CrossMemberConfigurationCheck implements Check
      */
     private function assertGuard(string $application): void
     {
-        if (is_array($this->config->get(self::GUARDS . '.' . $application))) {
+        $guard = $this->config->get(self::GUARDS . '.' . $application);
+
+        if (!is_array($guard)) {
+            throw new \LogicException(sprintf(self::NO_GUARD, self::MFA_APPLICATIONS, $application, self::GUARDS));
+        }
+
+        if (($guard['driver'] ?? null) === self::SESSION_DRIVER) {
             return;
         }
 
-        throw new \LogicException(sprintf(self::NO_GUARD, self::MFA_APPLICATIONS, $application, self::GUARDS));
+        throw new \LogicException(sprintf(self::NOT_SESSION_GUARD, self::MFA_APPLICATIONS, $application, self::GUARDS, self::SESSION_DRIVER));
     }
 
     /**

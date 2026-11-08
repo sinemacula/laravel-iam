@@ -58,9 +58,19 @@ final readonly class Installer
         'Bind your email and SMS gateways (`EmailGateway`, `SmsGateway`) or name them in `iam.delivery.email` and `iam.delivery.sms`'
             . ' before you allow a code sign-in method or an `email` or `sms` factor.',
         'Name your tenant MFA requirement, memberships and tenant tree in `iam.tenancy`, or bind them, if your application has tenants.',
+        'Bind laravel-authentication\'s `TenantResolver`, resolving every tenant id to the tenant whose `getTenantIdentifier()` is that id,'
+            . ' before you name a tenant MFA requirement or turn laravel-sso\'s enforcement on, even if your principals act only in their own tenant:'
+            . ' under its default `ResolveNoTenant`, laravel-mfa\'s tenant requirement, `Iam::treeChanges()` and laravel-sso\'s revocation'
+            . ' throw `UnresolvedReferenceException`.',
         'Name your provisioner in `iam.provisioning.provisioner`, or bind it, to provision people signing in through SSO for the first time.',
-        'Add the routes from the guides: laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s, following laravel-sso\'s example application guide.',
-        'Call `Iam::schedule($schedule)` from `withSchedule()` and run the scheduler, and run a queue worker for laravel-sso\'s metadata refresh (`sso.metadata.queue`).',
+        'Add the routes, following laravel-iam\'s example application guide (docs/guides/example-application.md): redeem SSO\'s handoffs'
+            . ' through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly;'
+            . ' laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s guides list their own routes.',
+        'Call `Iam::schedule($schedule)` from `withSchedule()` and run the scheduler.',
+        'Run a queue worker for laravel-authentication\'s delivery of one-time codes (`authentication.delivery.queue.connection`'
+            . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through once the gateways are named,'
+            . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
+            . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
         'Allow the `simplesamlphp/composer-xmlprovider-installer` plugin in your application\'s `composer.json` (`config.allow-plugins`).',
         'Bind laravel-authentication\'s access contracts (`ApplicationAccess`, `TenantAccess`, `ScopeRegistry`): until you do,'
             . ' its defaults admit any principal to any application with any scope, and to its own tenant only;'
@@ -69,6 +79,8 @@ final readonly class Installer
             . ' for every MFA application\'s guard and, while SSO is in use, laravel-sso\'s `sso.*` ones for every SSO application\'s'
             . ' guard, whose sign-in methods must allow `external_provider`; `iam:check` refuses each one missing.',
         'Keep every `jwt` and `api_key` guard you add in `audit-log.capture.laravel.except_guards`.',
+        'Define every audit code your application records itself with `AuditLog::define()`: while `audit-log.definitions.require_registered`'
+            . ' is on, recording a code with no definition throws.',
         'Run `php artisan iam:check` on every deploy.',
     ];
 

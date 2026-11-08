@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authentication\Proofs\ObservedProperties as Authenticatio
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
 use SineMacula\Laravel\Authentication\Proofs\ProofResult;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties as MfaProperties;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
@@ -43,6 +44,15 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * properties cross under their own names (`backupEligible` is MFA's
  * `backupEligibility`, `phishingResistant` its `phishingResistance`).
  *
+ * An external provider's proof (an SSO sign-in's first factor, or a
+ * reauthentication at the provider) names its connection to MFA only as the
+ * `ProviderTrust` handed in allows: when it carries evidence SSO's evidence
+ * contract accepted, and, for a tenant, from a connection the tenant trusts
+ * (`ConnectionTrust`). Otherwise it reaches MFA on an `external_provider`
+ * channel naming no connection, so a combination policy that trusts a
+ * connection can never count a sign-in SSO's evidence gate refused, nor count
+ * one tenant's trust for another (IAM-4.6, IAM-5.1).
+ *
  * Nothing is relaxed on the way: a proof one member would refuse to build (an
  * additional factor without its factor, or on a password channel; a first
  * factor not made at sign-in; a credential backed up but not eligible for
@@ -63,30 +73,36 @@ final readonly class ProofTranslator
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator  $channels
+     * @param  \SineMacula\Laravel\Iam\Sso\ConnectionTrust  $connections
      */
     public function __construct(
 
         /** Translates the proofs' channels. */
         private ChannelTranslator $channels,
+
+        /** Whether a tenant trusts the connection an external provider's proof was made through. */
+        private ConnectionTrust $connections,
     ) {}
 
     /**
      * MFA's proof for one a session recorded, bound to the sign-in for the
      * purpose it was made for, stamped with the sign-in's verification
-     * generation.
+     * generation; an external provider's proof names its connection only as the
+     * trust given allows.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\SignIn  $signIn
+     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust  $trust
      * @return \SineMacula\Laravel\Mfa\Proofs\Proof
      *
      * @throws \InvalidArgumentException
      */
-    public function toMfa(RecordedProof $proof, SignIn $signIn): Proof
+    public function toMfa(RecordedProof $proof, SignIn $signIn, ProviderTrust $trust): Proof
     {
         return new Proof(
             $this->kind($proof->kind),
             $proof->method,
-            $this->channelOf($proof),
+            $this->channelOf($proof, $signIn->application, $trust),
             $proof->factor,
             $this->properties($proof->observed),
             $proof->authenticatedAt,
@@ -242,23 +258,50 @@ final readonly class ProofTranslator
     /**
      * MFA's channel for a recorded proof: none for a recovery code, an
      * `external_provider` one for a reauthentication at the external provider
-     * (with the provider's reference when it was recorded on one), and the
-     * recorded channel otherwise.
+     * or a proof recorded on one (naming the connection only as the trust
+     * allows), and the recorded channel otherwise.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
+     * @param  string  $application
+     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust  $trust
      * @return ?\SineMacula\Laravel\Mfa\Assurance\Channel
      *
      * @throws \InvalidArgumentException
      */
-    private function channelOf(RecordedProof $proof): ?MfaChannel
+    private function channelOf(RecordedProof $proof, string $application, ProviderTrust $trust): ?MfaChannel
     {
-        return match ($proof->kind) {
-            AuthenticationProofKind::RECOVERY_CODE             => null,
-            AuthenticationProofKind::EXTERNAL_REAUTHENTICATION => new MfaChannel(
+        $external = $proof->channel->kind === AuthenticationChannelKind::EXTERNAL_PROVIDER;
+
+        return match (true) {
+            $proof->kind              === AuthenticationProofKind::RECOVERY_CODE             => null,
+            $external || $proof->kind === AuthenticationProofKind::EXTERNAL_REAUTHENTICATION => new MfaChannel(
                 MfaChannelKind::EXTERNAL_PROVIDER,
-                $proof->channel->kind === AuthenticationChannelKind::EXTERNAL_PROVIDER ? $proof->channel->reference : null,
+                $external ? $this->connectionOf($proof, $application, $trust) : null,
             ),
             default => $this->channels->toMfa($proof->channel),
         };
+    }
+
+    /**
+     * The connection an external provider's proof may name to MFA: its own,
+     * when the trust counts accepted evidence, the proof carries evidence SSO's
+     * evidence contract accepted, and the tenant the trust names, if any,
+     * trusts the connection on the application; none otherwise.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
+     * @param  string  $application
+     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust  $trust
+     * @return ?string
+     */
+    private function connectionOf(RecordedProof $proof, string $application, ProviderTrust $trust): ?string
+    {
+        $connectionId = $proof->channel->reference;
+        $tenantId     = $trust->tenantId;
+
+        if ($connectionId === null || !$trust->countsAccepted || $proof->evidence === null) {
+            return null;
+        }
+
+        return $tenantId === null || $this->connections->trusts($tenantId, $connectionId, $application) ? $connectionId : null;
     }
 }

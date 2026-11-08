@@ -485,6 +485,11 @@ final class OperationalAlertsTest extends TestCase
             'A listener named in `iam.audit.alerts.audit_write_failed` is neither bound nor a class.',
         ];
 
+        yield 'a class with neither handle() nor __invoke()' => [
+            ['integrity_check_failed' => [HandlesAlerts::class, HearsNoAlerts::class]],
+            'The listener named in `iam.audit.alerts.integrity_check_failed` has neither a handle() method nor __invoke().',
+        ];
+
         yield 'a value that names no listener' => [
             ['key_nearing_expiry' => [1]],
             '`iam.audit.alerts.key_nearing_expiry` must be a listener\'s class name or a list of them.',
@@ -493,7 +498,9 @@ final class OperationalAlertsTest extends TestCase
 
     /**
      * `validate()` refuses an alert that does not exist, a value that names no
-     * listener, and a listener neither bound nor a class, for `iam:check`.
+     * listener, a listener neither bound nor a class, and a class that could
+     * not be handed the event, with neither `handle()` nor `__invoke()`, for
+     * `iam:check`.
      *
      * @param  mixed  $alerts
      * @param  string  $message

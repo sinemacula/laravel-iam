@@ -93,9 +93,10 @@ final class SsoJudgementsQueryBudgetTest extends PerformanceContractTestCase
 
         // Reads (2): laravel-authentication's policy reads the session again
         // and then its newest proof that meets the requirement.
-        $check = static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300);
+        $check  = static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300);
+        $caller = $this->requestCallerOf($person);
 
-        $this->assertQueryBudget(2, 0, static fn (): mixed => Iam::callers()->run(self::GUARD, $person, $check));
+        $this->assertQueryBudget(2, 0, static fn (): mixed => Iam::callers()->run($caller, $check));
     }
 
     /**

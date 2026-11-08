@@ -559,7 +559,7 @@ final class RedemptionLockOrderTest extends TestCase
      */
     private function redeemLink(Handoff $handoff, Person $person): RedemptionResult
     {
-        return Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        return Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
     }
 
     /**

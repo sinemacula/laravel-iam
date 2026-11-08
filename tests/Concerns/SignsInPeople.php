@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
@@ -18,6 +21,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
+use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
@@ -39,7 +43,11 @@ use Tests\Fixtures\Models\Person;
  * controller hands it on: `client()` for `laravel-authentication`, and
  * `callerOf()` for MFA's self-service actions, the person as an active caller
  * on the guard, or `servedCaller()`, the caller as MFA reads one from a request
- * served now (`CallerContext::fromRequest()`), whoever the guard serves.
+ * served now (`CallerContext::fromRequest()`), whoever the guard serves; and
+ * `requestCallerOf()` for this package's SSO calls, the person as
+ * `laravel-authentication`'s caller of a request, holding the session the guard
+ * serves now, as `Auth::caller()` reads it where an application reads the
+ * request.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -112,6 +120,24 @@ trait SignsInPeople
     protected static function callerOf(Person $person, string $guard = self::GUARD): CallerContext
     {
         return CallerContext::forIdentity($person, $guard, new MfaClientContext(self::CLIENT_IP, self::CLIENT_AGENT));
+    }
+
+    /**
+     * The identity as `laravel-authentication`'s caller of a request on the
+     * guard, its access credential holding the session the guard serves now, as
+     * `Auth::caller()` reads it: whoever's session that is, or none.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  string  $guard
+     * @return \SineMacula\Laravel\Authentication\Callers\Caller
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    protected function requestCallerOf(Identity $identity, string $guard = self::GUARD): Caller
+    {
+        $session = $this->app?->make(CurrentSession::class)->guard($guard)->session();
+
+        return new Caller($guard, CallerCredential::ACCESS, $identity, null, null, $session);
     }
 
     /**

@@ -10,6 +10,7 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -32,8 +33,13 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  * none yet), so the first factor is bound to the sign-in no session key can
  * name (`SignIn::UNNAMED`), as its requirement check binds a sign-in's proofs,
  * and stamped with the identity's current verification generation, as MFA
- * stamps a proof it records. An identity MFA cannot hold factors for, or one
- * whose key names nothing, is refused by throwing (IAM-8.2), as is an answer
+ * stamps a proof it records. An SSO sign-in's first factor names its connection
+ * to MFA only when it carries evidence SSO's evidence contract accepted, and,
+ * for a proven session acting in a tenant, only when that tenant trusts the
+ * connection (`ProviderTrust::accepted()`), so a combination policy that trusts
+ * the connection never waives the further factor of a sign-in SSO's evidence
+ * gate refused. An identity MFA cannot hold factors for, or one whose key names
+ * nothing, is refused by throwing (IAM-8.2), as is an answer
  * `laravel-authentication` cannot hold: no requirement is guessed.
  *
  * It reads nothing of its own but the generation, writes nothing and takes no
@@ -86,7 +92,7 @@ final readonly class AdditionalFactorPolicyAdapter implements AdditionalFactorPo
         }
 
         $signIn      = new SignIn(IdentityReference::of($identity), $context->application, SignIn::UNNAMED, VerificationGeneration::current($identity));
-        $firstFactor = $this->proofs->toMfa($context->firstFactor, $signIn);
+        $firstFactor = $this->proofs->toMfa($context->firstFactor, $signIn, ProviderTrust::accepted($context->provenSession?->getTenantId()));
 
         return $this->requirements->toAuthentication($this->policy->requirementFor($identity, $context->application, $firstFactor));
     }

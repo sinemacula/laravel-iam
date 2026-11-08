@@ -4,26 +4,17 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Testing;
 
-use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
-use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
-use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation;
-use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\SessionFirstFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
-use SineMacula\Laravel\Mfa\Database\ConfiguredModels;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
-use SineMacula\Laravel\Mfa\Enums\ChannelKind;
-use SineMacula\Laravel\Mfa\Enums\KeyProtection;
-use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Enums\RequirementPart;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
@@ -42,24 +33,25 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * `laravel-authentication` records, and a proof counts only while it names a
  * factor the identity holds in MFA's factor table. So MFA's own
  * `actingAsVerified()`, which records synthetic proofs through the store, is
- * refused here. This records the proof as a real step-up does instead: it
- * enrols a confirmed fixture factor of the level's kind for the identity, on
- * the guard's application, and steps the session up with a proof made with it
- * through the step-up adapter, so `laravel-authentication` locks the session's
- * row, checks it is still one of the guard's live, active sessions of a person,
- * and records the proof, flagged multifactor exactly when MFA's own acceptance
- * would say it refreshes the multifactor evidence: when MFA's requirement
- * check, judging the session's first factor and this proof alone, dates that
- * evidence to this proof. The proofs are then read back through the same
- * `SessionFirstFactor::proofs()` and `RequirementCheck` MFA's route gate uses,
- * against additional verification and the level, exactly as MFA's own helper
- * reads them.
+ * refused here. This records the proof as a real step-up does instead: it takes
+ * a confirmed factor of the level's type the identity holds, or enrols a
+ * confirmed fixture factor of that type for it on the guard's application when
+ * it holds none (`FixtureFactors`), and steps the session up with a proof made
+ * with it through the step-up adapter, so `laravel-authentication` locks the
+ * session's row, checks it is still one of the guard's live, active sessions of
+ * a person, and records the proof, flagged multifactor exactly when MFA's own
+ * acceptance would say it refreshes the multifactor evidence: when MFA's
+ * requirement check, judging the session's first factor and this proof alone,
+ * dates that evidence to this proof. The proofs are then read back through the
+ * same `SessionFirstFactor::proofs()` and `RequirementCheck` MFA's route gate
+ * uses, against additional verification and the level, exactly as MFA's own
+ * helper reads them.
  *
- * The level's evidence is MFA's own helper's: an email code to a synthetic
- * address for AAL1, an authenticator app for AAL2, and a hardware-protected,
- * phishing-resistant passkey observing presence and user verification for AAL3,
- * which MFA's default combination policy rates AAL2, so it needs a policy that
- * rates such evidence AAL3.
+ * The level's evidence is MFA's own helper's (`LevelEvidence`): an email code
+ * to a synthetic address for AAL1, an authenticator app for AAL2, and a
+ * hardware-protected, phishing-resistant passkey for AAL3, which MFA's default
+ * combination policy rates AAL2, so it needs a policy that rates such evidence
+ * AAL3.
  *
  * Stateless: the guard, the session and the identity are read on every call.
  *
@@ -70,13 +62,10 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  */
 final readonly class VerifiedSession
 {
-    /** @var string The synthetic address an AAL1 proof's code travels to. */
-    public const string EMAIL_ADDRESS = 'verified@example.test';
-
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  \SineMacula\Laravel\Iam\Testing\FixtureFactors  $factors
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $current
      * @param  \SineMacula\Laravel\Iam\Mfa\StepUpAdapter  $stepUp
      * @param  \SineMacula\Laravel\Mfa\Context\SessionFirstFactor  $proofs
@@ -84,8 +73,8 @@ final readonly class VerifiedSession
      */
     public function __construct(
 
-        /** The configuration MFA's factor model is declared in. */
-        private Repository $config,
+        /** The factor of the level's type the identity holds, or one enrolled for it. */
+        private FixtureFactors $factors,
 
         /** Resolves the default guard, the identity it serves and its current session. */
         private CurrentSession $current,
@@ -119,27 +108,15 @@ final readonly class VerifiedSession
         $application = $this->current->defaultGuard();
         $identity    = $this->current->caller($application);
         $session     = $this->current->current($identity, $application);
-
-        [$type, $kind, $properties, $amr] = self::evidence($level);
-
-        $factor = $this->enrol($identity, $application, $type);
-
-        $proof = new Proof(
-            kind: ProofKind::ADDITIONAL_FACTOR,
-            method: $type,
-            channel: new Channel($kind, $kind === ChannelKind::EMAIL ? self::EMAIL_ADDRESS : $factor),
-            reference: $factor,
-            properties: $properties,
-            provedAt: CarbonImmutable::now(),
-            binding: self::binding($identity, $application, SignIn::reference($session, $application)),
-            generation: VerificationGeneration::current($identity),
-        );
+        $evidence    = LevelEvidence::of($level);
+        $binding     = self::binding($identity, $application, SignIn::reference($session, $application));
+        $proof       = $evidence->proof($this->factors->held($identity, $application, $evidence->type), $binding, VerificationGeneration::current($identity));
 
         $this->stepUp->stepUp(CallerContext::forIdentity($identity, $application), VerificationResult::verified(
             $proof,
             $this->check->check(Requirement::none(), ...array_merge($this->proofs->proofs($identity, $application), [$proof])),
-            $amr,
-            $type,
+            $evidence->amr,
+            $evidence->type,
             $this->refreshesMultifactor($identity, $application, $proof),
         ));
 
@@ -147,6 +124,22 @@ final readonly class VerifiedSession
             Requirement::none()->withAdditionalVerification()->withMinimumLevel($level),
             ...$this->proofs->proofs($identity, $application),
         ));
+    }
+
+    /**
+     * Refuse the unclassified level, which no proof supports, so a caller can
+     * be refused it before anything is signed in or recorded.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
+     * @return void
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function assertClassified(AssuranceLevel $level): void
+    {
+        if ($level === AssuranceLevel::UNCLASSIFIED) {
+            throw new \InvalidArgumentException('A session cannot be verified at the unclassified level: it supports no level.');
+        }
     }
 
     /**
@@ -168,52 +161,6 @@ final readonly class VerifiedSession
         $firstFactor = $this->proofs->current($identity, $application) ?? throw new \LogicException('The session\'s first factor is not known, so no proof is accepted after it.');
 
         return $this->check->check(Requirement::none(), $firstFactor, $proof)->multifactorAt?->equalTo($proof->provedAt) ?? false;
-    }
-
-    /**
-     * The evidence a level's further proof is made of: the type of the factor
-     * it is made with, which is also its method, the kind of channel it travels
-     * on (to the synthetic address for an email code, and to the factor itself
-     * otherwise), what was observed, and the `amr` values MFA reports for a
-     * proof of that kind on its own (its method's, then user presence and key
-     * protection when observed).
-     *
-     * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
-     * @return array{0: string, 1: \SineMacula\Laravel\Mfa\Enums\ChannelKind, 2: \SineMacula\Laravel\Mfa\Assurance\ObservedProperties, 3: list<string>}
-     */
-    private static function evidence(AssuranceLevel $level): array
-    {
-        return match ($level) {
-            AssuranceLevel::AAL1 => ['email', ChannelKind::EMAIL, ObservedProperties::none(), ['otp']],
-            AssuranceLevel::AAL3 => ['passkey', ChannelKind::PASSKEY, self::hardwarePasskey(), ['pop', 'user', 'hwk']],
-            default              => ['totp', ChannelKind::AUTHENTICATOR_APP, ObservedProperties::none(), ['otp']],
-        };
-    }
-
-    /**
-     * What a passkey that observed presence, user verification and phishing
-     * resistance, with a hardware-protected key, was observed to be.
-     *
-     * @return \SineMacula\Laravel\Mfa\Assurance\ObservedProperties
-     */
-    private static function hardwarePasskey(): ObservedProperties
-    {
-        return new ObservedProperties(userPresence: true, userVerification: true, phishingResistance: true, keyProtection: KeyProtection::HARDWARE);
-    }
-
-    /**
-     * Refuse the unclassified level, which no proof supports.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
-     * @return void
-     *
-     * @throws \InvalidArgumentException
-     */
-    private static function assertClassified(AssuranceLevel $level): void
-    {
-        if ($level === AssuranceLevel::UNCLASSIFIED) {
-            throw new \InvalidArgumentException('A session cannot be verified at the unclassified level: it supports no level.');
-        }
     }
 
     /**
@@ -252,39 +199,5 @@ final readonly class VerifiedSession
         $listed = $unmet === [] ? 'none' : implode(', ', $unmet);
 
         throw new \LogicException(sprintf('Requested %s with additional verification; reached %s; unmet: %s.', $level->value, $evaluation->level->value, $listed));
-    }
-
-    /**
-     * Enrol a confirmed fixture factor of the type for the identity, on the
-     * application, in MFA's configured factor model, and answer its id as a
-     * proof made with it names it.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $application
-     * @param  string  $type
-     * @return string
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\InvalidModelException
-     * @throws \Throwable
-     */
-    private function enrol(Identity&MultiFactorAuthenticatable $identity, string $application, string $type): string
-    {
-        $model  = ConfiguredModels::factor($this->config);
-        $factor = new $model;
-        $owner  = $factor->authenticatable();
-        $holder = IdentityReference::of($identity);
-
-        $factor->forceFill([
-            $owner->getMorphType()        => $holder->type,
-            $owner->getForeignKeyName()   => $holder->key,
-            $factor->getTypeName()        => $type,
-            $factor->getApplicationName() => $application,
-        ]);
-
-        $factor->confirm();
-        $factor->persist();
-
-        return ProofStoreAdapter::factorReference($factor);
     }
 }

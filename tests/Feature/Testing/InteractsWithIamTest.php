@@ -4,19 +4,44 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Testing;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
+use SineMacula\Laravel\Authentication\Contracts\PrincipalResolver;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
+use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthenticationChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Authentication\Sessions\Enums\PendingRequirement;
+use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
+use SineMacula\Laravel\Authentication\Sessions\PendingSession;
+use SineMacula\Laravel\Authentication\Sessions\SignInContext;
+use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
+use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\IdentityReferences;
+use SineMacula\Laravel\Iam\Testing\CallerCompletion;
+use SineMacula\Laravel\Iam\Testing\CallerSession;
+use SineMacula\Laravel\Iam\Testing\CallerSignIn;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
+use SineMacula\Laravel\Iam\Testing\FixtureFactors;
+use SineMacula\Laravel\Iam\Testing\LevelEvidence;
 use SineMacula\Laravel\Iam\Testing\VerifiedSession;
+use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
+use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
@@ -28,25 +53,45 @@ use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Testing\Concerns\InteractsWithMfa;
+use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
+use SineMacula\Laravel\Sso\Sessions\Provenance;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Models\Machine;
 use Tests\Fixtures\Models\Person;
+use Tests\Fixtures\Resolvers\ClaimedTenant;
+use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Testing\LeveledCombinationPolicy;
+use Tests\Fixtures\Testing\Membership;
+use Tests\Fixtures\Testing\ResolvesMemberships;
 use Tests\TestCase;
 
 /**
- * Acting on a session verified at a given level, with every adapter bound as an
- * application gets them: MFA's proof store is this package's, so MFA's own
- * `actingAsVerified()` is refused, and `actingOnVerifiedSession()` arranges the
- * same through `laravel-authentication`'s step-up instead, with a factor the
- * person holds, so the proof counts and MFA's route gate lets the session
- * through.
+ * Acting as a caller across the suite, with every adapter bound as an
+ * application gets them.
+ *
+ * `actingAsCaller()` arranges the identity, the principal, the active tenant,
+ * the session, the MFA level and the SSO provenance in one call, by signing the
+ * person in for real, so each adapter reads them from the session as it reads a
+ * real caller's: MFA's route gate, MFA's active-tenant resolver and the `sso`
+ * context namespace included. A machine identity is acted as without a session.
+ *
+ * Acting on a session verified at a given level: MFA's proof store is this
+ * package's, so MFA's own `actingAsVerified()` is refused, and
+ * `actingOnVerifiedSession()` arranges the same through
+ * `laravel-authentication`'s step-up instead, with a factor the person holds,
+ * so the proof counts and MFA's route gate lets the session through.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
+#[CoversClass(CallerSession::class)]
+#[CoversClass(CallerSignIn::class)]
+#[CoversClass(CallerCompletion::class)]
+#[CoversClass(FixtureFactors::class)]
+#[CoversClass(LevelEvidence::class)]
 #[CoversClass(VerifiedSession::class)]
 #[CoversClass(ProofStoreAdapter::class)]
 #[CoversTrait(InteractsWithIam::class)]
@@ -59,6 +104,30 @@ final class InteractsWithIamTest extends TestCase
 
     /** @var string The route MFA's gate lets a session through at AAL3. */
     private const string AAL3_ROUTE = '/verified/aal3';
+
+    /** @var string The route that answers the guard's active tenant. */
+    private const string TENANT_ROUTE = '/caller/tenant';
+
+    /** @var string The latest an SSO caller's session may last, as SSO capped it, an hour after the SSO caller signs in. */
+    private const string SESSION_NOT_AFTER = '2026-11-08 11:00:00';
+
+    /** @var string The version of the enforcement SSO judged an SSO caller's sign-in under. */
+    private const string ENFORCEMENT_VERSION = 'enforcement-7';
+
+    /** @var string A second guard people sign in on. */
+    private const string OTHER_GUARD = 'console';
+
+    /** @var string The guard machines authenticate on with an API key. */
+    private const string MACHINE_GUARD = 'machines';
+
+    /** @var string The tenant a caller acts in. */
+    private const string TENANT = 'tenant-acme';
+
+    /** @var string The connection an SSO caller signed in through. */
+    private const string SSO_CONNECTION = 'connection-acme';
+
+    /** @var string The link an SSO caller signed in through. */
+    private const string LINK = 'link-acme';
 
     /** @var string What MFA's own helper is refused with, naming the helper that arranges a verified session instead. */
     private const string REFUSAL = 'Only laravel-authentication records a session\'s proofs; a further proof reaches it through a step-up or a pending completion,'
@@ -169,7 +238,7 @@ final class InteractsWithIamTest extends TestCase
         self::assertSame($type, $recorded->method);
         self::assertSame($factor->id, $recorded->factor);
         self::assertSame($channel->value, $recorded->channel->kind->value);
-        self::assertSame($channel === ChannelKind::EMAIL ? VerifiedSession::EMAIL_ADDRESS : $factor->id, $recorded->channel->reference);
+        self::assertSame($channel === ChannelKind::EMAIL ? LevelEvidence::EMAIL_ADDRESS : $factor->id, $recorded->channel->reference);
         self::assertTrue($recorded->evaluation?->accepted);
         self::assertSame($multifactor, $recorded->evaluation->multifactor);
         self::assertSame($methods, $recorded->methods);
@@ -267,6 +336,972 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
+     * A person acting as a caller is signed in for real: the guard binds the
+     * person, as their own default principal, on a live, active session of the
+     * guard's, started under the password from the testing client, holding its
+     * first factor alone, so MFA's route gate refuses it a level.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonActsOnASessionTheySignedInTo(): void
+    {
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person);
+
+        $session = $this->boundSession();
+
+        $this->assertBoundIdentity($person)->assertBoundPrincipal($person)->assertBoundTenant(null)->assertBoundScopes(null);
+
+        self::assertSame(SessionStatus::ACTIVE, $session->getStatus());
+        self::assertSame(self::GUARD, $session->getGuard());
+        self::assertSame(CallerSession::DEFAULT_METHOD, $session->getSignInMethod());
+        self::assertNull($session->getTenantId());
+        self::assertSame(CallerSignIn::CLIENT_IP, $session->getAttribute($session->getLastUsedIpName()));
+        self::assertSame(CallerSignIn::CLIENT_AGENT, $session->getAttribute($session->getLastUsedUserAgentName()));
+        self::assertCount(1, $this->proofsOf($session));
+        self::assertSame(AuthenticationChannelKind::UNKNOWN, $this->firstFactorOf($session)?->channel->kind);
+        self::assertSame([], Auth::context()?->toArray()[AuthenticationContext::NAMESPACE] ?? []);
+
+        $this->getJson(self::AAL2_ROUTE)->assertUnauthorized();
+    }
+
+    /**
+     * The principal given is the one the sign-in chooses, and the session is
+     * started under the method given.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testThePrincipalAndTheMethodGivenAreTheSessions(): void
+    {
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, principal: $person, session: CallerSession::started('passkey'));
+
+        $this->assertBoundPrincipal($person);
+
+        self::assertSame('passkey', $this->boundSession()->getSignInMethod());
+    }
+
+    /**
+     * A principal the identity holds beside its default one is the one the
+     * sign-in chooses: the session records it, and the test acts as it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPrincipalBesideTheDefaultIsTheSessions(): void
+    {
+        $person     = $this->createPerson();
+        $membership = new Membership('membership-1', $person);
+
+        $this->app?->instance(PrincipalResolver::class, new ResolvesMemberships([$membership]));
+
+        $this->actingAsCaller($person, principal: $membership);
+
+        $session = $this->boundSession();
+
+        $this->assertBoundIdentity($person)->assertBoundPrincipal($membership);
+
+        self::assertSame(Membership::class, $session->getAttribute('principal_type'));
+        self::assertSame('membership-1', $session->getAttribute('principal_id'));
+    }
+
+    /**
+     * A principal the identity does not hold is refused at sign-in, and nothing
+     * is left behind.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPrincipalTheIdentityDoesNotHoldIsRefused(): void
+    {
+        $person = $this->createPerson();
+        $other  = $this->createPerson('other@example.test');
+
+        $this->app?->instance(PrincipalResolver::class, new ResolvesMemberships([new Membership('membership-2', $other)]));
+
+        try {
+            $this->actingAsCaller($person, principal: new Membership('membership-2', $other));
+
+            self::fail('A principal another identity holds was acted as.');
+        } catch (\LogicException $exception) {
+            self::assertStringStartsWith('The caller did not sign in on guard [api]:', $exception->getMessage());
+        }
+
+        self::assertSame(0, $person->sessions()->count());
+    }
+
+    /**
+     * Signed in with credentials, the session's first factor is the one the
+     * method proves, the password's, so MFA judges it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerSignedInWithCredentialsHoldsTheMethodsFirstFactor(): void
+    {
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, session: self::withPassword($person));
+
+        $session = $this->boundSession();
+
+        self::assertSame('password', $session->getSignInMethod());
+        self::assertSame(AuthenticationChannelKind::PASSWORD, $this->firstFactorOf($session)?->channel->kind);
+    }
+
+    /**
+     * Credentials that sign in another identity than the caller are refused
+     * inside the sign-in's transaction, so the test never acts as someone it
+     * did not name and the other identity's session is rolled back with it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testCredentialsOfAnotherIdentityAreRefused(): void
+    {
+        $caller = $this->createPerson();
+        $other  = $this->createPerson();
+
+        try {
+            $this->actingAsCaller($caller, session: self::withPassword($other));
+
+            self::fail('The caller acted on another identity\'s session.');
+        } catch (\LogicException $exception) {
+            self::assertSame('The credentials signed in another identity on guard [api] than the caller.', $exception->getMessage());
+        }
+
+        self::assertSame(0, $caller->sessions()->count());
+        self::assertSame(0, $other->sessions()->count());
+    }
+
+    /**
+     * Credentials that do not verify refuse the sign-in, naming the reason.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testCredentialsThatDoNotVerifyAreRefused(): void
+    {
+        $person = $this->createPerson();
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('The caller did not sign in on guard [api]: [invalid_credentials].');
+
+        $this->actingAsCaller($person, session: CallerSession::signedIn(['email' => $person->email, 'password' => 'wrong']));
+    }
+
+    /**
+     * The helper is public, so code outside the test case, a helper object of
+     * the application's own say, can act as a caller through it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testCodeOutsideTheTestCaseCanActAsACaller(): void
+    {
+        $person  = $this->createPerson();
+        $outside = \Closure::bind(static fn (InteractsWithIamTest $test): InteractsWithIamTest => $test->actingAsCaller($person), null, null);
+
+        self::assertSame($this, $outside($this));
+
+        $this->assertBoundIdentity($person);
+    }
+
+    /**
+     * A person is signed in on the guard named, not the default one, and the
+     * guard named becomes the default.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonIsSignedInOnTheGuardNamed(): void
+    {
+        $this->app?->make('config')->set('auth.guards.' . self::OTHER_GUARD, [
+            'driver'      => 'jwt',
+            'provider'    => 'people',
+            'application' => ['methods' => ['password']],
+        ]);
+
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, guard: self::OTHER_GUARD);
+
+        $this->assertBoundIdentity($person, self::OTHER_GUARD)->assertBoundSession(null, self::GUARD);
+
+        self::assertSame(self::OTHER_GUARD, $this->app?->make(CurrentSession::class)->defaultGuard());
+        self::assertSame(1, $person->sessions()->where('guard', self::OTHER_GUARD)->count());
+    }
+
+    /**
+     * The tenant is chosen at sign-in, so the session records it and MFA's
+     * active-tenant resolver, which reads the session, answers it, and the
+     * guard binds it, so `Auth::tenant()` answers it too, on every request.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheTenantIsTheSessionsAndTheGuards(): void
+    {
+        $this->openTenancy();
+
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, tenant: self::TENANT);
+
+        self::assertSame(self::TENANT, $this->boundSession()->getTenantId());
+        self::assertSame(self::TENANT, $this->app?->make(ActiveTenantResolver::class)->activeTenant($person, self::GUARD));
+        self::assertSame(self::TENANT, Auth::tenant()?->getTenantIdentifier());
+
+        $this->getJson(self::TENANT_ROUTE)->assertOk()->assertExactJson(['tenant' => self::TENANT]);
+    }
+
+    /**
+     * A tenant named by an integer id is the tenant of that id's string.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testATenantNamedByAnIntegerIsItsString(): void
+    {
+        $this->openTenancy();
+
+        $this->actingAsCaller($this->createPerson(), tenant: 42);
+
+        self::assertSame('42', $this->boundSession()->getTenantId());
+        self::assertSame('42', Auth::tenant()?->getTenantIdentifier());
+    }
+
+    /**
+     * A tenant the tenant resolver does not resolve is refused, never guessed.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testATenantTheResolverDoesNotResolveIsRefused(): void
+    {
+        $this->app?->instance(TenantAccess::class, new OpenTenancy);
+        $this->app?->instance(TenantResolver::class, new class implements TenantResolver {
+            /**
+             * Resolve no tenant.
+             *
+             * @param  string  $tenantId
+             * @return null
+             */
+            #[\Override]
+            public function resolve(string $tenantId): null
+            {
+                return null;
+            }
+        });
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('The caller did not sign in on guard [api]: [tenant_ineligible].');
+
+        $this->actingAsCaller($this->createPerson(), tenant: self::TENANT);
+    }
+
+    /**
+     * A tenant the sign-in admits, but the tenant resolver this package reads
+     * does not, is refused with this package's exception once the person acts.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testATenantThisPackageCannotResolveIsRefused(): void
+    {
+        $this->openTenancy();
+
+        $resolver = new OpenTenancy;
+
+        $this->app?->instance(TenantResolver::class, new class ($resolver) implements TenantResolver {
+            /** @var int How many times a tenant was resolved. */
+            private int $calls = 0;
+
+            /**
+             * Constructor.
+             *
+             * @param  \Tests\Fixtures\Resolvers\OpenTenancy  $resolver
+             */
+            public function __construct(
+
+                /** The resolver the sign-in reads. */
+                private readonly OpenTenancy $resolver,
+            ) {}
+
+            /**
+             * Resolve the tenant for the sign-in, and no tenant after it.
+             *
+             * @param  string  $tenantId
+             * @return ?\SineMacula\Laravel\Authentication\Contracts\Tenant
+             */
+            #[\Override]
+            public function resolve(string $tenantId): ?Tenant
+            {
+                return $this->calls++ === 0 ? $this->resolver->resolve($tenantId) : null;
+            }
+        });
+
+        $this->expectException(UnresolvedReferenceException::class);
+
+        $this->actingAsCaller($this->createPerson(), tenant: self::TENANT);
+    }
+
+    /**
+     * A tenant named that is the principal's own is admitted at sign-in by
+     * `laravel-authentication` without asking a tenant resolver, but still
+     * needs one to act in it: under the default `ResolveNoTenant`, the helper
+     * throws this package's exception once the person has signed in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testThePrincipalsOwnTenantNamedStillNeedsAResolver(): void
+    {
+        $person     = $this->createPerson();
+        $membership = new Membership('membership-own', $person, new ClaimedTenant('tenant-own'));
+
+        $this->app?->instance(PrincipalResolver::class, new ResolvesMemberships([$membership]));
+
+        try {
+            $this->actingAsCaller($person, principal: $membership, tenant: 'tenant-own');
+
+            self::fail('The principal\'s own tenant was acted in with no tenant resolver.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertStringContainsString('tenant-own', $exception->getMessage());
+        }
+
+        self::assertSame('tenant-own', $this->boundSession()->getTenantId());
+    }
+
+    /**
+     * With no tenant named, the person acts in the principal's own tenant, as
+     * `laravel-authentication` admits it, with no tenant resolver.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testThePrincipalsOwnTenantLeftOutNeedsNoResolver(): void
+    {
+        $person     = $this->createPerson();
+        $membership = new Membership('membership-own', $person, new ClaimedTenant('tenant-own'));
+
+        $this->app?->instance(PrincipalResolver::class, new ResolvesMemberships([$membership]));
+
+        $this->actingAsCaller($person, principal: $membership);
+
+        self::assertSame('tenant-own', $this->boundSession()->getTenantId());
+    }
+
+    /**
+     * With a level, the session is verified at exactly that level, so MFA's
+     * route gate lets it through, with the further proof made with a factor the
+     * person holds.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAVerifiedCallerPassesMfasRouteGate(): void
+    {
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::AAL2)->getJson(self::AAL2_ROUTE)->assertOk();
+
+        self::assertCount(2, $this->proofsOf($this->boundSession()));
+        self::assertSame('totp', $this->onlyFactorOf($person)->getType());
+    }
+
+    /**
+     * A level for a session started with no first factor MFA can judge is
+     * refused before the person is signed in: MFA accepts no proof after it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testALevelForAStartedSessionIsRefusedBeforeTheCallerSignsIn(): void
+    {
+        $person = $this->createPerson();
+
+        try {
+            $this->actingAsCaller($person, verified: AssuranceLevel::AAL2);
+
+            self::fail('A started session was verified.');
+        } catch (\InvalidArgumentException $exception) {
+            self::assertSame('A level needs a first factor MFA can judge: sign the caller in with CallerSession::signedIn() or throughSso().', $exception->getMessage());
+        }
+
+        self::assertSame(0, $person->sessions()->count());
+    }
+
+    /**
+     * Rows of a level asked of an SSO caller under MFA's default combination
+     * policy, and the level the session reaches instead.
+     *
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: string}>
+     */
+    public static function provideLevelsThroughSso(): iterable
+    {
+        yield 'AAL1' => [AssuranceLevel::AAL1, 'Requested aal1 with additional verification; reached unclassified; unmet: minimum_level.'];
+
+        yield 'AAL2' => [AssuranceLevel::AAL2, 'Requested aal2 with additional verification; reached aal1; unmet: minimum_level.'];
+    }
+
+    /**
+     * Under MFA's default combination policy the provider's sign-in adds no
+     * level, so no level can be verified through SSO: the email code AAL1
+     * proves is unclassified on its own, and the authenticator app AAL2 proves
+     * reaches AAL1. A test of a level through SSO binds the combination policy
+     * the application binds.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
+     * @param  string  $reached
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideLevelsThroughSso')]
+    public function testUnderMfasDefaultNoLevelIsVerifiedThroughSso(AssuranceLevel $level, string $reached): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage($reached);
+
+        $this->actingAsCaller($this->createPerson(), session: CallerSession::throughSso(self::provenance()), verified: $level);
+    }
+
+    /**
+     * Every part composes in the one call: the tenant, the level and the SSO
+     * provenance land on the same session.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testEveryPartComposesOnOneSession(): void
+    {
+        $this->openTenancy();
+
+        $this->app?->instance(CombinationPolicy::class, new LeveledCombinationPolicy);
+
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, $person, self::TENANT, self::GUARD, CallerSession::throughSso(self::provenance()), AssuranceLevel::AAL3);
+
+        $session = $this->boundSession();
+
+        $this->assertBoundIdentity($person)->assertBoundPrincipal($person);
+
+        self::assertSame(self::TENANT, $session->getTenantId());
+        self::assertSame(self::TENANT, Auth::tenant()?->getTenantIdentifier());
+        self::assertSame(CallerSession::EXTERNAL_METHOD, $session->getSignInMethod());
+        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(AuthenticationContext::CONNECTION));
+        self::assertSame('passkey', $this->onlyFactorOf($person)->getType());
+        self::assertCount(2, $this->proofsOf($session));
+
+        $this->getJson(self::AAL3_ROUTE)->assertOk();
+    }
+
+    /**
+     * Through SSO, the person signs in as a redemption SSO admitted signs them
+     * in: under `external_provider`, through the provenance's connection and
+     * link, with the provenance as the session's provider context, which the
+     * `sso` context namespace reads back.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnSsoCallerCarriesTheProvenanceOnTheSession(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 10:00:00'));
+
+        $person     = $this->createPerson();
+        $provenance = self::provenance(CarbonImmutable::parse(self::SESSION_NOT_AFTER));
+
+        $this->actingAsCaller($person, session: CallerSession::throughSso($provenance));
+
+        $session = $this->boundSession();
+        $context = Auth::context();
+
+        $this->assertBoundIdentity($person);
+
+        self::assertSame(CallerSession::EXTERNAL_METHOD, $session->getSignInMethod());
+        self::assertSame(self::SSO_CONNECTION, $this->firstFactorOf($session)?->channel->reference);
+        self::assertSame(self::SSO_CONNECTION, $context?->get(AuthenticationContext::CONNECTION));
+        self::assertSame(self::TENANT, $context->get(AuthenticationContext::TENANT));
+        self::assertSame('oidc', $context->get(AuthenticationContext::PROTOCOL));
+        self::assertSame(self::LINK, $context->get(AuthenticationContext::LINK));
+        self::assertSame(['pwd', 'mfa'], $context->get(AuthenticationContext::PROVIDER_AMR));
+        self::assertSame($provenance->providerAuthenticatedAt?->format(Provenance::INSTANT_FORMAT), $context->get(AuthenticationContext::PROVIDER_AUTH_TIME));
+        self::assertSame('2026-11-01 09:00:00', $this->firstFactorOf($session)?->authenticatedAt->format('Y-m-d H:i:s'));
+        self::assertSame(self::SESSION_NOT_AFTER, $session->getAbsoluteExpiresAt()?->format('Y-m-d H:i:s'));
+        self::assertSame(self::ENFORCEMENT_VERSION, DB::table('authentication_provenance')->where('session_id', $session->getKey())->value('policy_version'));
+    }
+
+    /**
+     * Provenance that names no time the provider authenticated the person signs
+     * them in as authenticated now, to the whole second.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnSsoCallerWithNoProviderTimeAuthenticatedNow(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-08 10:15:30.750'));
+
+        $this->actingAsCaller($this->createPerson(), session: CallerSession::throughSso(new Provenance(self::SSO_CONNECTION, self::TENANT, 'saml2', linkId: self::LINK)));
+
+        $session = $this->boundSession();
+
+        self::assertSame('2026-11-08 10:15:30.000000', $this->firstFactorOf($session)?->authenticatedAt->format('Y-m-d H:i:s.u'));
+        self::assertSame('saml2', Auth::context()?->get(AuthenticationContext::PROTOCOL));
+        self::assertNull(DB::table('authentication_provenance')->where('session_id', $session->getKey())->value('policy_version'));
+    }
+
+    /**
+     * The redemption recorded for the SSO caller's sign-in is forgotten once
+     * the sign-in returns, so nothing later in the test finds it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheSsoCallersRedemptionIsForgotten(): void
+    {
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, session: CallerSession::throughSso(self::provenance()));
+
+        $records = $this->app?->make(AdmittedRedemptions::class);
+
+        self::assertNull($records?->matching(self::SSO_CONNECTION, CallerSignIn::ISSUER, (new IdentityReferences)->reference($person)->id));
+    }
+
+    /**
+     * Provenance with no link is refused: under this package every SSO session
+     * is established through a link.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testProvenanceWithNoLinkIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Under laravel-iam an SSO session is established through a link: name the link the provenance admitted.');
+
+        $this->actingAsCaller($this->createPerson(), session: CallerSession::throughSso(new Provenance(self::SSO_CONNECTION, self::TENANT, 'oidc')));
+    }
+
+    /**
+     * A method the guard does not allow refuses the sign-in, naming the guard
+     * and the reason, so the test never acts on a session it did not mean to.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMethodTheGuardDoesNotAllowIsRefused(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessageMatches('/^The caller did not sign in on guard \[api\]: \[method_not_allowed\]\.$/');
+
+        $this->actingAsCaller($this->createPerson(), session: CallerSession::started('magic_link'));
+    }
+
+    /**
+     * The unclassified level is refused before the person is signed in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheUnclassifiedLevelIsRefusedBeforeTheCallerSignsIn(): void
+    {
+        $person = $this->createPerson();
+
+        try {
+            $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::UNCLASSIFIED);
+
+            self::fail('A caller was verified at the unclassified level.');
+        } catch (\InvalidArgumentException $exception) {
+            self::assertSame('A session cannot be verified at the unclassified level: it supports no level.', $exception->getMessage());
+        }
+
+        self::assertSame(0, $person->sessions()->count());
+    }
+
+    /**
+     * Scopes limit only a machine, so scopes for a person are refused before
+     * anything is signed in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testScopesForAPersonAreRefused(): void
+    {
+        $person = $this->createPerson();
+
+        try {
+            $this->actingAsCaller($person, scopes: ['reports:read']);
+
+            self::fail('A person acted with scopes.');
+        } catch (\InvalidArgumentException $exception) {
+            self::assertSame('Scopes limit only a machine identity; a person acts on a session, which its sign-in limits.', $exception->getMessage());
+        }
+
+        self::assertSame(0, $person->sessions()->count());
+    }
+
+    /**
+     * A machine signs in to no session: the test acts as it, limited to the
+     * scopes given, or to none, and in the tenant given.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMachineActsWithoutASessionLimitedToItsScopes(): void
+    {
+        $this->openTenancy();
+
+        $machine   = $this->createMachine();
+        $principal = self::principalOf($machine);
+
+        $this->actingAsCaller($machine, $principal, self::TENANT, self::MACHINE_GUARD, scopes: ['reports:read']);
+
+        $this->assertBoundIdentity($machine, self::MACHINE_GUARD)
+            ->assertBoundPrincipal($principal, self::MACHINE_GUARD)
+            ->assertBoundSession(null, self::MACHINE_GUARD)
+            ->assertBoundScopes(['reports:read'], self::MACHINE_GUARD);
+
+        $this->assertBoundTenant(new ClaimedTenant(self::TENANT), self::MACHINE_GUARD);
+
+        $this->actingAsCaller($machine, $principal, guard: self::MACHINE_GUARD);
+
+        $this->assertBoundScopes([], self::MACHINE_GUARD)->assertBoundTenant(null, self::MACHINE_GUARD);
+    }
+
+    /**
+     * What a machine cannot hold: a session and an MFA level.
+     *
+     * @return iterable<string, array{0: ?\SineMacula\Laravel\Iam\Testing\CallerSession, 1: ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel}>
+     */
+    public static function sessionParts(): iterable
+    {
+        yield 'a session' => [CallerSession::started(), null];
+        yield 'SSO provenance' => [CallerSession::throughSso(self::provenance()), null];
+        yield 'an MFA level' => [null, AssuranceLevel::AAL2];
+    }
+
+    /**
+     * A machine holds no session, so a session or an MFA level for one is
+     * refused.
+     *
+     * @param  ?\SineMacula\Laravel\Iam\Testing\CallerSession  $session
+     * @param  ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('sessionParts')]
+    public function testAMachineIsRefusedWhatOnlyASessionHolds(?CallerSession $session, ?AssuranceLevel $level): void
+    {
+        $machine = $this->createMachine();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('A machine identity signs in to no session, so it is acted as with no session and no MFA level.');
+
+        $this->actingAsCaller($machine, self::principalOf($machine), guard: self::MACHINE_GUARD, session: $session, verified: $level);
+    }
+
+    /**
+     * A person who already holds a confirmed factor, under an application that
+     * then requires one at sign-in, is signed in with a proof made with that
+     * factor: the pending sign-in is completed, no factor is enrolled, and the
+     * session holds the first factor and the sign-in's proof.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonWhoHoldsAFactorIsSignedInWithIt(): void
+    {
+        $person = $this->createPerson();
+        $held   = $this->holdFactor($person, 'totp');
+
+        $this->actingAsCaller($person, session: self::withPassword($person));
+
+        $session = $this->boundSession();
+        $proofs  = $this->proofsOf($session);
+
+        $this->assertBoundIdentity($person)->assertBoundPrincipal($person);
+
+        self::assertSame(SessionStatus::ACTIVE, $session->getStatus());
+        self::assertSame($held->id, $this->onlyFactorOf($person)->id);
+        self::assertCount(2, $proofs);
+        self::assertSame(AuthenticationPurpose::SIGN_IN, $proofs[0]->purpose);
+        self::assertSame('totp', $proofs[0]->method);
+        self::assertSame($held->id, $proofs[0]->factor);
+        self::assertSame(AuthenticationChannelKind::AUTHENTICATOR_APP, $proofs[0]->channel->kind);
+        self::assertSame($held->id, $proofs[0]->channel->reference);
+        self::assertTrue($proofs[0]->evaluation?->accepted);
+        self::assertTrue($proofs[0]->evaluation->multifactor);
+        self::assertSame(['otp'], $proofs[0]->methods);
+    }
+
+    /**
+     * A holder of a factor is verified at the level asked for, with the factor
+     * they hold, and the level is exactly the one asked for.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonWhoHoldsAFactorIsVerifiedAtTheLevel(): void
+    {
+        $person = $this->createPerson();
+        $held   = $this->holdFactor($person, 'totp');
+
+        $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::AAL2);
+
+        $this->getJson(self::AAL2_ROUTE)->assertOk();
+
+        self::assertSame($held->id, $this->onlyFactorOf($person)->id);
+        self::assertCount(3, $this->proofsOf($this->boundSession()));
+    }
+
+    /**
+     * A holder of a factor signed in through SSO is signed in with it too, and
+     * the session keeps SSO's provenance.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonWhoHoldsAFactorIsSignedInThroughSsoWithIt(): void
+    {
+        $person = $this->createPerson();
+        $held   = $this->holdFactor($person, 'totp');
+
+        $this->actingAsCaller($person, session: CallerSession::throughSso(self::provenance()));
+
+        $proofs = $this->proofsOf($this->boundSession());
+
+        self::assertSame(CallerSession::EXTERNAL_METHOD, $this->boundSession()->getSignInMethod());
+        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(AuthenticationContext::CONNECTION));
+        self::assertCount(2, $proofs);
+        self::assertSame($held->id, $proofs[0]->factor);
+        self::assertSame(AuthenticationPurpose::SIGN_IN, $proofs[0]->purpose);
+    }
+
+    /**
+     * A holder of a factor verified at AAL1 completes the sign-in with an email
+     * code, AAL1's evidence, so the session reaches exactly AAL1: an email
+     * factor is enrolled beside the one they hold.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAHolderVerifiedAtAal1CompletesTheSignInWithAal1sEvidence(): void
+    {
+        $person = $this->createPerson();
+
+        $this->holdFactor($person, 'totp');
+
+        $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::AAL1);
+
+        $proofs = $this->proofsOf($this->boundSession());
+
+        self::assertCount(3, $proofs);
+        self::assertSame('email', $proofs[1]->method);
+        self::assertSame(LevelEvidence::EMAIL_ADDRESS, $proofs[1]->channel->reference);
+        self::assertFalse($proofs[1]->evaluation?->multifactor);
+        self::assertSame(['email', 'totp'], $person->authFactors()->pluck('type')->sort()->values()->all());
+
+        $this->getJson(self::AAL2_ROUTE)->assertUnauthorized();
+    }
+
+    /**
+     * A session started with no first factor MFA can judge cannot take the
+     * further factor the application requires of a person who holds one, so
+     * acting as the holder on one is refused, saying what to do instead, and
+     * nothing is left behind.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAStartedSessionOfAHolderIsRefusedNamingWhatToDo(): void
+    {
+        $person = $this->createPerson();
+
+        $this->holdFactor($person, 'totp');
+
+        try {
+            $this->actingAsCaller($person);
+
+            self::fail('A started session of a holder was acted on.');
+        } catch (\LogicException $exception) {
+            self::assertSame(
+                'The caller did not sign in on guard [api]: [pending: mfa]. A started session holds no first factor MFA can judge, so the further factor'
+                . ' the application requires of a person who holds one cannot complete it: sign the caller in with CallerSession::signedIn() or throughSso().',
+                $exception->getMessage(),
+            );
+        }
+
+        self::assertSame(0, $person->sessions()->count());
+        self::assertSame(1, $person->authFactors()->count());
+    }
+
+    /**
+     * Only a sign-in that waits first on a further factor, and kept its pending
+     * credential, is completed: one that waits first on a choice of principal,
+     * or kept no credential, is handed back as it is, with nothing recorded.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOnlyASignInWaitingFirstOnAFurtherFactorIsCompleted(): void
+    {
+        $person = $this->createPerson();
+
+        $this->holdFactor($person, 'totp');
+
+        $result  = $this->attemptSignIn($person);
+        $pending = $result->pending ?? self::fail('The holder\'s sign-in was not left pending.');
+        $choice  = new PendingSession(
+            $pending->id,
+            $pending->guard,
+            $pending->identity,
+            null,
+            null,
+            [PendingRequirement::PRINCIPAL],
+            $pending->method,
+            $pending->expiresAt,
+            $pending->session,
+            $pending->requirement,
+            $pending->firstFactor,
+        );
+
+        $completion = $this->app?->make(CallerCompletion::class) ?? self::fail('No completion.');
+
+        foreach ([SignInResult::pending($choice, $result->credential), SignInResult::pending($pending)] as $handed) {
+            self::assertSame($handed, $completion->complete($handed, self::GUARD, null, self::client()));
+        }
+
+        self::assertSame(PendingRequirement::MFA, $pending->requires[0]);
+        self::assertSame(1, $person->authFactors()->count());
+        self::assertSame([PendingRequirement::MFA], $this->sessions()->pending($result->credential ?? self::fail('No credential.'))?->requires);
+    }
+
+    /**
+     * A started session's first factor names no channel, so a further proof
+     * made after it does not complete a holder's sign-in: the sign-in stays
+     * pending on the factor, with nothing more enrolled, which is why
+     * `CallerSignIn` never completes a started session.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAProofAfterAStartedSessionsFirstFactorLeavesItPending(): void
+    {
+        $person = $this->createPerson();
+
+        $this->holdFactor($person, 'totp');
+
+        $started = $this->sessions()->start($person, null, CallerSession::DEFAULT_METHOD, new SignInContext(self::client()));
+        $result  = $this->app?->make(CrossMemberTransaction::class)->run(
+            fn (): SignInResult => $this->app?->make(CallerCompletion::class)->complete($started, self::GUARD, null, self::client()) ?? self::fail('No completion.'),
+        );
+
+        self::assertTrue($result?->isPending());
+        self::assertSame([PendingRequirement::MFA], $result->pending?->requires);
+        self::assertSame(1, $person->authFactors()->count());
+    }
+
+    /**
+     * A person verified once holds the factor `$verified` enrolled, so they can
+     * be acted as again, verified again, in another tenant, at another level,
+     * or with no level, each on a new session.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAVerifiedPersonCanBeActedAsAgain(): void
+    {
+        $this->openTenancy();
+
+        $this->app?->instance(CombinationPolicy::class, new LeveledCombinationPolicy);
+
+        $person = $this->createPerson();
+
+        $this->actingAsCaller($person, tenant: self::TENANT, session: self::withPassword($person), verified: AssuranceLevel::AAL2);
+
+        $first = $this->boundSession();
+
+        $this->actingAsCaller($person, tenant: 'tenant-other', session: self::withPassword($person), verified: AssuranceLevel::AAL2)->getJson(self::AAL2_ROUTE)->assertOk();
+
+        $second = $this->boundSession();
+
+        self::assertNotSame($first->getKey(), $second->getKey());
+        self::assertSame('tenant-other', $second->getTenantId());
+        self::assertSame('totp', $this->onlyFactorOf($person)->getType());
+
+        $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::AAL3)->getJson(self::AAL3_ROUTE)->assertOk();
+
+        self::assertSame(2, $person->authFactors()->count());
+
+        $this->actingAsCaller($person, session: self::withPassword($person));
+
+        self::assertCount(2, $this->proofsOf($this->boundSession()));
+        self::assertSame(2, $person->authFactors()->count());
+    }
+
+    /**
+     * The credentials a session signed in with are held wrapped, so neither a
+     * dump nor an export shows them.
+     *
+     * @return void
+     */
+    public function testTheCredentialsAreHeldWrapped(): void
+    {
+        $session = CallerSession::signedIn(['email' => 'ada@example.test', 'password' => self::PASSWORD]);
+
+        self::assertSame(['email' => 'ada@example.test', 'password' => self::PASSWORD], $session->credentials());
+        self::assertStringNotContainsString(self::PASSWORD, print_r($session, true));
+        self::assertTrue($session->provesFirstFactor());
+        self::assertFalse(CallerSession::started()->provesFirstFactor());
+        self::assertNull(CallerSession::started()->credentials());
+        self::assertTrue(CallerSession::throughSso(self::provenance())->provesFirstFactor());
+    }
+
+    /**
      * Define the routes MFA's gate guards, on the stateless guard.
      *
      * @param  mixed  $router
@@ -282,6 +1317,176 @@ final class InteractsWithIamTest extends TestCase
 
         $router->get(self::AAL3_ROUTE, static fn (): JsonResponse => new JsonResponse(['reached' => true]))
             ->middleware(['auth:' . self::GUARD, 'mfa:level=aal3']);
+
+        $router->get(self::TENANT_ROUTE, static fn (): JsonResponse => new JsonResponse(['tenant' => Auth::tenant()?->getTenantIdentifier()]))
+            ->middleware(['auth:' . self::GUARD]);
+    }
+
+    /**
+     * Allow the passkey and the `external_provider` method beside the password
+     * on the guard, so a caller can start a session under another method, and
+     * sign in through SSO.
+     *
+     * @return list<string>
+     */
+    #[\Override]
+    protected function signInMethods(): array
+    {
+        return ['password', 'passkey', 'external_provider'];
+    }
+
+    /**
+     * Declare the guard machines authenticate on with an API key, and create a
+     * machine.
+     *
+     * @return \Tests\Fixtures\Models\Machine
+     */
+    private function createMachine(): Machine
+    {
+        $this->app?->make('config')->set('auth.guards.' . self::MACHINE_GUARD, ['driver' => 'api_key', 'provider' => 'machines']);
+        $this->app?->make('config')->set('auth.providers.machines', ['driver' => 'model', 'model' => Machine::class]);
+
+        return Machine::query()->create(['name' => 'Reporting']);
+    }
+
+    /**
+     * The principal the machine acts as.
+     *
+     * @param  \Tests\Fixtures\Models\Machine  $machine
+     * @return \SineMacula\Laravel\Authentication\Contracts\Principal
+     */
+    private static function principalOf(Machine $machine): Principal
+    {
+        return new readonly class ($machine) implements Principal {
+            /**
+             * Constructor.
+             *
+             * @param  \Tests\Fixtures\Models\Machine  $machine
+             */
+            public function __construct(
+
+                /** The machine the principal belongs to. */
+                private Machine $machine,
+            ) {}
+
+            /**
+             * The principal's identifier: the machine's key.
+             *
+             * @return mixed
+             */
+            #[\Override]
+            public function getPrincipalIdentifier(): mixed
+            {
+                return $this->machine->getKey();
+            }
+
+            /**
+             * The machine the principal belongs to.
+             *
+             * @return \SineMacula\Laravel\Authentication\Contracts\Identity
+             */
+            #[\Override]
+            public function getIdentity(): Identity
+            {
+                return $this->machine;
+            }
+
+            /**
+             * No tenant of its own.
+             *
+             * @return ?\SineMacula\Laravel\Authentication\Contracts\Tenant
+             */
+            #[\Override]
+            public function getTenant(): ?Tenant
+            {
+                return null;
+            }
+        };
+    }
+
+    /**
+     * The tenant resolver and access that admit every tenant.
+     *
+     * @return void
+     */
+    private function openTenancy(): void
+    {
+        $this->app?->instance(TenantResolver::class, new OpenTenancy);
+        $this->app?->instance(TenantAccess::class, new OpenTenancy);
+    }
+
+    /**
+     * The provenance an SSO caller signs in with, capped at the time given.
+     *
+     * @param  ?\Carbon\CarbonImmutable  $notAfter
+     * @return \SineMacula\Laravel\Sso\Sessions\Provenance
+     */
+    private static function provenance(?CarbonImmutable $notAfter = null): Provenance
+    {
+        return new Provenance(
+            self::SSO_CONNECTION,
+            self::TENANT,
+            'oidc',
+            CarbonImmutable::parse('2026-11-01 09:00:00'),
+            ['pwd', 'mfa'],
+            linkId: self::LINK,
+            sessionNotAfter: $notAfter,
+            enforcementVersion: self::ENFORCEMENT_VERSION,
+        );
+    }
+
+    /**
+     * A session the person signs in to with their password.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @return \SineMacula\Laravel\Iam\Testing\CallerSession
+     */
+    private static function withPassword(Person $person): CallerSession
+    {
+        return CallerSession::signedIn(['email' => $person->email, 'password' => self::PASSWORD]);
+    }
+
+    /**
+     * The session the guard people sign in on has bound.
+     *
+     * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
+     */
+    private function boundSession(): EloquentSession&Model
+    {
+        $session = $this->app?->make(CurrentSession::class)->guard(self::GUARD)->session();
+
+        self::assertInstanceOf(EloquentSession::class, $session);
+        self::assertInstanceOf(Model::class, $session);
+
+        return $session;
+    }
+
+    /**
+     * A confirmed factor of the type the person holds, enrolled through the
+     * guard's application.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  string  $type
+     * @return \SineMacula\Laravel\Mfa\Models\Factor
+     *
+     * @throws \Throwable
+     */
+    private function holdFactor(Person $person, string $type): Factor
+    {
+        $factor = new Factor;
+        $owner  = $factor->authenticatable();
+
+        $factor->forceFill([
+            $owner->getMorphType()        => $person->getMorphClass(),
+            $owner->getForeignKeyName()   => $person->getKey(),
+            $factor->getTypeName()        => $type,
+            $factor->getApplicationName() => self::GUARD,
+        ]);
+
+        $factor->confirm();
+        $factor->persist();
+
+        return $factor;
     }
 
     /**

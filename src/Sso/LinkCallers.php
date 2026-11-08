@@ -4,22 +4,24 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Sso;
 
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Authentication\Callers\Caller;
 
 /**
  * The callers handed to this package in this request for SSO's freshness
- * contract to judge, each with the application it is judged on (IAM-4.6,
- * SSO-2.12): the caller of a `link` redemption running, or the caller the
- * application hands in around its own call into SSO (`CallerScope::run()`).
+ * contract to judge (IAM-4.6, SSO-2.12): the caller of a `link` redemption
+ * running, or the caller the application hands in around its own call into SSO
+ * (`CallerScope::run()`).
  *
  * SSO hands its freshness contract only the operation and its maximum age,
- * never the caller or the application, and the adapter never takes either from
- * the request or the default guard. `LinkRedemption` is handed both as plain
- * values, as `CallerScope` is, so each opens the record with them before SSO is
- * asked (`open()`) and closes it once SSO has answered or thrown (`close()`),
- * and the freshness adapter judges the caller's own session on that
- * application's guard (`current()`), never a session of whoever else the guard
- * serves. With none open, nothing is judged, and the answer is `stale`.
+ * never the caller, and the adapter never takes one from the request, the
+ * default guard or the session a guard serves. `LinkRedemption` and
+ * `CallerScope` are each handed the caller as a plain value,
+ * `laravel-authentication`'s `Caller` (its guard, its identity and the session
+ * its credential holds, as `Auth::caller()` reads them where the application
+ * reads the request), so each opens the record with it before SSO is asked
+ * (`open()`) and closes it once SSO has answered or thrown (`close()`), and the
+ * freshness adapter judges that caller's own session alone (`current()`). With
+ * none open, nothing is judged, and the answer is `stale`.
  *
  * Each entry also records whether a transaction was already open on the storage
  * connection when the caller was handed in. A plain read inside a transaction
@@ -43,22 +45,20 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  */
 final class LinkCallers
 {
-    /** @var list<array{application: string, caller: \SineMacula\Laravel\Sso\Identities\IdentityReference, inTransaction: bool}> The callers open, the latest last. */
+    /** @var list<array{caller: \SineMacula\Laravel\Authentication\Callers\Caller, inTransaction: bool}> The callers open, the latest last. */
     private array $open = [];
 
     /**
-     * Open the record for the caller, on the application, noting whether a
-     * transaction was already open on the storage connection when the caller
-     * was handed in.
+     * Open the record for the caller, noting whether a transaction was already
+     * open on the storage connection when the caller was handed in.
      *
-     * @param  string  $application
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $caller
+     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @param  bool  $inTransaction
      * @return void
      */
-    public function open(string $application, IdentityReference $caller, bool $inTransaction): void
+    public function open(Caller $caller, bool $inTransaction): void
     {
-        $this->open[] = ['application' => $application, 'caller' => $caller, 'inTransaction' => $inTransaction];
+        $this->open[] = ['caller' => $caller, 'inTransaction' => $inTransaction];
     }
 
     /**
@@ -72,10 +72,10 @@ final class LinkCallers
     }
 
     /**
-     * The latest caller open, with its application and whether a transaction
-     * was already open when it was handed in, or `null` when none is open.
+     * The latest caller open, with whether a transaction was already open when
+     * it was handed in, or `null` when none is open.
      *
-     * @return ?array{application: string, caller: \SineMacula\Laravel\Sso\Identities\IdentityReference, inTransaction: bool}
+     * @return ?array{caller: \SineMacula\Laravel\Authentication\Callers\Caller, inTransaction: bool}
      */
     public function current(): ?array
     {

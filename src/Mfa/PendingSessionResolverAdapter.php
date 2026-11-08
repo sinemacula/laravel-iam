@@ -16,6 +16,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
@@ -71,6 +72,11 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  *
  * Stateless: the guard and the session are read on every call, so nothing
  * outlives the request (IAM-8.1).
+ *
+ * The pending session's first factor and further proofs reach MFA as the proof
+ * store's do: an SSO sign-in's first factor names its connection only when it
+ * carries evidence SSO's evidence contract accepted and the session's tenant,
+ * if any, trusts the connection (`ProviderTrust::accepted()`).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -216,6 +222,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
         $application = $pending->guard;
         $signIn      = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($pending->session, $application), VerificationGeneration::current($identity));
 
+        $trust    = ProviderTrust::accepted($pending->session->getTenantId());
         $counting = $pending->proofs(null, null, RequirementSubject::MAX_LIMIT);
         $further  = array_reverse(array_filter($counting, static fn (RecordedProof $proof): bool => $proof->kind !== ProofKind::FIRST_FACTOR));
 
@@ -223,11 +230,11 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
             $identity,
             $application,
             $signIn->session,
-            $this->proofs->toMfa($pending->firstFactor, $signIn),
+            $this->proofs->toMfa($pending->firstFactor, $signIn, $trust),
             $this->requirements->toMfa($pending->requirement),
             $this->changes->pendingActions($pending->actions()),
             $pending->expiresAt,
-            array_map(fn (RecordedProof $proof) => $this->proofs->toMfa($proof, $signIn), $further),
+            array_map(fn (RecordedProof $proof) => $this->proofs->toMfa($proof, $signIn, $trust), $further),
             $credential,
         );
     }

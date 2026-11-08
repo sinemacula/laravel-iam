@@ -5,6 +5,10 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Sso;
 
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Model;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
+use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
@@ -12,7 +16,6 @@ use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOutcome;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
  * SSO's freshness contract, answered by `laravel-authentication`'s freshness
@@ -28,17 +31,19 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * `fresh` only when the policy finds a proof that meets that requirement now;
  * otherwise, or with no session to judge, it is `stale`.
  *
- * SSO hands the contract neither the caller nor the application, and the
- * adapter never takes either from the request, the default guard or whoever a
- * guard happens to serve: the session judged is found only where this package
- * was handed them as plain values, in this request's record of callers
+ * SSO hands the contract no caller, and the adapter never takes one from the
+ * request, the default guard or the session a guard serves: the session judged
+ * is found only where this package was handed the caller as a plain value
+ * (`laravel-authentication`'s `Caller`), in this request's record of callers
  * (`LinkCallers`). Inside a `link` redemption this package runs
  * (`LinkRedemption`), or the application's own call into SSO it hands the
- * caller in around (`CallerScope::run()`), it is the current session of the
- * application's guard when that guard serves the caller, and no session
- * otherwise. With no caller handed in (a `link` flow's start, a link's removal
- * or one of SSO's management helpers called without one, a queued job, a
- * console command) nothing is judged, and the answer is `stale`.
+ * caller in around (`CallerScope::run()`), it is the session the caller's
+ * access credential holds, when that is a session of the caller's guard that
+ * the caller's identity owns, and no session otherwise: a caller with no
+ * session, a refresh or pending credential, or a session of another guard or
+ * identity is judged as none. With no caller handed in (a `link` flow's start,
+ * a link's removal or one of SSO's management helpers called without one, a
+ * queued job, a console command) nothing is judged, and the answer is `stale`.
  *
  * The policy is asked plainly, reading the session again on the write
  * connection and taking no lock. SSO asks its freshness contract inside its own
@@ -75,7 +80,6 @@ final readonly class FreshnessAdapter implements Freshness
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy  $freshness
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      */
     public function __construct(
 
@@ -85,11 +89,8 @@ final readonly class FreshnessAdapter implements Freshness
         /** Judges the session's freshness. */
         private FreshnessPolicy $freshness,
 
-        /** Resolves the guards and their sessions. */
+        /** Tells whether a transaction is open on the storage connection. */
         private CurrentSession $sessions,
-
-        /** Names the identity a guard serves as SSO names it. */
-        private IdentityReferences $identities,
     ) {}
 
     /**
@@ -100,8 +101,8 @@ final readonly class FreshnessAdapter implements Freshness
      * @param  int  $maxAgeSeconds
      * @return \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOutcome
      *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
     public function check(FreshnessOperation $operation, int $maxAgeSeconds): FreshnessOutcome
@@ -115,15 +116,14 @@ final readonly class FreshnessAdapter implements Freshness
     }
 
     /**
-     * The session judged: the handed-in caller's on its application's guard, or
-     * `null` when no caller is handed in, when the guard serves another
-     * identity or none, or when the caller was handed in inside a transaction
+     * The session judged: the handed-in caller's own, or `null` when no caller
+     * is handed in, when the caller holds no session of its own through its
+     * access credential, or when the caller was handed in inside a transaction
      * that is still open.
      *
      * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
      *
-     * @throws \InvalidArgumentException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     private function session(): ?Session
     {
@@ -133,24 +133,26 @@ final readonly class FreshnessAdapter implements Freshness
             return null;
         }
 
-        return $this->callersSession($caller['application'], $caller['caller']);
+        return self::callersSession($caller['caller']);
     }
 
     /**
-     * The current session of the application's guard, when the guard serves the
-     * caller, or `null` otherwise.
+     * The session the caller's access credential holds, when it is a session of
+     * the caller's guard that the caller's identity owns, or `null` otherwise.
      *
-     * @param  string  $application
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $caller
+     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    private function callersSession(string $application, IdentityReference $caller): ?Session
+    private static function callersSession(Caller $caller): ?Session
     {
-        $guard    = $this->sessions->guard($application);
-        $identity = $guard->identity();
+        $session = $caller->session;
 
-        return $identity !== null && $this->identities->reference($identity)->is($caller) ? $guard->session() : null;
+        if ($caller->credential !== CallerCredential::ACCESS || !$session instanceof EloquentSession || !$session instanceof Model) {
+            return null;
+        }
+
+        return $caller->owns($session) ? $session : null;
     }
 }

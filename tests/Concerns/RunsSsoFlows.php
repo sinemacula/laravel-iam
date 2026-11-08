@@ -242,7 +242,7 @@ trait RunsSsoFlows
     protected function linkThroughFlow(Person $person): RedemptionResult
     {
         $handoff = $this->handoff(Purpose::LINK, $person);
-        $linked  = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        $linked  = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
 
         self::assertTrue($linked->isRedeemed(), sprintf('The person was not linked: [%s].', $linked->reason->value ?? $linked->status->value));
 

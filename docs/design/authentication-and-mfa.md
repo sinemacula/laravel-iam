@@ -307,15 +307,44 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
 - MFA's test helper `InteractsWithMfa::actingAsVerified()` (`Testing\VerifiedSignIn`) does not work with this
   store: it records its further proof through `record()`, which refuses it, and the proof names a synthetic factor,
   which `proofs()` would leave out. An application's tests use `Testing\Concerns\InteractsWithIam`
-  `actingOnVerifiedSession($session, $level)` instead, which acts on a signed-in session, enrols a confirmed fixture
-  factor for its identity (an email factor for AAL1, an authenticator app for AAL2, a passkey for AAL3), steps the
+  `actingOnVerifiedSession($session, $level)` instead, which acts on a signed-in session, takes a confirmed factor of
+  the level's type its identity holds or enrols a fixture one when it holds none (`Testing\FixtureFactors`: an email
+  factor for AAL1, an authenticator app for AAL2, a passkey for AAL3, `Testing\LevelEvidence`), steps the
   session up with a proof made with it through the step-up adapter, so `laravel-authentication` records it (flagged
   multifactor as MFA's own acceptance would flag it, from the session's first factor and the proof alone), and throws
   a `LogicException` unless MFA's route gate would read the session at exactly that level. The further proof is made
   now, so a freshness test verifies the session and then moves the clock on. The refusal `actingAsVerified()` meets
   names the helper. Closing the gap is a member change still needed in `laravel-mfa`: a hook in `VerifiedSignIn` for a
   store whose proofs only the authentication layer records, so its own helper can arrange them. The suite-wide
-  `actingAsCaller()` (M9, IAM-12.2) builds on `actingOnVerifiedSession()`, not on `actingAsVerified()`.
+  `actingAsCaller()` (IAM-12.2) builds on `actingOnVerifiedSession()`, not on `actingAsVerified()`; the application's
+  side of both is in `docs/guides/testing.md`.
+- `actingAsCaller($identity, $principal, $tenant, $guard, $session, $verified, $scopes)` is the testing helper's one
+  core method, taking plain values only. A person is signed in for real (`Testing\CallerSignIn`, internal) and the test
+  acts on the new session, so every adapter reads the caller from the session `laravel-authentication` wrote, never from
+  a stub: the principal and the tenant are chosen through the `SignInContext`, so the session records the tenant MFA's
+  active tenant resolver reads, and the test then acts in it so `Auth::tenant()` answers it too. How the person signs in
+  is one `Testing\CallerSession` value: `started()` through `start()`, whose first proof names no channel, so MFA judges
+  no first factor and no level can follow (refused before anything is written); `signedIn()` through `signIn()` with the
+  credentials, which must sign in the identity given; or `throughSso()` with SSO's own `Sessions\Provenance`, signed in
+  as `Iam::signIns()` signs in an admitted redemption (`AdmittedRedemptions` recorded for the call and forgotten after
+  it, `signInExternally()` handed `ExternalResults::from()`'s result, so the session records the provenance as its
+  provider context). The three are one value rather than three arguments because they exclude each other, and because a
+  method taking eight arguments would not stay one readable call. Every sign-in runs in `CrossMemberTransaction` and
+  must activate the very identity acted as, or a `LogicException` names the reason inside that transaction, so whatever
+  the sign-in wrote rolls back with it; a level is then verified through `actingOnVerifiedSession()`. A machine is acted
+  as without a session (`actingAsIdentity()`), with its scopes. A sign-in left pending on a further factor (an
+  application requiring one of a person who already holds a confirmed factor: a person seeded with one, or one a level
+  was verified for in an earlier call) is completed, not refused, so the same person can be acted as twice and a test of
+  a holder's factors can use the helper: `Testing\CallerCompletion` reads the pending context back from the credential
+  through `PendingSessionResolverAdapter::fromCredential()`, makes a proof of the level's evidence (an authenticator
+  app's without a level) with a confirmed factor of its type the person holds (enrolling one when they hold none), bound
+  to the pending session for sign-in and flagged multifactor as MFA's acceptance would flag it from the pending first
+  factor and the proof alone, and hands it to `PendingCompletionAdapter::complete()` inside the same transaction, as
+  MFA's verification would. A sign-in still pending after that (on a choice of principal) is refused, naming what it
+  waits on. A `started()` session is never completed: its first factor names no channel, so MFA accepts no further proof
+  after it, and the refusal says to sign in with `signedIn()` or `throughSso()`. That `start()` records no first factor
+  MFA can judge is a member gap in `laravel-authentication`: an optional first factor on `start()` would let a session
+  the application started itself be completed and stepped up.
 - A minimum assurance level in MFA's freshness configuration (for an operation the freshness gate is asked about, or
   for `mfa.add_factor`, `mfa.remove_factor` or `mfa.generate_recovery_codes`) throws an `InvalidArgumentException`
   whenever it is asked, as no stored proof records a level. Configure the operation without one, or bind a gate of your
@@ -524,7 +553,11 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   (`testARemovalIsMadeOnTheApplicationItNames`); `tests/Unit/Mfa/Translation/ClientTranslatorTest.php`
 - `tests/Performance/Mfa/RequirementQueryBudgetTest.php`; `benchmarks/Mfa/RequirementCheckBench.php`
 - `tests/Feature/Testing/InteractsWithIamTest.php` `testMfasActingAsVerifiedIsRefusedByThisPackagesStore`,
-  `testAVerifiedSessionPassesMfasRouteGate`, `testTheFurtherProofIsRecordedWithAFactorThePersonHolds`
+  `testAVerifiedSessionPassesMfasRouteGate`, `testTheFurtherProofIsRecordedWithAFactorThePersonHolds`,
+  `testAPersonActsOnASessionTheySignedInTo`, `testTheTenantIsTheSessionsAndTheGuards`,
+  `testAVerifiedCallerPassesMfasRouteGate`, `testEveryPartComposesOnOneSession`,
+  `testAnSsoCallerCarriesTheProvenanceOnTheSession`, `testALevelForAStartedSessionIsRefusedBeforeTheCallerSignsIn`,
+  `testAMachineActsWithoutASessionLimitedToItsScopes`
 
 ## Change Triggers
 
@@ -556,3 +589,5 @@ Update this note when:
   on it atomically outside one (the read mode `CurrentSession::isInTransaction()` decides would then be wrong);
 - MFA changes what `VerificationResult::$refreshesMultifactor` or `Evaluation::$multifactorAt` says, or starts handing
   over a proof it has not accepted after the session's first factor.
+- `laravel-authentication`'s `start()` gains a first factor, or its sign-in starts completing a pending session for a
+  test (`actingAsCaller()` could then verify a started session, or complete a pending one, rather than refuse it).

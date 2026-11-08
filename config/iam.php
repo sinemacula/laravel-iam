@@ -40,10 +40,11 @@ return [
     | passkey factor gate, and, while any MFA application offers the `passkey`
     | factor type, MFA's passkey ceremonies. Each adapter replaces only the
     | member's own default, never a binding of the application's. Turn it off
-    | (`false`, `0`, `off`) only to bind every one of those seams yourself:
-    | revocation on factor removal is mandatory, as is the passkey factor gate,
-    | even once passkeys are no longer a factor type, and the members' defaults
-    | leave both undone. A value it does not recognise leaves it on.
+    | (`false`, `0`, `off`, `no`) only to bind every one of those seams
+    | yourself: revocation on factor removal is mandatory, as is the passkey
+    | factor gate, even once passkeys are no longer a factor type, and the
+    | members' defaults leave both undone. A value it does not recognise leaves
+    | it on.
     |
     | `sso` binds `laravel-authentication` and SSO: SSO's re-authentication
     | sessions, answered from `laravel-authentication`'s sessions; its session
@@ -58,12 +59,13 @@ return [
     | per-connection evidence policy; and the `sso` namespace of the
     | authentication context. SSO's freshness judges only a caller handed in:
     | wrap a call into SSO that asks it (a management helper, a link flow's
-    | start) in `Iam::callers()->run($guard, $identity, $work)`; without one it
+    | start) in `Iam::callers()->run($caller, $work)`, `$caller` being
+    | `laravel-authentication`'s `Caller` (`Auth::caller()`); without one it
     | is stale. SSO keeps its own handoff codes either way. Turn it off
-    | (`false`, `0`, `off`) only to bind every one of those seams yourself:
-    | revocation is mandatory, since SSO's default leaves every session
-    | standing when a tenant's enforcement changes, a connection is disabled or
-    | deleted, a link is removed or a scope widened, and
+    | (`false`, `0`, `off`, `no`) only to bind every one of those seams
+    | yourself: revocation is mandatory, since SSO's default leaves every
+    | session standing when a tenant's enforcement changes, a connection is
+    | disabled or deleted, a link is removed or a scope widened, and
     | `laravel-authentication`'s default links nothing, so no SSO sign-in
     | succeeds. A value it does not recognise leaves it on.
     |
@@ -302,8 +304,8 @@ return [
     | the same, so one query answers across guards. It is read as the package
     | boots, before audit-log stops taking registrations, so a change takes
     | effect on the next boot (a deploy, a worker restart). Turn it off
-    | (`false`, `0`, `off`) only to map the members' events yourself; a value
-    | it does not recognise leaves it on. Whatever it says, exclude every
+    | (`false`, `0`, `off`, `no`) only to map the members' events yourself; a
+    | value it does not recognise leaves it on. Whatever it says, exclude every
     | `jwt` and `api_key` guard from audit-log's own capture
     | (`audit-log.capture.laravel.except_guards`) and leave its Gate capture
     | off, or each sign-in is recorded twice, and turn audit-log's
@@ -368,12 +370,18 @@ return [
     |---------------------------------------------------------------------------
     |
     | Whether every member's request state is flushed as each Octane worker
-    | starts, before each Octane request and before each queued job, so nothing
-    | one request or job bound (a signed-in guard, a member's scoped instance)
-    | reaches the next. Turn it off (`false`, `0`, `off`) only when the
-    | application performs the same reset itself; a value it does not recognise
-    | leaves it on. Long-lived processes of any other kind call
-    | `Iam::resetWorkerState()` by hand between their units of work.
+    | starts, before each Octane request and
+    | before each queued job not on the `sync` connection, so nothing one
+    | request or job signed in (a guard, the session's proofs) reaches the
+    | next. A `sync` job is skipped: it runs inside the request that dispatched
+    | it, and keeps that request's guards and session.
+    | Octane and the queue worker forget the container's scoped instances
+    | themselves at each boundary; the worker's start, and
+    | `Iam::resetWorkerState()`, forget the members' scoped state too. Turn it
+    | off (`false`, `0`, `off`, `no`) only when the application performs the
+    | same reset itself; any other value leaves it on. Long-lived processes of
+    | any other kind call `Iam::resetWorkerState()` by hand between their units
+    | of work.
     |
     */
 

@@ -20,6 +20,7 @@ use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Concerns\RunsChecks;
+use Tests\Fixtures\Audit\HearsNoAlerts;
 use Tests\TestCase;
 
 /**
@@ -47,7 +48,8 @@ final class AuditCheckTest extends TestCase
         . 'so no member event is recorded: register it, or stop package discovery leaving it out.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
-    private const string GATE_CAPTURE_ON = '`audit-log.capture.gate.enabled` must be false: laravel-authorization\'s decisions are recorded through their own events.';
+    private const string GATE_CAPTURE_ON = '`audit-log.capture.gate.enabled` must be false, so each authorization decision is recorded once,'
+        . ' after a later release maps laravel-authorization\'s events; until then no authorization decision is recorded, the application\'s own Gate checks included.';
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNREGISTERED = '`audit-log.definitions.require_registered` must be true, '
@@ -218,6 +220,24 @@ final class AuditCheckTest extends TestCase
         $this->app?->make('config')->set(OperationalAlerts::KEY . '.audit_write_failed', 'App\Listeners\Nowhere');
 
         self::assertSame(['A listener named in `iam.audit.alerts.audit_write_failed` is neither bound nor a class.'], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * A listener class that could not be handed the event, with neither
+     * `handle()` nor `__invoke()`, fails the check before the event it alerts
+     * on is ever dispatched.
+     *
+     * @return void
+     */
+    public function testAListenerThatCannotBeHandedTheEventFails(): void
+    {
+        $this->install();
+
+        $this->app?->make('config')->set(OperationalAlerts::KEY . '.integrity_check_failed', [HearsNoAlerts::class]);
+
+        $refusal = 'The listener named in `iam.audit.alerts.integrity_check_failed` has neither a handle() method nor __invoke().';
+
+        self::assertSame([$refusal], self::problems($this->check()->checks()));
     }
 
     /**

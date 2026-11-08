@@ -150,13 +150,14 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   job, a request to a provider, a mutated object) is repeated. Keep the closure to database work, and dispatch what
   must happen once after the commit.
 - Flows whose transaction a member opens itself (MFA's factor changes) cannot be wrapped; the adapters called inside
-  them never retry, and the guide says the caller retries the request.
+  them never retry, and the operations guide says the caller retries the request (`docs/guides/operations.md`,
+  Retries).
 - SSO's starts and completions talk to the provider and refuse to run inside a transaction; only its redemption runs
   through `run()`.
 - The identity and principal models must live on the storage connection too (IAM-2.3), but resolving them at boot would
   read the database, so `iam:check` makes it (`Checks\StorageCheck`): the model of each user provider a `jwt` or
   `api_key` guard uses, read from the model's own connection without a query. No setting names the principal models,
-  so the guide names them (`install-and-check.md`).
+  so the installation guide names them (`docs/guides/installation.md`, The storage connection; `install-and-check.md`).
 - Changing the connection moves no table: moving the tables is a deploy, with a migration the application performs and
   a restart of every worker.
 

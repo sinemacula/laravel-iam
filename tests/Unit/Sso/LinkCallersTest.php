@@ -6,8 +6,10 @@ namespace Tests\Unit\Sso;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Iam\Sso\LinkCallers;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
  * Unit tests for the callers handed in for SSO's freshness in this request:
@@ -33,29 +35,29 @@ final class LinkCallersTest extends TestCase
     }
 
     /**
-     * The latest caller opened is named with its application and whether a
-     * transaction was open when it was handed in; closing it names the one
-     * opened before it, and closing that names none.
+     * The latest caller opened is named with whether a transaction was open
+     * when it was handed in; closing it names the one opened before it, and
+     * closing that names none.
      *
      * @return void
      */
     public function testTheLatestRedemptionOpenNamesItsCaller(): void
     {
         $callers = new LinkCallers;
-        $first   = new IdentityReference('person', '1');
-        $second  = new IdentityReference('person', '2');
+        $first   = $this->caller('api');
+        $second  = $this->caller('admin');
 
-        $callers->open('api', $first, false);
+        $callers->open($first, false);
 
-        self::assertSame(['application' => 'api', 'caller' => $first, 'inTransaction' => false], $callers->current());
+        self::assertSame(['caller' => $first, 'inTransaction' => false], $callers->current());
 
-        $callers->open('admin', $second, true);
+        $callers->open($second, true);
 
-        self::assertSame(['application' => 'admin', 'caller' => $second, 'inTransaction' => true], $callers->current());
+        self::assertSame(['caller' => $second, 'inTransaction' => true], $callers->current());
 
         $callers->close();
 
-        self::assertSame(['application' => 'api', 'caller' => $first, 'inTransaction' => false], $callers->current());
+        self::assertSame(['caller' => $first, 'inTransaction' => false], $callers->current());
 
         $callers->close();
 
@@ -71,15 +73,26 @@ final class LinkCallersTest extends TestCase
     public function testACloseWithNoneOpenChangesNothing(): void
     {
         $callers = new LinkCallers;
-        $caller  = new IdentityReference('person', '1');
+        $caller  = $this->caller('api');
 
         $callers->close();
-        $callers->open('api', $caller, false);
+        $callers->open($caller, false);
 
-        self::assertSame(['application' => 'api', 'caller' => $caller, 'inTransaction' => false], $callers->current());
+        self::assertSame(['caller' => $caller, 'inTransaction' => false], $callers->current());
 
         $callers->close();
 
         self::assertNull($callers->current());
+    }
+
+    /**
+     * A caller on the guard, with no session.
+     *
+     * @param  string  $guard
+     * @return \SineMacula\Laravel\Authentication\Callers\Caller
+     */
+    private function caller(string $guard): Caller
+    {
+        return new Caller($guard, CallerCredential::ACCESS, self::createStub(Identity::class), null, null, null);
     }
 }

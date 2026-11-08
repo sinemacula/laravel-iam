@@ -6,10 +6,12 @@ namespace Tests\Unit\Mfa\Translation;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
+use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\External\ExternalEvidence;
 use SineMacula\Laravel\Authentication\Proofs\Channel as AuthChannel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\KeyProtection as AuthenticationKeyProtection;
@@ -20,7 +22,9 @@ use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties as MfaProperties;
@@ -48,6 +52,7 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * @internal
  */
 #[CoversClass(ProofTranslator::class)]
+#[CoversClass(ProviderTrust::class)]
 final class ProofTranslatorTest extends TestCase
 {
     /** @var string The application the sign-in is on. */
@@ -191,7 +196,7 @@ final class ProofTranslatorTest extends TestCase
         $observed = new AuthenticationProperties(userPresence: true);
         $proof    = self::recorded(AuthKind::FIRST_FACTOR, AuthPurpose::SIGN_IN, new AuthChannel(AuthChannelKind::PASSWORD, 'ignored'), observed: $observed);
 
-        $translated = self::translator()->toMfa($proof, self::signIn());
+        $translated = self::translator()->toMfa($proof, self::signIn(), ProviderTrust::withheld());
 
         self::assertSame(MfaProofKind::FIRST_FACTOR, $translated->kind);
         self::assertSame('password', $translated->method);
@@ -213,7 +218,7 @@ final class ProofTranslatorTest extends TestCase
     {
         $proof = self::recorded(AuthKind::ADDITIONAL_FACTOR, AuthPurpose::STEP_UP, new AuthChannel(AuthChannelKind::AUTHENTICATOR_APP, 'factor-1'), 'totp', 'factor-1');
 
-        $translated = self::translator()->toMfa($proof, self::signIn());
+        $translated = self::translator()->toMfa($proof, self::signIn(), ProviderTrust::withheld());
 
         self::assertSame(MfaProofKind::ADDITIONAL_FACTOR, $translated->kind);
         self::assertSame('totp', $translated->method);
@@ -231,7 +236,7 @@ final class ProofTranslatorTest extends TestCase
     {
         $proof = self::recorded(AuthKind::RECOVERY_CODE, AuthPurpose::SIGN_IN, new AuthChannel(AuthChannelKind::UNKNOWN), 'recovery_code', 'set-1');
 
-        $translated = self::translator()->toMfa($proof, self::signIn());
+        $translated = self::translator()->toMfa($proof, self::signIn(), ProviderTrust::withheld());
 
         self::assertSame(MfaProofKind::RECOVERY_CODE, $translated->kind);
         self::assertNull($translated->channel);
@@ -240,21 +245,81 @@ final class ProofTranslatorTest extends TestCase
 
     /**
      * A reauthentication at the external provider is MFA's reauthentication
-     * with the first factor, on the provider's channel with its reference, for
-     * the reauthenticate purpose (IAM-3.14, IAM-5.2).
+     * with the first factor, on the provider's channel with its reference when
+     * it carries accepted evidence, for the reauthenticate purpose (IAM-3.14,
+     * IAM-5.2).
      *
      * @return void
      */
     public function testAnExternalReauthenticationIsAFirstFactorReauthenticationOnTheProvidersChannel(): void
     {
         $channel = new AuthChannel(AuthChannelKind::EXTERNAL_PROVIDER, 'connection-1');
-        $proof   = self::recorded(AuthKind::EXTERNAL_REAUTHENTICATION, AuthPurpose::REAUTHENTICATE, $channel, 'external_provider');
+        $proof   = self::recorded(AuthKind::EXTERNAL_REAUTHENTICATION, AuthPurpose::REAUTHENTICATE, $channel, 'external_provider', evidence: self::evidence());
 
-        $translated = self::translator()->toMfa($proof, self::signIn());
+        $translated = self::translator()->toMfa($proof, self::signIn(), ProviderTrust::accepted(null));
 
         self::assertSame(MfaProofKind::FIRST_FACTOR_REAUTHENTICATION, $translated->kind);
         self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, 'connection-1', $translated->channel);
         self::assertSame(MfaPurpose::REAUTHENTICATE, $translated->binding->purpose);
+    }
+
+    /**
+     * Rows of an external provider's proof: whether it is a reauthentication at
+     * the provider rather than a sign-in's first factor, whether it carries
+     * evidence SSO accepted, whether it is translated under a trust that counts
+     * accepted evidence, and the connection MFA is handed.
+     *
+     * @return iterable<string, array{0: bool, 1: bool, 2: bool, 3: ?string}>
+     */
+    public static function provideExternalProofs(): iterable
+    {
+        foreach (['a first factor' => false, 'a reauthentication' => true] as $name => $reauthentication) {
+
+            yield $name . ' with accepted evidence, counted' => [$reauthentication, true, true, 'connection-1'];
+
+            yield $name . ' with no accepted evidence, counted' => [$reauthentication, false, true, null];
+
+            yield $name . ' with accepted evidence, withheld' => [$reauthentication, true, false, null];
+
+            yield $name . ' with no accepted evidence, withheld' => [$reauthentication, false, false, null];
+        }
+    }
+
+    /**
+     * An external provider's proof names its connection to MFA only when it
+     * carries evidence SSO accepted and the trust counts accepted evidence;
+     * otherwise it is on the provider's channel naming no connection, so no
+     * combination policy can trust it by its connection (IAM-4.6, IAM-5.1).
+     *
+     * @param  bool  $reauthentication
+     * @param  bool  $accepted
+     * @param  bool  $counted
+     * @param  ?string  $connection
+     * @return void
+     */
+    #[DataProvider('provideExternalProofs')]
+    public function testAProvidersProofNamesItsConnectionOnlyWithAcceptedEvidence(bool $reauthentication, bool $accepted, bool $counted, ?string $connection): void
+    {
+        $kind    = $reauthentication ? AuthKind::EXTERNAL_REAUTHENTICATION : AuthKind::FIRST_FACTOR;
+        $purpose = $reauthentication ? AuthPurpose::REAUTHENTICATE : AuthPurpose::SIGN_IN;
+        $channel = new AuthChannel(AuthChannelKind::EXTERNAL_PROVIDER, 'connection-1');
+        $proof   = self::recorded($kind, $purpose, $channel, 'external_provider', evidence: $accepted ? self::evidence() : null);
+        $trust   = $counted ? ProviderTrust::accepted(null) : ProviderTrust::withheld();
+
+        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, $connection, self::translator()->toMfa($proof, self::signIn(), $trust)->channel);
+    }
+
+    /**
+     * An external provider's proof recorded on no connection names none, even
+     * with accepted evidence.
+     *
+     * @return void
+     */
+    public function testAProvidersProofOnNoConnectionNamesNone(): void
+    {
+        $proof = self::recorded(AuthKind::FIRST_FACTOR, AuthPurpose::SIGN_IN, new AuthChannel(AuthChannelKind::EXTERNAL_PROVIDER), 'external_provider', evidence: self::evidence());
+
+        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, null, self::translator()->toMfa($proof, self::signIn(), ProviderTrust::accepted(null))->channel);
     }
 
     /**
@@ -268,7 +333,7 @@ final class ProofTranslatorTest extends TestCase
     {
         $proof = self::recorded(AuthKind::EXTERNAL_REAUTHENTICATION, AuthPurpose::REAUTHENTICATE, new AuthChannel(AuthChannelKind::EMAIL, 'ada@example.test'), 'external_provider');
 
-        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, null, self::translator()->toMfa($proof, self::signIn())->channel);
+        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, null, self::translator()->toMfa($proof, self::signIn(), ProviderTrust::withheld())->channel);
     }
 
     /**
@@ -283,7 +348,7 @@ final class ProofTranslatorTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        self::translator()->toMfa($proof, self::signIn());
+        self::translator()->toMfa($proof, self::signIn(), ProviderTrust::withheld());
     }
 
     /**
@@ -415,7 +480,7 @@ final class ProofTranslatorTest extends TestCase
      */
     private static function translator(): ProofTranslator
     {
-        return new ProofTranslator(new ChannelTranslator);
+        return new ProofTranslator(new ChannelTranslator, new ConnectionTrust(new Container));
     }
 
     /**
@@ -447,6 +512,7 @@ final class ProofTranslatorTest extends TestCase
      * @param  string  $method
      * @param  ?string  $factor
      * @param  ?\SineMacula\Laravel\Authentication\Proofs\ObservedProperties  $observed
+     * @param  ?\SineMacula\Laravel\Authentication\External\ExternalEvidence  $evidence
      * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof
      */
     private static function recorded(
@@ -456,10 +522,21 @@ final class ProofTranslatorTest extends TestCase
         string $method = 'password',
         ?string $factor = null,
         ?AuthenticationProperties $observed = null,
+        ?ExternalEvidence $evidence = null,
     ): RecordedProof {
         $observed ??= new AuthenticationProperties;
 
-        return new RecordedProof('proof-1', $kind, $purpose, $method, $channel, $factor, $observed, null, [], CarbonImmutable::parse(self::PROVED_AT));
+        return new RecordedProof('proof-1', $kind, $purpose, $method, $channel, $factor, $observed, null, [], CarbonImmutable::parse(self::PROVED_AT), $evidence);
+    }
+
+    /**
+     * Build the evidence an external provider asserted, as SSO accepted it.
+     *
+     * @return \SineMacula\Laravel\Authentication\External\ExternalEvidence
+     */
+    private static function evidence(): ExternalEvidence
+    {
+        return new ExternalEvidence(['pwd', 'mfa'], null, CarbonImmutable::parse(self::PROVED_AT));
     }
 
     /**

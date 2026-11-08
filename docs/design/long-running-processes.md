@@ -43,7 +43,8 @@ process calls it.
     and active from M1, binding its request state with `scoped()`: its `ResolvedTenant` holder, `ResolutionCache`,
     `LastDecisionStore`, `PolicyEvaluator`, `SessionScopes`, `CheckContextFactory`, the `DeclaredAbilities` its Gate
     hook answers, the `SchemaInspector` that reads, once a request or job, the tables and connections its
-    `whereAuthorized()` query scope reads, and its `authorization` manager, and
+    `whereAuthorized()` query scope reads, the `Previewing` that holds whether a preview is being evaluated and the
+    subjects its previews are about, and its `authorization` manager, and
     every default behind its contracts (its subject resolver, policy store and policy resolver, its tenant tree, its
     check contexts among them) under its own `authorization.default:` keys, which `WorkerReset::isSuiteState()` finds
     by that prefix, so a default authorization adds is forgotten with the rest (the contracts themselves resolve

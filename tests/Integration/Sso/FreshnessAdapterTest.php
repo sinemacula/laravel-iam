@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\CallerScope;
@@ -36,15 +38,15 @@ use Tests\TestCase;
  * caller's requirement, met by a proof of any kind made within it, and the
  * stricter of it and the application's own requirement for the operation
  * applies; only a caller handed in as a plain value (a `link` redemption's, or
- * one the application hands in through `CallerScope`) is judged, on its
- * application's guard, and with none handed in, or a guard that does not serve
- * it, the answer is `stale`, however fresh the session the request is served
- * with; the policy is asked plainly, inside SSO's transactions too, so no
- * session row is locked under SSO's locks, and a caller handed in while a
- * transaction was already open is `stale` while it is; and a `link` redeemed
- * through this package is created for a caller signed in recently enough, and
- * refused as `freshness_required` otherwise, or inside the caller's own
- * transaction.
+ * one the application hands in through `CallerScope`) is judged, on the session
+ * its access credential holds while that session is its own, and with none
+ * handed in, or one holding no session of its own, the answer is `stale`,
+ * however fresh the session the request is served with; the policy is asked
+ * plainly, inside SSO's transactions too, so no session row is locked under
+ * SSO's locks, and a caller handed in while a transaction was already open is
+ * `stale` while it is; and a `link` redeemed through this package is created
+ * for a caller signed in recently enough, and refused as `freshness_required`
+ * otherwise, or inside the caller's own transaction.
  *
  * The scenarios that judge a session inside SSO's transaction run at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
@@ -142,8 +144,10 @@ final class FreshnessAdapterTest extends TestCase
 
         $gate = $this->app?->make(FreshnessGate::class) ?? self::fail('The application has not booted.');
 
-        self::assertSame(FreshnessOutcome::STALE, Iam::callers()->run(self::GUARD, $person, static fn (): FreshnessOutcome => $gate->check(FreshnessOperation::LINK_REMOVE)));
-        self::assertSame(FreshnessOutcome::FRESH, Iam::callers()->run(self::GUARD, $person, static fn (): FreshnessOutcome => $gate->check(FreshnessOperation::LINK_CREATE)));
+        $caller = $this->requestCallerOf($person);
+
+        self::assertSame(FreshnessOutcome::STALE, Iam::callers()->run($caller, static fn (): FreshnessOutcome => $gate->check(FreshnessOperation::LINK_REMOVE)));
+        self::assertSame(FreshnessOutcome::FRESH, Iam::callers()->run($caller, static fn (): FreshnessOutcome => $gate->check(FreshnessOperation::LINK_CREATE)));
     }
 
     /**
@@ -229,7 +233,7 @@ final class FreshnessAdapterTest extends TestCase
         $caught  = null;
 
         try {
-            Iam::callers()->run(self::GUARD, $person, static fn (): never => throw $failure);
+            Iam::callers()->run($this->requestCallerOf($person), static fn (): never => throw $failure);
         } catch (\RuntimeException $exception) {
             $caught = $exception;
         }
@@ -254,7 +258,7 @@ final class FreshnessAdapterTest extends TestCase
         $ran = false;
 
         try {
-            Iam::callers()->run('web', $this->createPerson(), static function () use (&$ran): void {
+            Iam::callers()->run(new Caller('web', CallerCredential::ACCESS, $this->createPerson(), null, null, null), static function () use (&$ran): void {
                 $ran = true;
             });
             self::fail('A guard that holds no sessions was accepted.');
@@ -266,15 +270,16 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * While a `link` redemption runs, the caller's own session on the
-     * redemption's application is judged: fresh when that guard serves the
-     * caller, stale when it serves another person, however fresh their session.
+     * While a `link` redemption runs, the session the caller holds is judged
+     * only while it is the caller's own: fresh for the person whose session it
+     * is, stale for a caller handed in holding another person's, however fresh
+     * that session.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testALinkCallerIsJudgedOnItsApplicationsGuardAlone(): void
+    public function testALinkCallerIsJudgedOnItsOwnSessionAlone(): void
     {
         $caller  = $this->createPerson();
         $other   = $this->createPerson();
@@ -282,12 +287,12 @@ final class FreshnessAdapterTest extends TestCase
 
         $this->signInAndActOnSession($caller);
 
-        $callers->open(self::GUARD, self::referenceOf($caller), false);
+        $callers->open($this->requestCallerOf($caller), false);
 
         self::assertSame(FreshnessOutcome::FRESH, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
 
         $callers->close();
-        $callers->open(self::GUARD, self::referenceOf($other), false);
+        $callers->open($this->requestCallerOf($other), false);
 
         self::assertSame(FreshnessOutcome::STALE, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
 
@@ -295,7 +300,38 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` caller whose application's guard holds no session is stale.
+     * Only the session an access credential holds is judged: a caller read from
+     * a refresh credential is stale, however fresh the session it holds, and a
+     * caller holding its own session is judged without the guard being asked
+     * whom it serves.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOnlyTheSessionAnAccessCredentialHoldsIsJudged(): void
+    {
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $callers = $this->app?->make(LinkCallers::class) ?? self::fail('The application has not booted.');
+
+        $callers->open(new Caller(self::GUARD, CallerCredential::REFRESH, $person, null, null, $session), false);
+
+        self::assertSame(FreshnessOutcome::STALE, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
+
+        $callers->close();
+
+        $this->signInAndActOnSession($this->createPerson());
+
+        $callers->open(new Caller(self::GUARD, CallerCredential::ACCESS, $person, null, null, $session), false);
+
+        self::assertSame(FreshnessOutcome::FRESH, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
+
+        $callers->close();
+    }
+
+    /**
+     * A `link` caller holding no session is stale.
      *
      * @return void
      */
@@ -303,7 +339,7 @@ final class FreshnessAdapterTest extends TestCase
     {
         $callers = $this->app?->make(LinkCallers::class) ?? self::fail('The application has not booted.');
 
-        $callers->open(self::GUARD, self::referenceOf($this->createPerson()), false);
+        $callers->open($this->requestCallerOf($this->createPerson()), false);
 
         self::assertSame(FreshnessOutcome::STALE, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
 
@@ -332,7 +368,7 @@ final class FreshnessAdapterTest extends TestCase
 
         $recorder = $this->recordReadModes();
         $check    = fn (): FreshnessOutcome => $this->adapter()->check(FreshnessOperation::ENFORCEMENT_UPDATE, self::MAX_AGE);
-        $answer   = Iam::callers()->run(self::GUARD, $person, static fn (): FreshnessOutcome => DB::transaction($check));
+        $answer   = Iam::callers()->run($this->requestCallerOf($person), static fn (): FreshnessOutcome => DB::transaction($check));
 
         self::assertSame(FreshnessOutcome::FRESH, $answer);
         self::assertAskedOnlyIn($recorder, false);
@@ -367,7 +403,7 @@ final class FreshnessAdapterTest extends TestCase
 
         $callers = $this->app?->make(LinkCallers::class) ?? self::fail('The application has not booted.');
 
-        $callers->open(self::GUARD, self::referenceOf($person), true);
+        $callers->open($this->requestCallerOf($person), true);
 
         self::assertSame(FreshnessOutcome::STALE, DB::transaction(fn (): FreshnessOutcome => $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE)));
         self::assertSame(FreshnessOutcome::FRESH, $this->adapter()->check(FreshnessOperation::LINK_CREATE, self::MAX_AGE));
@@ -397,7 +433,7 @@ final class FreshnessAdapterTest extends TestCase
 
         $handoff  = $this->linkHandoff($person);
         $recorder = $this->recordReadModes();
-        $linked   = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        $linked   = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
 
         self::assertTrue($linked->isRedeemed(), sprintf('The person was not linked: [%s].', $linked->reason->value ?? $linked->status->value));
         self::assertAskedOnlyIn($recorder, false);
@@ -431,7 +467,7 @@ final class FreshnessAdapterTest extends TestCase
 
         $this->travel(6)->seconds();
 
-        $refused = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person);
+        $refused = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
 
         self::assertFalse($refused->isRedeemed());
         self::assertSame(FailureReason::FRESHNESS_REQUIRED, $refused->reason);
@@ -440,15 +476,15 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` started for one person and redeemed with another signed in on
-     * the guard is refused for freshness before anything else: the caller's own
-     * session is judged, and the guard holds none of theirs.
+     * A `link` started for one person and redeemed by a caller holding another
+     * person's session is refused for freshness before anything else: only the
+     * caller's own session is judged, and the caller holds none.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testALinkWhoseCallerTheGuardDoesNotServeIsRefused(): void
+    public function testALinkWhoseCallerHoldsAnotherPersonsSessionIsRefused(): void
     {
         $caller = $this->createPerson();
 
@@ -458,7 +494,7 @@ final class FreshnessAdapterTest extends TestCase
 
         $this->signInAndActOnSession($this->createPerson());
 
-        $refused = Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $caller);
+        $refused = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($caller));
 
         self::assertSame(FailureReason::FRESHNESS_REQUIRED, $refused->reason);
         self::assertSame(0, DB::table('sso_links')->count());
@@ -481,8 +517,9 @@ final class FreshnessAdapterTest extends TestCase
         $this->signInAndActOnSession($person);
 
         $handoff  = $this->linkHandoff($person);
+        $caller   = $this->requestCallerOf($person);
         $recorder = $this->recordReadModes();
-        $refused  = DB::transaction(fn (): RedemptionResult => Iam::links()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client(), $person));
+        $refused  = DB::transaction(fn (): RedemptionResult => Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $caller));
 
         self::assertSame(FailureReason::FRESHNESS_REQUIRED, $refused->reason);
         self::assertSame([], $recorder->modes);
@@ -509,12 +546,12 @@ final class FreshnessAdapterTest extends TestCase
         $check = static fn (): FreshnessOutcome => $gate->check(FreshnessOperation::LINK_CREATE);
 
         self::assertSame(FreshnessOutcome::STALE, $check());
-        self::assertSame(FreshnessOutcome::FRESH, Iam::callers()->run(self::GUARD, $person, $check));
+        self::assertSame(FreshnessOutcome::FRESH, Iam::callers()->run($this->requestCallerOf($person), $check));
     }
 
     /**
      * Ask the adapter for the operation with the person handed in as the caller
-     * on the guard.
+     * of a request on the guard, holding the session the guard serves.
      *
      * @param  \Tests\Fixtures\Models\Person  $caller
      * @param  \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation  $operation
@@ -525,12 +562,13 @@ final class FreshnessAdapterTest extends TestCase
      */
     private function checkAs(Person $caller, FreshnessOperation $operation, int $maxAge = self::MAX_AGE): FreshnessOutcome
     {
-        return Iam::callers()->run(self::GUARD, $caller, fn (): FreshnessOutcome => $this->adapter()->check($operation, $maxAge));
+        return Iam::callers()->run($this->requestCallerOf($caller), fn (): FreshnessOutcome => $this->adapter()->check($operation, $maxAge));
     }
 
     /**
      * Start and complete a `link` flow for the person, handed in as the caller
-     * on the guard, as SSO's flow start asks freshness, and answer its handoff.
+     * of a request on the guard, as SSO's flow start asks freshness, and answer
+     * its handoff.
      *
      * @param  \Tests\Fixtures\Models\Person  $caller
      * @return \Tests\Fixtures\Sso\Handoff
@@ -539,7 +577,7 @@ final class FreshnessAdapterTest extends TestCase
      */
     private function linkHandoff(Person $caller): Handoff
     {
-        return Iam::callers()->run(self::GUARD, $caller, fn (): Handoff => $this->handoff(Purpose::LINK, $caller));
+        return Iam::callers()->run($this->requestCallerOf($caller), fn (): Handoff => $this->handoff(Purpose::LINK, $caller));
     }
 
     /**
