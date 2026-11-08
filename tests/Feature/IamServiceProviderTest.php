@@ -6,7 +6,9 @@ namespace Tests\Feature;
 
 use Illuminate\Auth\GenericUser;
 use Illuminate\Config\Repository;
+use Illuminate\Console\Application as Artisan;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Database\Connection;
@@ -30,6 +32,10 @@ use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
+use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
+use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
+use SineMacula\Laravel\Iam\Console\CheckCommand;
+use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
@@ -53,6 +59,7 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
+use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
@@ -1110,7 +1117,50 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Outside the console, nothing is offered for publishing.
+     * In the console, `iam:install` and `iam:check` are registered, each by its
+     * own command class.
+     *
+     * @return void
+     */
+    public function testTheCommandsAreRegisteredInTheConsole(): void
+    {
+        $commands = $this->application()->make(ConsoleKernel::class)->all();
+
+        self::assertInstanceOf(InstallCommand::class, $commands[InstallCommand::NAME] ?? null);
+        self::assertInstanceOf(CheckCommand::class, $commands[CheckCommand::NAME] ?? null);
+    }
+
+    /**
+     * This package's checks of SSO's side are registered with SSO's own, under
+     * `iam`, after every check of SSO's.
+     *
+     * @return void
+     */
+    public function testThePackagesChecksOfSsosSideAreRegisteredWithSsosOwn(): void
+    {
+        self::assertSame(
+            [...SsoServiceProvider::CONFIGURATION_CHECKS, SsoCheckRegistration::SUBJECT => SsoBridgeCheck::class],
+            $this->application()->make(ConfigurationChecks::class)->all(),
+        );
+    }
+
+    /**
+     * The capabilities whose seams the binding rule applies, which `iam:check`
+     * reads the mandatory seams from too, are every capability's, in order.
+     *
+     * @return void
+     */
+    public function testEveryCapabilitysSeamsAreProvided(): void
+    {
+        self::assertSame(
+            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, DeliverySeams::class, SsoSeams::class, TenancySeams::class],
+            IamServiceProvider::seamProviders(),
+        );
+    }
+
+    /**
+     * Outside the console, nothing is offered for publishing, and no command is
+     * registered.
      *
      * @return void
      */
@@ -1126,10 +1176,14 @@ final class IamServiceProviderTest extends TestCase
         $publishes->setValue(null, []);
         $groups->setValue(null, []);
 
+        $bootstrappers = new \ReflectionProperty(Artisan::class, 'bootstrappers');
+        $starting      = $bootstrappers->getValue();
+
         try {
-            (new \ReflectionMethod(IamServiceProvider::class, 'registerPublishing'))->invoke(new IamServiceProvider($app));
+            (new \ReflectionMethod(IamServiceProvider::class, 'registerConsole'))->invoke(new IamServiceProvider($app));
 
             self::assertSame([], ServiceProvider::pathsToPublish(IamServiceProvider::class));
+            self::assertSame($starting, $bootstrappers->getValue());
         } finally {
             $publishes->setValue(null, $saved[0]);
             $groups->setValue(null, $saved[1]);

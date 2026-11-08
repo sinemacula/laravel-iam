@@ -111,8 +111,11 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   The adapters take no lock of their own: each asks `of()` inside SSO's transaction, so the guard is held there. A
   change that creates or accepts a membership reports it to SSO's scope widening first (IAM-7.3), whose identity guard
   is SSO's first lock; a provisioner guards only the new identity's own rows.
-- `Tenancy\TenancySeams` binds, while `iam.adapters.sso` is on, over SSO's own defaults only, each transient and none
-  mandatory, since SSO's defaults fail closed:
+- `Tenancy\TenancySeams` binds, while `iam.adapters.sso` is on, over SSO's own defaults only, each transient. The rows
+  answered from the memberships are never mandatory, since SSO's defaults fail closed; the tree's is mandatory while
+  the application has a tree and SSO's enforcement is on (IAM-10.2), since SSO's default would then keep a tenant's
+  enforcement from the tenants beneath it, so an application that keeps each tenant's rule to itself while it keeps a
+  tree binds an inheritance of its own (decision recorded in `install-and-check.md`):
 
   | SSO seam                 | Bound to                        | Default replaced          | While                                  |
   | ------------------------ | ------------------------------- | ------------------------- | -------------------------------------- |

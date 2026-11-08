@@ -87,9 +87,9 @@ before that member has merged it, and why the storage connection alone still wai
   - A value a provider registered after this package sets, or any `boot()` sets, is still read too late; set switches
     in configuration files or the environment.
 - What the rule did is a `Bindings\BindingOutcome`, the seams bound and the seams kept in the order of the rows, which
-  `IamServiceProvider::registerSeams()` keeps in the container for `iam:check` to report (M8). It records the rule's
+  `IamServiceProvider::registerSeams()` keeps in the container for `iam:check` to report. It records the rule's
   own decision as it ran; a binding made afterwards replaces the adapter without changing it, so the check reads the
-  live binding of each mandatory seam as well.
+  live binding of each mandatory seam as well (`Checks\MandatorySeamsCheck`, `install-and-check.md`).
 - The rule is applied once more from the booting phase, to the rows the first pass left open and only those
   (`BindingRule::applyAgain()`, from `IamServiceProvider::settle()`): the tenancy rows `Tenancy\TenancySeams` declares
   over SSO's `TenantMembership`, `LinkEligibility`, `PrincipalScope` and `EnforcementInheritance`
@@ -159,7 +159,7 @@ before that member has merged it, and why the storage connection alone still wai
   default.
 - A member renaming a default's class, or moving a closure binding to another class, makes the rule treat the new
   default as the application's and keep it. That fails closed: no adapter is bound over a binding the rule cannot
-  recognise, and `iam:check` (M8) reports a mandatory seam left on its permissive default at deploy. The tests pin the
+  recognise, and `iam:check` reports a mandatory seam left on any class of its member's own at deploy. The tests pin the
   members' defaults, in every provider order, on every supported Laravel version.
 - An application that binds a seam to the member's own default class by name, before this package registers, is
   indistinguishable from the member and gets the adapter. To keep the member's default deliberately, turn the row's

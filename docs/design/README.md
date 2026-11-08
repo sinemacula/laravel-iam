@@ -80,6 +80,20 @@ The current note set is:
   application's alerting; the trail read audit-log refuses inside a change that spans members; what M11 adds for
   authorization; and the gaps in the members the mapping works around.
 
+- `install-and-check.md`: how `iam:install` publishes every member's configuration, language files and migrations, and
+  this package's configuration, in their working order, each where its provider publishes it; how it recognises a
+  migration already published by its base name whatever its timestamp, tells it from an application's own of the same
+  base name and fails the run where a migration's identity is in doubt, keeps every file already there and changes
+  nothing it did not publish, so it is safe to run twice; the audit-log values and the prefixed `laravel-authorization`
+  table names it writes only into a configuration file it has just published, and what it reports as still owed; the
+  members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
+  the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
+  the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `sso`
+  namespace, the audit trail's settings, the senders' gateways, the configuration that crosses the members, the platform
+  and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as `[iam]` and failing
+  SSO's boot only while SSO is in use; what M10 and M11 add; and the gaps in the members installation and the checks
+  work around.
+
 A note is added here with the code it describes.
 
 These documents are secondary to the code and tests, not a replacement for them. If a note and a cited test disagree,

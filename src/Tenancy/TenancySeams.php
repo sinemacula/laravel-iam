@@ -78,11 +78,17 @@ use SineMacula\Laravel\Sso\Linking\RefusingPrincipalScope;
  * requirements and for the tree changes, say. These rows follow the SSO
  * capability's switch as it read when this package registered, as SSO's other
  * seams did, so they and those seams are bound together or not at all: a value
- * a later provider writes comes too late for either, off as much as on. None of
- * these is mandatory: SSO's defaults fail closed, and a tree is the
- * application's choice. A membership contract or a tree bound from a provider's
- * `boot()` binds none of these adapters, though the revocations and the
- * adapters that are bound still ask it.
+ * a later provider writes comes too late for either, off as much as on. The
+ * rows answered from the memberships are never mandatory: SSO's defaults fail
+ * closed. The tenant tree's is mandatory while the application has a tree and
+ * SSO's enforcement is on (IAM-10.2): left on SSO's default then, a tenant's
+ * enforcement would never reach the tenants beneath it, though the application
+ * keeps them beneath it. An application that keeps each tenant's rule to itself
+ * while it keeps a tree binds an inheritance of its own, which `iam:check` then
+ * accepts; SSO's own class, bound by the application, is kept by the rule but
+ * reported by the check. A membership contract or a tree bound from a
+ * provider's `boot()` binds none of these adapters, though the revocations and
+ * the adapters that are bound still ask it.
  *
  * Each adapter replaces the member's own default only; an application's binding
  * is kept (IAM-8.4). The adapters keep nothing and resolve what they ask on
@@ -95,7 +101,7 @@ use SineMacula\Laravel\Sso\Linking\RefusingPrincipalScope;
  */
 final readonly class TenancySeams implements ProvidesSeams
 {
-    /** @var string SSO's switch for its enforcement, which the binding is mandatory while on. */
+    /** @var string SSO's switch for its enforcement, which the policy's binding, and the tree's while the application has one, are mandatory while on. */
     public const string ENFORCEMENT = 'sso.features.enforcement';
 
     /**
@@ -118,7 +124,8 @@ final readonly class TenancySeams implements ProvidesSeams
      * capability's switch is, and mandatory while SSO's enforcement or a tenant
      * MFA requirement is; and the bindings answered from the application's
      * memberships and tenant tree, each on while the switch is and the
-     * application has the one it answers from.
+     * application has the one it answers from, the tree's mandatory while the
+     * application has one and SSO's enforcement is on.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -127,7 +134,8 @@ final readonly class TenancySeams implements ProvidesSeams
     public function seams(Repository $config): array
     {
         $on          = SsoSeams::isOn(...);
-        $mandatory   = $this->isMandatory($config);
+        $mandatory   = self::isEnforcedOrRequired($config, $this->container);
+        $inherited   = self::isEnforced($config) && TenancyContracts::hasTree($this->container, $config);
         $memberships = fn (Repository $switches): bool => $this->isSsoOn($switches) && TenancyContracts::hasMemberships($this->container, $switches);
         $tree        = fn (Repository $switches): bool => $this->isSsoOn($switches) && TenancyContracts::hasTree($this->container, $switches);
 
@@ -136,8 +144,27 @@ final readonly class TenancySeams implements ProvidesSeams
             new SeamBinding(TenantMembership::class, TenantMembershipAdapter::class, [NoTenantMembership::class], appliesWhen: $memberships),
             new SeamBinding(LinkEligibility::class, LinkEligibilityAdapter::class, [RefusingLinkEligibility::class], appliesWhen: $memberships),
             new SeamBinding(PrincipalScope::class, PrincipalScopeAdapter::class, [RefusingPrincipalScope::class], appliesWhen: $memberships),
-            new SeamBinding(EnforcementInheritance::class, EnforcementInheritanceAdapter::class, [OwnTenantInheritance::class], appliesWhen: $tree),
+            new SeamBinding(EnforcementInheritance::class, EnforcementInheritanceAdapter::class, [OwnTenantInheritance::class], appliesWhen: $tree, mandatory: $inherited),
         ];
+    }
+
+    /**
+     * Whether SSO's enforcement is on or the application names or binds a
+     * tenant MFA requirement: while either is, the seams a tenant's rule
+     * reaches a session through are mandatory (IAM-10.2), the tenant
+     * authentication policy's among them, whoever binds them. SSO's switch is
+     * read as SSO would read it to turn its enforcement on. With no container
+     * given, only the configuration is read.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  ?\Illuminate\Contracts\Container\Container  $container
+     * @return bool
+     */
+    public static function isEnforcedOrRequired(Repository $config, ?Container $container): bool
+    {
+        return self::isEnforced($config)
+            || TenantMfaRequirements::isNamed($config)
+            || ($container?->bound(TenantMfaRequirement::class) ?? false);
     }
 
     /**
@@ -156,17 +183,14 @@ final readonly class TenancySeams implements ProvidesSeams
     }
 
     /**
-     * Whether the tenant authentication policy must be bound off the default:
-     * SSO's enforcement is on, read as SSO reads its own switch would turn it
-     * on, or the application names or binds a tenant MFA requirement.
+     * Whether SSO's enforcement is on, read as SSO would read its own switch to
+     * turn it on.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
      */
-    private function isMandatory(Repository $config): bool
+    private static function isEnforced(Repository $config): bool
     {
-        return filter_var($config->get(self::ENFORCEMENT), FILTER_VALIDATE_BOOL)
-            || TenantMfaRequirements::isNamed($config)
-            || $this->container->bound(TenantMfaRequirement::class);
+        return filter_var($config->get(self::ENFORCEMENT), FILTER_VALIDATE_BOOL);
     }
 }

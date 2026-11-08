@@ -23,6 +23,9 @@ use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
+use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
+use SineMacula\Laravel\Iam\Console\CheckCommand;
+use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
@@ -51,13 +54,14 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
  * records SSO's redemptions keep for one request, the callers queued jobs
  * carried, the grant half of SSO's principal scope, the storage connection's
- * alignment, the seam bindings, the storage check's booting and booted
- * callbacks, the audit trail's mappers and codes, the `sso` authentication
- * context contributor, the listeners counting outermost commits and releasing
- * the work held for a commit to finish, the listener provisioning SSO's
- * unlinked results, the listeners handing the operational events to the
- * application's alerting, the listeners carrying the caller into each queued
- * job, the worker reset listeners and the publishing tag.
+ * alignment, the seam bindings, this package's checks of SSO's side with SSO's
+ * own, the storage check's booting and booted callbacks, the audit trail's
+ * mappers and codes, the `sso` authentication context contributor, the
+ * listeners counting outermost commits and releasing the work held for a commit
+ * to finish, the listener provisioning SSO's unlinked results, the listeners
+ * handing the operational events to the application's alerting, the listeners
+ * carrying the caller into each queued job, the worker reset listeners, the
+ * publishing tag and the `iam:install` and `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -99,10 +103,11 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * connection key that is not a name, refuses boot, except while one of the
  * console commands that list, describe, discover, cache or clear configuration
  * runs, so the problem (a cached one included) can still be inspected and
- * cleared, as `laravel-mfa` skips its own boot check for them. The command is
- * read from the process's arguments; a process that names none runs `list` only
- * when it is Artisan, so any other script started without a command (a test
- * runner, a long-lived worker) is checked.
+ * cleared, as `laravel-mfa` skips its own boot check for them, or `iam:check`,
+ * which reports it (`Checks\StorageCheck`) rather than stop before it can. The
+ * command is read from the process's arguments; a process that names none runs
+ * `list` only when it is Artisan, so any other script started without a command
+ * (a test runner, a long-lived worker) is checked.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -115,6 +120,7 @@ final class IamServiceProvider extends ServiceProvider
         'config:clear',
         'config:show',
         'help',
+        CheckCommand::NAME,
         'list',
         'optimize:clear',
         'package:discover',
@@ -143,8 +149,9 @@ final class IamServiceProvider extends ServiceProvider
      * frames of the queued jobs running and the grant half of SSO's principal
      * scope, write the shared storage connection into every member key that is
      * unset and whose member has registered, apply the binding rule to every
-     * seam binding, and register the callback that aligns and checks the
-     * storage connections once every provider has registered.
+     * seam binding, register this package's checks of SSO's side with SSO's
+     * own, and register the callback that aligns and checks the storage
+     * connections once every provider has registered.
      *
      * @return void
      *
@@ -171,6 +178,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
         $this->registerSeams();
+        SsoCheckRegistration::register($this->app);
         $this->registerStorageCheck();
     }
 
@@ -185,8 +193,8 @@ final class IamServiceProvider extends ServiceProvider
      * outermost commits and releasing the work held for a commit to finish, the
      * listener provisioning SSO's unlinked results, the listeners handing the
      * operational events to the application's alerting, the listeners carrying
-     * the caller into each queued job, the worker reset listeners and the
-     * publishing tag.
+     * the caller into each queued job, the worker reset listeners, the
+     * publishing tag and the console commands.
      *
      * @return void
      *
@@ -207,7 +215,28 @@ final class IamServiceProvider extends ServiceProvider
         OperationalAlerts::listen();
         CarryCallerIntoJobs::listen($this->app);
         $this->registerListeners();
-        $this->registerPublishing();
+        $this->registerConsole();
+    }
+
+    /**
+     * Return the capabilities whose seam bindings the binding rule applies,
+     * which `iam:check` reads the mandatory seams from too; each later
+     * milestone adds its capability's `*Seams` class here.
+     *
+     * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
+     *
+     * @internal
+     */
+    public static function seamProviders(): array
+    {
+        return [
+            MfaSeams::class,
+            PasskeySeams::class,
+            ContextSeams::class,
+            DeliverySeams::class,
+            SsoSeams::class,
+            TenancySeams::class,
+        ];
     }
 
     /**
@@ -434,11 +463,12 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the package's config publishing tag.
+     * Register the package's config publishing tag and its console commands,
+     * `iam:install` and `iam:check`, in the console only.
      *
      * @return void
      */
-    protected function registerPublishing(): void
+    protected function registerConsole(): void
     {
         if (!$this->app->runningInConsole()) {
             return;
@@ -447,6 +477,8 @@ final class IamServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/iam.php' => config_path('iam.php'),
         ], 'iam-config');
+
+        $this->commands([InstallCommand::class, CheckCommand::class]);
     }
 
     /**
@@ -677,23 +709,5 @@ final class IamServiceProvider extends ServiceProvider
         }
 
         return basename($arguments[0] ?? '') === self::ARTISAN ? self::DEFAULT_COMMAND : null;
-    }
-
-    /**
-     * Return the capabilities whose seam bindings the binding rule applies;
-     * each later milestone adds its capability's `*Seams` class here.
-     *
-     * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
-     */
-    private static function seamProviders(): array
-    {
-        return [
-            MfaSeams::class,
-            PasskeySeams::class,
-            ContextSeams::class,
-            DeliverySeams::class,
-            SsoSeams::class,
-            TenancySeams::class,
-        ];
     }
 }

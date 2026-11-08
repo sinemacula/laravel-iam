@@ -303,13 +303,15 @@ return [
     | boots, before audit-log stops taking registrations, so a change takes
     | effect on the next boot (a deploy, a worker restart). Turn it off
     | (`false`, `0`, `off`) only to map the members' events yourself; a value
-    | it does not recognise leaves it on. With it on, exclude every `jwt` and
-    | `api_key` guard from audit-log's own capture
+    | it does not recognise leaves it on. Whatever it says, exclude every
+    | `jwt` and `api_key` guard from audit-log's own capture
     | (`audit-log.capture.laravel.except_guards`) and leave its Gate capture
     | off, or each sign-in is recorded twice, and turn audit-log's
     | `definitions.require_registered` on, so a code without a definition is
-    | refused rather than recorded unchecked: `iam:install` writes all three
-    | and `iam:check` refuses a configuration without them.
+    | refused rather than recorded unchecked. `iam:install` writes the
+    | exclusions and the refusal into an audit-log configuration it publishes
+    | (Gate capture already ships off), and `iam:check` refuses a
+    | configuration without any of the three.
     |
     | `alerts` offers the suite's operational events to the application's
     | alerting: `audit_write_failed` (audit-log's `AuditWriteFailed`, a record
