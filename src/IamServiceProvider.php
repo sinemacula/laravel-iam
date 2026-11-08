@@ -15,6 +15,11 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
+use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
+use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
+use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
+use SineMacula\Laravel\Iam\Audit\JobCallers;
+use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
@@ -44,12 +49,15 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * records SSO's redemptions keep for one request, the grant half of SSO's
- * principal scope, the storage connection's alignment, the seam bindings, the
- * storage check's booting and booted callbacks, the `sso` authentication
+ * records SSO's redemptions keep for one request, the callers queued jobs
+ * carried, the grant half of SSO's principal scope, the storage connection's
+ * alignment, the seam bindings, the storage check's booting and booted
+ * callbacks, the audit trail's mappers and codes, the `sso` authentication
  * context contributor, the listeners counting outermost commits and releasing
  * the work held for a commit to finish, the listener provisioning SSO's
- * unlinked results, the worker reset listeners and the publishing tag.
+ * unlinked results, the listeners handing the operational events to the
+ * application's alerting, the listeners carrying the caller into each queued
+ * job, the worker reset listeners and the publishing tag.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -131,12 +139,12 @@ final class IamServiceProvider extends ServiceProvider
     private bool $ssoOn = false;
 
     /**
-     * Register the configuration, the manager, the request's records and the
-     * grant half of SSO's principal scope, write the shared storage connection
-     * into every member key that is unset and whose member has registered,
-     * apply the binding rule to every seam binding, and register the callback
-     * that aligns and checks the storage connections once every provider has
-     * registered.
+     * Register the configuration, the manager, the request's records, the
+     * frames of the queued jobs running and the grant half of SSO's principal
+     * scope, write the shared storage connection into every member key that is
+     * unset and whose member has registered, apply the binding rule to every
+     * seam binding, and register the callback that aligns and checks the
+     * storage connections once every provider has registered.
      *
      * @return void
      *
@@ -153,6 +161,13 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerFactorCodeCallers();
         $this->registerRedemptionRecords();
 
+        // The frames of the queued jobs running are frame state, as audit-log's
+        // own job frames are: scoped, so the queue worker and Octane forget
+        // them between jobs and requests, but outside this package's key for
+        // scoped adapters, so the explicit reset a job calls between its own
+        // units of work keeps the caller it carried (IAM-9.7)
+        $this->app->scoped(JobCallers::class, static fn (): JobCallers => new JobCallers);
+
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
         $this->registerSeams();
@@ -162,11 +177,16 @@ final class IamServiceProvider extends ServiceProvider
     /**
      * Settle the storage connections if the booting phase passed before this
      * provider registered (it was registered while the application booted, or
-     * after), then queue the `sso` authentication context contributor's
-     * registration for when every provider has booted, and bootstrap the
-     * listeners counting outermost commits and releasing the work held for a
-     * commit to finish, the listener provisioning SSO's unlinked results, the
-     * worker reset listeners and the publishing tag.
+     * after), register this package's part of the audit trail with audit-log
+     * before it stops taking registrations (an audit-log that never registers
+     * is not refused while a configuration command runs, as a member is not),
+     * then queue the `sso` authentication context contributor's registration
+     * for when every provider has booted, and bootstrap the listeners counting
+     * outermost commits and releasing the work held for a commit to finish, the
+     * listener provisioning SSO's unlinked results, the listeners handing the
+     * operational events to the application's alerting, the listeners carrying
+     * the caller into each queued job, the worker reset listeners and the
+     * publishing tag.
      *
      * @return void
      *
@@ -180,9 +200,12 @@ final class IamServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->settle();
+        AuditRegistrations::register($this->app, !self::isRunningUncheckedCommand($this->app));
         $this->registerContextContributors();
         $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
+        OperationalAlerts::listen();
+        CarryCallerIntoJobs::listen($this->app);
         $this->registerListeners();
         $this->registerPublishing();
     }
@@ -222,10 +245,12 @@ final class IamServiceProvider extends ServiceProvider
      * Register the records SSO's redemptions keep for one request: the
      * redemption admitted, which `laravel-authentication`'s external identity
      * links contract answers from, the renewal a re-authentication records
-     * before its one write, the outermost commits each connection has begun,
-     * which a standalone `link` reads to tell whether its attempt reached its
-     * commit before it failed, and the caller of the `link` redemption running,
-     * whose session SSO's freshness contract judges, and the work held until a
+     * before its one write, the refusals `laravel-authentication` reports
+     * inside a transaction, held for the audit trail until the outermost one
+     * has ended, the outermost commits each connection has begun, which a
+     * standalone `link` reads to tell whether its attempt reached its commit
+     * before it failed, and the caller of the `link` redemption running, whose
+     * session SSO's freshness contract judges, and the work held until a
      * connection's commit has finished. Each is scoped, so it is one request's
      * or one job's alone (IAM-8.1), under this package's own key for its scoped
      * adapters, which `Iam::resetWorkerState()` forgets as it forgets every
@@ -236,7 +261,7 @@ final class IamServiceProvider extends ServiceProvider
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, OutermostCommits::class, LinkCallers::class, CommittedWork::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, LinkCallers::class, CommittedWork::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 

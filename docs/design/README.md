@@ -67,6 +67,19 @@ The current note set is:
   of a tenant judge its whole subtree, a broken tree refused; the testing kits and fakes for the application's
   contracts; and the gaps in the members the adapters work around.
 
+- `audit-mapping.md`: how `laravel-authentication`'s, MFA's and SSO's events are recorded in `laravel-audit-log`: the
+  mappers, codes and definitions registered while the application boots, before audit-log freezes its registries; how
+  each event is recorded from the event alone, under audit-log's own code where it means the same and a code of its
+  member's prefix otherwise, a refusal by its flow and a concealed reason kept concealed, the actor the identity, no one
+  or the caller, every reference through the morph map and every record correlated as one SSO sign-in, a challenge or a
+  session; the whole record sequences of a password sign-in, an MFA step-up and an SSO sign-in; the one context
+  contributor that fills a record's gaps from the caller a package guard already holds, never triggering authentication,
+  and only on a record about that caller; the `jwt` and `api_key` guards excluded from audit-log's own capture, and its
+  Gate capture off, so nothing is recorded twice, computed for installation to write and the check to enforce, and
+  audit-log's refusal of a code no definition registers read for them too; the operational events handed to the
+  application's alerting; the trail read audit-log refuses inside a change that spans members; what M11 adds for
+  authorization; and the gaps in the members the mapping works around.
+
 A note is added here with the code it describes.
 
 These documents are secondary to the code and tests, not a replacement for them. If a note and a cited test disagree,

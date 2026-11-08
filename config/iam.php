@@ -291,6 +291,59 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Audit
+    |---------------------------------------------------------------------------
+    |
+    | `mappers` records the members' own events in `laravel-audit-log`: one
+    | mapper each for `laravel-authentication`'s, MFA's and SSO's events, and a
+    | definition (version, category, the fields kept) for every code they
+    | record that audit-log does not ship. Audit-log's own codes, such as
+    | `authentication.signed_in`, are reused unchanged for an event that means
+    | the same, so one query answers across guards. It is read as the package
+    | boots, before audit-log stops taking registrations, so a change takes
+    | effect on the next boot (a deploy, a worker restart). Turn it off
+    | (`false`, `0`, `off`) only to map the members' events yourself; a value
+    | it does not recognise leaves it on. With it on, exclude every `jwt` and
+    | `api_key` guard from audit-log's own capture
+    | (`audit-log.capture.laravel.except_guards`) and leave its Gate capture
+    | off, or each sign-in is recorded twice, and turn audit-log's
+    | `definitions.require_registered` on, so a code without a definition is
+    | refused rather than recorded unchecked: `iam:install` writes all three
+    | and `iam:check` refuses a configuration without them.
+    |
+    | `alerts` offers the suite's operational events to the application's
+    | alerting: `audit_write_failed` (audit-log's `AuditWriteFailed`, a record
+    | that could not be written), `audit_capture_failed` (`AuditCaptureFailed`,
+    | an event a mapper could not describe), `integrity_check_failed`
+    | (`IntegrityCheckFailed`, sealing or verification finding the log altered
+    | or unverifiable) and `key_nearing_expiry` (SSO's `KeyNearingExpiry`, a key
+    | or certificate within a configured threshold of its end). Name a listener
+    | class, or a list of them, for each: it is resolved from the container and
+    | handed the event through its `handle()` method, or invoked, synchronously,
+    | in the order named, as the event is dispatched. The package sends nothing
+    | itself, so with none named nobody is told. The values are read at each
+    | dispatch: one that names no listener is refused then, and by `iam:check`.
+    | Audit-log dispatches `AuditWriteFailed` and `AuditCaptureFailed` inside
+    | its write guard, so a record their listener makes is refused; it does not
+    | guard `IntegrityCheckFailed` (from `audit-log:seal` and `audit-log:verify`)
+    | or SSO's `KeyNearingExpiry`, so their listener could record one, into the
+    | very log just found altered or unverifiable for an integrity failure.
+    | Alert by other means (a notification, a log channel) in every case.
+    |
+    */
+
+    'audit' => [
+        'mappers' => env('IAM_AUDIT_MAPPERS', true),
+        'alerts'  => [
+            'audit_write_failed'     => [],
+            'audit_capture_failed'   => [],
+            'integrity_check_failed' => [],
+            'key_nearing_expiry'     => [],
+        ],
+    ],
+
+    /*
+    |---------------------------------------------------------------------------
     | Transactions
     |---------------------------------------------------------------------------
     |
