@@ -168,8 +168,8 @@ process calls it.
 
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `flushSession()`,
   `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`, `AUTHORIZATION_DEFAULT`.
-- `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `isSuiteState()` finds this package's scoped adapters
-  by, `bindScoped()` and `unscope()`.
+- `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
+  scoped adapters by, `bindScoped()` and `unscope()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
@@ -217,8 +217,10 @@ process calls it.
 
 - An adapter or member that keeps request state outside a scoped binding: it joins `forgetMemberState()`, as
   `laravel-authorization`'s explicit resets will in M11.
-- M10 replacing `laravel-mfa`'s session proof store (IAM-3.11): the session flush exists for it, and moves out of
-  `forgetMemberState()` with it.
+- `laravel-mfa`'s session proof store ceasing to be a store an application can run on: this package's own proof store
+  (IAM-3.11) keeps nothing in the Laravel session, but MFA's default is still bound wherever `iam.adapters.mfa` is off
+  or the application binds it, and the session flush exists for it; it moves out of `forgetMemberState()` only once no
+  application can keep it.
 - A change to the protected `Container::$scopedInstances` the reset reads, or a public way to ask whether an abstract
   is scoped, which the reset then uses instead.
 - A member adding, renaming or removing a scoped binding that keeps request state (`laravel-authorization` changing

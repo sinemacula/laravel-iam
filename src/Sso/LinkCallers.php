@@ -4,24 +4,30 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Sso;
 
+use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Callers\Caller;
+use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
+use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 
 /**
- * The callers handed to this package in this request for SSO's freshness
- * contract to judge (IAM-4.6, SSO-2.12): the caller of a `link` redemption
- * running, or the caller the application hands in around its own call into SSO
- * (`CallerScope::run()`).
+ * The callers handed to this package in this request for SSO's freshness and
+ * link confirmation contracts to judge (IAM-4.6, IAM-4.10, SSO-2.12, SSO-8.8):
+ * the caller of a `link` redemption running, or the caller the application
+ * hands in around its own call into SSO (`CallerScope::run()`).
  *
- * SSO hands its freshness contract only the operation and its maximum age,
- * never the caller, and the adapter never takes one from the request, the
- * default guard or the session a guard serves. `LinkRedemption` and
- * `CallerScope` are each handed the caller as a plain value,
- * `laravel-authentication`'s `Caller` (its guard, its identity and the session
- * its credential holds, as `Auth::caller()` reads them where the application
- * reads the request), so each opens the record with it before SSO is asked
- * (`open()`) and closes it once SSO has answered or thrown (`close()`), and the
- * freshness adapter judges that caller's own session alone (`current()`). With
- * none open, nothing is judged, and the answer is `stale`.
+ * SSO hands its freshness contract only the operation and its maximum age, and
+ * its link confirmation only the identity, the connection and the domain links,
+ * never the caller, and neither adapter takes one from the request, the default
+ * guard or the session a guard serves. `LinkRedemption` and `CallerScope` are
+ * each handed the caller as a plain value, `laravel-authentication`'s `Caller`
+ * (its guard, its identity and the session its credential holds, as
+ * `Auth::caller()` reads them where the application reads the request), so each
+ * opens the record with it before SSO is asked (`open()`) and closes it once
+ * SSO has answered or thrown (`close()`), and the adapters judge that caller's
+ * own session alone (`current()`): the session its access credential holds,
+ * while it is a session of the caller's guard that the caller's identity owns
+ * (`sessionOf()`). With none open, nothing is judged, and the answer is
+ * `stale`, or `dependent`.
  *
  * Each entry also records whether a transaction was already open on the storage
  * connection when the caller was handed in. A plain read inside a transaction
@@ -80,5 +86,27 @@ final class LinkCallers
     public function current(): ?array
     {
         return $this->open === [] ? null : $this->open[array_key_last($this->open)];
+    }
+
+    /**
+     * The session the caller's access credential holds, when it is an Eloquent
+     * session of the caller's guard that the caller's identity owns, or `null`
+     * otherwise: a caller with no session, a refresh or pending credential, or
+     * a session of another guard or identity holds none of its own.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
+     * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public static function sessionOf(Caller $caller): (EloquentSession&Model)|null
+    {
+        $session = $caller->session;
+
+        if ($caller->credential !== CallerCredential::ACCESS || !$session instanceof EloquentSession || !$session instanceof Model) {
+            return null;
+        }
+
+        return $caller->owns($session) ? $session : null;
     }
 }

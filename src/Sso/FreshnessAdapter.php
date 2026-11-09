@@ -5,10 +5,6 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Sso;
 
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Database\Eloquent\Model;
-use SineMacula\Laravel\Authentication\Callers\Caller;
-use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
-use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
@@ -133,26 +129,6 @@ final readonly class FreshnessAdapter implements Freshness
             return null;
         }
 
-        return self::callersSession($caller['caller']);
-    }
-
-    /**
-     * The session the caller's access credential holds, when it is a session of
-     * the caller's guard that the caller's identity owns, or `null` otherwise.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
-     * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private static function callersSession(Caller $caller): ?Session
-    {
-        $session = $caller->session;
-
-        if ($caller->credential !== CallerCredential::ACCESS || !$session instanceof EloquentSession || !$session instanceof Model) {
-            return null;
-        }
-
-        return $caller->owns($session) ? $session : null;
+        return LinkCallers::sessionOf($caller['caller']);
     }
 }

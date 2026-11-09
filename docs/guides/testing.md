@@ -45,7 +45,8 @@ final class InvoicesTest extends TestCase
 A person is signed in for real, through `laravel-authentication`'s session service, as your application signs people
 in, and the test acts on the new session. So every adapter reads the caller from the session `laravel-authentication`
 wrote, exactly as it reads a real caller's: MFA's route gate, MFA's active tenant, the tenant authentication policy and
-the `sso` context namespace among them. Nothing is stubbed.
+the `mfa` and `sso` context namespaces among them, so a session verified at a level reads `mfa.accepted` and
+`mfa.level` in `Auth::context()`. Nothing is stubbed.
 
 | Argument     | What it is                                                                                                      |
 |--------------|-----------------------------------------------------------------------------------------------------------------|

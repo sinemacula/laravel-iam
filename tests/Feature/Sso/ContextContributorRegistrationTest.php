@@ -13,27 +13,33 @@ use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authentication\Contracts\ExternalEvidencePolicy;
 use SineMacula\Laravel\Authentication\External\InsufficientEvidence as InsufficientExternalEvidence;
 use SineMacula\Laravel\Iam\IamServiceProvider;
+use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
+use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Sso\ExternalEvidencePolicyAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use Tests\Concerns\PermutesProviderOrder;
+use Tests\Fixtures\Providers\RegistersAnMfaContributor;
 use Tests\Fixtures\Providers\RegistersAnSsoContributor;
 use Tests\Fixtures\Providers\RegistersAuthenticationWhileBooting;
+use Tests\Fixtures\Providers\TurnsMfaOffWhileRegistering;
 use Tests\Fixtures\Providers\TurnsSsoOffWhileRegistering;
 use Tests\Fixtures\Providers\TurnsSsoOnWhileRegistering;
 use Tests\TestCase;
 
 /**
- * Feature tests for the `sso` namespace's registration with
+ * Feature tests for the `mfa` and `sso` namespaces' registration with
  * `laravel-authentication`'s authentication context: this package registers its
- * contributor under `sso` exactly once, once every provider has booted, in
- * every provider order, `laravel-authentication` registered from another
- * provider's `boot()` included, and only while the SSO capability's switch is
- * on as the binding rule read it, so a provider that turns the switch over
- * once this package has registered leaves the contributor and the adapters
- * agreeing; a contributor the application registered under `sso` from any provider's
- * `boot()` is kept, and one it registers once the application has booted is
- * `laravel-authentication`'s refusal.
+ * contributor under each exactly once, once every provider has booted, in every
+ * provider order, `laravel-authentication` registered from another provider's
+ * `boot()` included, and only while the matching capability's switch is on as
+ * the binding rule read it, so a provider that turns a switch over once this
+ * package has registered leaves the contributor and the adapters agreeing; a
+ * contributor the application registered under either namespace from any
+ * provider's `boot()` is kept, and one it registers once the application has
+ * booted is `laravel-authentication`'s refusal.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,8 +51,12 @@ final class ContextContributorRegistrationTest extends TestCase
 {
     use PermutesProviderOrder;
 
+    /** @var array<string, string> This package's contributors, by namespace. */
+    private const array CONTRIBUTORS = ['mfa' => MfaContextContributor::class, 'sso' => SsoContextContributor::class];
+
     /**
-     * The contributor is registered under `sso`, once, in every provider order.
+     * The contributors are registered under `mfa` and `sso`, once each, in
+     * every provider order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -54,15 +64,16 @@ final class ContextContributorRegistrationTest extends TestCase
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     #[DataProvider('provideProviderOrders')]
-    public function testTheContributorIsRegisteredUnderSsoInEveryProviderOrder(array $providers): void
+    public function testTheContributorsAreRegisteredInEveryProviderOrder(array $providers): void
     {
         $this->bootInOrder($providers);
 
-        self::assertSame(['sso' => SsoContextContributor::class], $this->registered());
+        self::assertSame(self::CONTRIBUTORS, $this->registered());
     }
 
     /**
-     * With the capability's switch off, nothing is registered under `sso`.
+     * With the SSO capability's switch off, nothing is registered under `sso`,
+     * and the `mfa` contributor still is.
      *
      * @return void
      *
@@ -71,7 +82,69 @@ final class ContextContributorRegistrationTest extends TestCase
     #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
     public function testTheSwitchOffRegistersNothing(): void
     {
-        self::assertSame([], $this->registered());
+        self::assertSame(['mfa' => MfaContextContributor::class], $this->registered());
+    }
+
+    /**
+     * With the MFA capability's switch off, nothing is registered under `mfa`,
+     * and the `sso` contributor still is.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    public function testTheMfaSwitchOffRegistersNothingUnderMfa(): void
+    {
+        self::assertSame(['sso' => SsoContextContributor::class], $this->registered());
+    }
+
+    /**
+     * A provider that turns the MFA switch off once this package has registered
+     * comes too late for the bindings and for the contributor alike: both stay
+     * on.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheMfaSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn(): void
+    {
+        $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, TurnsMfaOffWhileRegistering::class]);
+
+        self::assertFalse(MfaSeams::isOn($this->application()->make('config')));
+        self::assertInstanceOf(ProofStoreAdapter::class, $this->bound(ProofStore::class));
+        self::assertSame(self::CONTRIBUTORS, $this->registered());
+    }
+
+    /**
+     * A contributor the application registered under `mfa` before this package
+     * booted is kept.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testAnApplicationsEarlierMfaContributorIsKept(): void
+    {
+        $this->bootInOrder([...self::MEMBER_PROVIDERS, RegistersAnMfaContributor::class, IamServiceProvider::class]);
+
+        self::assertSame(['mfa' => RegistersAnMfaContributor::CONTRIBUTOR, 'sso' => SsoContextContributor::class], $this->registered());
+    }
+
+    /**
+     * A contributor the application registers under `mfa` from a provider that
+     * boots after this package is kept too.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testAnApplicationsLaterMfaContributorIsKept(): void
+    {
+        $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, RegistersAnMfaContributor::class]);
+
+        self::assertSame(['mfa' => RegistersAnMfaContributor::CONTRIBUTOR, 'sso' => SsoContextContributor::class], $this->registered());
     }
 
     /**
@@ -89,7 +162,7 @@ final class ContextContributorRegistrationTest extends TestCase
 
         self::assertFalse(SsoSeams::isOn($this->application()->make('config')));
         self::assertInstanceOf(ExternalEvidencePolicyAdapter::class, $this->bound(ExternalEvidencePolicy::class));
-        self::assertSame(['sso' => SsoContextContributor::class], $this->registered());
+        self::assertSame(self::CONTRIBUTORS, $this->registered());
     }
 
     /**
@@ -107,7 +180,7 @@ final class ContextContributorRegistrationTest extends TestCase
 
         self::assertTrue(SsoSeams::isOn($this->application()->make('config')));
         self::assertInstanceOf(InsufficientExternalEvidence::class, $this->bound(ExternalEvidencePolicy::class));
-        self::assertSame([], $this->registered());
+        self::assertSame(['mfa' => MfaContextContributor::class], $this->registered());
     }
 
     /**
@@ -122,7 +195,7 @@ final class ContextContributorRegistrationTest extends TestCase
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, RegistersAnSsoContributor::class, IamServiceProvider::class]);
 
-        self::assertSame(['sso' => RegistersAnSsoContributor::CONTRIBUTOR], $this->registered());
+        self::assertSame(['mfa' => MfaContextContributor::class, 'sso' => RegistersAnSsoContributor::CONTRIBUTOR], $this->registered());
     }
 
     /**
@@ -138,7 +211,7 @@ final class ContextContributorRegistrationTest extends TestCase
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, RegistersAnSsoContributor::class]);
 
-        self::assertSame(['sso' => RegistersAnSsoContributor::CONTRIBUTOR], $this->registered());
+        self::assertSame(['mfa' => MfaContextContributor::class, 'sso' => RegistersAnSsoContributor::CONTRIBUTOR], $this->registered());
     }
 
     /**
@@ -175,11 +248,12 @@ final class ContextContributorRegistrationTest extends TestCase
 
         $this->bootInOrder([IamServiceProvider::class, ...$members, RegistersAuthenticationWhileBooting::class]);
 
-        self::assertSame(['sso' => SsoContextContributor::class], $this->registered());
+        self::assertSame(self::CONTRIBUTORS, $this->registered());
     }
 
     /**
-     * The contributors `laravel-authentication` holds, by namespace.
+     * The contributors `laravel-authentication` holds, by namespace, in the
+     * namespaces' order rather than the order they were registered in.
      *
      * @return array<string, string>
      *
@@ -187,7 +261,11 @@ final class ContextContributorRegistrationTest extends TestCase
      */
     private function registered(): array
     {
-        return $this->application()->make(ContextContributors::class)->registered();
+        $registered = $this->application()->make(ContextContributors::class)->registered();
+
+        ksort($registered);
+
+        return $registered;
     }
 
     /**

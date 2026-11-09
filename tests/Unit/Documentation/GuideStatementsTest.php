@@ -20,8 +20,9 @@ use PHPUnit\Framework\TestCase;
  * which jobs the worker reset skips and what it keeps, what replacing a binding
  * the package keeps risks, what moving onto the package replaces and in which
  * order, what the members' test fakes replace, which callers SSO's freshness
- * judges, how the audit trail names a tenant, and when a tenant resolver is
- * owed) say what the code does.
+ * judges, what the authentication context reads inside a transaction, how the
+ * audit trail names a tenant, and when a tenant resolver is owed) say what the
+ * code does.
  *
  * A guide is prose, so these hold the sentences that state each behaviour, and
  * the code the sentences describe is held by its own tests.
@@ -229,6 +230,46 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
+        yield 'the MFA guide says the context carries the mfa namespace, from the session it was built for' => [
+            'docs/guides/authentication-and-mfa.md',
+            [
+                'carries MFA\'s view of the session under `mfa`',
+                'another session, or in a queued job, reports that session\'s verification',
+                '`iam:check` requires the namespace either way',
+            ],
+            ['has no `mfa` namespace yet', 'Until then read'],
+        ];
+
+        yield 'the MFA guide says the context is built once and kept, so a transaction reads its proofs only on the first build' => [
+            'docs/guides/authentication-and-mfa.md',
+            [
+                '`Auth::context()` is built once per guard per request and kept',
+                'forgets only when the guard binds another identity, principal or session, or when this process changes the session\'s proofs',
+                'only when that first build happens inside a transaction on the session model\'s connection',
+                'ask there through `Auth::sessions($guard)->proofs()` and `firstFactor()`, or MFA\'s own view, `Mfa::authenticationContext($caller)`',
+            ],
+            ['so read the context there only where you would take that lock'],
+        ];
+
+        yield 'the MFA design note says the context\'s read mode holds only for its first build' => [
+            'docs/design/authentication-and-mfa.md',
+            [
+                'builds `Auth::context()` once per request and keeps it',
+                'a later read runs no contributor, takes no lock and reads nothing',
+                'never `Auth::context()`',
+            ],
+            ['so a context built inside a transaction takes the session row'],
+        ];
+
+        yield 'the context check requires the mfa namespace' => [
+            'docs/guides/checks.md',
+            [
+                'the `mfa` namespace is required in every application',
+                '*No contributor is registered under the `mfa` namespace of the authentication context; turn `iam.adapters.mfa` on,',
+            ],
+            ['joins the context check once this package contributes it', 'Applies while SSO is in use.'],
+        ];
+
         yield 'only this package\'s checks keep off the database, and none prints a secret' => [
             'docs/guides/checks.md',
             [
@@ -324,8 +365,8 @@ final class GuideStatementsTest extends TestCase
 
         yield 'the seams still to come include the refusing defaults' => [
             'docs/guides/bindings.md',
-            ['`Authorization\Contracts\SessionPolicySource`', '`AuditLog\Contracts\AuditAccessPolicy`', '`Sso\Contracts\LinkConfirmation`'],
-            [],
+            ['`Authorization\Contracts\SessionPolicySource`', '`AuditLog\Contracts\AuditAccessPolicy`', 'Two more wait the same way'],
+            ['which a later release of this package answers', 'Three more wait the same way'],
         ];
 
         yield 'the application\'s own audit codes need definitions' => [
@@ -409,10 +450,16 @@ final class GuideStatementsTest extends TestCase
             ['Routes and controllers for every flow'],
         ];
 
-        yield 'a link asks for SSO\'s link confirmation' => [
+        yield 'a link asks for SSO\'s link confirmation, which the package answers' => [
             'docs/guides/authentication-and-sso.md',
-            ['SSO asks three things of the link', '`SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`'],
-            ['SSO asks two things of the link'],
+            [
+                'SSO asks three things of the link',
+                '`SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`',
+                'signed in with a password or a passkey, or through your own account recovery',
+                'A session any provider established is not, whichever link it stood on',
+                '`iam.sso.recovery_methods`',
+            ],
+            ['SSO asks two things of the link', 'This package does not answer it yet', 'stays bound'],
         ];
 
         yield 'a guard with its own signing keys is listed, rotated and revoked in its own block' => [

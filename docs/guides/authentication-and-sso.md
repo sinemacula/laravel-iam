@@ -22,6 +22,7 @@ specification the adapters are written to. This guide covers what you call, and 
 | SSO `Freshness`                            | `laravel-authentication`'s freshness policy                       | SSO's sensitive changes ask for a fresh session, as your own do                    |
 | SSO `ApplicationPolicy`                    | the guard's sign-in methods                                       | a guard that does not allow `external_provider` starts no flow                     |
 | SSO `LinkEmailMatcher`                     | `laravel-authentication`'s verified identifiers                   | linking by a verified domain matches only a verified email address                 |
+| SSO `LinkConfirmation`                     | how the caller's session signed in, from its proofs               | only a session apart from every provider confirms a verified domain link           |
 | Auth `TenantAuthenticationPolicy`          | SSO's enforcement and exemptions, and your tenant MFA requirement | one tenant policy decides every session acting in the tenant                       |
 | The `sso` authentication context namespace | the provenance SSO captured at sign-in                            | `Auth::context()` says how a session began                                         |
 
@@ -127,12 +128,23 @@ application the link is redeemed for. SSO asks three things of the link:
 - **Eligibility.** A link is allowed only by an accepted membership of the connection's tenant, answered from your
   memberships (see [Provisioning and tenancy](provisioning-and-tenancy.md#memberships)). Without them every link is
   refused as `link_ineligible`.
-- **Link confirmation.** An identity that holds, or has ever held, a link by a verified domain may link another
-  provider only once SSO's `SineMacula\Laravel\Sso\Contracts\LinkConfirmation` says the caller's authentication is
-  independent of that link. This package does not answer it yet (a later release does), so SSO's
-  `SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation` stays bound, and refuses every such `link` as
-  `independent_authentication_required`. Bind your own if those people must link another provider
+- **Link confirmation.** An identity that holds, or has ever held, a link by a verified domain may link a provider, or
+  confirm that link, only once SSO's `SineMacula\Laravel\Sso\Contracts\LinkConfirmation` says the caller's
+  authentication is independent of it, or the `link` is refused as `independent_authentication_required`. The package
+  answers it in place of SSO's `SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`, from the proofs
+  `laravel-authentication` records for the session the caller holds, its own: the session is independent when it
+  signed in with a password or a passkey, or through your own account recovery, and was never renewed through a
+  provider. A session any provider established is not, whichever link it stood on, so a person whose only session
+  came through their verified domain link signs in with a password or a passkey first
   ([laravel-sso: confirming it is the person][sso-links-confirming]).
+
+A recovery session counts only when your recovery starts it with `Auth::sessions($guard)->start()` under a method you
+name at `iam.sso.recovery_methods` (see [Configuration](configuration.md#sso)); no other session started that way
+does. What a password, a passkey or your recovery proves is yours to keep true: one enrolled from a session the
+verified domain link established, or a recovery its provider can drive, proves nothing the provider could not do. A
+caller with no session of its own, and a session that is pending, revoked or ended, never confirms. Inside SSO's
+transaction the session's row is locked until the link commits, so revoking the session waits for it. Freshness renewed
+through a provider never counts here, whatever SSO's `Freshness` answers.
 
 ## SSO's own calls that ask for freshness
 

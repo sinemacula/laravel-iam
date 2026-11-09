@@ -41,6 +41,7 @@ use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
+use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
@@ -100,6 +101,7 @@ final class AdaptersDocumentationTest extends TestCase
         Freshness::class                      => 'SSO\'s freshness',
         ApplicationPolicy::class              => 'application policy',
         LinkEmailMatcher::class               => 'link email matcher',
+        LinkConfirmation::class               => 'SSO\'s link confirmation',
         EvidencePolicy::class                 => 'SSO\'s per-connection evidence policy',
         TenantAuthenticationPolicy::class     => '`laravel-authentication`\'s tenant authentication policy',
         TenantMembership::class               => 'SSO\'s tenant membership',

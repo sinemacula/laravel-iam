@@ -24,6 +24,7 @@ use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
 use SineMacula\Laravel\Iam\Sso\ExternalEvidencePolicyAdapter;
 use SineMacula\Laravel\Iam\Sso\ExternalIdentityLinksAdapter;
 use SineMacula\Laravel\Iam\Sso\FreshnessAdapter;
+use SineMacula\Laravel\Iam\Sso\LinkConfirmationAdapter;
 use SineMacula\Laravel\Iam\Sso\LinkEmailMatcherAdapter;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationSessionsAdapter;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
@@ -33,6 +34,7 @@ use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
 use SineMacula\Laravel\Sso\Contracts\HandoffIssuer;
+use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\LinkStorage;
@@ -45,6 +47,7 @@ use SineMacula\Laravel\Sso\Freshness\RefusingFreshness;
 use SineMacula\Laravel\Sso\Handoffs\DatabaseHandoffStore;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Linking\NoEmailMatches;
+use SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation;
 use SineMacula\Laravel\Sso\Links\LinkStore;
 use SineMacula\Laravel\Sso\Links\NoLinks;
 use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
@@ -83,6 +86,7 @@ final class SsoSeamsTest extends TestCase
         Freshness::class                => FreshnessAdapter::class,
         ApplicationPolicy::class        => ApplicationPolicyAdapter::class,
         LinkEmailMatcher::class         => LinkEmailMatcherAdapter::class,
+        LinkConfirmation::class         => LinkConfirmationAdapter::class,
     ];
 
     /** @var array<class-string, class-string> Each seam SSO or `laravel-authentication` binds a default for, with that default. */
@@ -95,6 +99,7 @@ final class SsoSeamsTest extends TestCase
         Freshness::class                => RefusingFreshness::class,
         ApplicationPolicy::class        => ConfiguredApplicationPolicy::class,
         LinkEmailMatcher::class         => NoEmailMatches::class,
+        LinkConfirmation::class         => RefusingLinkConfirmation::class,
         EvidencePolicy::class           => InsufficientEvidence::class,
     ];
 

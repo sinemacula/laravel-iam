@@ -12,8 +12,6 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
-use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
@@ -23,7 +21,6 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
-use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
  * MFA's proof store, kept in `laravel-authentication`'s session proofs: a
@@ -42,7 +39,12 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
  * evidence contract accepted and the session's tenant, if any, trusts the
  * connection (`ProviderTrust::accepted()`), so a combination policy that trusts
  * a connection never counts a sign-in SSO's evidence gate refused, nor one
- * tenant's trust for another.
+ * tenant's trust for another. The translation is `SignInProofs`, which the
+ * `mfa` context contributor shares, so the store and the context read a
+ * session's proofs alike; the store reads the guard's current session only
+ * because MFA's contract asks for the identity's current sign-in and hands no
+ * session to read instead, and `record()`, handed a binding but no identity,
+ * finds that identity as the guard is signed in as it.
  *
  * `laravel-authentication` is the only writer of a session's proofs: it records
  * the first factor when the session is signed in, in the same transaction as
@@ -99,7 +101,7 @@ final readonly class ProofStoreAdapter implements ProofStore
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
+     * @param  \SineMacula\Laravel\Iam\Mfa\SignInProofs  $proofs
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
      */
     public function __construct(
@@ -110,8 +112,8 @@ final readonly class ProofStoreAdapter implements ProofStore
         /** Resolves the sign-in MFA names to the guard's current session. */
         private CurrentSession $sessions,
 
-        /** Translates the session's proofs to MFA's. */
-        private ProofTranslator $proofs,
+        /** Reads the session's proofs as MFA's proofs of the sign-in. */
+        private SignInProofs $proofs,
 
         /** Runs the liveness check in a transaction on the storage connection. */
         private CrossMemberTransaction $transaction,
@@ -218,11 +220,8 @@ final readonly class ProofStoreAdapter implements ProofStore
         }
 
         $recorded = Auth::sessions($application)->proofs($session, limit: RequirementSubject::MAX_LIMIT);
-        $signIn   = $this->signIn($identity, $application, $session);
 
-        $proofs = array_map(fn (RecordedProof $proof): ?Proof => $this->translated($proof, $signIn, $session), array_reverse($recorded));
-
-        return self::held($identity, array_values(array_filter($proofs)));
+        return $this->proofs->of($identity, $application, $session, array_reverse($recorded));
     }
 
     /**
@@ -249,9 +248,8 @@ final readonly class ProofStoreAdapter implements ProofStore
         }
 
         $recorded = Auth::sessions($application)->firstFactor($session);
-        $proof    = $recorded === null ? null : $this->translated($recorded, $this->signIn($identity, $application, $session), $session);
 
-        return $proof === null ? null : (self::held($identity, [$proof])[0] ?? null);
+        return $recorded === null ? null : ($this->proofs->of($identity, $application, $session, [$recorded])[0] ?? null);
     }
 
     /**
@@ -284,7 +282,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     #[\Override]
     public function forgetFactor(MultiFactorAuthenticatable $identity, string $factorId): void
     {
-        if (!self::holds($identity, $factorId)) {
+        if (!SignInProofs::holds($identity, $factorId)) {
             return;
         }
 
@@ -320,63 +318,7 @@ final readonly class ProofStoreAdapter implements ProofStore
      */
     public static function factorReference(Factor $factor): string
     {
-        $id = $factor->getFactorIdentifier();
-
-        return is_scalar($id) ? (string) $id : '';
-    }
-
-    /**
-     * The proofs that still count: each that names no factor, and each that
-     * names a factor the identity still holds.
-     *
-     * The identity's factors are read only when a proof names one, from MFA's
-     * factor table on the write connection, so a factor MFA has just deleted,
-     * in its own transaction or in one since committed, is already gone, and a
-     * replica that has not caught up cannot bring it back.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  list<\SineMacula\Laravel\Mfa\Proofs\Proof>  $proofs
-     * @return list<\SineMacula\Laravel\Mfa\Proofs\Proof>
-     */
-    private static function held(MultiFactorAuthenticatable $identity, array $proofs): array
-    {
-        if (array_filter($proofs, static fn (Proof $proof): bool => $proof->reference !== null) === []) {
-            return $proofs;
-        }
-
-        $factors = self::factors($identity);
-
-        return array_values(array_filter($proofs, static fn (Proof $proof): bool => $proof->reference === null || in_array($proof->reference, $factors, true)));
-    }
-
-    /**
-     * Whether the identity still holds the factor, read from MFA's factor table
-     * on the write connection.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $factorId
-     * @return bool
-     */
-    private static function holds(MultiFactorAuthenticatable $identity, string $factorId): bool
-    {
-        return in_array($factorId, self::factors($identity), true);
-    }
-
-    /**
-     * The identity's factors, as a proof made with each names it, read from
-     * MFA's factor table on the write connection, so a factor MFA has just
-     * deleted, in its own transaction or in one since committed, is already
-     * gone, and a replica that has not caught up cannot bring it back.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @return array<int, string>
-     */
-    private static function factors(MultiFactorAuthenticatable $identity): array
-    {
-        return array_map(
-            static fn (Factor $factor): string => self::factorReference($factor),
-            $identity->authFactors()->useWritePdo()->get()->all(),
-        );
+        return SignInProofs::factorReference($factor);
     }
 
     /**
@@ -449,43 +391,5 @@ final readonly class ProofStoreAdapter implements ProofStore
         $identity = is_array($this->config->get('auth.guards.' . $application)) ? Auth::guard($application)->user() : null;
 
         return $identity instanceof MultiFactorAuthenticatable ? $identity : null;
-    }
-
-    /**
-     * The sign-in the session is, as MFA binds its proofs: the identity, the
-     * application, the session's key and the identity's current verification
-     * generation.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $application
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
-     * @return \SineMacula\Laravel\Iam\Mfa\Translation\SignIn
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \Throwable
-     */
-    private function signIn(MultiFactorAuthenticatable $identity, string $application, Session $session): SignIn
-    {
-        return new SignIn(IdentityReference::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
-    }
-
-    /**
-     * MFA's proof for one the session recorded, or `null` when MFA cannot
-     * express it, so it does not count. An external provider's proof names its
-     * connection only when it carries evidence SSO accepted and the session's
-     * tenant, if any, trusts the connection (`ProviderTrust::accepted()`).
-     *
-     * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
-     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\SignIn  $signIn
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
-     * @return ?\SineMacula\Laravel\Mfa\Proofs\Proof
-     */
-    private function translated(RecordedProof $proof, SignIn $signIn, Session $session): ?Proof
-    {
-        try {
-            return $this->proofs->toMfa($proof, $signIn, ProviderTrust::accepted($session->getTenantId()));
-        } catch (\InvalidArgumentException) {
-            return null;
-        }
     }
 }

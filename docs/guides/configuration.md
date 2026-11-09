@@ -135,14 +135,21 @@ See [Testing](testing.md#fakes) for the fake gateways.
 
 ## SSO
 
-| Key                | Default | Environment        | What it does                                                                         |
-|--------------------|---------|--------------------|--------------------------------------------------------------------------------------|
-| `iam.sso.evidence` | `false` | `IAM_SSO_EVIDENCE` | Binds SSO's per-connection evidence policy, `Sso\Evidence\ConnectionEvidencePolicy`. |
+| Key                        | Default | Environment        | What it does                                                                                                     |
+|----------------------------|---------|--------------------|------------------------------------------------------------------------------------------------------------------|
+| `iam.sso.evidence`         | `false` | `IAM_SSO_EVIDENCE` | Binds SSO's per-connection evidence policy, `Sso\Evidence\ConnectionEvidencePolicy`.                             |
+| `iam.sso.recovery_methods` | `[]`    | None               | The sign-in methods of your own account recovery, whose sessions SSO's link confirmation counts as independent.  |
 
-Read strictly: only `true` (as a boolean or as text, `1`, `on` or `yes`) turns it on. It applies only while
-`iam.adapters.sso` is on, and never replaces an evidence policy you bound yourself. The evidence SSO accepts is only
-the first of two gates; what it satisfies is MFA's combination policy's to decide. Read [MFA and SSO](mfa-and-sso.md)
-before you turn it on.
+`iam.sso.evidence` is read strictly: only `true` (as a boolean or as text, `1`, `on` or `yes`) turns it on. It applies
+only while `iam.adapters.sso` is on, and never replaces an evidence policy you bound yourself. The evidence SSO accepts
+is only the first of two gates; what it satisfies is MFA's combination policy's to decide. Read
+[MFA and SSO](mfa-and-sso.md) before you turn it on.
+
+`iam.sso.recovery_methods` lists the methods your recovery starts a session under with
+`Auth::sessions($guard)->start()`. A session started under one of them confirms a `link` beside a password or passkey
+session (see [Authentication and SSO](authentication-and-sso.md#linking-an-identity)); list a method only when the
+recovery behind it is the person's own, apart from every identity provider. Anything but a list of method names (a
+keyed array, or a list holding anything but strings) names no recovery at all.
 
 SSO's own mapping of a provider's attributes (`sso.mapping.custom_attributes`) and its routes are SSO's keys, not this
 package's: see [laravel-sso: managing connections][sso-custom-attributes] and

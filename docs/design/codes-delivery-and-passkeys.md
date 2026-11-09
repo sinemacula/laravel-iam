@@ -7,8 +7,8 @@ passkeys as factors (IAM-3.10) and the context MFA reads (IAM-3.12, the resolver
 reach the application's own email and SMS gateways (IAM-3.13). It covers the seams `Mfa\MfaSeams`,
 `Mfa\PasskeySeams`, `Mfa\ContextSeams` and `Delivery\DeliverySeams` add, what each adapter answers and how it
 refuses, the one message both members' codes become, where each delivery runs and what a failing gateway undoes, and
-the locks taken. The `mfa` context contributor comes later (M10) and is not described here; the seams joined in M2
-are in `authentication-and-mfa.md`, and the binding rule that applies every row is in `binding-precedence.md`.
+the locks taken. The `mfa` context contributor (IAM-3.12) and the seams joined in M2 are in `authentication-and-mfa.md`,
+and the binding rule that applies every row is in `binding-precedence.md`.
 
 ## Invariants
 
@@ -536,4 +536,4 @@ Update this note when:
   credential before it asks the passkey factor gate (the gate adapter reads the pending session from it);
 - MFA changes which events name the sign-in they were made on, or what `EventSubject::$signInId` names (the event
   context reads it as `laravel-authentication`'s session key);
-- the `mfa` context contributor lands (M10), or a proof store keys on the application.
+- a proof store keys on the application.

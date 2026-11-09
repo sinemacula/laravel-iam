@@ -139,7 +139,7 @@ AUTHORIZATION_DB_CONNECTION=mysql
 ## Further reading
 
 - [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): why the principal scope waits.
-- [The install and check design note](../design/install-and-check.md#what-m10-and-m11-add): what the checks gain.
+- [The install and check design note](../design/install-and-check.md#what-m11-adds): what the checks gain.
 
 [authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md

@@ -61,11 +61,10 @@ final class CheckCommandTest extends TestCase
             self::assertMatchesRegularExpression('/^' . preg_quote($header, '/') . '$/m', $output);
         }
 
-        foreach (['storage', 'seams', 'audit', 'senders', 'configuration', 'platform', 'schedule'] as $subject) {
+        foreach (['storage', 'seams', 'context', 'audit', 'senders', 'configuration', 'platform', 'schedule'] as $subject) {
             self::assertStringContainsString("[{$subject}] OK", $output);
         }
 
-        self::assertStringContainsString('[context] not applied', $output);
         self::assertStringContainsString('[sso] not applied', $output);
         self::assertStringContainsString('[iam] not enabled', $output);
         self::assertStringEndsWith('Every check passed.' . PHP_EOL, $output);
