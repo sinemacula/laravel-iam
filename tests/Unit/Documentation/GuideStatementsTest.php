@@ -610,9 +610,10 @@ final class GuideStatementsTest extends TestCase
                 '`SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`',
                 'signed in with a password or a passkey, or through your own account recovery',
                 'A session any provider established is not, whichever link it stood on',
-                '`iam.sso.recovery_methods`',
+                'from a `FirstFactor` on the `recovery` channel (`ChannelKind::RECOVERY`',
+                'a session started on any other channel, `unknown` included, does not',
             ],
-            ['SSO asks two things of the link', 'This package does not answer it yet', 'stays bound'],
+            ['SSO asks two things of the link', 'This package does not answer it yet', 'stays bound', '`iam.sso.recovery_methods`'],
         ];
 
         yield 'a guard with its own signing keys is listed, rotated and revoked in its own block' => [

@@ -11,6 +11,9 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
+use SineMacula\Laravel\Authentication\Proofs\Channel;
+use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
+use SineMacula\Laravel\Authentication\Proofs\FirstFactor;
 use SineMacula\Laravel\Authentication\Sessions\Enums\PendingRequirement;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
@@ -301,11 +304,12 @@ final readonly class CallerSignIn
     private function attempt(Identity $identity, string $guard, CallerSession $session, SignInContext $context): SignInResult
     {
         $credentials = $session->credentials();
+        $factor      = new FirstFactor($identity, new Channel(ChannelKind::UNKNOWN));
 
         return match (true) {
             $session->provenance !== null => $this->throughSso($identity, $guard, $session->provenance, $context),
             $credentials         !== null => $this->sessions->sessions($guard)->signIn($session->method, $credentials, $context),
-            default                       => $this->sessions->sessions($guard)->start($identity, null, $session->method, $context),
+            default                       => $this->sessions->sessions($guard)->start($factor, null, $session->method, $context),
         };
     }
 

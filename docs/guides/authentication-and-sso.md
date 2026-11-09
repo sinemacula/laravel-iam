@@ -138,13 +138,14 @@ application the link is redeemed for. SSO asks three things of the link:
   came through their verified domain link signs in with a password or a passkey first
   ([laravel-sso: confirming it is the person][sso-links-confirming]).
 
-A recovery session counts only when your recovery starts it with `Auth::sessions($guard)->start()` under a method you
-name at `iam.sso.recovery_methods` (see [Configuration](configuration.md#sso)); no other session started that way
-does. What a password, a passkey or your recovery proves is yours to keep true: one enrolled from a session the
-verified domain link established, or a recovery its provider can drive, proves nothing the provider could not do. A
-caller with no session of its own, and a session that is pending, revoked or ended, never confirms. Inside SSO's
-transaction the session's row is locked until the link commits, so revoking the session waits for it. Freshness renewed
-through a provider never counts here, whatever SSO's `Freshness` answers.
+A recovery session counts only when your recovery starts it with `Auth::sessions($guard)->start()` from a `FirstFactor`
+on the `recovery` channel (`ChannelKind::RECOVERY`, which `laravel-authentication` admits as a first factor only); a
+session started on any other channel, `unknown` included, does not. What a password, a passkey or your recovery proves
+is yours to keep true: one enrolled from a session the verified domain link established, or a recovery its provider can
+drive, proves nothing the provider could not do. A caller with no session of its own, and a session that is pending,
+revoked or ended, never confirms. Inside SSO's transaction the session's row is locked until the link commits, so
+revoking the session waits for it. Freshness renewed through a provider never counts here, whatever SSO's `Freshness`
+answers.
 
 ## SSO's own calls that ask for freshness
 

@@ -135,11 +135,11 @@ run through are in `storage-and-transactions.md`.
   session judged is found exactly as freshness finds it: the session the caller SSO hands over names, among its
   identity's own (`CurrentSession::owned()`), read through the reader of the guard it belongs to; SSO has checked that
   the caller's identity is the one the code is bound to. It is `independent` only when the session's first factor, the
-  oldest counting first-factor proof, was made over the `password` or `passkey` channel, or is the application's own
-  recovery (a `start()` under a method named at `iam.sso.recovery_methods`, which `laravel-authentication` records on
-  the `unknown` channel), and the session holds no counting `external_reauthentication` proof. Everything else is
-  `dependent`: an SSO session, whichever link it stood on, a code sign-in, any other `start()`, a first factor that no
-  longer counts, a pending, revoked or ended session (the reader answers none), a caller with no session, a session that
+  oldest counting first-factor proof, was made over the `password`, `passkey` or `recovery` channel (the application's
+  own recovery, a `start()` from a first factor on that channel, which `laravel-authentication` admits as a first factor
+  only), and the session holds no counting `external_reauthentication` proof. Everything else is `dependent`: an SSO
+  session, whichever link it stood on, a code sign-in, any other `start()`, a first factor that no longer counts, a
+  pending, revoked or ended session (the reader answers none), a caller with no session, a session that
   is not its identity's or is of a guard that holds no sessions, and any judgement outside a transaction. SSO asks it
   inside a `link` redemption's transaction, after the application's eligibility; there the reader locks the session's
   row until the transaction ends and reads its proofs current, so the answer holds until the redeemer commits by the
@@ -496,8 +496,6 @@ run through are in `storage-and-transactions.md`.
     service has no reader of it), so link confirmation judges by the first factor's channel alone, which makes every
     session a provider established `dependent`, a `link_purpose` link's included: IAM-4.10's reading of
     `sso.link_provenance` is not delivered until a public provenance reader ships, and nothing reads it in its place.
-  - `laravel-authentication` records the application's own recovery, a `start()`, only as an `unknown` channel under
-    the application's method name, so the application names its recovery methods (`iam.sso.recovery_methods`).
   - `laravel-mfa`'s `Proof` carries no provider methods, so a rebound combination policy can trust a provider only by
     its connection, not by the methods SSO accepted.
   - `laravel-authentication` has no public lookup of an identity by a verified identifier, and the verified-at column
@@ -528,7 +526,7 @@ run through are in `storage-and-transactions.md`.
   `src/Mfa/Translation/ProviderTrust.php`: `accepted()`, `withheld()`; `src/Mfa/Translation/ProofTranslator.php`:
   `toMfa()`; `src/Sso/FreshnessAdapter.php`: `check()`;
   `src/Sso/ApplicationPolicyAdapter.php`: `externalSignIn()`; `src/Sso/LinkEmailMatcherAdapter.php`: `match()`;
-  `src/Sso/LinkConfirmationAdapter.php`: `judge()`, `RECOVERY_METHODS`; `config/iam.php`: `sso.recovery_methods`;
+  `src/Sso/LinkConfirmationAdapter.php`: `judge()`, `INDEPENDENT_CHANNELS`;
   `src/Sso/SsoContextContributor.php`: `contribute()`.
 - `src/Sso/ExternalResults.php`: `from()`, `renewing()`; `src/Sso/Translation/ClientTranslator.php`: `toSso()`.
 - `src/Sso/ReauthenticationSessionsAdapter.php`: `standing()`, `lockedStanding()`, `renewAuthentication()`;
@@ -700,8 +698,7 @@ run through are in `storage-and-transactions.md`.
 - `tests/Integration/Sso/LinkConfirmationAdapterTest.php` (every isolation level where a redemption or a judgement
   reads inside a transaction) `testTheAdapterIsSsosLinkConfirmation`,
   `testASessionThroughTheDomainLinkCannotConfirmIt`, `testASessionThePersonHoldsApartConfirmsTheLink`,
-  `testARecoverySessionConfirmsOnlyUnderAMethodTheApplicationNames`, `testAMalformedRecoverySettingNamesNoRecovery`,
-  `testARecoveryMethodNamedNeverCountsAProvidersSession`, `testASessionRenewedThroughAProviderIsDependent`,
+  `testOnlyAStartedSessionOnTheRecoveryChannelIsIndependent`, `testASessionRenewedThroughAProviderIsDependent`,
   `testACallerHoldingNothingOfThePersonsOwnIsDependent`, `testOutsideATransactionEveryoneIsDependent`,
   `testTheSessionsRowIsLockedUntilTheTransactionEnds`, `testASessionRevokedSinceTheTransactionReadIsDependent`
 - `tests/Performance/Sso/SignInRedemptionQueryBudgetTest.php` `testALinkedSignIn`, `testARefusalOfAnUnknownCode`
@@ -732,8 +729,7 @@ Update this note when:
   or SSO's `AuthenticationContext` keys or stored form change;
 - `laravel-authentication` publishes a session's provenance to other packages (link confirmation may then judge by
   `sso.link_provenance` and admit a session through a link of no verified domain provenance, if FEATURES allows it),
-  records a recovery as a proof kind of its own (the setting may then go), or changes what its proof reader locks or
-  answers for;
+  changes what its `recovery` channel admits, or changes what its proof reader locks or answers for;
 - the rate-limit counters move off the storage connection by default, which changes what an authentication refusal
   rolls back;
 - Laravel runs a transaction's remaining commit callbacks, or fires `TransactionCommitted`, when one of them fails

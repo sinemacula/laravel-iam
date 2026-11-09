@@ -6,7 +6,6 @@ namespace Tests\Integration\Sso;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -19,6 +18,7 @@ use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as ProofPurpose;
+use SineMacula\Laravel\Authentication\Proofs\FirstFactor;
 use SineMacula\Laravel\Authentication\Proofs\NewProof;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofWriter;
@@ -56,16 +56,15 @@ use Tests\TestCase;
  * a password or passkey session confirms.
  *
  * A session is `independent` only when it signed in with a password, a passkey
- * or the application's own recovery (a `start()` under a method named at
- * `iam.sso.recovery_methods`), was never renewed through a provider, is the one
- * SSO's caller names among its identity's own, and is judged inside a
- * transaction, where its row is locked and its proofs read current until the
- * transaction ends. Everything else is `dependent`: a session through the
- * domain link, a `start()` under another method, a session renewed through a
- * provider, revoked (here or on another connection after the transaction
- * began), another person's, one of a guard that holds no sessions, one that
- * does not exist, a caller with no session, and any judgement outside a
- * transaction.
+ * or the application's own recovery (a `start()` from a first factor on the
+ * `recovery` channel), was never renewed through a provider, is the one SSO's
+ * caller names among its identity's own, and is judged inside a transaction,
+ * where its row is locked and its proofs read current until the transaction
+ * ends. Everything else is `dependent`: a session through the domain link, a
+ * `start()` on the `unknown` channel, a session renewed through a provider,
+ * revoked (here or on another connection after the transaction began), another
+ * person's, one of a guard that holds no sessions, one that does not exist, a
+ * caller with no session, and any judgement outside a transaction.
  *
  * Every redemption, and every judgement read inside a transaction, runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
@@ -164,14 +163,16 @@ final class LinkConfirmationAdapterTest extends TestCase
             yield 'a password session, ' . $name => [$level, static fn (self $test): EloquentSession&Model => $test->signIn($test->member())->record];
 
             yield 'a passkey session, ' . $name => [$level, static fn (self $test): EloquentSession&Model => $test->signInWithPasskey()];
+
+            yield 'a recovery session, ' . $name => [$level, static fn (self $test): EloquentSession&Model => $test->startOn(ChannelKind::RECOVERY)];
         }
     }
 
     /**
      * Once the person holds a session signed in with a password or a passkey,
-     * the same link is confirmed through it at every isolation level, judged
-     * inside SSO's transaction in its judgement and its admission, and loses
-     * its verified domain provenance.
+     * or started for their recovery, the same link is confirmed through it at
+     * every isolation level, judged inside SSO's transaction in its judgement
+     * and its admission, and loses its verified domain provenance.
      *
      * @param  ?string  $level
      * @param  \Closure(self): (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)  $signIn
@@ -193,9 +194,9 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A session the application started for its own recovery confirms only
-     * under a method it names at `iam.sso.recovery_methods`; under any other
-     * method, or with none named, it is `dependent`.
+     * A session the application started for its own recovery, from a first
+     * factor on the `recovery` channel, is `independent`; one started on the
+     * `unknown` channel, under the same method, is `dependent`.
      *
      * @param  ?string  $level
      * @return void
@@ -203,82 +204,15 @@ final class LinkConfirmationAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testARecoverySessionConfirmsOnlyUnderAMethodTheApplicationNames(?string $level): void
+    public function testOnlyAStartedSessionOnTheRecoveryChannelIsIndependent(?string $level): void
     {
         self::runAtIsolationLevel($level);
 
-        $session = $this->startUnder(self::RECOVERY);
-        $caller  = $this->callerHolding($session);
+        $recovery = $this->callerHolding($this->startOn(ChannelKind::RECOVERY));
+        $unknown  = $this->callerHolding($this->startOn(ChannelKind::UNKNOWN));
 
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, ['support_reset', self::RECOVERY]);
-
-        self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, self::RECOVERY);
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, [self::RECOVERY]);
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($this->callerHolding($this->startUnder('support_reset'))));
-    }
-
-    /**
-     * A setting that is not a list of method names names no recovery at all,
-     * even where one of its values is the method: a keyed array, and a list
-     * holding anything but strings, are refused whole.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAMalformedRecoverySettingNamesNoRecovery(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $caller = $this->callerHolding($this->startUnder(self::RECOVERY));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, ['support' => self::RECOVERY]);
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, [self::RECOVERY, 1]);
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, [1 => self::RECOVERY]);
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, [self::RECOVERY]);
-
-        self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($caller));
-    }
-
-    /**
-     * A recovery method named does not make a password session's channel, or
-     * any other, stand for it: a session the domain link established is
-     * `dependent` whatever the application names.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testARecoveryMethodNamedNeverCountsAProvidersSession(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        Config::set(LinkConfirmationAdapter::RECOVERY_METHODS, ['external_provider', 'password']);
-
-        $session = $this->signInByDomain()->session->record ?? self::fail('The member did not sign in.');
-
-        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($this->callerHolding($session)));
+        self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($recovery));
+        self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($unknown));
     }
 
     /**
@@ -476,16 +410,33 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
+     * Start a session for the member as the application's own recovery does,
+     * from a first factor on the channel given.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind  $channel
+     * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
+     *
+     * @throws \Throwable
+     */
+    public function startOn(ChannelKind $channel): EloquentSession&Model
+    {
+        $factor = new FirstFactor($this->member(), new Channel($channel));
+        $result = $this->sessions()->start($factor, null, self::RECOVERY, new SignInContext(self::client()));
+
+        return $result->session->record ?? self::fail(sprintf('The session was not started: [%s].', $result->reason->value ?? $result->status->value));
+    }
+
+    /**
      * The sign-in methods the guard allows: the password, a passkey, sign-in
-     * through an external provider, and the two the application's own
-     * verifications start sessions under.
+     * through an external provider, and the one the application's own recovery
+     * starts sessions under.
      *
      * @return list<string>
      */
     #[\Override]
     protected function signInMethods(): array
     {
-        return ['password', 'passkey', 'external_provider', self::RECOVERY, 'support_reset'];
+        return ['password', 'passkey', 'external_provider', self::RECOVERY];
     }
 
     /**
@@ -518,22 +469,6 @@ final class LinkConfirmationAdapterTest extends TestCase
 
             return $test->callerHolding($session);
         }];
-    }
-
-    /**
-     * Start a session for the member as something outside the guard verified
-     * them, under the method given.
-     *
-     * @param  string  $method
-     * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
-     *
-     * @throws \Throwable
-     */
-    private function startUnder(string $method): EloquentSession&Model
-    {
-        $result = $this->sessions()->start($this->member(), null, $method, new SignInContext(self::client()));
-
-        return $result->session->record ?? self::fail(sprintf('The session was not started: [%s].', $result->reason->value ?? $result->status->value));
     }
 
     /**
