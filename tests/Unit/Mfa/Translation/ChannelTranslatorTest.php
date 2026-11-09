@@ -15,8 +15,9 @@ use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 
 /**
  * Unit tests for translating a proof's channel between `laravel-authentication`
- * and MFA, and to and from its array form: every kind crosses as itself, and a
- * reference crosses unless MFA's kind takes none.
+ * and MFA, and to and from its array form: every kind MFA has crosses as
+ * itself, the application's own recovery as MFA's `unknown`, and a reference
+ * crosses unless MFA's kind takes none.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -70,6 +71,22 @@ final class ChannelTranslatorTest extends TestCase
         self::assertSame($mfa, $translated->kind);
         self::assertSame($crosses ? self::REFERENCE : null, $translated->reference());
         self::assertNull((new ChannelTranslator)->toMfa(new AuthenticationChannel($authentication))->reference());
+    }
+
+    /**
+     * The application's own `recovery` channel, which MFA has no kind for, is
+     * MFA's `unknown`, without a reference, in its array form too.
+     *
+     * @return void
+     */
+    public function testARecoveryChannelIsMfasUnknown(): void
+    {
+        $translator = new ChannelTranslator;
+        $translated = $translator->toMfa(new AuthenticationChannel(AuthenticationChannelKind::RECOVERY, self::REFERENCE));
+
+        self::assertSame(MfaChannelKind::UNKNOWN, $translated->kind);
+        self::assertNull($translated->reference());
+        self::assertSame(['kind' => 'unknown', 'reference' => null], $translator->toArray(new AuthenticationChannel(AuthenticationChannelKind::RECOVERY)));
     }
 
     /**

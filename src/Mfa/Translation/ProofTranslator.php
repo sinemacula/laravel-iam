@@ -34,14 +34,15 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * completes the multifactor evidence of the session's first factor.
  *
  * Both members spell the first four proof kinds, the four purposes, the key
- * protections and the channel kinds the same, and translate one to one.
- * `laravel-authentication`'s fifth kind, a reauthentication at the external
- * provider the session began with, is MFA's reauthentication with the first
- * factor, on an `external_provider` channel and with the reauthenticate purpose
- * it is recorded with; an SSO sign-in is a first factor in both. A recovery
- * code travels on no channel in MFA and on an unknown one in
- * `laravel-authentication`, which has no proof without one. The observed
- * properties cross under their own names (`backupEligible` is MFA's
+ * protections and the channel kinds the same, and translate one to one, but for
+ * the application's own `recovery`, which is MFA's `unknown`
+ * (`ChannelTranslator`). `laravel-authentication`'s fifth kind, a
+ * reauthentication at the external provider the session began with, is MFA's
+ * reauthentication with the first factor, on an `external_provider` channel and
+ * with the reauthenticate purpose it is recorded with; an SSO sign-in is a
+ * first factor in both. A recovery code travels on no channel in MFA and on an
+ * unknown one in `laravel-authentication`, which has no proof without one. The
+ * observed properties cross under their own names (`backupEligible` is MFA's
  * `backupEligibility`, `phishingResistant` its `phishingResistance`).
  *
  * An external provider's proof (an SSO sign-in's first factor, or a

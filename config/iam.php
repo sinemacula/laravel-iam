@@ -59,7 +59,7 @@ return [
     | email matcher, answered by `laravel-authentication`'s freshness policy,
     | sign-in methods and email normaliser; SSO's link confirmation, answered
     | from how the caller's session signed in (a password, a passkey or the
-    | recovery `sso.recovery_methods` names); while `sso.evidence` is on, SSO's
+    | application's own recovery); while `sso.evidence` is on, SSO's
     | per-connection evidence policy; and the `sso` namespace of the
     | authentication context. SSO's freshness judges only the caller SSO is
     | handed: pass a call into SSO that asks it (a management helper, a link
@@ -313,23 +313,10 @@ return [
     | `adapters.sso` is on, and never replaces an evidence policy the
     | application bound itself.
     |
-    | `recovery_methods` names the sign-in methods of the application's own
-    | account recovery, under which it starts a session through
-    | `Auth::sessions($guard)->start()`. SSO's link confirmation counts a
-    | session signed in with a password or a passkey as independent of a
-    | verified domain link, and a session started under one of these methods
-    | too; every other session, an SSO session among them, is not. List a
-    | method only when the recovery behind it is the person's own, apart from
-    | every identity provider: a recovery a provider's sign-in can drive
-    | proves nothing the provider could not do. Anything but a list of method
-    | names (a keyed array, or a list holding anything but strings) names no
-    | recovery at all.
-    |
     */
 
     'sso' => [
-        'evidence'         => env('IAM_SSO_EVIDENCE', false),
-        'recovery_methods' => [],
+        'evidence' => env('IAM_SSO_EVIDENCE', false),
     ],
 
     /*
