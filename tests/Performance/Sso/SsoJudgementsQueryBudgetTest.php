@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\ApplicationPolicyAdapter;
-use SineMacula\Laravel\Iam\Sso\CallerScope;
 use SineMacula\Laravel\Iam\Sso\ExternalEvidencePolicyAdapter;
 use SineMacula\Laravel\Iam\Sso\FreshnessAdapter;
 use SineMacula\Laravel\Iam\Sso\LinkEmailMatcherAdapter;
@@ -21,6 +20,7 @@ use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
+use SineMacula\Laravel\Sso\Identities\Caller;
 use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
@@ -30,12 +30,13 @@ use Tests\Performance\PerformanceContractTestCase;
 /**
  * The statements SSO's judgements make when this package answers them, so a
  * read added to one is seen here: a link e-mail match reads each kind of
- * identity once; freshness reads the session and its proofs, as
- * `laravel-authentication`'s policy does, for a caller handed in, and nothing
- * with no caller handed in, however fresh the session the request is served
- * with; the application's external sign-in reads no table; and the external
- * evidence policy reads nothing while MFA's default combination policy finds
- * the evidence meets nothing, a tenant's requirement included.
+ * identity once; freshness reads the caller's identity and its session, then
+ * the session and its proofs, as `laravel-authentication`'s policy does, and
+ * nothing for no caller or a caller with no session, however fresh the session
+ * the request is served with; the application's external sign-in reads no
+ * table; and the external evidence policy reads nothing while MFA's default
+ * combination policy finds the evidence meets nothing, a tenant's requirement
+ * included.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,7 +45,6 @@ use Tests\Performance\PerformanceContractTestCase;
  */
 #[CoversClass(LinkEmailMatcherAdapter::class)]
 #[CoversClass(FreshnessAdapter::class)]
-#[CoversClass(CallerScope::class)]
 #[CoversClass(ApplicationPolicyAdapter::class)]
 #[CoversClass(ExternalEvidencePolicyAdapter::class)]
 final class SsoJudgementsQueryBudgetTest extends PerformanceContractTestCase
@@ -70,8 +70,8 @@ final class SsoJudgementsQueryBudgetTest extends PerformanceContractTestCase
     }
 
     /**
-     * A freshness check with no caller handed in, and of the session a caller
-     * handed in is served with.
+     * A freshness check for no caller, for a caller with no session, and of the
+     * session a caller names.
      *
      * @return void
      *
@@ -82,21 +82,22 @@ final class SsoJudgementsQueryBudgetTest extends PerformanceContractTestCase
         $freshness = $this->app?->make(Freshness::class) ?? self::fail('The application has not booted.');
         $person    = $this->createPerson();
 
-        // Reads (0): with no one signed in there is no session to read.
-        $this->assertQueryBudget(0, 0, static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300));
+        // Reads (0): with no caller there is no session to read.
+        $this->assertQueryBudget(0, 0, static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300, null));
 
         $this->signInAndActOnSession($person);
 
-        // Reads (0): with no caller handed in, the session the request is
-        // served with is never judged.
-        $this->assertQueryBudget(0, 0, static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300));
+        $caller = Iam::callers()->of($this->requestCallerOf($person));
+        $bare   = new Caller($caller->identity);
 
-        // Reads (2): laravel-authentication's policy reads the session again
-        // and then its newest proof that meets the requirement.
-        $check  = static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300);
-        $caller = $this->requestCallerOf($person);
+        // Reads (0): a caller with no session names none to judge, however
+        // fresh the session the request is served with.
+        $this->assertQueryBudget(0, 0, static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300, $bare));
 
-        $this->assertQueryBudget(2, 0, static fn (): mixed => Iam::callers()->run($caller, $check));
+        // Reads (4): the caller's identity and its session, then
+        // laravel-authentication's policy reads the session again and its
+        // newest proof that meets the requirement.
+        $this->assertQueryBudget(4, 0, static fn (): mixed => $freshness->check(FreshnessOperation::LINK_REMOVE, 300, $caller));
     }
 
     /**

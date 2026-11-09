@@ -23,6 +23,7 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
+use SineMacula\Laravel\Iam\Sso\Callers;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
@@ -247,7 +248,7 @@ final class RedemptionSecretsTest extends TestCase
 
         $transaction = new CrossMemberTransaction($database, $storage, $settings, $failures);
 
-        return new LinkRedemption($container, new IdentityReferences, $database, $storage, $settings, $failures, $transaction, SessionGuards::resolving('api'));
+        return new LinkRedemption($container, new Callers(new IdentityReferences, SessionGuards::resolving('api')), $database, $storage, $settings, $failures, $transaction);
     }
 
     /**

@@ -32,9 +32,10 @@ use Tests\TestCase;
  * guard; and the guard's current session, the identity's session when it is the
  * one named, and a refusal by throwing for another of its sessions, for another
  * identity's, for none, and for an application that is no session guard
- * (IAM-8.2). A change to the identity as a whole, which names no guard, goes
- * through the default guard when it holds sessions and otherwise through the
- * first `jwt` guard declared, and is refused when none is.
+ * (IAM-8.2). The identity's session SSO's caller names by its key is found of
+ * whichever guard. A change to the identity as a whole, which names no guard,
+ * goes through the default guard when it holds sessions and otherwise through
+ * the first `jwt` guard declared, and is refused when none is.
  *
  * The sessions are real ones, signed in through `laravel-authentication` with a
  * password, against the members' own defaults: the resolution reads only the
@@ -126,6 +127,32 @@ final class CurrentSessionTest extends TestCase
         self::assertUnresolvedSignIn(fn (): mixed => $this->currentSession()->named($person, self::GUARD, 'not-a-key'));
         self::assertSame([], DB::getQueryLog(), 'A key that cannot be one of the session model\'s is never queried.');
         self::assertUnresolvedGuard('web', fn (): mixed => $this->currentSession()->named($person, 'web', $this->signInReference($elsewhere, 'admin')));
+    }
+
+    /**
+     * The identity's session a key names is found whichever guard it is of, and
+     * nothing else is: another identity's session, a key no session holds, and
+     * any key of an identity that holds no sessions are none.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheIdentitysOwnSessionIsFoundOfWhicheverGuard(): void
+    {
+        $person   = $this->createPerson();
+        $stranger = $this->signIn($this->createPerson())->record;
+
+        $this->declareGuards(['admin' => $this->sessionGuard(), ...$this->guards()]);
+
+        $elsewhere   = $this->signIn($person, 'admin')->record;
+        $sessionless = new class extends User implements Identity {};
+        $sessions    = $this->currentSession();
+
+        self::assertSame($elsewhere->getSessionIdentifier(), $sessions->owned($person, $this->signInReference($elsewhere, 'admin'))?->getSessionIdentifier());
+        self::assertNull($sessions->owned($person, $this->signInReference($stranger)));
+        self::assertNull($sessions->owned($person, '987654'));
+        self::assertNull($sessions->owned($sessionless, $this->signInReference($stranger)));
     }
 
     /**

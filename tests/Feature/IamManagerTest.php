@@ -16,8 +16,6 @@ use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
-use SineMacula\Laravel\Authentication\Callers\Caller;
-use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
@@ -32,8 +30,7 @@ use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
-use SineMacula\Laravel\Iam\Sso\CallerScope;
-use SineMacula\Laravel\Iam\Sso\LinkCallers;
+use SineMacula\Laravel\Iam\Sso\Callers;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
@@ -45,7 +42,6 @@ use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Tests\Concerns\RunsInOctaneSandboxes;
-use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
@@ -128,18 +124,18 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The caller scope SSO's freshness is handed a caller through is its own
-     * service, resolved on each call.
+     * The service that names a caller as SSO takes it is its own, resolved on
+     * each call.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheCallerScopeIsReachedThroughItsOwnService(): void
+    public function testTheCallersAreNamedThroughTheirOwnService(): void
     {
         $manager = $this->manager();
 
-        self::assertInstanceOf(CallerScope::class, $manager->callers());
+        self::assertInstanceOf(Callers::class, $manager->callers());
         self::assertNotSame($manager->callers(), $manager->callers());
     }
 
@@ -212,9 +208,7 @@ final class IamManagerTest extends TestCase
      * The manager resolved once in the worker's application, before Octane
      * clones it for a request, resolves every service in the request's own
      * sandbox, never in the worker's application: the services the sandbox
-     * binds are the ones answered, through the manager and the facade alike,
-     * and the caller handed in is held in the sandbox's own record, where SSO's
-     * freshness, resolved in the sandbox, reads it.
+     * binds are the ones answered, through the manager and the facade alike.
      *
      * @return void
      *
@@ -225,7 +219,6 @@ final class IamManagerTest extends TestCase
         $manager = $this->manager();
 
         $this->app?->make('iam');
-        $this->app?->make(LinkCallers::class);
 
         $this->inOctaneSandbox(function (Application $sandbox) use ($manager): void {
 
@@ -235,6 +228,7 @@ final class IamManagerTest extends TestCase
             $changes  = $sandbox->make(TenantPolicyChanges::class);
             $widening = $sandbox->make(ScopeWidenings::class);
             $tree     = $sandbox->make(TreeChanges::class);
+            $callers  = $sandbox->make(Callers::class);
 
             $sandbox->instance(SignInRedemption::class, $signIns);
             $sandbox->instance(LinkRedemption::class, $links);
@@ -242,6 +236,7 @@ final class IamManagerTest extends TestCase
             $sandbox->instance(TenantPolicyChanges::class, $changes);
             $sandbox->instance(ScopeWidenings::class, $widening);
             $sandbox->instance(TreeChanges::class, $tree);
+            $sandbox->instance(Callers::class, $callers);
 
             self::assertSame($manager, $sandbox->make('iam'));
             self::assertSame($signIns, $manager->signIns());
@@ -251,15 +246,7 @@ final class IamManagerTest extends TestCase
             self::assertSame($changes, Iam::tenantPolicies());
             self::assertSame($widening, Iam::scopeWidenings());
             self::assertSame($tree, Iam::treeChanges());
-
-            $person = new Person;
-
-            $person->forceFill(['id' => 7]);
-
-            $caller = new Caller(self::GUARD, CallerCredential::ACCESS, $person, null, null, null);
-            $held   = Iam::callers()->run($caller, static fn (): ?array => $sandbox->make(LinkCallers::class)->current());
-
-            self::assertNotNull($held, 'The caller was held where the sandbox does not read it.');
+            self::assertSame($callers, Iam::callers());
         });
     }
 

@@ -7,7 +7,7 @@ namespace SineMacula\Laravel\Iam;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Container;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
-use SineMacula\Laravel\Iam\Sso\CallerScope;
+use SineMacula\Laravel\Iam\Sso\Callers;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
@@ -98,18 +98,17 @@ final readonly class IamManager
     }
 
     /**
-     * The service that hands SSO's freshness contract the caller of the
-     * application's own call into SSO, as a plain value, around that call
-     * (IAM-4.6): SSO's management helpers and a `link` flow's start ask
-     * freshness, and without a caller handed in it is `stale`.
+     * The service that names the caller of the application's own call into SSO
+     * as SSO takes it (IAM-4.6): SSO's management helpers, its link removal and
+     * a `link` flow's start take that caller, and SSO's freshness judges it.
      *
-     * @return \SineMacula\Laravel\Iam\Sso\CallerScope
+     * @return \SineMacula\Laravel\Iam\Sso\Callers
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function callers(): CallerScope
+    public function callers(): Callers
     {
-        return self::container()->make(CallerScope::class);
+        return self::container()->make(Callers::class);
     }
 
     /**

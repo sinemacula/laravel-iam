@@ -109,54 +109,55 @@ run through are in `storage-and-transactions.md`.
     `link` redemption records no proof.
 - SSO's freshness (`FreshnessAdapter`, IAM-4.6, SSO-2.12) asks `laravel-authentication`'s freshness policy for the
   operation SSO names (`sso.link.create` and the rest, valid operation names there) with SSO's maximum age as the
-  caller's requirement (`FreshnessRequirement::within()`), so the stricter of it and whatever the application
-  configures applies. It is `fresh` only when the policy finds a proof that meets it. SSO hands the contract no caller,
-  and the adapter never takes one from the request, the default guard or the session a guard serves: only a caller
-  handed in as a plain value is judged, `laravel-authentication`'s `Caller` (its guard, its identity, and the session
-  its credential holds, as `Auth::caller()` reads them where the application reads the request), kept in
-  `LinkCallers` for SSO's call: the `link` caller while `LinkRedemption` runs, or the caller the application hands in
-  around its own call into SSO with `Iam::callers()->run($caller, $work)` (`CallerScope`), as SSO's management helpers
-  and a `link` flow's start ask freshness. The session judged is the one the caller's access credential holds, while it
-  is a session of the caller's guard that the caller's identity owns (`Caller::owns()`); a caller with no session, a
-  refresh or pending credential, or a session of another guard or identity is `stale`, and no guard is asked whom it
-  serves. With no caller handed in (a queued job, a console command, any call into SSO the
-  application hands none in around), the answer is `stale`, however fresh the session the request is served with. The
-  policy is asked plainly, never current: SSO asks inside its own transactions, a `link`'s after its link locks and
-  before the application's eligibility and confirmation contracts, whose guards come before the session's row, and a
-  current judgement would lock the session's row there. A plain read is trusted only from a transaction opened after
-  the caller was handed in, such as SSO's own, whose snapshot is no older than the call: a caller handed in while a
-  transaction was already open on the storage connection (a `link` redeemed inside the caller's transaction) is
-  `stale` while a transaction is open, and the policy is not asked, since that snapshot may still count a proof voided
+  caller's requirement (`FreshnessRequirement::within()`), so the stricter of it and whatever the application configures
+  applies. It is `fresh` only when the policy finds a proof that meets it. SSO hands the contract the caller the action
+  is taken for (`Identities\Caller`: an identity reference and, when supplied, a session id), and the adapter judges
+  that caller alone, never the request, the default guard or the session a guard serves: the session the caller names,
+  found among its identity's own sessions on the write connection (`CurrentSession::owned()`), of whichever guard, and
+  judged by the policy only while it is live and active. No caller (a queued job, a console command, a call into SSO the
+  application hands none), a caller with no session, and a session that is not the identity's are `stale`, however fresh
+  the session the request is served with; an identity reference that names no identity throws
+  `UnresolvedReferenceException`. The application names its caller as SSO takes it with `Iam::callers()->of($caller)`
+  (`Callers`), from `laravel-authentication`'s `Caller` (`Auth::caller()`): its guard resolved as one that holds
+  sessions, its identity named as `IdentityReferences::reference()` names it, and the session its access credential
+  holds while it is a session of the caller's guard that the caller's identity owns (`Caller::owns()`); a refresh or
+  pending credential, or a session of another guard or identity, is named with none. `LinkRedemption` names its caller
+  the same way. The policy is asked plainly, never current: SSO asks inside its own transactions, a `link`'s after its
+  link locks and before the application's eligibility and confirmation contracts, whose guards come before the session's
+  row, and a current judgement would lock the session's row there. A plain read is trusted only from a transaction
+  opened after the caller was named, such as SSO's own, whose snapshot is no older than the call: a caller named while a
+  transaction is already open on the storage connection (a `link` redeemed inside the caller's transaction) is named
+  with no session, and so is `stale` without the policy being asked, since that snapshot may still count a proof voided
   or a session revoked before the call.
 - SSO's link confirmation (`LinkConfirmationAdapter`, IAM-4.10, SSO-8.8) answers from how the caller's session was
   signed in, read through `laravel-authentication`'s public reader of a session's proofs (IAM-13.9,
-  `Auth::sessions($guard)->firstFactor()` and `proofs()`), and never from `Auth::context()` keys (Decision Q13 (a)).
-  The session judged is found exactly as freshness finds it: the caller handed in as a plain value in `LinkCallers`,
-  the session its access credential holds while it is the caller's own (`LinkCallers::sessionOf()`), and only when the
-  caller is the identity SSO asks about, byte for byte (`IdentityReferences::reference()`). It is `independent` only
-  when the session's first factor, the oldest counting first-factor proof, was made over the `password` or `passkey`
-  channel, or is the application's own recovery (a `start()` under a method named at `iam.sso.recovery_methods`, which
-  `laravel-authentication` records on the `unknown` channel), and the session holds no counting
-  `external_reauthentication` proof. Everything else is `dependent`: an SSO session, whichever link it stood on, a
-  code sign-in, any other `start()`, a first factor that no longer counts, a pending, revoked or ended session (the
-  reader answers none), no caller or one holding no session of its own, and any judgement outside a transaction. SSO
-  asks it inside a `link` redemption's transaction, after the application's eligibility; there the reader locks the
-  session's row until the transaction ends and reads its proofs current, so the answer holds until the redeemer
-  commits by the lock every writer of the session takes first (SSO's "guard writers of sessions take"), and the
-  session's row is the last lock in SSO's order. Outside a transaction nothing can hold it true, so the answer is
-  `dependent` without a read. Unlike freshness, a caller handed in inside the caller's own transaction needs no
-  refusal of its own: the read is current, never the snapshot's, and at PostgreSQL's REPEATABLE READ a session
-  changed since the snapshot fails to serialise for the transaction to be retried (such a `link` is refused for
-  freshness first in any case). SSO's rule is phrased by the session's link provenance (`sso.link_provenance`):
-  `laravel-authentication` records a provenance only for a session an external provider established, whose first
-  factor is on the `external_provider` channel, so every session with one is `dependent` here and the provenance is
-  never read (Decision, M10). A session through a link of no verified domain provenance is therefore `dependent` too:
-  FEATURES (IAM-4.10) names only a password, a passkey and the application's recovery, stricter than SSO's contract,
-  never looser. This delivers IAM-4.10's judgement from the proofs alone: its reading of the provenance waits on a
-  public reader of a session's provenance in `laravel-authentication`, a member gap (see Failure / Edge Cases), and
-  until one ships every session a provider established stays `dependent`. The connection and the domain link ids SSO
-  hands over are not read for the same reason. The adapter is not mandatory: SSO's default refuses every `link` it is
-  asked about.
+  `Auth::sessions($guard)->firstFactor()` and `proofs()`), and never from `Auth::context()` keys (Decision Q13 (a)). The
+  session judged is found exactly as freshness finds it: the session the caller SSO hands over names, among its
+  identity's own (`CurrentSession::owned()`), read through the reader of the guard it belongs to; SSO has checked that
+  the caller's identity is the one the code is bound to. It is `independent` only when the session's first factor, the
+  oldest counting first-factor proof, was made over the `password` or `passkey` channel, or is the application's own
+  recovery (a `start()` under a method named at `iam.sso.recovery_methods`, which `laravel-authentication` records on
+  the `unknown` channel), and the session holds no counting `external_reauthentication` proof. Everything else is
+  `dependent`: an SSO session, whichever link it stood on, a code sign-in, any other `start()`, a first factor that no
+  longer counts, a pending, revoked or ended session (the reader answers none), a caller with no session, a session that
+  is not its identity's or is of a guard that holds no sessions, and any judgement outside a transaction. SSO asks it
+  inside a `link` redemption's transaction, after the application's eligibility; there the reader locks the session's
+  row until the transaction ends and reads its proofs current, so the answer holds until the redeemer commits by the
+  lock every writer of the session takes first (SSO's "guard writers of sessions take"), and the session's row is the
+  last lock in SSO's order. Outside a transaction nothing can hold it true, so the answer is `dependent` without a read.
+  Unlike freshness, a caller named inside the caller's own transaction needs no rule of its own: the read is current,
+  never the snapshot's, and at PostgreSQL's REPEATABLE READ a session changed since the snapshot fails to serialise for
+  the transaction to be retried; such a caller is named with no session for freshness's sake, so it is `dependent` here
+  too, and such a `link` is refused for freshness first in any case. SSO's rule is phrased by the session's link
+  provenance (`sso.link_provenance`): `laravel-authentication` records a provenance only for a session an external
+  provider established, whose first factor is on the `external_provider` channel, so every session with one is
+  `dependent` here and the provenance is never read (Decision, M10). A session through a link of no verified domain
+  provenance is therefore `dependent` too: FEATURES (IAM-4.10) names only a password, a passkey and the application's
+  recovery, stricter than SSO's contract, never looser. This delivers IAM-4.10's judgement from the proofs alone: its
+  reading of the provenance waits on a public reader of a session's provenance in `laravel-authentication`, a member gap
+  (see Failure / Edge Cases), and until one ships every session a provider established stays `dependent`. The connection
+  and the domain link ids SSO hands over are not read for the same reason. The adapter is not mandatory: SSO's default
+  refuses every `link` it is asked about.
 - SSO's application policy (`ApplicationPolicyAdapter`, IAM-4.6, SSO-5.1) answers `allowed` exactly when
   `laravel-authentication`'s application policy lets the guard of the application's name start sessions by the
   `external_provider` method; SSO's own `external_sign_in` setting is not read. A guard `laravel-authentication` does
@@ -193,8 +194,11 @@ run through are in `storage-and-transactions.md`.
   - `LinkRedemption::redeem(string $connectionId, string $code, string $verifier, ClientContext $client,
     Caller $caller): RedemptionResult`. The caller is handed over as `laravel-authentication`'s `Caller`, which the
     application reads where it reads the request (`Auth::caller()`); its guard is the application, its identity the
-    one linked, and its session the one SSO's freshness judges. It is never read from `Auth::identity()`, the guard's
-    current session nor the request's body.
+    one linked, and its session the one SSO's freshness and link confirmation judge, handed to SSO as SSO's own caller
+    (`Callers::of()`). It is never read from `Auth::identity()`, the guard's current session nor the request's body.
+  - `Callers::of(Caller $caller): Identities\Caller` (`Iam::callers()`) names the caller of the application's own call
+    into SSO (a management helper, a link's removal, a `link` flow's start) as SSO takes it. It is a translation, not an
+    action: SSO's helpers and starts take the caller themselves, so this package keeps no scope around them.
   - The code and the verifier are `#[\SensitiveParameter]`. The `ClientContext` is `laravel-authentication`'s, built
     with `ClientContext::fromRequest()` or `SignInContext::fromRequest()` where the request is read, or as
     `new ClientContext(null, null)` from a job or a command, whose events then carry no IP address or user agent. SSO's
@@ -203,8 +207,7 @@ run through are in `storage-and-transactions.md`.
   - The application reaches each service through an accessor of the manager and the facade (`Iam::signIns()`,
     `Iam::reauthentications()`, `Iam::links()`), never through a second method that repeats one's signature. No
     service, adapter or record reads a request, a cookie, a header, the guard's current user or its current session:
-    SSO's freshness contract, which SSO hands no caller at all, judges only the session of a caller handed in
-    (below).
+    SSO's freshness and link confirmation contracts judge only the caller SSO hands them (above).
 - The application SSO names is the guard of the same name, which must be a declared guard of the `jwt` driver
   (`CurrentSession::sessions()`, `CurrentSession::guard()`); anything else throws `UnresolvedReferenceException(guard)`.
   Every redemption resolves it before SSO is asked, so the code is never touched for an application that is no guard:
@@ -258,10 +261,8 @@ run through are in `storage-and-transactions.md`.
   the link SSO resolved and the client SSO was handed for it (which the tenant authentication policy hands SSO's
   exemption gate while that sign-in or re-authentication is judged, `tenant-authentication-policy.md`),
   `RenewalRecorder` at most one renewal, `Transactions\OutermostCommits` the outermost commits each connection has
-  begun, `LinkCallers` the caller of each `link` redemption or caller scope open, with whether a
-  transaction was already open when it was handed in, opened before SSO is asked and closed once it answers or throws,
-  and `Transactions\CommittedWork` the work held until a connection's commit has finished (an enforcement change's
-  second pass, and a reported policy change's). All five are bound scoped under
+  begun, and `Transactions\CommittedWork` the work held until a connection's commit has finished (an enforcement
+  change's second pass, and a reported policy change's). All four are bound scoped under
   `BindingRule::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
   the worker reset forgets them, and every adapter, listener and redemption resolves them from the container on each
   call. Each commit listener, and the `iam` manager (`IamManager`), resolves what it calls from the application
@@ -445,7 +446,8 @@ run through are in `storage-and-transactions.md`.
 - A `link` whose caller signed in longer ago than SSO's maximum age for `sso.link.create` (300 seconds by default) is
   refused as `freshness_required` under SSO's locks, and so is one whose caller holds no session of its own, and one
   redeemed inside the caller's own transaction, whose snapshot may be older than the redemption. A `link` flow
-  started with no caller handed in (`Iam::callers()->run()`) is refused for freshness at its start. A plain read inside
+  started for a caller with no session (`Iam::callers()->of()` names none inside a transaction) is refused for
+  freshness at its start. A plain read inside
   SSO's own transaction may answer as of its snapshot, which a `link` redemption takes as it starts, a moment before.
   Link eligibility is answered from the application's memberships (`Tenancy\LinkEligibilityAdapter`,
   `provisioning-and-tenancy.md`) once they are named or bound; without them SSO's default refuses every link
@@ -484,16 +486,11 @@ run through are in `storage-and-transactions.md`.
     shape; `IdentityReferences` reuses `SessionKeyShape::matches()`, which works on any model.
   - Neither member ships a contract kit for `ReauthenticationSessions`, `SessionRevocation`, `Linker`/`LinkStorage` or
     `ExternalIdentityLinks`, so IAM-8.3 has none to extend here.
-  - `laravel-sso`'s `Freshness::check()` is handed neither the caller nor the application, so the adapter judges only
-    the session of a caller handed in to this package (a `link` it redeems, or `Iam::callers()->run()` around the
-    application's own call), and is `stale` otherwise; SSO's contract expects the caller of the request being served
-    to be read.
   - `laravel-sso` asks freshness inside its transactions before the guards that come before the session's row in its
     lock order, and `laravel-authentication`'s policy can judge as committed only by locking that row, so the adapter
-    cannot judge current there: it trusts a plain read only from a transaction opened after the caller was handed in,
-    and a `link` inside the caller's own transaction is `stale`.
-  - `laravel-sso`'s `LinkConfirmation::judge()` is handed neither the caller nor the session, so the adapter judges
-    only the session of a caller handed in to this package, as freshness does, and is `dependent` otherwise.
+    cannot judge current there: it trusts a plain read only from a transaction opened after the caller was named, so
+    a caller named inside a transaction carries no session, and a `link` inside the caller's own transaction is
+    `stale`.
   - `laravel-authentication` publishes a session's provenance (and so SSO's `link_provenance` inside its provider
     context) to no other package outside its context contributors (`ContributionSubject::provenance()`; the session
     service has no reader of it), so link confirmation judges by the first factor's channel alone, which makes every
@@ -526,8 +523,7 @@ run through are in `storage-and-transactions.md`.
   `src/IamManager.php`: `signIns()`, `reauthentications()`, `links()`; `src/Facades/Iam.php`.
 - `src/Sso/AdmittedRedemptions.php`: `record()`, `matching()`, `acceptedEvidence()`, `clientFor()`, `forget()`;
   `src/Sso/RenewalRecorder.php`: `open()`, `close()`, `record()`, `take()`, `isHolding()`; `src/Sso/Renewal.php`;
-  `src/Sso/LinkCallers.php`: `open()`, `close()`, `current()`, `sessionOf()`; `src/Sso/CallerScope.php`: `run()`;
-  `src/IamManager.php`: `callers()`.
+  `src/Sso/Callers.php`: `of()`; `src/IamManager.php`: `callers()`; `src/Mfa/CurrentSession.php`: `owned()`.
 - `src/Sso/ExternalEvidencePolicyAdapter.php`: `accepts()`, `meets()`; `src/Sso/ConnectionTrust.php`: `trusts()`;
   `src/Mfa/Translation/ProviderTrust.php`: `accepted()`, `withheld()`; `src/Mfa/Translation/ProofTranslator.php`:
   `toMfa()`; `src/Sso/FreshnessAdapter.php`: `check()`;
@@ -578,15 +574,14 @@ run through are in `storage-and-transactions.md`.
 - `tests/Unit/Mfa/Translation/ProofTranslatorTest.php` `testAProvidersProofNamesItsConnectionOnlyWithAcceptedEvidence`,
   `testAProvidersProofOnNoConnectionNamesNone`
 - `tests/Integration/Sso/FreshnessAdapterTest.php` `testSsosMaximumAgeIsTheCallersRequirement`,
-  `testTheApplicationsStricterRequirementApplies`, `testNoCallerIsStale`,
-  `testASignedInSessionIsStaleWithoutACallerHandedIn`, `testTheCallerScopeHandsTheCallerInForItsWorkAlone`,
-  `testACallerOnAGuardThatHoldsNoSessionsThrowsBeforeTheWorkRuns`,
-  `testACallerWhoseIdentityCannotBeNamedThrowsBeforeTheWorkRuns`, `testALinkCallerIsJudgedOnItsOwnSessionAlone`,
-  `testOnlyTheSessionAnAccessCredentialHoldsIsJudged`,
-  `testThePolicyIsAskedPlainlyInsideSsosTransaction`,
-  `testACallerHandedInInsideATransactionIsStaleWhileOneIsOpen`, `testALinkIsRedeemedForACallerFreshEnough`,
+  `testTheApplicationsStricterRequirementApplies`, `testNoCallerIsStale`, `testACallerWithNoSessionIsStale`,
+  `testACallerIsJudgedOnItsOwnLiveSessionAlone`, `testACallerNamingNoIdentityThrows`,
+  `testOnlyTheSessionAnAccessCredentialHoldsIsNamed`, `testACallerOnAGuardThatHoldsNoSessionsCannotBeNamed`,
+  `testACallerWhoseIdentityCannotBeNamedCannotBeNamed`, `testThePolicyIsAskedPlainlyInsideSsosTransaction`,
+  `testACallerNamedInsideATransactionCarriesNoSession`, `testALinkIsRedeemedForACallerFreshEnough`,
   `testALinkIsRefusedForACallerNoLongerFresh`, `testALinkWhoseCallerHoldsAnotherPersonsSessionIsRefused`,
-  `testALinkInsideTheCallersTransactionIsRefused`, `testALinkFlowStartedWithoutACallerHandedInIsRefused`
+  `testALinkInsideTheCallersTransactionIsRefused`, `testALinkFlowStartedForACallerWithNoSessionIsRefused`;
+  `tests/Integration/Mfa/CurrentSessionTest.php` `testTheIdentitysOwnSessionIsFoundOfWhicheverGuard`
 - `tests/Unit/Sso/ApplicationPolicyAdapterTest.php` `testTheGuardsMethodListAloneDecides`,
   `testAGuardAuthenticationCannotJudgePropagates`
 - `tests/Integration/Sso/LinkEmailMatcherAdapterTest.php` `testTheOneVerifiedIdentityIsExactlyOneMatch`,
@@ -601,9 +596,7 @@ run through are in `storage-and-transactions.md`.
   `testADatabaseErrorFailsTheBuild`
 - `tests/Performance/Sso/SsoJudgementsQueryBudgetTest.php` `testALinkEmailMatch`, `testAFreshnessCheck`,
   `testAnApplicationsExternalSignIn`, `testEvidenceMfasDefaultFindsMeetsNothing`
-- `tests/Unit/Sso/LinkCallersTest.php` `testTheLatestRedemptionOpenNamesItsCaller`,
-  `testACallerWithoutAnAccessCredentialAndAModelSessionHoldsNone`;
-  `tests/Unit/Sso/AdmittedRedemptionsTest.php` `testTheAcceptedEvidenceIsAnsweredForItsConnectionAndIdentityAlone`
+- `tests/Unit/Sso/AdmittedRedemptionsTest.php` `testTheAcceptedEvidenceIsAnsweredForItsConnectionAndIdentityAlone`
 - `tests/Feature/Sso/SsoSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
   `testTheHandoffIssuerKeepsSsosOwnStoreInEveryProviderOrder`,
   `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
@@ -618,7 +611,7 @@ run through are in `storage-and-transactions.md`.
   `testTheCommitListenersReachAnOctaneSandboxsRecords`; `tests/Unit/Transactions/OutermostCommitsTest.php`
   `testEachCommitIsCountedForItsOwnConnection`
 - `tests/Feature/IamManagerTest.php` `testEachRedemptionIsReachedThroughItsOwnService`,
-  `testEachServiceIsResolvedFromTheCurrentApplication`;
+  `testTheCallersAreNamedThroughTheirOwnService`, `testEachServiceIsResolvedFromTheCurrentApplication`;
   `tests/Feature/Facades/IamTest.php` `testTheRedemptionsAreReachedThroughTheFacade`,
   `testTheFacadeAnnotatesExactlyTheManagersSurface`
 - `tests/Integration/Sso/SignInRedemptionTest.php` `testALinkedSignInSignsThePersonIn`,
@@ -732,15 +725,15 @@ Update this note when:
 - link eligibility stops being answered from the application's memberships (`provisioning-and-tenancy.md`), which
   changes what a link does, or the tenant authentication policy (`tenant-authentication-policy.md`) changes what an
   enforcement change revokes;
-- `laravel-sso` hands its freshness contract the caller or the application (the adapter then judges that caller's
-  session alone, and `Iam::callers()` is no longer needed), or asks it after the guards in its lock order (the adapter
-  can then judge current under the session's row lock), `laravel-mfa`'s proofs carry a provider's methods (a rebound
-  combination policy can then trust them), `laravel-authentication` gains a lookup by verified identifier or names a
-  connection's tenant to the evidence policy, or SSO's `AuthenticationContext` keys or stored form change;
-- `laravel-sso` hands its link confirmation the caller or the session, `laravel-authentication` publishes a session's
-  provenance to other packages (link confirmation may then judge by `sso.link_provenance` and admit a session through a
-  link of no verified domain provenance, if FEATURES allows it), records a recovery as a proof kind of its own (the
-  setting may then go), or changes what its proof reader locks or answers for;
+- `laravel-sso` changes what its `Identities\Caller` carries or which of its calls take one (`Callers` names it), or
+  asks freshness after the guards in its lock order (the adapter can then judge current under the session's row lock),
+  `laravel-mfa`'s proofs carry a provider's methods (a rebound combination policy can then trust them),
+  `laravel-authentication` gains a lookup by verified identifier or names a connection's tenant to the evidence policy,
+  or SSO's `AuthenticationContext` keys or stored form change;
+- `laravel-authentication` publishes a session's provenance to other packages (link confirmation may then judge by
+  `sso.link_provenance` and admit a session through a link of no verified domain provenance, if FEATURES allows it),
+  records a recovery as a proof kind of its own (the setting may then go), or changes what its proof reader locks or
+  answers for;
 - the rate-limit counters move off the storage connection by default, which changes what an authentication refusal
   rolls back;
 - Laravel runs a transaction's remaining commit callbacks, or fires `TransactionCommitted`, when one of them fails

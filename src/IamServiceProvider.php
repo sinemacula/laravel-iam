@@ -37,7 +37,6 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
-use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
@@ -299,19 +298,18 @@ final class IamServiceProvider extends ServiceProvider
      * inside a transaction, held for the audit trail until the outermost one
      * has ended, the outermost commits each connection has begun, which a
      * standalone `link` reads to tell whether its attempt reached its commit
-     * before it failed, and the caller of the `link` redemption running, whose
-     * session SSO's freshness contract judges, and the work held until a
-     * connection's commit has finished. Each is scoped, so it is one request's
-     * or one job's alone (IAM-8.1), under this package's own key for its scoped
-     * adapters, which `Iam::resetWorkerState()` forgets as it forgets every
-     * other one, and resolved through that key, so the explicit reset never
-     * leaves a record held where something still resolves it.
+     * before it failed, and the work held until a connection's commit has
+     * finished. Each is scoped, so it is one request's or one job's alone
+     * (IAM-8.1), under this package's own key for its scoped adapters, which
+     * `Iam::resetWorkerState()` forgets as it forgets every other one, and
+     * resolved through that key, so the explicit reset never leaves a record
+     * held where something still resolves it.
      *
      * @return void
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, LinkCallers::class, CommittedWork::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, CommittedWork::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 

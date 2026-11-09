@@ -61,9 +61,9 @@ return [
     | from how the caller's session signed in (a password, a passkey or the
     | recovery `sso.recovery_methods` names); while `sso.evidence` is on, SSO's
     | per-connection evidence policy; and the `sso` namespace of the
-    | authentication context. SSO's freshness judges only a caller handed in:
-    | wrap a call into SSO that asks it (a management helper, a link flow's
-    | start) in `Iam::callers()->run($caller, $work)`, `$caller` being
+    | authentication context. SSO's freshness judges only the caller SSO is
+    | handed: pass a call into SSO that asks it (a management helper, a link
+    | flow's start) `Iam::callers()->of($caller)`, `$caller` being
     | `laravel-authentication`'s `Caller` (`Auth::caller()`); without one it is
     | stale. SSO keeps its own handoff codes either way. Turn it off (`false`,
     | `0`, `off`, `no`) only to bind every one of those seams yourself:
