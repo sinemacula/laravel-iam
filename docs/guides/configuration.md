@@ -39,12 +39,13 @@ worker.
 
 ## Adapters
 
-| Key                | Default | Environment        | What it does                                                                                                 |
-|--------------------|---------|--------------------|--------------------------------------------------------------------------------------------------------------|
-| `iam.adapters.mfa` | `true`  | `IAM_ADAPTERS_MFA` | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.               |
-| `iam.adapters.sso` | `true`  | `IAM_ADAPTERS_SSO` | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams. |
+| Key                          | Default | Environment                  | What it does                                                                                                                                         |
+|------------------------------|---------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.adapters.mfa`           | `true`  | `IAM_ADAPTERS_MFA`           | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.                                                       |
+| `iam.adapters.sso`           | `true`  | `IAM_ADAPTERS_SSO`           | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams.                                         |
+| `iam.adapters.authorization` | `true`  | `IAM_ADAPTERS_AUTHORIZATION` | Binds `laravel-authorization` to the other members: its subject, context, requirement checker and session policy, its step-up, and the access seams. |
 
-Both are read leniently, as the members read a switch an environment variable fills: `false`, `0`, `off` and `no`
+Each is read leniently, as the members read a switch an environment variable fills: `false`, `0`, `off` and `no`
 turn one off, and anything else, an empty value included, leaves it on. Every seam each one binds, and what turning it
 off leaves undone, is in [Bindings](bindings.md). Turn one off only to bind every one of its seams yourself:
 `iam:check` still holds you to the mandatory ones.

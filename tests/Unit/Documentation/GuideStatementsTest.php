@@ -334,21 +334,170 @@ final class GuideStatementsTest extends TestCase
             ['`iam:check` notes each seam it kept with'],
         ];
 
-        yield 'authorization decides with no tenant, and isolates none' => [
+        yield 'authorization decides in the caller\'s tenant, and refuses no resource for its own' => [
             'docs/guides/authorization.md',
-            ['`laravel-authorization` decides with **no active tenant**', '`SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant`'],
-            [],
+            [
+                '`laravel-authorization` decides in the caller\'s active tenant',
+                'It still refuses **no resource for its tenant**',
+                '`SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant`',
+            ],
+            ['decides with **no active tenant**', 'binds nothing of it yet'],
         ];
 
         yield 'what waits on laravel-authorization, and what it leaves to you' => [
             'docs/guides/authorization.md',
             [
-                '`SineMacula\Laravel\Authorization\Resolvers\NoSessionPolicy`',
                 '`Iam::scopeWidenings()->widen()`',
                 'Check every SSO, MFA and audit-log administrative call yourself',
                 '`SineMacula\Laravel\AuditLog\Access\DenyAllPolicy`',
+                'A resource tenant resolver named by `iam:install`',
+            ],
+            ['`SineMacula\Laravel\Authorization\Resolvers\NoSessionPolicy`', 'Its `RefusingRequirementChecker`'],
+        ];
+
+        yield 'only MFA produces step-up responses, and the gate still comes first' => [
+            'docs/guides/authorization.md',
+            [
+                'renders it as MFA\'s `InsufficientAuthenticationException`',
+                'only MFA produces step-up responses',
+                'A refusal none of whose requirements MFA can express stays Laravel\'s `403`',
+                'Put the gate before `laravel-authorization`\'s',
+            ],
+            ['Each is a separate exception, and you answer both'],
+        ];
+
+        yield 'a class named in laravel-authorization\'s configuration is kept' => [
+            'docs/guides/authorization.md',
+            [
+                'A class you name in its configuration',
+                'registers is lost to its own provider, unless you made it before this package registered too',
+                '`iam:check` refuses each seam it took',
+            ],
+            ['whatever this package does'],
+        ];
+
+        yield 'a machine named anywhere no credential caps it is allowed nothing' => [
+            'docs/guides/authorization.md',
+            [
+                'whether or not it also implements `laravel-authorization`\'s',
+                'caps any other machine by nothing',
             ],
             [],
+        ];
+
+        yield 'the bindings guide names laravel-authorization\'s rows as the exception to the provider order' => [
+            'docs/guides/bindings.md',
+            [
+                'except for `laravel-authorization`\'s rows',
+                'a binding of one of them made before `laravel-authorization` registers is lost',
+            ],
+            ['left on the default, a machine is allowed nothing'],
+        ];
+
+        yield 'an application left out of the access map is open to every principal' => [
+            'docs/guides/authorization.md',
+            [
+                '**An application the map does not name is open to every principal**',
+                'either bind an `ApplicationAccess` of your own that admits the machines',
+                'any other application to every principal',
+            ],
+            ['leave the applications your machines call out of the map'],
+        ];
+
+        yield 'the design note says an application left out of the access map is open to every principal' => [
+            'docs/design/authorization.md',
+            ['An application the map does not name is open to every principal, people included, whatever its grants'],
+            ['an application whose machines call it is left out of the map'],
+        ];
+
+        yield 'an identity that is no principal is its own subject' => [
+            'docs/guides/authorization.md',
+            [
+                'An identity that is neither the caller\'s nor a principal itself, and any',
+                'is its own subject, in no tenant and with no session',
+                'reaches a grant hook as a grant to the identity itself',
+            ],
+            ['since it may act as several principals', 'name the principal instead'],
+        ];
+
+        yield 'a subject with no session is never judged, so a deny its requirement guards never refuses it' => [
+            'docs/guides/authorization.md',
+            [
+                '**A subject with no session is never judged.**',
+                'requirement guards applies to them. A deny guarded by a requirement therefore never refuses a subject with no session',
+                'To refuse the caller\'s own sessionless checks, say so: deny them with a condition on `authentication.credential` or `authentication.session_id`',
+                'A requirement that cannot be judged for a session makes its test undecidable',
+            ],
+            ['`unclassified`), a subject with no session'],
+        ];
+
+        yield 'the authentication context is the caller\'s, so it cannot refuse a check about a named principal' => [
+            'docs/guides/authorization.md',
+            [
+                '**The context is always the request\'s own caller\'s.**',
+                'never the subject a check names',
+                'That condition cannot refuse a check about a principal you name',
+                'Nothing in the authentication context can refuse such a check.',
+                'deny it with a condition on a `subject.*` attribute',
+            ],
+            ['To refuse those, say so: deny them with a condition on'],
+        ];
+
+        yield 'the design note says the authentication context is the caller\'s' => [
+            'docs/design/authorization.md',
+            [
+                'is always the request\'s own caller\'s',
+                'no such condition refuses a check about a named principal while the caller holds a session',
+            ],
+            ['the guide tells an application to deny those explicitly'],
+        ];
+
+        yield 'an identity MFA reads as inactive meets no authorization requirement' => [
+            'docs/guides/authorization.md',
+            ['An identity MFA treats as inactive meets no requirement, as at MFA\'s own route gate'],
+            [],
+        ];
+
+        yield 'the design note says an inactive identity meets no requirement' => [
+            'docs/design/authorization.md',
+            ['An identity MFA reads as inactive (its bound `ActiveStateResolver`'],
+            [],
+        ];
+
+        yield 'the installation guide names the three adapter switches' => [
+            'docs/guides/installation.md',
+            ['Three switches turn the package\'s adapters off altogether, `IAM_ADAPTERS_MFA`, `IAM_ADAPTERS_SSO` and `IAM_ADAPTERS_AUTHORIZATION`'],
+            ['Two switches'],
+        ];
+
+        yield 'the bindings guide says what turning each of the three switches off leaves' => [
+            'docs/guides/bindings.md',
+            ['Turning `iam.adapters.mfa`, `iam.adapters.sso` or `iam.adapters.authorization` off leaves every seam of its groups'],
+            ['Two switches', 'Turning `iam.adapters.mfa` or `iam.adapters.sso` off'],
+        ];
+
+        yield 'a listing in the caller\'s scope is judged as the check is' => [
+            'docs/guides/authorization.md',
+            ['so `permissionsFor()` in the caller\'s scope lists exactly what `can()` allows'],
+            [],
+        ];
+
+        yield 'the design note says a subject with no session never reaches the checker' => [
+            'docs/design/authorization.md',
+            ['A subject with no session never reaches the checker', 'neither an allow nor a deny the requirement guards applies'],
+            ['A subject with no session or guard', 'throws, since its principal cannot be told'],
+        ];
+
+        yield 'a refusal about a named subject is no step-up' => [
+            'docs/guides/authorization.md',
+            ['and so does a refusal about a subject you name (`Authorization::for($account)->authorize()`)', 'only a refusal decided on the caller\'s own session asks for one'],
+            [],
+        ];
+
+        yield 'the configuration file says a machine is capped by nothing with the authorization switch off' => [
+            'config/iam.php',
+            ['then capped by nothing, its credential\'s scopes ignored, unless it', 'implements `laravel-authorization`\'s `AuthorizableMachine`, which is'],
+            ['a machine is | allowed nothing', 'a machine is allowed nothing'],
         ];
 
         yield 'the example warns that authorize: isolates no tenant' => [
@@ -363,10 +512,14 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'the seams still to come include the refusing defaults' => [
+        yield 'the seams left on their defaults include the refusing one' => [
             'docs/guides/bindings.md',
-            ['`Authorization\Contracts\SessionPolicySource`', '`AuditLog\Contracts\AuditAccessPolicy`', 'Two more wait the same way'],
-            ['which a later release of this package answers', 'Three more wait the same way'],
+            [
+                '`Authentication\Contracts\TenantAccess` is not `laravel-authorization`\'s to answer',
+                '`AuditLog\Contracts\AuditAccessPolicy`',
+                'One more waits on a member default that refuses',
+            ],
+            ['which a later release of this package answers', 'Two more wait the same way', 'will be answered from the credential\'s scopes'],
         ];
 
         yield 'the application\'s own audit codes need definitions' => [

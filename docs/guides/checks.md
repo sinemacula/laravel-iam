@@ -83,14 +83,31 @@ Every mandatory seam is bound to something that does its duty ([Bindings](bindin
 mandatory, and when). The check reads the live binding without building anything.
 
 - *... is unbound; bind ..., or an implementation of your own, to it.*: bind the adapter it names, usually by turning
-  the capability's switch back on (`iam.adapters.mfa` or `iam.adapters.sso`), or bind your own implementation.
+  the capability's switch back on (`iam.adapters.mfa`, `iam.adapters.sso` or `iam.adapters.authorization`), or bind
+  your own implementation.
 - *... is still bound to ..., its member's permissive or inert default; ...*: the member's default would leave the duty
   undone. Turn the switch on, or bind your own implementation.
 - *... is bound through a closure, whose implementation cannot be read without building it; ...*: bind the seam by
   class name or as an instance, so the check can tell what it is.
+- *... holds its member's own default again, bound over what the binding rule decided once it had run ...*: one of
+  `laravel-authorization`'s seams this package bound, or kept with your binding, holds `laravel-authorization`'s own
+  default again, whatever its mandate, because its provider registered once nothing could bind the seam back (from a
+  provider's `boot()` once the application had booted, say). Register `laravel-authorization` with the other
+  providers, or bind the adapter or your own implementation once it has registered.
 - Note: *... keeps the application's binding, not this package's adapter.*: a binding of yours was in place before
   this package registered, so the adapter was never bound. Make sure your implementation keeps the adapter's duties
   ([Bindings](bindings.md#replacing-a-binding)).
+
+`laravel-authentication`'s scope registry and `laravel-authorization`'s session policy source are mandatory while a
+guard accepts `api_key` or `client_credentials`, as the bound `ApplicationPolicy` says (yours, if you replace it to read
+a guard's methods from somewhere else), and `laravel-authentication`'s application access while
+`authorization.application_access` maps an application to a permission: left on the members' defaults, a credential
+could carry scopes that name no permission, a machine's checks would be capped by nothing, whatever scopes its
+credential was issued, and every principal could use an application its grants keep it from. The session policy
+source's default, `NoSessionPolicy`, is refused whether `iam.adapters.authorization` is on or off, and whether you bind
+it by name; a source you name in `authorization.session.source` is read through `laravel-authorization`'s own binding,
+so it passes. An application the map leaves out is open to every principal whatever the mandate says (see
+[Authorization](authorization.md#access-contracts)).
 
 While SSO is in use, the mandatory seams of SSO and tenancy are checked by the SSO bridge (below) instead, so each seam
 is reported once.
@@ -223,10 +240,9 @@ built.
 
 ## What later releases add
 
-- Once `laravel-authorization` can answer them, `laravel-authentication`'s access contracts join the mandatory seams,
-  the configuration check requires `laravel-authorization`'s tenant resolvers to name this package's adapters,
-  `authorization.connection` joins the storage check, and `authorization:prune` joins the schedule. See
-  [Authorization](authorization.md).
+- The configuration check requires `laravel-authorization`'s resource tenant resolver to name this package's adapter,
+  `authorization.connection` joins the storage check, `authorization:prune` joins the schedule, and audit-log's access
+  policy is answered from `laravel-authorization`. See [Authorization](authorization.md#what-waits).
 
 [audit-log-operations]: https://github.com/sinemacula/laravel-audit-log/blob/master/docs/guides/operations.md
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md

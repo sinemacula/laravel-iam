@@ -30,6 +30,8 @@ use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
+use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -72,6 +74,7 @@ use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\Concerns\RunsInOctaneSandboxes;
+use Tests\Fixtures\Providers\RecordsAuthorizationContextWhileBooting;
 use Tests\Fixtures\Providers\RecordsBindingOutcome;
 use Tests\Fixtures\Providers\RecordsSettlementWhileBooting;
 use Tests\Fixtures\Providers\RegistersIamWhileBooting;
@@ -565,12 +568,12 @@ final class IamServiceProviderTest extends TestCase
     /**
      * The binding rule's outcome is kept in the container for the checks: it
      * bound every capability's seams over the members' defaults, MFA's, the
-     * passkey factor gate, its context's and SSO's, and kept none, the
-     * application binding nothing of its own, offering no passkeys, naming no
-     * gateway, no memberships and no tree, and leaving SSO's evidence off, so
-     * MFA keeps its own challenge gateway and its own passkey gateway, and SSO
-     * its own evidence policy, tenant membership, link eligibility, principal
-     * scope and enforcement inheritance.
+     * passkey factor gate, its context's, SSO's and `laravel-authorization`'s,
+     * and kept none, the application binding nothing of its own, offering no
+     * passkeys, naming no gateway, no memberships and no tree, and leaving
+     * SSO's evidence off, so MFA keeps its own challenge gateway and its own
+     * passkey gateway, and SSO its own evidence policy, tenant membership, link
+     * eligibility, principal scope and enforcement inheritance.
      *
      * @return void
      *
@@ -581,7 +584,8 @@ final class IamServiceProviderTest extends TestCase
         $outcome = $this->app?->make(BindingOutcome::class);
         $mfa     = (new MfaSeams(new DeliverySeams(new Container)))->seams(new Repository);
         $sso     = [...(new SsoSeams)->seams(new Repository), ...(new TenancySeams(new Container))->seams(new Repository)];
-        $rows    = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository), ...$sso];
+        $mfa     = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
+        $rows    = [...$mfa, ...$sso, ...(new AuthorizationSeams)->seams(new Repository)];
         $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class, EnforcementInheritance::class];
         $unbound = [ChallengeGateway::class, PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
         $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), $unbound));
@@ -673,6 +677,26 @@ final class IamServiceProviderTest extends TestCase
         $this->bootInOrder([RecordsSettlementWhileBooting::class, ...$providers]);
 
         self::assertSame(array_fill_keys(StorageConnection::MEMBER_KEYS, self::CONNECTION), $this->application()->make(RecordsSettlementWhileBooting::RECORDED));
+    }
+
+    /**
+     * The package binds `laravel-authorization`'s seams again in the booting
+     * phase, before the first provider boots, in every provider order, so a
+     * provider's `boot()` resolves the adapter even where
+     * `laravel-authorization`, registering after this package, bound its own
+     * default over it.
+     *
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[DataProvider('provideProviderOrders')]
+    public function testLaravelAuthorizationsSeamsAreBoundAgainBeforeAnyProviderBoots(array $providers): void
+    {
+        $this->bootInOrder([RecordsAuthorizationContextWhileBooting::class, ...$providers]);
+
+        self::assertSame(AuthenticationContextAdapter::class, $this->application()->make(RecordsAuthorizationContextWhileBooting::RECORDED));
     }
 
     /**
@@ -1172,7 +1196,7 @@ final class IamServiceProviderTest extends TestCase
     public function testEveryCapabilitysSeamsAreProvided(): void
     {
         self::assertSame(
-            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, DeliverySeams::class, SsoSeams::class, TenancySeams::class],
+            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, DeliverySeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class],
             IamServiceProvider::seamProviders(),
         );
     }

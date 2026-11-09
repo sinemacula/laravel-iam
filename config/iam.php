@@ -89,11 +89,35 @@ return [
     | names a tenant tree (`tenancy.tree`), SSO's enforcement inheritance,
     | answered from the tree. Without them SSO's defaults stay, and refuse.
     |
+    | `authorization` binds `laravel-authorization` to the other members: its
+    | subject resolver, answered from `Auth::caller()` (the principal, its
+    | identity, the active tenant, the application and the session); its
+    | authentication context, `laravel-authentication`'s, with the `mfa` and
+    | `sso` namespaces, whose keys it declares to its key catalogue; while
+    | `mfa` is on too, its requirement checker, answered by MFA's requirement
+    | check on the session's own proofs, and its insufficient-authentication
+    | exception, rendered as MFA's step-up; its session policy source,
+    | answered from the caller's credential scopes; and
+    | `laravel-authentication`'s scope registry and application access,
+    | answered from it. Each adapter replaces only the member's own default,
+    | never a binding of the application's nor a class the application names
+    | in `laravel-authorization`'s configuration. Turn it off (`false`, `0`,
+    | `off`, `no`) only to bind those seams yourself: `laravel-authorization`'s
+    | defaults know no `jwt` guard's session, tenant or scopes, so no tenant's
+    | grant counts and every authentication requirement is unmet. A machine is
+    | then capped by nothing, its credential's scopes ignored, unless it
+    | implements `laravel-authorization`'s `AuthorizableMachine`, which is
+    | allowed nothing, so while a guard accepts `api_key` or
+    | `client_credentials`, `iam:check` refuses that default session policy
+    | source, as it refuses `laravel-authentication`'s default scope registry,
+    | whatever this switch says. A value it does not recognise leaves it on.
+    |
     */
 
     'adapters' => [
-        'mfa' => env('IAM_ADAPTERS_MFA', true),
-        'sso' => env('IAM_ADAPTERS_SSO', true),
+        'mfa'           => env('IAM_ADAPTERS_MFA', true),
+        'sso'           => env('IAM_ADAPTERS_SSO', true),
+        'authorization' => env('IAM_ADAPTERS_AUTHORIZATION', true),
     ],
 
     /*

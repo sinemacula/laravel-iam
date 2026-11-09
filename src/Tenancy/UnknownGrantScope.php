@@ -9,11 +9,11 @@ use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 
 /**
- * The grant half of SSO's principal scope until `laravel-authorization` ships
- * its grant scope query (AUTHZ-14.2, M11): `unknown` for every identity and
- * tenant, so the principal scope never answers `within_tenant` on the
- * memberships alone (fail closed; Q9). It reads nothing and keeps nothing, so
- * it is shared.
+ * The grant half of SSO's principal scope until this package binds
+ * `laravel-authorization`'s grant scope query (AUTHZ-14.2), with the second
+ * part of M11: `unknown` for every identity and tenant, so the principal scope
+ * never answers `within_tenant` on the memberships alone (fail closed; Q9). It
+ * reads nothing and keeps nothing, so it is shared.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

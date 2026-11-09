@@ -28,9 +28,9 @@ use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
  *   and revokes its sessions, which a partial read is never enough for.
  *
  * The grant half is `laravel-authorization`'s grant scope query (AUTHZ-14.2,
- * `GrantScope`), which has not shipped: until it does (M11) it is
- * `UnknownGrantScope`, so this answers `within_tenant` for nobody, and SSO
- * refuses every reservation and activation by a verified domain as
+ * `GrantScope`), which this package binds with the second part of M11: until
+ * then it is `UnknownGrantScope`, so this answers `within_tenant` for nobody,
+ * and SSO refuses every reservation and activation by a verified domain as
  * `principal_scope_unknown` (Q9). It still answers `outside_tenant` from the
  * memberships, fail closed: once bound over SSO's default, which answers
  * `unknown`, an existing verified domain link of a person who holds another

@@ -24,6 +24,14 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * the configuration is cached or not. A value a provider sets after this
  * package registers, or in a `boot()`, is read too late.
  *
+ * A member that binds the seam to a closure resolving a key of its own, which
+ * holds the default its configuration names (`laravel-authorization`'s
+ * `authorization.default:*` keys), names that key (`$defaultKey`): the seam is
+ * then the member's only while the closure is one a class in `$memberDefaults`
+ * declares and the key still holds one of them, so a class the application
+ * names in the member's configuration is its binding, and kept, though the
+ * member made the binding.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -39,8 +47,9 @@ final readonly class SeamBinding
      * @param  list<class-string>  $memberDefaults
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
-     * @param  bool  $mandatory
+     * @param  bool|\Closure(): bool  $mandatory
      * @param  list<class-string>  $accepted
+     * @param  ?string  $defaultKey
      */
     public function __construct(
 
@@ -59,10 +68,27 @@ final readonly class SeamBinding
         /** The switch that turns the binding on, read from configuration; `null` is always on. */
         public ?\Closure $appliesWhen = null,
 
-        /** Whether the seam must be bound off its permissive default for the suite to be safe, as the checks report. */
-        public bool $mandatory = false,
+        /** Whether the seam must be bound off its permissive default for the suite to be safe, as the checks report; a closure is asked only when they read it (`isMandatory()`). */
+        public bool|\Closure $mandatory = false,
 
         /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
         public array $accepted = [],
+
+        /** The key the member holds its default under when its binding of the seam only resolves that key, which must still hold one of the member's defaults for the seam to be the member's; `null` for a seam bound to its default directly. */
+        public ?string $defaultKey = null,
     ) {}
+
+    /**
+     * Whether the seam must be bound off its permissive default, asking the
+     * closure the row was given, if any, only now: a mandate that asks a
+     * service the application binds (`laravel-authentication`'s application
+     * policy) is read when the checks run, never while providers register or on
+     * each boot, when the binding rule reads the rows.
+     *
+     * @return bool
+     */
+    public function isMandatory(): bool
+    {
+        return $this->mandatory instanceof \Closure ? ($this->mandatory)() : $this->mandatory;
+    }
 }

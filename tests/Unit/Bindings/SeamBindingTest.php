@@ -40,6 +40,7 @@ final class SeamBindingTest extends TestCase
         self::assertSame(Lifetime::TRANSIENT, $binding->lifetime);
         self::assertNull($binding->appliesWhen);
         self::assertFalse($binding->mandatory);
+        self::assertFalse($binding->isMandatory());
     }
 
     /**
@@ -57,5 +58,29 @@ final class SeamBindingTest extends TestCase
         self::assertSame(Lifetime::SCOPED, $binding->lifetime);
         self::assertSame($switch, $binding->appliesWhen);
         self::assertTrue($binding->mandatory);
+        self::assertTrue($binding->isMandatory());
+    }
+
+    /**
+     * A mandate declared as a closure is asked each time it is read, and never
+     * before.
+     *
+     * @return void
+     */
+    public function testAMandateDeclaredAsAClosureIsAskedWhenItIsRead(): void
+    {
+        $answers = new \ArrayObject([true, false]);
+        $asked   = new \ArrayObject;
+        $binding = new SeamBinding(PlainSeam::class, Adapter::class, [], mandatory: static function () use ($answers, $asked): bool {
+
+            $asked->append(true);
+
+            return (bool) $answers[count($asked) - 1];
+        });
+
+        self::assertCount(0, $asked);
+        self::assertTrue($binding->isMandatory());
+        self::assertFalse($binding->isMandatory());
+        self::assertCount(2, $asked);
     }
 }

@@ -18,11 +18,12 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
  * A combination policy an application that trusts its providers might bind: it
- * answers as MFA's default does, except that a sign-in whose one proof is a
- * first factor through an external provider on a connection it trusts is
- * multifactor authentication at AAL2, never phishing-resistant, each part
- * judged within its maximum age of the proof. It keeps the proofs it was asked
- * to evaluate, so a test can tell what it was handed.
+ * answers as MFA's default does, except that a sign-in whose newest proof is a
+ * first factor, or a reauthentication with it, through an external provider on
+ * a connection it trusts is multifactor authentication at AAL2, never
+ * phishing-resistant, each part judged within its maximum age of that proof. It
+ * keeps the proofs it was asked to evaluate, so a test can tell what it was
+ * handed.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,8 +60,9 @@ final class TrustsConnections implements CombinationPolicy
     }
 
     /**
-     * Multifactor authentication at AAL2 for a trusted provider's sign-in, each
-     * part met within its maximum age, and the default's answer otherwise.
+     * Multifactor authentication at AAL2 for a sign-in whose newest proof is a
+     * trusted provider's, each part met within its maximum age of that proof,
+     * and the default's answer otherwise.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  ...$proofs
@@ -73,7 +75,7 @@ final class TrustsConnections implements CombinationPolicy
     {
         $this->asked[] = array_values($proofs);
 
-        $proof = count($proofs) === 1 ? array_values($proofs)[0] : null;
+        $proof = $proofs === [] ? null : $proofs[array_key_last($proofs)];
 
         if ($proof === null || !$this->isTrusted($proof)) {
             return (new DefaultCombinationPolicy)->evaluate($requirement, ...$proofs);
@@ -100,8 +102,8 @@ final class TrustsConnections implements CombinationPolicy
     }
 
     /**
-     * Whether the proof is a first factor through an external provider on a
-     * trusted connection.
+     * Whether the proof is a first factor, or a reauthentication with it,
+     * through an external provider on a trusted connection.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @return bool
@@ -110,7 +112,7 @@ final class TrustsConnections implements CombinationPolicy
     {
         $channel = $proof->channel;
 
-        return $proof->kind    === ProofKind::FIRST_FACTOR
+        return in_array($proof->kind, [ProofKind::FIRST_FACTOR, ProofKind::FIRST_FACTOR_REAUTHENTICATION], true)
             && $channel?->kind === ChannelKind::EXTERNAL_PROVIDER
             && in_array($channel->reference(), $this->connections, true);
     }

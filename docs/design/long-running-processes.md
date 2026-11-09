@@ -26,6 +26,13 @@ process calls it.
     `FlushAuthenticationState` points it at each request's sandbox: the manager is shared across a worker's requests
     and resolves the request from the application it holds, which, until Octane's listener has run for the request,
     is the last request's sandbox, already flushed, so `make('request')` would fail on every request after the first.
+  - `forgetMemberState()` also drops the callers `laravel-authentication` keeps on the current request's attributes,
+    under `authentication.caller.` followed by the credential, the guard and the action (`CallerCredentials`), building
+    no request and leaving a `request` binding that is not a request, and every other attribute, alone.
+    `Auth::caller()` is read once per request and kept there, and every job a worker runs shares one request, so without
+    it every later job would be decided about the first job's caller, its grants, tenant and session, whoever its guards
+    held (`Authorization\SubjectResolverAdapter::resolve()`, `authorization.md`). `laravel-authentication`'s own
+    `ForgetGuardStateBeforeJob` resets the guards but leaves the memo, a gap in that member.
   - `forgetMemberState()` also flushes the session already resolved (`session.store`), building none, and leaves a
     `session.store` binding that is not an `Illuminate\Contracts\Session\Session` alone, as it leaves another `auth`
     manager: such a binding holds none of the proofs below, and calling `flush()` on it could fail inside every job's
@@ -79,7 +86,10 @@ process calls it.
     name a member's state by an alias (`AuthorizationManager` for `authorization`), or be a real-time facade, and a
     cleared root resolves again from the container, so a facade over anything the reset kept (`Context` among them)
     returns the same instance it did. Only `reset()` clears them; the Octane request and queue job listeners call
-    `forgetMemberState()` alone, and Octane and the queue worker clear the roots themselves.
+    `forgetMemberState()` alone, and Octane and the queue worker clear the roots themselves. The provider calls
+    `forgetScopedState()` once more as the application finishes booting, when it binds the adapters again over the
+    defaults of a `laravel-authorization` registered from another provider's `boot()` (`authorization.md`), so nothing
+    resolved from those defaults while the application booted outlives them.
   - Every other scoped instance is kept, never flushed with `forgetScopedInstances()`: Laravel keeps a command's or a
     job's `Context` and its `defer()` callbacks in scoped instances, and `laravel-audit-log` its execution frames, its
     commit queue and its captured events, which it enters, flushes and leaves itself as each request, command and job
@@ -100,9 +110,14 @@ process calls it.
 - `laravel-mfa` keeps no container instance of any seam between requests (since laravel-mfa#92 every default is bound
   with `bindIf()` and its `mfa` manager with `singletonIf()`, none of them holding request state), so its bindings need
   no reset; its request state is the session-held proofs above, and the identity the guards resolve.
-  `laravel-authorization`'s explicit resets (`LastDecisionStore::reset()`, `ResolutionCache::flush()` and the
-  `TenantScope` reset laravel-authorization#46 must provide) join the reset in M11, for state held outside the scoped
-  instances forgotten above.
+  `laravel-authorization`'s explicit resets (`LastDecisionStore::reset()`, `ResolutionCache::flush()`,
+  `TenantScope::flushResolvedTenant()`) are not called: each clears state held in a scoped instance forgotten above,
+  and what it added since (what its previews know, the console subject resolver its explanations resolve through, held
+  under an `authorization.default:` key) is scoped too, its explanations keeping nothing beyond the check. Its remaining
+  static state (`OperationScope`, held only while an operation runs, and its observers' weak maps) is no request's. The
+  adapters this package binds over its seams keep nothing; the subject resolver and application access are scoped all
+  the same, under `iam.scoped:`, the resolver because `laravel-authorization` keeps the tenant it resolved for a unit of
+  work only while the resolver bound is the one that resolved it (`authorization.md`).
 - `Workers\ResetWhenWorkerStarts` runs the whole `reset()` once as each Octane worker starts, on the event's `app`, the
   application every request's sandbox is cloned from, or the current application when the event carries none. It
   listens to `Laravel\Octane\Events\WorkerStarting` by its name, so Octane stays optional and is no dependency.
@@ -166,8 +181,9 @@ process calls it.
 
 ## Implementation Anchors
 
-- `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `flushSession()`,
-  `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`, `AUTHORIZATION_DEFAULT`.
+- `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `forgetCallers()`,
+  `flushSession()`, `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`,
+  `AUTHORIZATION_DEFAULT`, `CALLER_MEMO`.
 - `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
   scoped adapters by, `bindScoped()` and `unscope()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
@@ -185,7 +201,9 @@ process calls it.
   `testAFacadeOverAKeptScopedInstanceReturnsTheSameInstance`,
   `testResetKeepsASingletonOverAMembersScopedSeam`, `testResetFlushesTheSession`,
   `testForgettingTheMemberStateFlushesTheSession`, `testAnUnresolvedSessionIsNotBuilt`,
-  `testAnotherSessionStoreIsLeftAlone`
+  `testAnotherSessionStoreIsLeftAlone`, `testForgettingTheMemberStateDropsTheRequestsCallers`,
+  `testAnUnresolvedOrAnotherRequestIsLeftAlone`
+- `tests/Integration/Authorization/SubjectResolverAdapterTest.php` `testEachJobInAWorkerIsDecidedAboutItsOwnCaller`
 - `tests/Feature/Workers/WorkerResetTest.php` `testResetForgetsEveryScopedInstanceTheMembersBind` (every scoped
   binding of `laravel-authentication`, `laravel-authorization`, `laravel-mfa`, `laravel-sso` and this package, as the
   installed members make them, but this package's job frames), `testResetKeepsEveryOtherScopedInstance`
@@ -216,7 +234,7 @@ process calls it.
 ## Change Triggers
 
 - An adapter or member that keeps request state outside a scoped binding: it joins `forgetMemberState()`, as
-  `laravel-authorization`'s explicit resets will in M11.
+  `laravel-authorization`'s explicit resets would if it ever kept state outside its scoped instances.
 - `laravel-mfa`'s session proof store ceasing to be a store an application can run on: this package's own proof store
   (IAM-3.11) keeps nothing in the Laravel session, but MFA's default is still bound wherever `iam.adapters.mfa` is off
   or the application binds it, and the session flush exists for it; it moves out of `forgetMemberState()` only once no
