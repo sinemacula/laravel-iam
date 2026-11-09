@@ -228,7 +228,9 @@ final class InteractsWithIamTest extends TestCase
 
         $factor   = $this->onlyFactorOf($person);
         $recorded = $this->furtherProofOf($session);
-        $proofs   = $this->app?->make(ProofStore::class)->proofs($person, self::GUARD) ?? [];
+        $store    = $this->app?->make(ProofStore::class);
+        $current  = $store?->currentSession($person, self::GUARD);
+        $proofs   = $store === null || $current === null ? [] : $store->proofs($person, self::GUARD, $current);
 
         self::assertSame($type, $factor->getType());
         self::assertSame(FactorStatus::CONFIRMED, $factor->getStatus());

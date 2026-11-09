@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
-use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
@@ -41,10 +40,10 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  * a connection never counts a sign-in SSO's evidence gate refused, nor one
  * tenant's trust for another. The translation is `SignInProofs`, which the
  * `mfa` context contributor shares, so the store and the context read a
- * session's proofs alike; the store reads the guard's current session only
- * because MFA's contract asks for the identity's current sign-in and hands no
- * session to read instead, and `record()`, handed a binding but no identity,
- * finds that identity as the guard is signed in as it.
+ * session's proofs alike. MFA hands every call the identity, and `proofs()` the
+ * sign-in it asked `currentSession()` about; the guard's current session is
+ * read only to answer which sign-in is current, which is what MFA's contract
+ * asks, never to find whose proof it is.
  *
  * `laravel-authentication` is the only writer of a session's proofs: it records
  * the first factor when the session is signed in, in the same transaction as
@@ -54,9 +53,11 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  *
  * - `begin()` is a no-op: the session is the sign-in, begun before the guard
  *   is bound and `Login` fires, under a key MFA's listener does not know;
- * - `record()` refuses, by throwing MFA's `ProofRefusedException`, a proof that
- *   is not bound to the identity's current sign-in on a live, active session of
- *   a person, checked with `firstFactor()` in a transaction on the storage
+ * - `record()` refuses, by throwing MFA's `ProofRefusedException` and changing
+ *   nothing, a proof whose binding the identity it is handed does not own, or
+ *   that is not bound to the identity's current sign-in on a live, active
+ *   session of a person, checked with `firstFactor()` in a transaction on the
+ *   storage
  *   connection, so the session's row is locked until that transaction ends;
  *   on that sign-in it keeps the sign-in's own first factor, which the session
  *   already holds, and refuses any other proof, which only
@@ -75,7 +76,9 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
  *
  * A guard that holds no session of the identity holds no sign-in of it, so
  * `currentSession()` answers `null` and `proofs()` none, as the contract asks,
- * and nothing counts. An application that is no session guard of
+ * and nothing counts; `proofs()` answers none, too, for a sign-in that is not
+ * the identity's current one, so one replaced since MFA named it yields
+ * nothing. An application that is no session guard of
  * `laravel-authentication`'s is a misconfiguration, which `CurrentSession`
  * reports by throwing. A proof the session holds that MFA cannot express (an
  * additional factor that names no factor, say), or that names a factor the
@@ -99,15 +102,11 @@ final readonly class ProofStoreAdapter implements ProofStore
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\SignInProofs  $proofs
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
      */
     public function __construct(
-
-        /** The configuration the guards are declared in. */
-        private Repository $config,
 
         /** Resolves the sign-in MFA names to the guard's current session. */
         private CurrentSession $sessions,
@@ -160,15 +159,16 @@ final readonly class ProofStoreAdapter implements ProofStore
      * Keep the proof when the identity's current, live sign-in already holds
      * it, and refuse it otherwise.
      *
-     * The sign-in must be the guard's current session, held by the identity the
-     * proof names, and one of the guard's live, active sessions of a person,
-     * checked in a transaction on the storage connection (a savepoint of the
-     * caller's, when one is open) that locks the session's row. On it, only the
-     * sign-in's own first factor, made with the method and on the kind of
-     * channel the session recorded, is kept: the session holds it already. Any
-     * other proof reaches the session only through `laravel-authentication`,
-     * and is refused.
+     * The identity must own the proof's binding, the sign-in must be the
+     * identity's current session on the binding's application, and one of the
+     * guard's live, active sessions of a person, checked in a transaction on
+     * the storage connection (a savepoint of the caller's, when one is open)
+     * that locks the session's row. On it, only the sign-in's own first factor,
+     * made with the method and on the kind of channel the session recorded, is
+     * kept: the session holds it already. Any other proof reaches the session
+     * only through `laravel-authentication`, and is refused.
      *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @return void
      *
@@ -176,11 +176,11 @@ final readonly class ProofStoreAdapter implements ProofStore
      * @throws \Throwable
      */
     #[\Override]
-    public function record(Proof $proof): void
+    public function record(MultiFactorAuthenticatable $identity, Proof $proof): void
     {
-        $this->transaction->run(function () use ($proof): void {
+        $this->transaction->run(function () use ($identity, $proof): void {
 
-            $session     = $this->signInOf($proof->binding);
+            $session     = $this->signInOf($identity, $proof->binding);
             $firstFactor = Auth::sessions($proof->binding->application)->firstFactor($session);
 
             if ($firstFactor === null) {
@@ -194,9 +194,10 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The counting proofs of the identity's current sign-in on the application,
-     * oldest first, as MFA's proofs bound to it; none when the guard holds no
-     * session of the identity.
+     * The counting proofs of the identity's sign-in on the application the
+     * session names, oldest first, as MFA's proofs bound to it; none unless
+     * that sign-in is the identity's current one there, so none when the guard
+     * holds no session of the identity or holds another.
      *
      * The newest `RequirementSubject::MAX_LIMIT` proofs are read; MFA's first
      * factor resolver answers the sign-in's first factor whenever it is not
@@ -205,17 +206,18 @@ final readonly class ProofStoreAdapter implements ProofStore
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
+     * @param  string  $sessionId
      * @return list<\SineMacula\Laravel\Mfa\Proofs\Proof>
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     #[\Override]
-    public function proofs(MultiFactorAuthenticatable $identity, string $application): array
+    public function proofs(MultiFactorAuthenticatable $identity, string $application, string $sessionId): array
     {
         $session = $this->session($identity, $application);
 
-        if ($session === null) {
+        if ($session === null || SignIn::reference($session, $application) !== $sessionId) {
             return [];
         }
 
@@ -355,41 +357,27 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The guard's current session, when it is the sign-in the binding names and
-     * is held by the identity the binding names; refused otherwise.
+     * The identity's current session on the binding's application, when the
+     * identity owns the binding and that session is the sign-in it names;
+     * refused otherwise.
      *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @return \SineMacula\Laravel\Authentication\Contracts\Session
      *
      * @throws \SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException
      */
-    private function signInOf(ProofBinding $binding): Session
+    private function signInOf(MultiFactorAuthenticatable $identity, ProofBinding $binding): Session
     {
-        $identity = $this->signedIn($binding->application);
-
         try {
 
-            if ($identity === null || !IdentityReference::of($identity)->owns($binding)) {
-                throw new ProofRefusedException('The proof is bound to an identity the guard is not signed in as, so it cannot be recorded.');
+            if (!IdentityReference::of($identity)->owns($binding)) {
+                throw new ProofRefusedException('The proof is bound to another identity, so it cannot be recorded.');
             }
 
             return $this->sessions->of($identity, $binding->application, $binding->sessionId);
         } catch (SessionMismatchException|UnresolvedReferenceException $exception) {
             throw new ProofRefusedException('The proof is not bound to its identity\'s current sign-in, so it cannot be recorded.', previous: $exception);
         }
-    }
-
-    /**
-     * The identity the application's guard is signed in as, when the
-     * application is a declared guard and the identity can hold factors.
-     *
-     * @param  string  $application
-     * @return ?\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
-     */
-    private function signedIn(string $application): ?MultiFactorAuthenticatable
-    {
-        $identity = is_array($this->config->get('auth.guards.' . $application)) ? Auth::guard($application)->user() : null;
-
-        return $identity instanceof MultiFactorAuthenticatable ? $identity : null;
     }
 }
