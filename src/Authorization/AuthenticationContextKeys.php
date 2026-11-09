@@ -16,28 +16,19 @@ use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
  * them: a policy reads only a declared key, so without them no condition could
  * name `laravel-authentication`'s keys, MFA's or SSO's.
  *
- * Each key is declared with the type its member gives its value. A key that
- * says how strongly or how recently the session was authenticated is declared
- * untestable, as `laravel-authorization` declares its own assurance keys
- * (`amr`, `auth_time`, `multifactor`, `seconds_since_step_up`, which it makes
- * untestable whatever is declared), so a policy states an authentication
- * requirement instead, which the requirement checker judges on the newest proof
- * meeting each part (`RequirementCheckerAdapter`): `laravel-authentication`'s
- * `mfa` and `recovery_code`, MFA's verdicts on the session's evidence
- * (`accepted`, `factor_types`, `level`, `phishing_resistant`,
- * `user_verification`, `last_verification_age_seconds`) and SSO's record of the
- * provider's authentication (`provider_auth_time`, `provider_amr`,
- * `provider_acr`, `provider_authn_context_class_ref`). Every other key may be
- * tested.
+ * Each key is declared with the type its member gives its value, and testable:
+ * whether a condition may test it is the catalogue's to decide, from the
+ * assurance keys the context declares beside `laravel-authorization`'s own
+ * (`AuthenticationContextAdapter::ASSURANCE_KEYS`), each of which it makes
+ * untestable whatever is declared. `laravel-authorization` learns the types of
+ * a context's keys from nothing else, so the types are declared here.
  *
  * A key already declared (by `authorization.context.keys`, an attribute
  * provider, or a service provider that declared it first) is left as it is
  * declared: the application's declaration wins. The keys are declared once, as
  * the catalogue, one per application, is built, and only while the
  * authentication context bound is this package's: one the application binds
- * declares its own. A catalogue built before this package bound its context
- * again over `laravel-authorization`'s default has them declared once it has
- * (`declareOnResolved()`).
+ * declares its own.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,46 +37,46 @@ use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
  */
 final readonly class AuthenticationContextKeys
 {
-    /** @var array<string, array{\SineMacula\Laravel\Authorization\Enums\ContextKeyType, bool}> Each key declared, by its dot path, with its type and whether a condition may test it. */
+    /** @var array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType> Each key declared, by its dot path, with its type. */
     public const array KEYS = [
-        'authentication.subject_type'          => [ContextKeyType::STRING, true],
-        'authentication.identity_type'         => [ContextKeyType::STRING, true],
-        'authentication.identity_id'           => [ContextKeyType::STRING, true],
-        'authentication.principal_type'        => [ContextKeyType::STRING, true],
-        'authentication.principal_id'          => [ContextKeyType::STRING, true],
-        'authentication.tenant_type'           => [ContextKeyType::STRING, true],
-        'authentication.tenant_id'             => [ContextKeyType::STRING, true],
-        'authentication.application'           => [ContextKeyType::STRING, true],
-        'authentication.session_id'            => [ContextKeyType::STRING, true],
-        'authentication.amr'                   => [ContextKeyType::LIST, false],
-        'authentication.auth_time'             => [ContextKeyType::NUMBER, false],
-        'authentication.mfa'                   => [ContextKeyType::BOOL, false],
-        'authentication.recovery_code'         => [ContextKeyType::BOOL, false],
-        'authentication.multifactor'           => [ContextKeyType::BOOL, false],
-        'authentication.seconds_since_step_up' => [ContextKeyType::NUMBER, false],
-        'authentication.credential'            => [ContextKeyType::STRING, true],
-        'authentication.scopes'                => [ContextKeyType::LIST, true],
-        'authentication.ip'                    => [ContextKeyType::IP, true],
-        'mfa.accepted'                         => [ContextKeyType::BOOL, false],
-        'mfa.multifactor'                      => [ContextKeyType::BOOL, false],
-        'mfa.factor_types'                     => [ContextKeyType::LIST, false],
-        'mfa.level'                            => [ContextKeyType::STRING, false],
-        'mfa.phishing_resistant'               => [ContextKeyType::BOOL, false],
-        'mfa.user_verification'                => [ContextKeyType::BOOL, false],
-        'mfa.last_verification_age_seconds'    => [ContextKeyType::NUMBER, false],
-        'mfa.has_confirmed_factor'             => [ContextKeyType::BOOL, true],
-        'sso.connection'                       => [ContextKeyType::STRING, true],
-        'sso.tenant'                           => [ContextKeyType::STRING, true],
-        'sso.protocol'                         => [ContextKeyType::STRING, true],
-        'sso.provider_auth_time'               => [ContextKeyType::TIME, false],
-        'sso.provider_amr'                     => [ContextKeyType::LIST, false],
-        'sso.provider_acr'                     => [ContextKeyType::STRING, false],
-        'sso.provider_authn_context_class_ref' => [ContextKeyType::STRING, false],
-        'sso.link'                             => [ContextKeyType::STRING, true],
-        'sso.link_provenance'                  => [ContextKeyType::STRING, true],
-        'sso.provider_session_deadline'        => [ContextKeyType::TIME, true],
-        'sso.session_not_after'                => [ContextKeyType::TIME, true],
-        'sso.enforcement_version'              => [ContextKeyType::STRING, true],
+        'authentication.subject_type'          => ContextKeyType::STRING,
+        'authentication.identity_type'         => ContextKeyType::STRING,
+        'authentication.identity_id'           => ContextKeyType::STRING,
+        'authentication.principal_type'        => ContextKeyType::STRING,
+        'authentication.principal_id'          => ContextKeyType::STRING,
+        'authentication.tenant_type'           => ContextKeyType::STRING,
+        'authentication.tenant_id'             => ContextKeyType::STRING,
+        'authentication.application'           => ContextKeyType::STRING,
+        'authentication.session_id'            => ContextKeyType::STRING,
+        'authentication.amr'                   => ContextKeyType::LIST,
+        'authentication.auth_time'             => ContextKeyType::NUMBER,
+        'authentication.mfa'                   => ContextKeyType::BOOL,
+        'authentication.recovery_code'         => ContextKeyType::BOOL,
+        'authentication.multifactor'           => ContextKeyType::BOOL,
+        'authentication.seconds_since_step_up' => ContextKeyType::NUMBER,
+        'authentication.credential'            => ContextKeyType::STRING,
+        'authentication.scopes'                => ContextKeyType::LIST,
+        'authentication.ip'                    => ContextKeyType::IP,
+        'mfa.accepted'                         => ContextKeyType::BOOL,
+        'mfa.multifactor'                      => ContextKeyType::BOOL,
+        'mfa.factor_types'                     => ContextKeyType::LIST,
+        'mfa.level'                            => ContextKeyType::STRING,
+        'mfa.phishing_resistant'               => ContextKeyType::BOOL,
+        'mfa.user_verification'                => ContextKeyType::BOOL,
+        'mfa.last_verification_age_seconds'    => ContextKeyType::NUMBER,
+        'mfa.has_confirmed_factor'             => ContextKeyType::BOOL,
+        'sso.connection'                       => ContextKeyType::STRING,
+        'sso.tenant'                           => ContextKeyType::STRING,
+        'sso.protocol'                         => ContextKeyType::STRING,
+        'sso.provider_auth_time'               => ContextKeyType::TIME,
+        'sso.provider_amr'                     => ContextKeyType::LIST,
+        'sso.provider_acr'                     => ContextKeyType::STRING,
+        'sso.provider_authn_context_class_ref' => ContextKeyType::STRING,
+        'sso.link'                             => ContextKeyType::STRING,
+        'sso.link_provenance'                  => ContextKeyType::STRING,
+        'sso.provider_session_deadline'        => ContextKeyType::TIME,
+        'sso.session_not_after'                => ContextKeyType::TIME,
+        'sso.enforcement_version'              => ContextKeyType::STRING,
     ];
 
     /**
@@ -105,30 +96,6 @@ final readonly class AuthenticationContextKeys
 
             self::declareOn($catalogue);
         });
-    }
-
-    /**
-     * Declare the keys on the key catalogue already built, while the
-     * authentication context bound is this package's: a catalogue built while
-     * `laravel-authorization`'s own default context was bound, before this
-     * package bound the adapter over it again, was passed over as it was built
-     * (`IamServiceProvider`), and is kept for the life of the process. A
-     * catalogue not built yet is left to be declared on as it is.
-     *
-     * @param  \Illuminate\Contracts\Container\Container  $container
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \InvalidArgumentException
-     * @throws \Psr\Container\ContainerExceptionInterface
-     */
-    public static function declareOnResolved(Container $container): void
-    {
-        if (!$container->resolved(ContextKeyCatalogue::class) || !self::isAdapterBound($container)) {
-            return;
-        }
-
-        self::declareOn($container->make(ContextKeyCatalogue::class));
     }
 
     /**
@@ -154,13 +121,13 @@ final readonly class AuthenticationContextKeys
      */
     private static function declareOn(ContextKeyCatalogue $catalogue): void
     {
-        foreach (self::KEYS as $path => [$type, $isTestable]) {
+        foreach (self::KEYS as $path => $type) {
 
             if ($catalogue->find($path) !== null) {
                 continue;
             }
 
-            $catalogue->declare($path, $type, $isTestable);
+            $catalogue->declare($path, $type);
         }
     }
 }

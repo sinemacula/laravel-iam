@@ -222,14 +222,6 @@ final readonly class WorkerReset
      * jobs reset with `forgetMemberState()` alone, never coming here, since
      * both clear the roots themselves.
      *
-     * This package calls it once more as the application finishes booting, when
-     * it binds its adapters again over the defaults of a
-     * `laravel-authorization` another provider registered from its `boot()`:
-     * whatever was resolved from those defaults meanwhile (the manager, with
-     * the default subject resolver, session cap and check context factory it
-     * holds, the tenant it resolved) is forgotten, so the next resolution holds
-     * the adapters (`IamServiceProvider`).
-     *
      * @return void
      */
     public function forgetScopedState(): void
