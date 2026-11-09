@@ -97,14 +97,15 @@ The current note set is:
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the
-  caller mid-admission; its authentication context, `laravel-authentication`'s with a fixed list of namespaces and the
-  keys it declares to the key catalogue, those that say how the session was authenticated untestable; its requirement
-  checker, answered by MFA's requirement check on the proofs of the subject's own session, each refusal undecidable;
-  its insufficient-authentication exception, rendered as MFA's step-up from the request Laravel hands its handler; the
-  session policy source, the scope registry and application access; how the binding rule replaces a member that binds
-  its defaults unconditionally, and binds again what it replaced, never over a class the application names in that
-  member's configuration; when the scope registry and application access are mandatory; what the second part of this
-  work still adds; and the gaps in the members the adapters work around.
+  caller mid-admission; its authentication context, `laravel-authentication`'s with a fixed list of namespaces, the
+  keys it declares to the key catalogue with their types, and its assurance keys, which say how the session was
+  authenticated and no condition may test; its requirement checker, answered by MFA's requirement check on the proofs
+  of the subject's own session, each refusal undecidable; its insufficient-authentication exception, rendered as MFA's
+  step-up from the request Laravel hands its handler; the session policy source, the scope registry and application
+  access, which admits a machine on its grants as it admits a person; how the binding rule keeps a class the
+  application names in `laravel-authorization`'s configuration, in whatever order the providers register; when the
+  scope registry and application access are mandatory; what the second part of this work still adds; and the gaps in
+  the members the adapters work around.
 
 A note is added here with the code it describes.
 

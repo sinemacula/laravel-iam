@@ -284,10 +284,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   rather than named in its configuration, so `iam:install` writes none of `authorization.subject_resolver`,
   `authorization.requirement_checker` or `authorization.session.source`, `CrossMemberConfigurationCheck` requires none
   of them, and a class the application names there is kept. `authorization:check` already runs inside `iam:check`.
-  Since `laravel-authorization` binds its defaults unconditionally, `MandatorySeamsCheck` also refuses each of its rows
-  the binding rule's outcome lists, bound or kept, whose live binding holds `laravel-authorization`'s own default again
-  (`MemberDefaults::holdsDefault()`), whatever its mandate: `laravel-authorization` registered once nothing could bind
-  the seam back, so the outcome, and the note it gives a kept seam, would otherwise be false.
 - Its second part still brings: a resource tenant resolver, named by `iam:install` and required by
   `CrossMemberConfigurationCheck`; `authorization.connection` in the storage alignment and `StorageCheck`;
   `authorization:prune` registered by `IamSchedule`; and the audit access policy answered from
@@ -390,7 +386,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `src/Scheduling/IamSchedule.php`: `register()`; `src/IamManager.php`: `schedule()`.
 - `src/Console/CheckCommand.php`: `handle()`; `src/Checks/Checker.php`: `run()`, `MEMBER_COMMANDS`, `CHECKS`;
   `src/Checks/Contracts/Check.php`.
-- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `decidedChecks()`,
+- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `holderOf()`,
   `isMemberDefault()`), `src/Bindings/SeamBinding.php` (`$accepted`), `src/Checks/SeamHolders.php` (`of()`,
   `isMembersOwn()`),
   `src/Checks/SsoBridgeFallbackCheck.php`, `src/Checks/ContextNamespacesCheck.php`, `src/Checks/AuditCheck.php`,
@@ -446,7 +442,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
   `testEachCheckIsReported`
 - `tests/Feature/Authorization/AuthorizationSeamsTest.php`
-  `testIamCheckRefusesASeamLaravelAuthorizationBoundItsDefaultOverAgain`
+  `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
 - `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testASeamLeftOnItsMembersDefaultFails`,
   `testAMandatorySeamIsCheckedWithItsCapabilityOff`, `testAResolvedMemberDefaultFails`,
   `testAnyClassOfAMembersOwnFails`, `testAnApplicationsClosureFails`, `testAnUnboundMandatorySeamFails`,

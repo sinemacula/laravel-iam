@@ -180,8 +180,8 @@ final class AccessSeamsTest extends TestCase
     /**
      * The session policy source and the scope registry are transient, and
      * application access is scoped (IAM-6.6); the source is replaced only while
-     * `laravel-authorization`'s own key still holds its default, and the others
-     * over `laravel-authentication`'s defaults.
+     * `authorization.session.source` names its default, and the others over
+     * `laravel-authentication`'s defaults.
      *
      * @return void
      */
@@ -194,10 +194,10 @@ final class AccessSeamsTest extends TestCase
         self::assertSame(Lifetime::SCOPED, $bindings[ApplicationAccess::class]->lifetime);
 
         self::assertSame([AuthorizationServiceProvider::class, NoSessionPolicy::class], $bindings[SessionPolicySource::class]->memberDefaults);
-        self::assertSame(AuthorizationSeams::DEFAULT_KEY_PREFIX . SessionPolicySource::class, $bindings[SessionPolicySource::class]->defaultKey);
+        self::assertSame('authorization.session.source', $bindings[SessionPolicySource::class]->configurationKey);
         self::assertSame([AcceptAnyScope::class], $bindings[ScopeRegistry::class]->memberDefaults);
         self::assertSame([AdmitAnyPrincipal::class], $bindings[ApplicationAccess::class]->memberDefaults);
-        self::assertNull($bindings[ApplicationAccess::class]->defaultKey);
+        self::assertNull($bindings[ApplicationAccess::class]->configurationKey);
     }
 
     /**

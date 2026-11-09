@@ -35,7 +35,8 @@ use Tests\TestCase;
  * withdrawn refuses the session's next refresh; an application the map does not
  * name admits everyone, as `laravel-authentication`'s default does. A principal
  * kept apart from its identity is admitted on its identity's grants, whichever
- * guard is the default when the access is asked.
+ * guard is the default when the access is asked, and a machine on its own
+ * grants, as a person is.
  *
  * The sessions are real ones, signed in through `laravel-authentication` with a
  * password, so the access is asked as `laravel-authentication` asks it: inside
@@ -193,16 +194,15 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A machine principal is refused on an application the map names, though it
-     * holds the permission: `laravel-authorization` decides the access with the
-     * session caps applied, and a principal being admitted holds no credential
-     * yet whose scopes could cap it, so a machine, capped by nothing, is
-     * allowed nothing. An application its machines use is left out of the map
-     * until `laravel-authorization` decides the access uncapped.
+     * A machine principal is admitted on an application the map names while its
+     * grants allow the permission, and refused once they do not, as a person
+     * is: `laravel-authorization` decides the access without session caps, so
+     * the machine, which holds no credential yet whose scopes could cap it, is
+     * not refused for lacking them.
      *
      * @return void
      */
-    public function testAMachineIsRefusedOnAnApplicationTheMapNames(): void
+    public function testAMachineIsAdmittedOnAnApplicationTheMapNamesOnItsGrants(): void
     {
         $config = $this->app?->make('config');
 
@@ -212,7 +212,13 @@ final class ApplicationAccessAdapterTest extends TestCase
 
         $account = ServiceAccount::query()->create(['name' => 'Reporting']);
 
+        self::assertFalse($this->access()->mayUse('keys', $account));
+
         $account->givePermission(self::USE);
+
+        self::assertTrue($this->access()->mayUse('keys', $account));
+
+        $account->revokePermission(self::USE);
 
         self::assertFalse($this->access()->mayUse('keys', $account));
     }
