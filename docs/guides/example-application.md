@@ -22,9 +22,9 @@ completion and metadata routes are laid out in SSO's [example application][sso-e
 | `POST` | `/api/auth/sso/sessions`                     | public                      | `Iam::signIns()->redeem()`                  |
 | `POST` | `/api/mfa/verifications`                     | caller                      | `Mfa::verify()`, a step-up                  |
 | `POST` | `/api/auth/sso/reauthentications`            | caller                      | `Iam::reauthentications()->redeem()`        |
-| `POST` | `/api/auth/sso/links/authorization-requests` | caller (fresh)              | `Iam::callers()->run()` around SSO's start  |
+| `POST` | `/api/auth/sso/links/authorization-requests` | caller (fresh)              | SSO's start, `Iam::callers()->of()`         |
 | `POST` | `/api/auth/sso/links`                        | caller                      | `Iam::links()->redeem()`                    |
-| `POST` | `/api/sso/connections/{connection}/enable`   | administrator               | `Iam::callers()->run()` around SSO's change |
+| `POST` | `/api/sso/connections/{connection}/enable`   | administrator               | SSO's change, `Iam::callers()->of()`        |
 | `POST` | `/api/invoices/{invoice}/refund`             | caller, step-up, permission | your own action                             |
 
 ## The routes file
@@ -338,8 +338,8 @@ inside the transaction, so it rolls back with the code unspent
 
 ## Linking an identity
 
-A link flow's start asks SSO's freshness, so the caller is handed in around it; the redemption takes the caller as a
-value:
+A link flow's start asks SSO's freshness, so it is handed the caller as SSO names it; the redemption takes the caller
+as a value:
 
 ```php
 namespace App\Http\Controllers;
@@ -352,9 +352,7 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Sso\Flows\AuthorizationRequestService;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
-use SineMacula\Laravel\Sso\Flows\StartResult;
 use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 final class SsoLinkController
 {
@@ -364,14 +362,14 @@ final class SsoLinkController
     {
         $caller = Auth::caller() ?? throw new AuthenticationException;
 
-        $result = Iam::callers()->run($caller, fn (): StartResult => $this->requests->start(
+        $result = $this->requests->start(
             $caller->guard,
             Purpose::LINK,
             (string) $request->input('connection'),
             SsoClientContext::fromRequest($request),
             $request->input('code_challenge'),
-            new IdentityReference($caller->identity->getMorphClass(), (string) $caller->identity->getKey()),
-        ));
+            Iam::callers()->of($caller),
+        );
 
         return response()->json($result->body(), $result->isStarted() ? 200 : 400, $result->headers());
     }
@@ -396,15 +394,16 @@ final class SsoLinkController
 ```
 
 Note the two client contexts: SSO's own `Http\ClientContext` for SSO's start, and `laravel-authentication`'s for this
-package's redemption. The start names the caller to SSO as the redemption does: by the identity model's morph class and
-its primary key (`getKey()`), never its auth identifier, which a model may keep in another column; a flow started for
-one id and redeemed for another is refused as SSO's `identity_mismatch`. A link is allowed only by an accepted
+package's redemption. The start names the caller to SSO as the redemption does (`Iam::callers()->of()`): by the identity
+model's morph class and its primary key, never its auth identifier, which a model may keep in another column, with the
+session its access credential holds, which SSO's freshness judges and never stores; a flow started for one id and
+redeemed for another is refused as SSO's `identity_mismatch`. A link is allowed only by an accepted
 membership of the connection's tenant (see [Provisioning and tenancy](provisioning-and-tenancy.md#memberships)).
 
 ## Administering SSO
 
-SSO's management helpers ask for a fresh session, so the caller is handed in around them; your authorisation decides
-who may call them:
+SSO's management helpers ask for a fresh session, so each is handed the caller as SSO names it; your authorisation
+decides who may call them:
 
 ```php
 namespace App\Http\Controllers;
@@ -414,7 +413,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Sso\Connections\ConnectionResult;
 use SineMacula\Laravel\Sso\Connections\ConnectionService;
 use SineMacula\Laravel\Sso\Http\ClientContext;
 
@@ -427,11 +425,12 @@ final class ConnectionController
         $caller = Auth::caller() ?? throw new AuthenticationException;
         $tenant = (string) $caller->tenant?->getTenantIdentifier();
 
-        $result = Iam::callers()->run($caller, fn (): ConnectionResult => $this->connections->enable(
+        $result = $this->connections->enable(
             $tenant,
             $connection,
             ClientContext::fromRequest($request),
-        ));
+            Iam::callers()->of($caller),
+        );
 
         return response()->json($result, $result->isSucceeded() ? 200 : 422);
     }

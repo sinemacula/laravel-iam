@@ -50,27 +50,25 @@ turn one off, and anything else, an empty value included, leaves it on. Every se
 off leaves undone, is in [Bindings](bindings.md). Turn one off only to bind every one of its seams yourself:
 `iam:check` still holds you to the mandatory ones.
 
-SSO's freshness judges only a caller handed in. Wrap a call into SSO that asks for freshness (a management helper, the
-start of a link flow) in the caller it runs for:
+SSO's freshness judges only the caller SSO is handed. Hand a call into SSO that asks for freshness (a management
+helper, the start of a link flow) the caller it runs for, as SSO names it:
 
 ```php
 use Illuminate\Auth\AuthenticationException;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Sso\Domains\DomainResult;
 use SineMacula\Laravel\Sso\Domains\DomainService;
 
 $caller = Auth::caller() ?? throw new AuthenticationException;
 
-$result = Iam::callers()->run($caller, fn (): DomainResult => app(DomainService::class)
-    ->remove($tenantId, $connectionId, $domain, $client));
+$result = app(DomainService::class)
+    ->remove($tenantId, $connectionId, $domain, $client, Iam::callers()->of($caller));
 ```
 
 Without it, SSO judges no session fresh and refuses with `freshness_required`. Only the session the caller's access
 credential holds, of the caller's own guard and identity, is judged: a refresh or pending credential is `stale`. Call
-`Iam::callers()->run()` with no transaction open on the storage connection: a caller handed in inside one is `stale`
-until that transaction ends. See
-[Authentication and SSO](authentication-and-sso.md#ssos-own-calls-that-ask-for-freshness).
+`Iam::callers()->of()` with no transaction open on the storage connection: a caller named inside one carries no
+session, so it is `stale`. See [Authentication and SSO](authentication-and-sso.md#ssos-own-calls-that-ask-for-freshness).
 
 ## Tenancy
 

@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for what the guides, and the configuration file's own comments,
  * say about behaviour a reader acts on: the example controllers answer every
  * refusal a redemption throws, the caller is named to SSO as the redemption
- * names it, every `Iam::callers()->run()` is handed the caller, and the
+ * names it, every `Iam::callers()->of()` is handed the caller, and the
  * statements of the code's behaviour a reader relies on for security (what the
  * evidence gates count, what `laravel-authorization`'s defaults leave open,
  * what `iam:check` can find and reads, what rotating `APP_KEY` restarts or
@@ -41,8 +41,8 @@ final class GuideStatementsTest extends TestCase
     /** @var string The pattern of a fenced PHP block. */
     private const string PHP_BLOCK = '/```php\n(.*?)```/s';
 
-    /** @var string The pattern of a call that runs work for a caller, and its first argument. */
-    private const string CALLER_RUN = '/Iam::callers\(\)->run\(\s*(\$\w+)/';
+    /** @var string The pattern of a call that names a caller to SSO, and its argument. */
+    private const string CALLER_NAMED = '/Iam::callers\(\)->of\(\s*(\$\w+)/';
 
     /**
      * Rows of a redemption, and the exception it throws for a refusal by
@@ -79,9 +79,9 @@ final class GuideStatementsTest extends TestCase
     }
 
     /**
-     * The example names the caller to SSO by the identity's primary key, as the
-     * redemption names it, never by its auth identifier, which a model may keep
-     * in another column.
+     * The example names the caller to SSO as the redemption names it, by the
+     * identity's primary key, never by its auth identifier, which a model may
+     * keep in another column.
      *
      * @return void
      */
@@ -90,22 +90,22 @@ final class GuideStatementsTest extends TestCase
         $contents = self::contents(self::EXAMPLE);
 
         self::assertStringNotContainsString('getAuthIdentifier()', $contents);
-        self::assertStringContainsString('new IdentityReference($caller->identity->getMorphClass(), (string) $caller->identity->getKey())', $contents);
+        self::assertStringContainsString('Iam::callers()->of($caller)', $contents);
     }
 
     /**
-     * Every `Iam::callers()->run()` the guides and the configuration file show
+     * Every `Iam::callers()->of()` the guides and the configuration file show
      * is handed the caller, as the method takes it.
      *
      * @return void
      */
-    public function testEveryCallerScopeIsHandedTheCaller(): void
+    public function testEveryNamedCallerIsHandedTheCaller(): void
     {
         $arguments = [];
 
         foreach ([...self::guides(), 'config/iam.php'] as $file) {
 
-            preg_match_all(self::CALLER_RUN, self::contents($file), $matches);
+            preg_match_all(self::CALLER_NAMED, self::contents($file), $matches);
 
             foreach ($matches[1] as $argument) {
                 $arguments[$file . ': ' . $argument] = $argument;
@@ -655,23 +655,23 @@ final class GuideStatementsTest extends TestCase
             ['a member\'s scoped instance) reaches the next', '(`false`, `0`, `off`) only'],
         ];
 
-        yield 'SSO\'s freshness judges no caller handed in inside a transaction' => [
+        yield 'SSO\'s freshness judges no session of a caller named inside a transaction' => [
             'docs/guides/authentication-and-sso.md',
             [
-                'Call `Iam::callers()->run()` with no transaction open on the storage connection, never inside `Iam::transaction()` or a transaction of your own',
-                'a caller handed in inside one is `stale` until that transaction ends',
+                'Call `Iam::callers()->of()` with no transaction open on the storage connection, never inside `Iam::transaction()` or a transaction of your own',
+                'a caller named inside one carries no session, so it is `stale`',
                 'A caller signed in with a refresh or pending credential, or one holding a session of another guard or identity, is `stale`.',
             ],
-            [],
+            ['Iam::callers()->run('],
         ];
 
-        yield 'the configuration guide says the same of the caller scope' => [
+        yield 'the configuration guide says the same of the named caller' => [
             'docs/guides/configuration.md',
             [
                 'a refresh or pending credential is `stale`',
-                'Call `Iam::callers()->run()` with no transaction open on the storage connection: a caller handed in inside one is `stale` until that transaction ends.',
+                'Call `Iam::callers()->of()` with no transaction open on the storage connection: a caller named inside one carries no session, so it is `stale`.',
             ],
-            [],
+            ['Iam::callers()->run('],
         ];
 
         yield 'the memberships example hands an immutable time of acceptance' => [

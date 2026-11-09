@@ -9,7 +9,6 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
-use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Transactions\ConcurrencyFailures;
@@ -19,7 +18,7 @@ use SineMacula\Laravel\Iam\Transactions\RetrySettings;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\HandoffRedemption;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
 
 /**
  * Redeems a `link` handoff code SSO issued, linking the caller's identity to
@@ -73,12 +72,13 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * The caller is `laravel-authentication`'s `Caller`, handed over as a plain
  * value: the caller of the request, as `Auth::caller()` reads it where the
  * application reads the request, never from the request's body. Its guard is
- * the application, and its identity is named to SSO as an Eloquent identity's
- * morph class and its key (`IdentityReferences::reference()`), the reference
- * SSO started the flow for; an identity that is no Eloquent model, or whose key
- * is neither a non-empty string nor an integer, throws
- * `UnresolvedReferenceException` before the code is touched (IAM-8.2). A code
- * started for another identity is SSO's `identity_mismatch`.
+ * the application, and it is handed to SSO as SSO's own caller
+ * (`Callers::of()`): its identity named as an Eloquent identity's morph class
+ * and its key, the reference SSO started the flow for, and the session its
+ * access credential holds while it is the caller's own; an identity that is no
+ * Eloquent model, or whose key is neither a non-empty string nor an integer,
+ * throws `UnresolvedReferenceException` before the code is touched (IAM-8.2). A
+ * code started for another identity is SSO's `identity_mismatch`.
  *
  * The caller's guard is resolved before SSO is asked, standalone or inside the
  * caller's transaction, as a sign-in's and a re-authentication's application
@@ -89,19 +89,17 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * the code was not started for is SSO's `application_mismatch`, answered once
  * SSO has consumed the code.
  *
- * It reads no request, nor the guard's current user or session. While SSO
- * redeems the code, the caller is kept in this request's record of callers
- * (`LinkCallers`), whose session SSO's freshness contract judges under SSO's
- * locks (`FreshnessAdapter`), since SSO hands that contract no caller. Inside
- * the caller's transaction, that transaction's snapshot may be older than the
- * redemption and the session's row cannot be locked where SSO asks, so the
- * record says so and the freshness adapter answers `stale`: such a `link` is
- * SSO's `freshness_required`, unless the application binds a freshness contract
- * of its own. SSO's redemption, the request's count of outermost commits and
- * the record are resolved on each call. The code and the verifier are handed to
- * the caller's transaction's work wrapped in a `SensitiveParameterValue`, and
- * unwrapped only inside it, so the trace of anything thrown there never holds
- * either in the clear.
+ * It reads no request, nor the guard's current user or session. SSO hands the
+ * caller to its freshness contract under its locks (`FreshnessAdapter`) and to
+ * its link confirmation (`LinkConfirmationAdapter`), which judge its session.
+ * Inside the caller's transaction, that transaction's snapshot may be older
+ * than the redemption and the session's row cannot be locked where SSO asks for
+ * freshness, so the caller is handed with no session: such a `link` is SSO's
+ * `freshness_required`, and its confirmation `dependent`. SSO's redemption and
+ * the request's count of outermost commits are resolved on each call. The code
+ * and the verifier are handed to the caller's transaction's work wrapped in a
+ * `SensitiveParameterValue`, and unwrapped only inside it, so the trace of
+ * anything thrown there never holds either in the clear.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -114,21 +112,20 @@ final readonly class LinkRedemption
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
-     * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
+     * @param  \SineMacula\Laravel\Iam\Sso\Callers  $callers
      * @param  \Illuminate\Database\DatabaseManager  $database
      * @param  \SineMacula\Laravel\Iam\Storage\StorageConnection  $storage
      * @param  \SineMacula\Laravel\Iam\Transactions\RetrySettings  $settings
      * @param  \SineMacula\Laravel\Iam\Transactions\ConcurrencyFailures  $failures
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
-     * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      */
     public function __construct(
 
         /** Resolves SSO's redemption on each call. */
         private Container $container,
 
-        /** Names the caller as SSO names an identity. */
-        private IdentityReferences $identities,
+        /** Names the caller as SSO takes it. */
+        private Callers $callers,
 
         /** The connections the redemption runs on. */
         private DatabaseManager $database,
@@ -144,9 +141,6 @@ final readonly class LinkRedemption
 
         /** Runs a redemption inside the caller's transaction in a savepoint of it. */
         private CrossMemberTransaction $transaction,
-
-        /** Resolves the application to the guard it is. */
-        private CurrentSession $sessions,
     ) {}
 
     /**
@@ -173,24 +167,12 @@ final readonly class LinkRedemption
         Caller $caller,
     ): RedemptionResult {
         $application = $caller->guard;
+        $named       = $this->callers->of($caller);
+        $connection  = $this->database->connection($this->storage->name());
 
-        $this->sessions->guard($application);
-
-        $reference  = $this->identities->reference($caller->identity);
-        $connection = $this->database->connection($this->storage->name());
-        $callers    = $this->container->make(LinkCallers::class);
-
-        $inCallersTransaction = $connection->transactionLevel() > 0;
-
-        $callers->open($caller, $inCallersTransaction);
-
-        try {
-            return $inCallersTransaction
-                ? $this->inCallersTransaction($application, $connectionId, $code, $verifier, $client, $reference)
-                : $this->standalone($connection, $application, $connectionId, $code, $verifier, $client, $reference);
-        } finally {
-            $callers->close();
-        }
+        return $connection->transactionLevel() > 0
+            ? $this->inCallersTransaction($application, $connectionId, $code, $verifier, $client, $named)
+            : $this->standalone($connection, $application, $connectionId, $code, $verifier, $client, $named);
     }
 
     /**
@@ -203,7 +185,7 @@ final readonly class LinkRedemption
      * @param  string  $code
      * @param  string  $verifier
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $caller
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
      * @throws \Throwable
@@ -214,7 +196,7 @@ final readonly class LinkRedemption
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $verifier,
         ClientContext $client,
-        IdentityReference $caller,
+        SsoCaller $caller,
     ): RedemptionResult {
         $secrets = new \SensitiveParameterValue([$code, $verifier]);
 
@@ -238,7 +220,7 @@ final readonly class LinkRedemption
      * @param  string  $code
      * @param  string  $verifier
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $caller
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
      * @throws \Throwable
@@ -252,7 +234,7 @@ final readonly class LinkRedemption
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $verifier,
         ClientContext $client,
-        IdentityReference $caller,
+        SsoCaller $caller,
     ): RedemptionResult {
         $attempts = $this->settings->attempts();
         $commits  = $this->container->make(OutermostCommits::class);
@@ -280,7 +262,7 @@ final readonly class LinkRedemption
      * @param  string  $code
      * @param  string  $verifier
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $caller
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
      * @throws \Throwable
@@ -291,7 +273,7 @@ final readonly class LinkRedemption
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $verifier,
         ClientContext $client,
-        IdentityReference $caller,
+        SsoCaller $caller,
     ): RedemptionResult {
         return $this->container->make(HandoffRedemption::class)->redeem(
             Purpose::LINK,

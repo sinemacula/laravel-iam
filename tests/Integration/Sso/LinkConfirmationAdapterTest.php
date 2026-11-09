@@ -24,7 +24,6 @@ use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofWriter;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Iam\Sso\LinkCallers;
 use SineMacula\Laravel\Iam\Sso\LinkConfirmationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
@@ -34,6 +33,7 @@ use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
+use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
 use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Models\Connection;
@@ -57,14 +57,15 @@ use Tests\TestCase;
  *
  * A session is `independent` only when it signed in with a password, a passkey
  * or the application's own recovery (a `start()` under a method named at
- * `iam.sso.recovery_methods`), was never renewed through a provider, is the
- * caller's own, handed in as a plain value, and is judged inside a transaction,
- * where its row is locked and its proofs read current until the transaction
- * ends. Everything else is `dependent`: a session through the domain link, a
- * `start()` under another method, a session renewed through a provider, revoked
- * (here or on another connection after the transaction began), another person's
- * or held through a refresh credential, a caller who is not the identity asked
- * about, no caller, and any judgement outside a transaction.
+ * `iam.sso.recovery_methods`), was never renewed through a provider, is the one
+ * SSO's caller names among its identity's own, and is judged inside a
+ * transaction, where its row is locked and its proofs read current until the
+ * transaction ends. Everything else is `dependent`: a session through the
+ * domain link, a `start()` under another method, a session renewed through a
+ * provider, revoked (here or on another connection after the transaction
+ * began), another person's, one of a guard that holds no sessions, one that
+ * does not exist, a caller with no session, and any judgement outside a
+ * transaction.
  *
  * Every redemption, and every judgement read inside a transaction, runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
@@ -78,7 +79,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(LinkConfirmationAdapter::class)]
-#[CoversClass(LinkCallers::class)]
 #[CoversClass(SsoSeams::class)]
 #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
 final class LinkConfirmationAdapterTest extends TestCase
@@ -144,7 +144,7 @@ final class LinkConfirmationAdapterTest extends TestCase
         self::runAtIsolationLevel($level);
 
         $session = $this->signInByDomain()->session->record ?? self::fail('The member did not sign in.');
-        $refused = $this->confirmAs($this->callerHolding($session));
+        $refused = $this->confirmAs($session);
 
         self::assertSame(FailureReason::INDEPENDENT_AUTHENTICATION_REQUIRED, $refused->reason);
         self::assertSame(LinkOrigin::VERIFIED_DOMAIN->value, DB::table('sso_links')->value('provenance'));
@@ -186,7 +186,7 @@ final class LinkConfirmationAdapterTest extends TestCase
 
         $this->signInByDomain();
 
-        $confirmed = $this->confirmAs($this->callerHolding($signIn($this)));
+        $confirmed = $this->confirmAs($signIn($this));
 
         self::assertTrue($confirmed->isRedeemed(), sprintf('The link was not confirmed: [%s].', $confirmed->reason->value ?? $confirmed->status->value));
         self::assertNotSame(LinkOrigin::VERIFIED_DOMAIN->value, DB::table('sso_links')->value('provenance'));
@@ -321,7 +321,7 @@ final class LinkConfirmationAdapterTest extends TestCase
      * Rows of `[isolation level, caller]`: each caller of whom nothing the
      * person holds apart is judged, at each isolation level.
      *
-     * @return iterable<string, array{0: ?string, 1: \Closure(self): ?\SineMacula\Laravel\Authentication\Callers\Caller}>
+     * @return iterable<string, array{0: ?string, 1: \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller}>
      */
     public static function provideDependentCallers(): iterable
     {
@@ -337,7 +337,7 @@ final class LinkConfirmationAdapterTest extends TestCase
      * `dependent`, however the person's own session signed in.
      *
      * @param  ?string  $level
-     * @param  \Closure(self): ?\SineMacula\Laravel\Authentication\Callers\Caller  $caller
+     * @param  \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return void
      *
      * @throws \Throwable
@@ -446,16 +446,14 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * The person, the member unless another is given, as the caller of a
-     * request on the guard, its access credential holding the session.
+     * The member as SSO's caller, naming the session given.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
-     * @param  ?\Tests\Fixtures\Models\Person  $person
-     * @return \SineMacula\Laravel\Authentication\Callers\Caller
+     * @return \SineMacula\Laravel\Sso\Identities\Caller
      */
-    public function callerHolding(EloquentSession&Model $session, ?Person $person = null): Caller
+    public function callerHolding(EloquentSession&Model $session): SsoCaller
     {
-        return new Caller(self::GUARD, CallerCredential::ACCESS, $person ?? $this->member(), null, null, $session);
+        return new SsoCaller(self::referenceOf($this->member()), self::keyOf($session));
     }
 
     /**
@@ -495,27 +493,25 @@ final class LinkConfirmationAdapterTest extends TestCase
      * the test given once the person holds a password session
      * (`passwordSession()`), keyed by what it is.
      *
-     * @return iterable<string, array{0: \Closure(self): ?\SineMacula\Laravel\Authentication\Callers\Caller}>
+     * @return iterable<string, array{0: \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller}>
      */
     private static function dependentCallers(): iterable
     {
-        yield 'no caller handed in' => [static fn (): ?Caller => null];
+        yield 'a caller with no session' => [static fn (self $test): SsoCaller => new SsoCaller(self::referenceOf($test->member()))];
 
-        yield 'a caller with no session' => [static fn (self $test): Caller => new Caller(self::GUARD, CallerCredential::ACCESS, $test->member(), null, null, null)];
+        yield 'another person\'s session' => [static fn (self $test): SsoCaller => $test->callerHolding($test->signIn($test->createPerson())->record)];
 
-        yield 'a refresh credential' => [
-            static fn (self $test): Caller => new Caller(self::GUARD, CallerCredential::REFRESH, $test->member(), null, null, $test->passwordSession()),
-        ];
+        yield 'a session that does not exist' => [static fn (self $test): SsoCaller => new SsoCaller(self::referenceOf($test->member()), 'no-such-session')];
 
-        yield 'another person holding the session' => [
-            static fn (self $test): Caller => new Caller(self::GUARD, CallerCredential::ACCESS, $test->createPerson(), null, null, $test->passwordSession()),
-        ];
+        yield 'a session of a guard that holds no sessions' => [static function (self $test): SsoCaller {
+            $session = $test->passwordSession();
 
-        yield 'another person with a password session of their own' => [
-            static fn (self $test): Caller => $test->callerHolding($test->signIn($other = $test->createPerson())->record, $other),
-        ];
+            $session->newQuery()->whereKey($session->getKey())->update([$session->getGuardName() => 'web']);
 
-        yield 'a revoked session' => [static function (self $test): Caller {
+            return $test->callerHolding($session);
+        }];
+
+        yield 'a revoked session' => [static function (self $test): SsoCaller {
             $session = $test->passwordSession();
 
             $test->sessions()->revokeSession($test->member(), $session->getKey(), RevocationReason::REVOKED);
@@ -542,16 +538,18 @@ final class LinkConfirmationAdapterTest extends TestCase
 
     /**
      * Redeem a `link` of the member to the subject their domain link holds,
-     * through this package, as the caller.
+     * through this package, as the member on the session, the caller of a
+     * request on the guard whose access credential holds it.
      *
-     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
      * @throws \Throwable
      */
-    private function confirmAs(Caller $caller): RedemptionResult
+    private function confirmAs(EloquentSession&Model $session): RedemptionResult
     {
         $handoff = $this->handoff(Purpose::LINK, $this->member(), tailor: self::byDomain());
+        $caller  = new Caller(self::GUARD, CallerCredential::ACCESS, $this->member(), null, null, $session);
 
         return Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $caller);
     }
@@ -567,26 +565,25 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Ask the adapter about the member, inside a transaction on the storage
-     * connection, with the caller handed in, if any.
+     * Ask the adapter about the caller, inside a transaction on the storage
+     * connection.
      *
-     * @param  ?\SineMacula\Laravel\Authentication\Callers\Caller  $caller
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict
      *
      * @throws \Throwable
      *
      * @phpstan-impure
      */
-    private function judgeInTransaction(?Caller $caller): LinkConfirmationVerdict
+    private function judgeInTransaction(SsoCaller $caller): LinkConfirmationVerdict
     {
         return DB::transaction(fn (): LinkConfirmationVerdict => $this->judgeAs($caller));
     }
 
     /**
-     * Ask the adapter about the member, with the caller handed in, if any, as a
-     * `link` redemption hands it in.
+     * Ask the adapter about the caller, as a `link` redemption hands it over.
      *
-     * @param  ?\SineMacula\Laravel\Authentication\Callers\Caller  $caller
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @param  ?\SineMacula\Laravel\Sso\Models\Connection  $connection
      * @return \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict
      *
@@ -594,26 +591,13 @@ final class LinkConfirmationAdapterTest extends TestCase
      *
      * @phpstan-impure
      */
-    private function judgeAs(?Caller $caller, ?Connection $connection = null): LinkConfirmationVerdict
+    private function judgeAs(SsoCaller $caller, ?Connection $connection = null): LinkConfirmationVerdict
     {
-        $app      = $this->app ?? self::fail('The application has not booted.');
-        $callers  = $app->make(LinkCallers::class);
-        $adapter  = $this->resolved(LinkConfirmation::class);
-        $identity = self::referenceOf($this->member());
-
-        if ($caller !== null) {
-            $callers->open($caller, false);
-        }
+        $adapter = $this->resolved(LinkConfirmation::class);
 
         self::assertInstanceOf(LinkConfirmationAdapter::class, $adapter);
 
-        try {
-            return $adapter->judge($identity, $connection ?? $this->ssoConnection(), []);
-        } finally {
-            if ($caller !== null) {
-                $callers->close();
-            }
-        }
+        return $adapter->judge($caller, $connection ?? $this->ssoConnection(), []);
     }
 
     /**
