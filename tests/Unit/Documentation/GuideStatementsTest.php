@@ -369,11 +369,11 @@ final class GuideStatementsTest extends TestCase
         yield 'a class named in laravel-authorization\'s configuration is kept' => [
             'docs/guides/authorization.md',
             [
-                'A class you name in its configuration',
-                'registers is lost to its own provider, unless you made it before this package registered too',
-                '`iam:check` refuses each seam it took',
+                'A class you name in',
+                'in whatever order the providers register',
+                'before `laravel-authorization` registers or after',
             ],
-            ['whatever this package does'],
+            ['whatever this package does', 'is lost to its own provider', 'refuses each seam it took'],
         ];
 
         yield 'a machine named anywhere no credential caps it is allowed nothing' => [
@@ -385,23 +385,23 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'the bindings guide names laravel-authorization\'s rows as the exception to the provider order' => [
+        yield 'the bindings guide says the provider order changes nothing, laravel-authorization\'s rows included' => [
             'docs/guides/bindings.md',
             [
-                'except for `laravel-authorization`\'s rows',
-                'a binding of one of them made before `laravel-authorization` registers is lost',
+                'providers register in changes nothing.',
+                'is your binding, and kept, in whatever order the',
             ],
-            ['left on the default, a machine is allowed nothing'],
+            ['except for `laravel-authorization`\'s rows', 'registers is lost', 'left on the default, a machine is allowed nothing'],
         ];
 
-        yield 'an application left out of the access map is open to every principal' => [
+        yield 'an application left out of the access map is open to every principal, and a machine is admitted on its grants' => [
             'docs/guides/authorization.md',
             [
                 '**An application the map does not name is open to every principal**',
-                'either bind an `ApplicationAccess` of your own that admits the machines',
+                'A machine principal is admitted on its grants as a person is',
                 'any other application to every principal',
             ],
-            ['leave the applications your machines call out of the map'],
+            ['leave the applications your machines call out of the map', 'A machine principal is refused'],
         ];
 
         yield 'the design note says an application left out of the access map is open to every principal' => [

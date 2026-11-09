@@ -28,14 +28,12 @@ use SineMacula\Laravel\Authorization\Services\ApplicationAccess as Authorization
  * primary. Whatever the decision throws propagates, and
  * `laravel-authentication` admits nothing it could not ask about.
  *
- * `laravel-authorization` decides the access with the session caps applied, and
- * a principal being admitted holds no credential yet whose scopes could cap it
- * (`SessionPolicySourceAdapter` answers a machine `[]`, a cap allowing
- * nothing), so a machine principal is refused on an application the map names,
- * whatever it holds. That is `laravel-authorization`'s rule, read here, not
- * changed. An application the map leaves out is open to every principal, people
- * included, whatever their grants, so an application whose machines call it
- * either binds an `ApplicationAccess` of its own or is open.
+ * `laravel-authorization` decides the access without session caps, since a
+ * principal being admitted holds no session yet: neither the request's
+ * credential scopes nor a machine's missing ones refuse it, so a machine is
+ * admitted on its grants as a person is, while a deny, a boundary or a
+ * guardrail still refuses. An application the map leaves out is open to every
+ * principal, people included, whatever their grants.
  *
  * It keeps nothing itself, but is bound scoped (under `iam.scoped:`), as
  * IAM-6.6 asks, so a long-running worker builds it afresh for each request or

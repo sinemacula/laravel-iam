@@ -86,10 +86,7 @@ process calls it.
     name a member's state by an alias (`AuthorizationManager` for `authorization`), or be a real-time facade, and a
     cleared root resolves again from the container, so a facade over anything the reset kept (`Context` among them)
     returns the same instance it did. Only `reset()` clears them; the Octane request and queue job listeners call
-    `forgetMemberState()` alone, and Octane and the queue worker clear the roots themselves. The provider calls
-    `forgetScopedState()` once more as the application finishes booting, when it binds the adapters again over the
-    defaults of a `laravel-authorization` registered from another provider's `boot()` (`authorization.md`), so nothing
-    resolved from those defaults while the application booted outlives them.
+    `forgetMemberState()` alone, and Octane and the queue worker clear the roots themselves.
   - Every other scoped instance is kept, never flushed with `forgetScopedInstances()`: Laravel keeps a command's or a
     job's `Context` and its `defer()` callbacks in scoped instances, and `laravel-audit-log` its execution frames, its
     commit queue and its captured events, which it enters, flushes and leaves itself as each request, command and job
