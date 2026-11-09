@@ -178,8 +178,10 @@ final class MultifactorEvidenceTest extends TestCase
      */
     private function isFreshMultifactorByMfasCheck(Person $person): bool
     {
-        $proofs = $this->app?->make(ProofStore::class)->proofs($person, self::GUARD) ?? [];
-        $check  = $this->app?->make(RequirementCheck::class);
+        $store   = $this->app?->make(ProofStore::class);
+        $current = $store?->currentSession($person, self::GUARD);
+        $proofs  = $store === null || $current === null ? [] : $store->proofs($person, self::GUARD, $current);
+        $check   = $this->app?->make(RequirementCheck::class);
 
         self::assertInstanceOf(RequirementCheck::class, $check);
 

@@ -224,9 +224,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
     when that guard holds none of the identity's, so its proofs stop counting all the same. A deleted factor is not
     reported there: the revoker reports it, and a second report would judge the current session twice and lose the
     pending credential the first judgement issued. Both read only through `laravel-authentication`'s public readers
-    (IAM-13.9) and no `@internal` class of its. The guard's current session is read because MFA's contract names a
-    sign-in by its identity and application alone and hands no session to read instead; `record()`, handed a binding
-    but no identity, finds that identity as the guard is signed in as it.
+    (IAM-13.9) and no `@internal` class of its. MFA hands every call the identity, and `proofs()` the sign-in it asked
+    `currentSession()` about; the guard's current session is read only to answer which sign-in is current, as MFA's
+    contract asks, so `proofs()` of a sign-in that is no longer current answers none, and `record()` refuses a proof
+    whose binding the identity it is handed does not own.
   - `SignInProofs` translates a session's recorded proofs, handed in oldest first, to MFA's proofs of the sign-in: bound
     to the identity, the application and the session's key, stamped with the identity's current verification
     generation, an external provider's proof naming its connection only under `ProviderTrust::accepted()` for the

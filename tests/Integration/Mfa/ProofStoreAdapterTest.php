@@ -107,6 +107,12 @@ final class ProofStoreAdapterTest extends TestCase
     /** @var ?\Tests\Fixtures\Models\Person The identity the kit's checks sign in. */
     private ?Person $person = null;
 
+    /** @var ?\Tests\Fixtures\Models\Person Another person the kit's checks sign in, whose proof the first must not record. */
+    private ?Person $otherPerson = null;
+
+    /** @var bool Whether the kit's sign-in was replaced, so the guard already acts on it and shows its first factor. */
+    private bool $replaced = false;
+
     /** @var (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null The session the kit's check signed in. */
     private (EloquentSession&Model)|null $kitSession = null;
 
@@ -130,12 +136,12 @@ final class ProofStoreAdapterTest extends TestCase
 
         [$forgotten, $kept] = [$this->factorOf($person), $this->factorOf($person)];
 
-        self::assertRefused(static fn () => $store->record(self::additionalFactor($person, $session, $forgotten->id)));
+        self::assertRefused(static fn () => $store->record($person, self::additionalFactor($person, $session, $forgotten->id)));
 
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $forgotten->id);
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $kept->id);
 
-        self::assertSame([null, $forgotten->id, $kept->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $forgotten->id, $kept->id], self::references(self::storedProofs($store, $person, self::GUARD)));
 
         DB::connection(StorageConnection::name())->transaction(function () use ($store, $person, $forgotten, $kept): void {
 
@@ -144,16 +150,16 @@ final class ProofStoreAdapterTest extends TestCase
             $forgotten->delete();
             $store->forgetFactor($person, $forgotten->id);
 
-            self::assertSame([null, $kept->id], self::references($store->proofs($person, self::GUARD)));
+            self::assertSame([null, $kept->id], self::references(self::storedProofs($store, $person, self::GUARD)));
         });
 
         self::assertCount(3, $this->proofsOf($record));
-        self::assertSame([null, $kept->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $kept->id], self::references(self::storedProofs($store, $person, self::GUARD)));
 
         $this->sessions()->factorRemoved($person, $forgotten->id, $record);
 
         self::assertCount(2, $this->proofsOf($record));
-        self::assertSame([null, $kept->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $kept->id], self::references(self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -179,7 +185,7 @@ final class ProofStoreAdapterTest extends TestCase
                 $factor->delete();
                 $store->forgetFactor($person, $factor->id);
 
-                self::assertSame([null], self::references($store->proofs($person, self::GUARD)));
+                self::assertSame([null], self::references(self::storedProofs($store, $person, self::GUARD)));
 
                 throw new \RuntimeException('Rolled back.');
             });
@@ -187,7 +193,7 @@ final class ProofStoreAdapterTest extends TestCase
             // The factor's deletion is undone with the transaction.
         }
 
-        self::assertSame([null, $factor->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $factor->id], self::references(self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -209,12 +215,40 @@ final class ProofStoreAdapterTest extends TestCase
         DB::table('authentication_proofs')->where('session_id', $record->getKey())->update(['factor_reference' => $factor->id]);
 
         self::assertSame($factor->id, $store->firstFactor($person, self::GUARD)?->reference);
-        self::assertSame([$factor->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([$factor->id], self::references(self::storedProofs($store, $person, self::GUARD)));
 
         $factor->delete();
 
         self::assertNull($store->firstFactor($person, self::GUARD));
-        self::assertSame([], $store->proofs($person, self::GUARD));
+        self::assertSame([], self::storedProofs($store, $person, self::GUARD));
+    }
+
+    /**
+     * Proofs made at the same instant are read in the order they were recorded,
+     * as MFA's contract asks of `proofs()`.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testProofsMadeAtTheSameInstantAreReadInTheOrderRecorded(): void
+    {
+        [$store, $person] = [$this->proofStore(), $this->createPerson()];
+
+        $record = $this->signInAndActOnSession($person);
+
+        [$first, $second] = [$this->factorOf($person), $this->factorOf($person)];
+
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->addMinute()->startOfSecond());
+
+        try {
+            $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $second->id);
+            $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $first->id);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+
+        self::assertSame([null, $second->id, $first->id], self::references(self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -237,7 +271,7 @@ final class ProofStoreAdapterTest extends TestCase
         $this->factorOf($person);
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $number);
 
-        self::assertSame([null, $number], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $number], self::references(self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -257,16 +291,16 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->stepUp($person, $record, AuthenticationProofKind::RECOVERY_CODE);
 
-        self::assertSame(0, $this->factorReads(static fn () => $store->proofs($person, self::GUARD)));
+        self::assertSame(0, $this->factorReads(static fn () => self::storedProofs($store, $person, self::GUARD)));
         self::assertSame(0, $this->factorReads(static fn () => $store->firstFactor($person, self::GUARD)));
-        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds($store->proofs($person, self::GUARD)));
+        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds(self::storedProofs($store, $person, self::GUARD)));
 
         CarbonImmutable::setTestNow(CarbonImmutable::now()->addSecond());
 
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $factor->id);
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $factor->id);
 
-        self::assertSame(1, $this->factorReads(static fn () => $store->proofs($person, self::GUARD)));
+        self::assertSame(1, $this->factorReads(static fn () => self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -282,12 +316,12 @@ final class ProofStoreAdapterTest extends TestCase
         [$store, $person] = [$this->proofStore(), $this->createPerson()];
 
         $session = $this->signInAndActOnSession($person);
-        $held    = $store->proofs($person, self::GUARD);
+        $held    = self::storedProofs($store, $person, self::GUARD);
 
         $store->begin($person, self::GUARD, Str::lower((string) Str::ulid()));
 
         self::assertSame($this->signInReference($session), $store->currentSession($person, self::GUARD));
-        self::assertEquals($held, $store->proofs($person, self::GUARD));
+        self::assertEquals($held, self::storedProofs($store, $person, self::GUARD));
     }
 
     /**
@@ -363,7 +397,7 @@ final class ProofStoreAdapterTest extends TestCase
             foreach (
                 [
                     static fn (): mixed => $store->currentSession($person, $application),
-                    static fn (): mixed => $store->proofs($person, $application),
+                    static fn (): mixed => self::storedProofs($store, $person, $application),
                 ] as $question
             ) {
                 try {
@@ -408,7 +442,7 @@ final class ProofStoreAdapterTest extends TestCase
         $this->stepUp($person, $record, AuthenticationProofKind::RECOVERY_CODE);
 
         $generation = VerificationGeneration::advance($person);
-        $proofs     = $store->proofs($person, self::GUARD);
+        $proofs     = self::storedProofs($store, $person, self::GUARD);
 
         self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::ADDITIONAL_FACTOR, ProofKind::RECOVERY_CODE], self::kinds($proofs));
         self::assertSame(['password', 'totp', 'recovery_code'], array_map(static fn (Proof $proof): string => $proof->method, $proofs));
@@ -454,14 +488,14 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->stepUp($person, $record, AuthenticationProofKind::RECOVERY_CODE);
 
-        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds($store->proofs($person, self::GUARD)));
+        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds(self::storedProofs($store, $person, self::GUARD)));
 
         CarbonImmutable::setTestNow(CarbonImmutable::now()->addSecond());
 
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, self::FACTOR);
 
         self::assertCount(4, $this->proofsOf($record));
-        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds($store->proofs($person, self::GUARD)));
+        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE], self::kinds(self::storedProofs($store, $person, self::GUARD)));
     }
 
     /**
@@ -481,7 +515,7 @@ final class ProofStoreAdapterTest extends TestCase
         $this->sessions()->revokeSession($person, $record->getKey(), RevocationReason::REVOKED);
 
         self::assertSame($this->signInReference($record), $store->currentSession($person, self::GUARD));
-        self::assertSame([], $store->proofs($person, self::GUARD));
+        self::assertSame([], self::storedProofs($store, $person, self::GUARD));
     }
 
     /**
@@ -501,7 +535,7 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->signInAndActOnSession($this->createPerson());
 
-        foreach ([static fn () => $store->currentSession($stranger, self::GUARD), static fn () => $store->proofs($stranger, self::GUARD)] as $read) {
+        foreach ([static fn () => $store->currentSession($stranger, self::GUARD), static fn () => self::storedProofs($store, $stranger, self::GUARD)] as $read) {
 
             try {
                 $read();
@@ -528,9 +562,9 @@ final class ProofStoreAdapterTest extends TestCase
         [$store, $person] = [$this->proofStore(), $this->createPerson()];
 
         $session = $this->signInReference($this->signInAndActOnSession($person));
-        $held    = $store->proofs($person, self::GUARD);
+        $held    = self::storedProofs($store, $person, self::GUARD);
 
-        $store->record(self::firstFactor($person, $session));
+        $store->record($person, self::firstFactor($person, $session));
 
         $password = new Channel(ChannelKind::PASSWORD);
         $email    = new Channel(ChannelKind::EMAIL, 'a@example.test');
@@ -545,10 +579,10 @@ final class ProofStoreAdapterTest extends TestCase
         ];
 
         foreach ($refused as $case => $proof) {
-            self::assertRefused(static fn () => $store->record($proof), $case);
+            self::assertRefused(static fn () => $store->record($person, $proof), $case);
         }
 
-        self::assertEquals($held, $store->proofs($person, self::GUARD));
+        self::assertEquals($held, self::storedProofs($store, $person, self::GUARD));
     }
 
     /**
@@ -567,15 +601,15 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->stopActing(self::GUARD);
 
-        self::assertRefused(static fn () => $store->record(self::firstFactor($person, $session)), 'no session');
+        self::assertRefused(static fn () => $store->record($person, self::firstFactor($person, $session)), 'no session');
 
         $this->actingAsIdentity($person, guard: self::GUARD);
 
-        self::assertRefused(static fn () => $store->record(self::firstFactor($person, $session)), 'no session the guard acts on');
+        self::assertRefused(static fn () => $store->record($person, self::firstFactor($person, $session)), 'no session the guard acts on');
 
         $this->signInAndActOnSession($this->createPerson());
 
-        self::assertRefused(static fn () => $store->record(self::firstFactor($person, $session)), 'another identity\'s session');
+        self::assertRefused(static fn () => $store->record($person, self::firstFactor($person, $session)), 'another identity\'s session');
     }
 
     /**
@@ -594,7 +628,7 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->sessions()->revokeSession($person, $record->getKey(), RevocationReason::REVOKED);
 
-        self::assertRefused(fn () => $store->record(self::firstFactor($person, $this->signInReference($record))));
+        self::assertRefused(fn () => $store->record($person, self::firstFactor($person, $this->signInReference($record))));
         self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
     }
 
@@ -617,7 +651,7 @@ final class ProofStoreAdapterTest extends TestCase
 
         $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $factor);
 
-        $held = $store->proofs($person, self::GUARD);
+        $held = self::storedProofs($store, $person, self::GUARD);
 
         DB::enableQueryLog();
 
@@ -633,7 +667,7 @@ final class ProofStoreAdapterTest extends TestCase
         self::assertSame(['select'], array_map(static fn (array $query): string => strtok($query['query'], ' ') ?: '', DB::getQueryLog()));
 
         self::assertSame([null, $factor], self::references($held));
-        self::assertEquals($held, $store->proofs($person, self::GUARD));
+        self::assertEquals($held, self::storedProofs($store, $person, self::GUARD));
         self::assertSame($this->signInReference($record), $store->currentSession($person, self::GUARD));
     }
 
@@ -666,7 +700,7 @@ final class ProofStoreAdapterTest extends TestCase
         $store->forgetFactor($person, $forgotten->id);
 
         self::assertCount(2, $this->proofsOf($record));
-        self::assertSame([null, $kept->id], self::references($store->proofs($person, self::GUARD)));
+        self::assertSame([null, $kept->id], self::references(self::storedProofs($store, $person, self::GUARD)));
         self::assertNotNull($this->firstFactorOf($record));
         self::assertNull($this->firstFactorOf($other));
         self::assertTrue($forgotten->newQuery()->whereKey($forgotten->getKey())->exists());
@@ -724,14 +758,14 @@ final class ProofStoreAdapterTest extends TestCase
 
             self::assertFalse($this->isLockedElsewhere($record));
 
-            $store->record($proof);
+            $store->record($person, $proof);
 
             self::assertTrue($this->isLockedElsewhere($record));
         });
 
         self::assertFalse($this->isLockedElsewhere($record));
 
-        $store->record($proof);
+        $store->record($person, $proof);
 
         self::assertFalse($this->isLockedElsewhere($record));
         self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
@@ -765,7 +799,7 @@ final class ProofStoreAdapterTest extends TestCase
             VerificationGeneration::advance($person);
             $person->forceFill(['name' => 'Changed'])->save();
 
-            $store->record(self::firstFactor($person, $this->signInReference($record)));
+            $store->record($person, self::firstFactor($person, $this->signInReference($record)));
         }));
 
         self::assertSame($generation, VerificationGeneration::current($person));
@@ -808,7 +842,7 @@ final class ProofStoreAdapterTest extends TestCase
                     ->where($record->getKeyName(), $record->getKey())
                     ->update(['revoked_at' => CarbonImmutable::now(), 'revoked_reason' => RevocationReason::REVOKED->value]);
 
-                $store->record($proof);
+                $store->record($person, $proof);
             });
 
             self::fail('A proof of a session revoked concurrently was kept.');
@@ -847,6 +881,18 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
+     * Another person of the same kind, with no sign-in until a check signs them
+     * in.
+     *
+     * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
+     */
+    #[\Override]
+    protected function otherProofStoreIdentity(): MultiFactorAuthenticatable
+    {
+        return $this->otherPerson ??= $this->createPerson();
+    }
+
+    /**
      * The guard the kit's sign-ins are on.
      *
      * @return string
@@ -881,15 +927,44 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
+     * Sign the identity in again through `laravel-authentication`, with the
+     * guard acting on the new session, as the bearer request after a sign-in
+     * does, so the new session is the identity's current sign-in and the one it
+     * replaced is not.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $session
+     * @return string
+     *
+     * @throws \Throwable
+     */
+    protected function replaceProofStoreSignIn(ProofStore $store, MultiFactorAuthenticatable $identity, string $application, string $session): string
+    {
+        $replacement = $this->proofStoreSignIn($identity, $application);
+
+        $this->actingOnSession($this->kitSession ?? self::fail('The sign-in was not replaced.'), $application);
+
+        $this->replaced = true;
+
+        self::assertNotSame($session, $replacement);
+
+        return $replacement;
+    }
+
+    /**
      * Put the check's proof in the sign-in through `laravel-authentication`.
      *
      * A password first factor is the one `laravel-authentication` recorded on
      * signing the session in, its only first factor: the guard acts on the
      * session, as the bearer request after a sign-in does, so it counts, and
      * the check's proof is recorded through the store, which keeps it only as
-     * that session's own first factor. A further factor is recorded through
-     * `laravel-authentication`'s step-up, the one way it records one on an
-     * active session, made with the same factor.
+     * that session's own first factor. On a sign-in that replaced another, the
+     * guard already acts on the session, so its first factor shows already and
+     * a further factor is recorded as the equivalent evidence. A further factor
+     * is recorded through `laravel-authentication`'s step-up, the one way it
+     * records one on an active session, made with the same factor.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -910,7 +985,16 @@ final class ProofStoreAdapterTest extends TestCase
         if ($proof->kind === ProofKind::FIRST_FACTOR) {
             $this->actingOnSession($record, $application);
 
-            $store->record($proof);
+            $store->record($identity, $proof);
+
+            // A replacing sign-in already shows the first factor its sign-in
+            // recorded, so the equivalent evidence the kit asks for is a
+            // further factor, recorded the one way laravel-authentication does.
+            if ($this->replaced) {
+                $this->replaced = false;
+
+                $this->stepUp($identity, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $this->factorOf($identity)->id);
+            }
 
             return;
         }
@@ -1053,7 +1137,7 @@ final class ProofStoreAdapterTest extends TestCase
     private static function assertNoSignIn(ProofStore $store, MultiFactorAuthenticatable $identity, string $application): void
     {
         self::assertNull($store->currentSession($identity, $application));
-        self::assertSame([], $store->proofs($identity, $application));
+        self::assertSame([], self::storedProofs($store, $identity, $application));
     }
 
     /**
@@ -1178,5 +1262,21 @@ final class ProofStoreAdapterTest extends TestCase
         ), self::client());
 
         self::assertTrue($result->isIssued(), sprintf('The step-up was refused: [%s].', $result->reason->value ?? 'none'));
+    }
+
+    /**
+     * The proofs of the identity's current sign-in on the application, as MFA
+     * reads them: it asks which sign-in is current once and names the answer.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @return list<\SineMacula\Laravel\Mfa\Proofs\Proof>
+     */
+    private static function storedProofs(ProofStore $store, MultiFactorAuthenticatable $identity, string $application): array
+    {
+        $session = $store->currentSession($identity, $application);
+
+        return $session === null ? [] : $store->proofs($identity, $application, $session);
     }
 }
