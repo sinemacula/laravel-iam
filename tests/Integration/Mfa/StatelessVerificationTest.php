@@ -11,7 +11,9 @@ use Illuminate\Routing\Router;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Mfa\FirstFactorResolverAdapter;
+use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
@@ -29,14 +31,16 @@ use Tests\TestCase;
  * The stateless-guard reproduction of sinemacula/laravel-iam#3: a person signed
  * in with a bearer token verifies a further factor on one request, and the
  * verification counts on the next request with the same token, with no Laravel
- * session started or kept by either.
+ * session started or kept by either, and the request's authentication context
+ * reports it under `mfa` (`mfa.accepted`).
  *
  * Every adapter between `laravel-authentication` and MFA is bound by this
  * package's binding rule, as an application gets them: MFA's proof store and
  * first-factor resolver are this package's, so the sign-in is the token's
  * session and its proofs are the ones `laravel-authentication` records, and the
  * verified proof reaches the session through the step-up adapter's
- * `Auth::sessions()->stepUp()`.
+ * `Auth::sessions()->stepUp()`. The `mfa` namespace is this package's
+ * contributor's, which reads the same session's proofs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,6 +50,7 @@ use Tests\TestCase;
 #[CoversClass(ProofStoreAdapter::class)]
 #[CoversClass(FirstFactorResolverAdapter::class)]
 #[CoversClass(StepUpAdapter::class)]
+#[CoversClass(MfaContextContributor::class)]
 final class StatelessVerificationTest extends TestCase
 {
     use MigratesMembers, SignsInPeople;
@@ -66,13 +71,16 @@ final class StatelessVerificationTest extends TestCase
         $factor = $this->confirmedFactor($person);
 
         $this->request('GET', '/protected', $token)->assertUnauthorized();
+        $this->request('GET', '/context', $token)->assertOk()->assertExactJson(['mfa' => false]);
 
         $verified = $this->request('POST', '/verify', $token, ['factor' => $factor->getKey(), 'code' => AuthenticatorApp::code($factor)]);
 
         $verified->assertOk()->assertExactJson(['verified' => true, 'session' => false]);
 
         $this->request('GET', '/protected', $token)->assertOk()->assertExactJson(['reached' => true, 'session' => false]);
+        $this->request('GET', '/context', $token)->assertOk()->assertExactJson(['mfa' => true]);
         $this->request('GET', '/protected', $other)->assertUnauthorized();
+        $this->request('GET', '/context', $other)->assertOk()->assertExactJson(['mfa' => false]);
     }
 
     /**
@@ -96,6 +104,9 @@ final class StatelessVerificationTest extends TestCase
 
         $router->get('protected', static fn (Request $request): JsonResponse => new JsonResponse(['reached' => true, 'session' => $request->hasSession()]))
             ->middleware(['auth:' . self::GUARD, 'mfa']);
+
+        $router->get('context', static fn (): JsonResponse => new JsonResponse(['mfa' => Auth::context()?->get('mfa.accepted')]))
+            ->middleware('auth:' . self::GUARD);
     }
 
     /**

@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\CallerScope;
@@ -262,6 +263,30 @@ final class FreshnessAdapterTest extends TestCase
                 $ran = true;
             });
             self::fail('A guard that holds no sessions was accepted.');
+        } catch (UnresolvedReferenceException) {
+            self::assertFalse($ran);
+        }
+
+        self::assertNull($this->app?->make(LinkCallers::class)->current());
+    }
+
+    /**
+     * A caller whose identity SSO cannot name (one that is no model) throws
+     * before the work runs, and nothing is handed in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testACallerWhoseIdentityCannotBeNamedThrowsBeforeTheWorkRuns(): void
+    {
+        $ran = false;
+
+        try {
+            Iam::callers()->run(new Caller(self::GUARD, CallerCredential::ACCESS, self::createStub(Identity::class), null, null, null), static function () use (&$ran): void {
+                $ran = true;
+            });
+            self::fail('An identity SSO cannot name was accepted.');
         } catch (UnresolvedReferenceException) {
             self::assertFalse($ran);
         }

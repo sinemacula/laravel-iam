@@ -24,6 +24,7 @@ keeps nothing between calls. [Bindings](bindings.md) says, for each, how to repl
 | MFA `PendingCompletion`                                    | `satisfy()` on the pending session                                                                                    | a verified factor activates the session, which issues its tokens                                                                  |
 | MFA `StepUp`                                               | `stepUp()` on the session                                                                                             | a step-up is recorded on the session and returns a new access token                                                               |
 | MFA `ProofStore`, `FirstFactorResolver`                    | the session's own proofs                                                                                              | proofs live on the authentication session, so a stateless guard works                                                             |
+| Auth's `mfa` context namespace                             | MFA's own contributor, from the session's proofs                                                                      | `Auth::context()` reports MFA's view of the session it was built for, in a request or a queued job                                |
 | MFA `Reauthenticator`, `FreshnessGate`                     | `laravel-authentication`'s freshness policy                                                                           | freshness is judged once, by the session's proofs                                                                                 |
 | MFA `FactorChangeGate`                                     | `factorChange()` under the session's lock                                                                             | a factor change takes a fresh step-up, judged as committed                                                                        |
 | MFA `SessionRevoker` (mandatory)                           | `factorRemoved()` and `factorReset()`                                                                                 | removing a factor or resetting an identity ends the sessions it should                                                            |
@@ -172,9 +173,34 @@ MFA's events, the active tenant whose requirement applies, the subject type and 
 session `laravel-authentication` validated, never from a guard's ambient state. The active tenant is the one the
 validated session recorded, so a tenant's requirement reaches MFA only for a session that acts in it.
 
-`laravel-authentication`'s authentication context (`Auth::context()`) has no `mfa` namespace yet: a later release of
-this package contributes it, from the session's proofs, and `iam:check` then requires it beside `sso`. Until then read
-MFA's own view of a caller with `Mfa::authenticationContext()`.
+`laravel-authentication`'s authentication context (`Auth::context()`) carries MFA's view of the session under `mfa`:
+`mfa.accepted`, `mfa.multifactor`, `mfa.factor_types`, `mfa.level`, `mfa.phishing_resistant`, `mfa.user_verification`,
+`mfa.last_verification_age_seconds` and `mfa.has_confirmed_factor`, the keys MFA's own contributor works out (see MFA's
+[middleware guide][mfa-middleware]). This package registers the contributor while `iam.adapters.mfa` is on, unless you
+registered your own under `mfa`, and `iam:check` requires the namespace either way.
+
+The keys come from the session the context was built for and its proofs, never from the request: a context built for
+another session, or in a queued job, reports that session's verification. A session that is pending, revoked or ended,
+or no session at all, has the neutral context (nothing accepted, level `unclassified`).
+
+`Auth::context()` is built once per guard per request and kept: a later read returns the kept context, which
+`laravel-authentication` forgets only when the guard binds another identity, principal or session, or when this process
+changes the session's proofs. A change another process commits does not reach a context already built. Its proofs are
+read current, under the session row's lock, only when that first build happens inside a transaction on the session
+model's connection; once it is built, a read inside a transaction takes no lock and reads nothing. Where you need an
+answer inside a transaction that is current and holds under the lock, ask there through
+`Auth::sessions($guard)->proofs()` and `firstFactor()`, or MFA's own view, `Mfa::authenticationContext($caller)`, which
+is worked out afresh on each call, rather than `Auth::context()`.
+
+```php
+use SineMacula\Laravel\Authentication\Facades\Auth;
+
+if (Auth::context()?->get('mfa.accepted') !== true) {
+    // Ask for a further factor before going on.
+}
+```
+
+`Mfa::authenticationContext()` still answers MFA's view of the caller the request serves, the same keys.
 
 ## Transactions and retries
 

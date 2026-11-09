@@ -67,11 +67,14 @@ use SineMacula\Laravel\Sso\Http\ClientContext as SsoClient;
  * REPEATABLE READ a plain read answers from the transaction's snapshot, which
  * may be older than the session its locking read found, so a session committed
  * after that snapshot would be taken for one through no connection. Outside one
- * it is read plainly, and nothing acts on the answer atomically. A sign-in,
- * whose session is not written yet, is established through the connection of
- * the redemption SSO admitted in this request for the identity
- * (`AdmittedRedemptions`), which SSO judged against the rule under its own
- * locks; any other sign-in through no connection. Only this package's SSO
+ * it is read plainly, and nothing acts on the answer atomically. The public
+ * reader of a session's proofs (`Auth::sessions($guard)->firstFactor()`) cannot
+ * stand in for it: it answers nothing for a pending session, which the policy
+ * is asked about too, so a pending SSO session would be taken for one through
+ * no connection. A sign-in, whose session is not written yet, is established
+ * through the connection of the redemption SSO admitted in this request for the
+ * identity (`AdmittedRedemptions`), which SSO judged against the rule under its
+ * own locks; any other sign-in through no connection. Only this package's SSO
  * capability records that redemption, so the adapter is bound only while it is
  * on (`TenancySeams`). So the gate is asked only for a session the rule would
  * refuse, and an exempt identity's sessions through a satisfying connection

@@ -6,7 +6,7 @@ This note describes how `iam:install` publishes every member's files and this pa
 application, recognising what is already there, and writes the few member values this package needs (IAM-2.1, IAM-2.4,
 IAM-2.5); how `Iam::schedule()` registers the members' scheduled work they leave to the application (IAM-2.6); the PHP
 extensions this package declares (IAM-2.8); how `iam:check` runs every member's check and this package's own
-(IAM-10); what M10 and M11 add; and the gaps in the members it works around.
+(IAM-10); what M11 adds; and the gaps in the members it works around.
 
 ## Invariants
 
@@ -175,7 +175,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     since an instance, a closure or an `extend()` of the application's can build SSO's class from a list without the
     bridge. It fails closed: a checker that cannot be resolved, or whose checks cannot be read, is taken as not running
     the bridge, so it runs here.
-  - `ContextNamespacesCheck`: the `sso` namespace has a contributor while SSO is in use; `mfa` joins with M10.
+  - `ContextNamespacesCheck`: the `mfa` namespace has a contributor in every application (MFA is always installed),
+    and the `sso` namespace while SSO is in use, so the check always applies; each namespace nobody holds is reported
+    on its own, naming the switch (`iam.adapters.mfa` or `iam.adapters.sso`) that registers this package's
+    contributor there.
   - `AuditCheck` (IAM-9, IAM-2.5): `OperationalAlerts::validate()`, every `jwt` and `api_key` guard excluded
     (`CaptureExclusions::unexcludedGuards()`), Gate capture off (`laravel-authorization` is always installed) and
     `require_registered` on, the values `iam:install` writes (decision Q5 (a)), whatever the mappers say: with them
@@ -266,10 +269,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   alignment's, which refuses boot on a mismatch already, so the bridge repeats neither. SSO's freshness operations are
   left to `iam:check`, so an application that has not declared them yet is told at deploy rather than refused at boot.
 
-### What M10 and M11 add
+### What M11 adds
 
-- M10 registers this package's `mfa` authentication context contributor, and `ContextNamespacesCheck` then requires
-  the `mfa` namespace beside `sso`.
 - M11 (decision Q8) brings `laravel-authorization`'s glue: `laravel-authentication`'s application access and scope
   registry join the mandatory rows `MandatorySeamsCheck` reads; `CrossMemberConfigurationCheck` requires
   `laravel-authorization`'s subject and resource tenant resolvers to name this package's adapters, and `iam:install`
@@ -364,7 +365,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 ## Implementation Anchors
 
 - `src/Console/InstallCommand.php`: `handle()`, `tablePrefix()`, `askForTablePrefix()`, `report()`.
-- `src/Install/Installer.php`: `install()`, `offersTablePrefix()`, `publish()`, `publishFile()`, `writeAuditLog()`,
+- `src/Install/Installer.php`: `install()`, `offersTablePrefix()`, `publishTag()`, `publishFile()`, `writeAuditLog()`,
   `writeTablePrefix()`, `judgeTablePrefix()`, `OWED`; `src/Install/InstallReport.php` (`$conflicts`, `$notes`).
 - `src/Install/Publications.php`: `all()`; `src/Install/Publication.php`; `src/Install/Enums/PublicationKind.php`.
 - `src/Install/MigrationLedger.php`: `baseName()`, `copyOf()`, `namesakesOf()`.
@@ -445,7 +446,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `tests/Feature/Checks/StorageCheckTest.php` `testAMemberKeyOnAnotherConnectionFails`,
   `testAMemberThatNeverRegisteredIsReported`, `testEveryIdentityModelMustLiveOnTheSharedConnection`,
   `testAGuardNamingNoProviderReadsTheDefaultProvidersModel`, `testAuditLogOnAnotherConnectionIsNoted`
-- `tests/Feature/Checks/ContextNamespacesCheckTest.php` `testANamespaceNobodyRegisteredFails`
+- `tests/Feature/Checks/ContextNamespacesCheckTest.php` `testItRequiresSsoOnlyWhileSsoIsInUse`,
+  `testANamespaceNobodyRegisteredFails`, `testAnMfaNamespaceNobodyRegisteredFails`
 - `tests/Feature/Checks/AuditCheckTest.php` `testAuditLogAsItShipsFails`, `testWhatTheInstallWritesPasses`,
   `testWithTheMappersOffAuditLogsValuesAreStillEnforced`, `testGateCaptureOnFails`,
   `testAnAuditLogThatNeverRegisteredIsReportedAsMissing`
@@ -486,12 +488,12 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.
 - A member adding a check command, a check of its own that covers one of this package's (glue, not policy), or a
   public way to add a check (IAM-13.8 for `laravel-authentication`): `Checker` and the checks follow.
-- A member renaming a mandatory seam's default, a mandate changing (M10's `mfa` namespace, M11's application access
-  and scope registry), or MFA or `laravel-authorization` standing their boot validation aside for `iam:check`:
-  `MandatorySeamsCheck`, `ContextNamespacesCheck` and `CheckCommand` follow.
+- A member renaming a mandatory seam's default, a mandate changing (M11's application access and scope registry), or
+  MFA or `laravel-authorization` standing their boot validation aside for `iam:check`: `MandatorySeamsCheck`,
+  `ContextNamespacesCheck` and `CheckCommand` follow.
 - SSO changing `ConfigurationChecks::add()`, `Features::isInUse()` or the meaning of `FreshnessOperation`:
   `SsoCheckRegistration`, `SsoBridgeFallbackCheck`, `SsoSeams::isInUse()` and `CrossMemberConfigurationCheck` follow.
 - SSO binding a link storage default of its own, or its guide binding the link storage to another class: the link
   storage row's `accepted` list follows.
-- M10 or M11 landing (see above): the checks, `Installer`, `IamSchedule` and their tests follow.
+- M11 landing (see above): the checks, `Installer`, `IamSchedule` and their tests follow.
 - A member closes one of the gaps listed above: the workaround it names goes.

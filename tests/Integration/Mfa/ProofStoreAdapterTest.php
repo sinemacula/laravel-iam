@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Auth\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -30,6 +31,7 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
+use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
@@ -93,6 +95,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ProofStoreAdapter::class)]
+#[CoversClass(SignInProofs::class)]
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class ProofStoreAdapterTest extends TestCase
 {
@@ -312,6 +315,30 @@ final class ProofStoreAdapterTest extends TestCase
         $this->stopActing(self::GUARD);
 
         self::assertNoSignIn($store, $person, self::GUARD);
+    }
+
+    /**
+     * With no session of the identity, the guard holding another identity's,
+     * the store answers no first factor without asking
+     * `laravel-authentication`'s session service for one.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWithoutASessionOfTheIdentityNoFirstFactorIsAskedFor(): void
+    {
+        $person = $this->createPerson();
+
+        $this->signInAndActOnSession($this->createPerson());
+
+        $auth = \Mockery::mock($this->app?->make('auth'));
+
+        $auth->shouldNotReceive('sessions');
+
+        Auth::swap($auth);
+
+        self::assertNull($this->proofStore()->firstFactor($person, self::GUARD));
     }
 
     /**

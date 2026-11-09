@@ -33,8 +33,10 @@ use SineMacula\Laravel\Iam\Mfa\CurrentSession;
  * session of another guard or identity is `stale`. A caller handed in while a
  * transaction is already open on the storage connection is `stale` until that
  * transaction ends: its snapshot may be older than the call, and the session's
- * row cannot be locked where SSO asks. Nothing is kept once the work ends
- * (IAM-8.1).
+ * row cannot be locked where SSO asks. SSO's link confirmation, asked when the
+ * work redeems a `link` through SSO's own `HandoffRedemption`, judges the same
+ * caller's own session (`LinkConfirmationAdapter`), and is `dependent` without
+ * one. Nothing is kept once the work ends (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

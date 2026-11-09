@@ -198,7 +198,12 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
     carries none.
   - `laravel-authentication` has no public read of the connection a session was established through:
     `SessionProofs::connectionId()` is `@internal`, and the adapter calls it; nor is the sign-in's connection handed to
-    the policy before the session is written.
+    the policy before the session is written. The public reader of a session's proofs IAM-13.9 added does not replace
+    it (Decision, M10): its first factor's `external_provider` channel names the connection, but it answers nothing
+    for a pending session, which a pending session's judgement and `tenantPolicyChanged()` hand the policy, nor for a
+    first factor that no longer counts, so a pending SSO session would be taken for one through no connection, its
+    exemption asked for and its version changed. The smallest change is the session's connection on
+    `TenantPolicyContext`, which `laravel-authentication` already reads for its own judgement.
   - `laravel-authentication`'s `TenantPolicyContext` carries neither its `ProofSource::$current` nor the session's
     connection, so the adapter cannot read the session's provenance as `laravel-authentication` asked of that very
     judgement: it reads it current whenever a transaction is open on the storage connection, where every caller that

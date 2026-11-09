@@ -47,7 +47,12 @@ use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
  * MFA requirement (IAM-4.5), the same answer `laravel-authentication`'s tenant
  * authentication policy is given (`Tenancy\TenancySeams`). Passkeys as factors
  * (IAM-3.10) and MFA's context (IAM-3.12) are declared beside them, in
- * `PasskeySeams` and `ContextSeams`, under the same switch.
+ * `PasskeySeams` and `ContextSeams`, under the same switch, which the `mfa`
+ * namespace of `laravel-authentication`'s authentication context follows too
+ * (`MfaContextContributor`, registered by the service provider, as a
+ * contributor is, rather than bound). The proof store and the first-factor
+ * resolver are not mandatory: MFA states no mandate for them, and its own
+ * defaults keep working behind a guard that keeps a Laravel session.
  *
  * Each adapter replaces the member's own default only; an application's binding
  * is kept (IAM-8.4). MFA's proof store default is bound with a closure its

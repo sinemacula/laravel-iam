@@ -16,6 +16,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FirstFactorResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
+use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
@@ -55,6 +56,7 @@ use Tests\TestCase;
  */
 #[CoversClass(FirstFactorResolverAdapter::class)]
 #[CoversClass(ProofStoreAdapter::class)]
+#[CoversClass(SignInProofs::class)]
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class FirstFactorResolverAdapterTest extends TestCase
 {

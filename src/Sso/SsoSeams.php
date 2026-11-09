@@ -18,6 +18,7 @@ use SineMacula\Laravel\Sso\Applications\ConfiguredApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
+use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\LinkStorage;
@@ -28,16 +29,17 @@ use SineMacula\Laravel\Sso\Evidence\InsufficientEvidence;
 use SineMacula\Laravel\Sso\Flows\NoReauthenticationSessions;
 use SineMacula\Laravel\Sso\Freshness\RefusingFreshness;
 use SineMacula\Laravel\Sso\Linking\NoEmailMatches;
+use SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation;
 use SineMacula\Laravel\Sso\Links\LinkStore;
 use SineMacula\Laravel\Sso\Links\NoLinks;
 use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 
 /**
  * The seams `laravel-authentication`, SSO and MFA join through for SSO (IAM-4.2
- * to IAM-4.4, IAM-4.6, IAM-4.7, IAM-4.9, IAM-5.1): re-authentication sessions,
- * session revocation, the external identity links, SSO's own link store, the
- * provider's evidence, freshness, the application's external sign-in and the
- * link email matcher.
+ * to IAM-4.4, IAM-4.6, IAM-4.7, IAM-4.9, IAM-4.10, IAM-5.1): re-authentication
+ * sessions, session revocation, the external identity links, SSO's own link
+ * store, the provider's evidence, freshness, the application's external
+ * sign-in, the link email matcher and link confirmation.
  *
  * - SSO's `ReauthenticationSessions` is answered from
  *   `laravel-authentication`'s external standing, with its renewal recorded for
@@ -88,6 +90,12 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  *   methods for the guard of the same name (`ApplicationPolicyAdapter`).
  * - SSO's `LinkEmailMatcher` matches the identities' verified email addresses
  *   through `laravel-authentication`'s normaliser (`LinkEmailMatcherAdapter`).
+ * - SSO's `LinkConfirmation` is answered from how the caller's session was
+ *   signed in, read through `laravel-authentication`'s public reader of a
+ *   session's proofs: a password, a passkey or the application's own recovery
+ *   is independent of a verified domain link, and nothing else is
+ *   (`LinkConfirmationAdapter`). It is not mandatory: SSO's default refuses
+ *   every such `link`, which is never looser.
  *
  * The `sso` namespace of `laravel-authentication`'s authentication context is
  * no seam: its contributor (`SsoContextContributor`) is registered in the
@@ -163,6 +171,7 @@ final readonly class SsoSeams implements ProvidesSeams
             new SeamBinding(Freshness::class, FreshnessAdapter::class, [RefusingFreshness::class], appliesWhen: $on),
             new SeamBinding(ApplicationPolicy::class, ApplicationPolicyAdapter::class, [ConfiguredApplicationPolicy::class], appliesWhen: $on),
             new SeamBinding(LinkEmailMatcher::class, LinkEmailMatcherAdapter::class, [NoEmailMatches::class], appliesWhen: $on),
+            new SeamBinding(LinkConfirmation::class, LinkConfirmationAdapter::class, [RefusingLinkConfirmation::class], appliesWhen: $on),
             new SeamBinding(EvidencePolicy::class, ConnectionEvidencePolicy::class, [InsufficientEvidence::class], Lifetime::SCOPED, $evidence),
         ];
     }

@@ -37,14 +37,16 @@ return [
     | first factor, code challenges and their counters, the event context, the
     | active tenant, the subject type, the active state and the application,
     | MFA's tenant requirement, answered from `tenancy.mfa_requirement`, the
-    | passkey factor gate, and, while any MFA application offers the `passkey`
-    | factor type, MFA's passkey ceremonies. Each adapter replaces only the
-    | member's own default, never a binding of the application's. Turn it off
-    | (`false`, `0`, `off`, `no`) only to bind every one of those seams
-    | yourself: revocation on factor removal is mandatory, as is the passkey
-    | factor gate, even once passkeys are no longer a factor type, and the
-    | members' defaults leave both undone. A value it does not recognise leaves
-    | it on.
+    | passkey factor gate, while any MFA application offers the `passkey`
+    | factor type, MFA's passkey ceremonies, and the `mfa` namespace of the
+    | authentication context. Each adapter replaces only the member's own
+    | default, never a binding of the application's, and a contributor the
+    | application registers under `mfa` is kept. Turn it off (`false`, `0`,
+    | `off`, `no`) only to bind every one of those seams yourself, and register
+    | an `mfa` contributor of your own: revocation on factor removal is
+    | mandatory, as is the passkey factor gate, even once passkeys are no
+    | longer a factor type, and the members' defaults leave both undone. A
+    | value it does not recognise leaves it on.
     |
     | `sso` binds `laravel-authentication` and SSO: SSO's re-authentication
     | sessions, answered from `laravel-authentication`'s sessions; its session
@@ -55,17 +57,19 @@ return [
     | policy, answered from the evidence SSO accepted with MFA's combination
     | policy as the second gate; SSO's freshness, application policy and link
     | email matcher, answered by `laravel-authentication`'s freshness policy,
-    | sign-in methods and email normaliser; while `sso.evidence` is on, SSO's
+    | sign-in methods and email normaliser; SSO's link confirmation, answered
+    | from how the caller's session signed in (a password, a passkey or the
+    | recovery `sso.recovery_methods` names); while `sso.evidence` is on, SSO's
     | per-connection evidence policy; and the `sso` namespace of the
     | authentication context. SSO's freshness judges only a caller handed in:
     | wrap a call into SSO that asks it (a management helper, a link flow's
     | start) in `Iam::callers()->run($caller, $work)`, `$caller` being
-    | `laravel-authentication`'s `Caller` (`Auth::caller()`); without one it
-    | is stale. SSO keeps its own handoff codes either way. Turn it off
-    | (`false`, `0`, `off`, `no`) only to bind every one of those seams
-    | yourself: revocation is mandatory, since SSO's default leaves every
-    | session standing when a tenant's enforcement changes, a connection is
-    | disabled or deleted, a link is removed or a scope widened, and
+    | `laravel-authentication`'s `Caller` (`Auth::caller()`); without one it is
+    | stale. SSO keeps its own handoff codes either way. Turn it off (`false`,
+    | `0`, `off`, `no`) only to bind every one of those seams yourself:
+    | revocation is mandatory, since SSO's default leaves every session
+    | standing when a tenant's enforcement changes, a connection is disabled or
+    | deleted, a link is removed or a scope widened, and
     | `laravel-authentication`'s default links nothing, so no SSO sign-in
     | succeeds. A value it does not recognise leaves it on.
     |
@@ -285,10 +289,23 @@ return [
     | `adapters.sso` is on, and never replaces an evidence policy the
     | application bound itself.
     |
+    | `recovery_methods` names the sign-in methods of the application's own
+    | account recovery, under which it starts a session through
+    | `Auth::sessions($guard)->start()`. SSO's link confirmation counts a
+    | session signed in with a password or a passkey as independent of a
+    | verified domain link, and a session started under one of these methods
+    | too; every other session, an SSO session among them, is not. List a
+    | method only when the recovery behind it is the person's own, apart from
+    | every identity provider: a recovery a provider's sign-in can drive
+    | proves nothing the provider could not do. Anything but a list of method
+    | names (a keyed array, or a list holding anything but strings) names no
+    | recovery at all.
+    |
     */
 
     'sso' => [
-        'evidence' => env('IAM_SSO_EVIDENCE', false),
+        'evidence'         => env('IAM_SSO_EVIDENCE', false),
+        'recovery_methods' => [],
     ],
 
     /*

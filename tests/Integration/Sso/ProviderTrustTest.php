@@ -30,6 +30,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
+use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
@@ -78,6 +79,7 @@ use Tests\TestCase;
 #[CoversClass(ProviderTrust::class)]
 #[CoversClass(ConnectionTrust::class)]
 #[CoversClass(ProofStoreAdapter::class)]
+#[CoversClass(SignInProofs::class)]
 #[CoversClass(RequirementCheckAdapter::class)]
 final class ProviderTrustTest extends TestCase
 {

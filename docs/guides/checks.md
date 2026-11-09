@@ -112,8 +112,11 @@ starts and in `sso:check`, which reports it as `[iam]`. It applies only while SS
 
 ## context
 
-Applies while SSO is in use.
+Always applies: the `mfa` namespace is required in every application, the `sso` namespace while SSO is in use.
 
+- *No contributor is registered under the `mfa` namespace of the authentication context; turn `iam.adapters.mfa` on,
+  or register your own.*: the `mfa.*` keys of a session's authentication context have no contributor, so a policy
+  reading them reads nothing. Turn the switch on, or register a contributor of your own under `mfa`.
 - *No contributor is registered under the `sso` namespace of the authentication context; turn `iam.adapters.sso` on,
   or register your own.*: the `sso.*` keys of a session's authentication context have no contributor. Turn the switch
   on, or register a contributor of your own under `sso`.
@@ -220,7 +223,6 @@ built.
 
 ## What later releases add
 
-- The `mfa` namespace of the authentication context joins the context check once this package contributes it.
 - Once `laravel-authorization` can answer them, `laravel-authentication`'s access contracts join the mandatory seams,
   the configuration check requires `laravel-authorization`'s tenant resolvers to name this package's adapters,
   `authorization.connection` joins the storage check, and `authorization:prune` joins the schedule. See

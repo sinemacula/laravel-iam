@@ -8,19 +8,25 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContributor;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 
 /**
- * The `sso` namespace of `laravel-authentication`'s authentication context is
- * registered while SSO is in use (IAM-10.2, IAM-4.8).
+ * The `mfa` namespace of `laravel-authentication`'s authentication context is
+ * registered, and the `sso` namespace while SSO is in use (IAM-10.2, IAM-3.12,
+ * IAM-4.8).
  *
- * This package registers its contributor there while its SSO capability's
- * switch is on; with the switch off, the application registers its own. Either
- * way, a session established through SSO needs one, or its provenance never
- * reaches the context. Nothing is required while SSO is not in use, since no
- * session is established through it. The `mfa` namespace joins with the `mfa`
- * contributor (M10, IAM-13.6).
+ * This package registers its contributor under each while the matching
+ * capability's switch is on (`iam.adapters.mfa`, `iam.adapters.sso`); with a
+ * switch off, the application registers its own. Either way, every session
+ * needs an `mfa` contributor, since MFA is always installed and a policy that
+ * reads `mfa.*` would otherwise read nothing, and a session established through
+ * SSO needs an `sso` one, or its provenance never reaches the context. Nothing
+ * is required of `sso` while SSO is not in use, since no session is established
+ * through it. Each namespace nobody registered is reported on its own, naming
+ * the switch that would register this package's contributor.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -29,7 +35,7 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  */
 final readonly class ContextNamespacesCheck implements Check
 {
-    /** @var string Why a namespace nobody registered is refused. */
+    /** @var string Why a namespace nobody registered is refused, and the switch that registers this package's contributor there. */
     private const string UNREGISTERED = 'No contributor is registered under the `%s` namespace of the authentication context; '
         . 'turn `%s` on, or register your own.';
 
@@ -60,45 +66,56 @@ final readonly class ContextNamespacesCheck implements Check
     }
 
     /**
-     * The check applies while SSO is in use.
+     * The check always applies: the `mfa` namespace is always required.
      *
      * @return bool
      */
     #[\Override]
     public function applies(): bool
     {
-        return SsoSeams::isInUse($this->config);
+        return true;
     }
 
     /**
-     * The `sso` namespace is registered.
+     * The `mfa` namespace is registered, and the `sso` namespace while SSO is
+     * in use.
      *
      * @return list<\Closure(): mixed>
      */
     #[\Override]
     public function checks(): array
     {
-        return [
+        $checks = [
             function (): void {
-                $this->assertRegistered(AuthenticationContext::NAMESPACE);
+                $this->assertRegistered(MfaContributor::NAMESPACE, MfaSeams::SWITCH);
             },
         ];
+
+        if (SsoSeams::isInUse($this->config)) {
+            $checks[] = function (): void {
+                $this->assertRegistered(AuthenticationContext::NAMESPACE, SsoSeams::SWITCH);
+            };
+        }
+
+        return $checks;
     }
 
     /**
-     * Refuse a namespace no contributor is registered under.
+     * Refuse a namespace no contributor is registered under, naming the switch
+     * that registers this package's contributor there.
      *
      * @param  string  $namespace
+     * @param  string  $switch
      * @return void
      *
      * @throws \LogicException
      */
-    private function assertRegistered(string $namespace): void
+    private function assertRegistered(string $namespace, string $switch): void
     {
         if (array_key_exists($namespace, $this->container->make(ContextContributors::class)->registered())) {
             return;
         }
 
-        throw new \LogicException(sprintf(self::UNREGISTERED, $namespace, SsoSeams::SWITCH));
+        throw new \LogicException(sprintf(self::UNREGISTERED, $namespace, $switch));
     }
 }

@@ -27,12 +27,13 @@ The current note set is:
 - `long-running-processes.md`: the combined worker reset that flushes every member's request state, the session that
   holds MFA's proofs among it, what it flushes before each Octane request and each queued job, why a job keeps its
   scoped instances and the application keeps its own instances, and how another long-lived process calls it.
-- `authentication-and-mfa.md`: the twelve seams between `laravel-authentication` and `laravel-mfa` and the default
-  each replaces; how an MFA application and sign-in are resolved to a guard and its current session, and refused when
-  they cannot be; how proofs, channels, requirements, levels and changes are translated, `external_reauthentication`
-  and `unclassified` among them; what each adapter answers and how it refuses; the evaluation a further proof is
-  recorded with; and the lock order, identity state and factors before the session row, with what each isolation level
-  does to a change that waited and why MFA's changes are never wrapped in another transaction.
+- `authentication-and-mfa.md`: the twelve seams between `laravel-authentication` and `laravel-mfa` and the default each
+  replaces; the `mfa` context namespace, filled from the contribution subject's session and its proofs; how an MFA
+  application and sign-in are resolved to a guard and its current session, and refused when they cannot be; how proofs,
+  channels, requirements, levels and changes are translated, `external_reauthentication` and `unclassified` among them;
+  what each adapter answers and how it refuses; the evaluation a further proof is recorded with; and the lock order,
+  identity state and factors before the session row, with what each isolation level does to a change that waited and why
+  MFA's changes are never wrapped in another transaction.
 
 - `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
   `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
@@ -48,8 +49,8 @@ The current note set is:
   the records kept for one request and the one renewal a re-authentication writes; how each of SSO's revocation scopes
   ends exactly its sessions; how identity and tenant references are resolved; the provider's evidence through SSO's
   evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
-  link e-mail matching on verified identifiers and the `sso` context namespace; SSO's lock order; and the gaps in the
-  members the adapters work around.
+  link e-mail matching on verified identifiers, link confirmation from how the caller's session signed in, and the
+  `sso` context namespace; SSO's lock order; and the gaps in the members the adapters work around.
 - `tenant-authentication-policy.md`: the application's one tenant MFA requirement and its rule, routed to MFA's
   tenant requirement and into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's
   enforcement, SSO's exemption gate and that requirement together; the version that changes whenever any of them does;
@@ -88,11 +89,11 @@ The current note set is:
   table names it writes only into a configuration file it has just published, and what it reports as still owed; the
   members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
-  the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `sso`
-  namespace, the audit trail's settings, the senders' gateways, the configuration that crosses the members, the platform
-  and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as `[iam]` and failing
-  SSO's boot only while SSO is in use; what M10 and M11 add; and the gaps in the members installation and the checks
-  work around.
+  the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
+  and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
+  the platform and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as
+  `[iam]` and failing SSO's boot only while SSO is in use; what M11 adds; and the gaps in the members installation and
+  the checks work around.
 
 A note is added here with the code it describes.
 

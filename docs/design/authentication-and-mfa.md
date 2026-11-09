@@ -3,10 +3,11 @@
 ## Purpose
 
 This note describes how the package joins `laravel-authentication` and `laravel-mfa` (IAM-3.1 to IAM-3.8, IAM-3.11,
-IAM-3.14 and IAM-5.2). It covers the twelve seams `Mfa\MfaSeams` binds, how an MFA sign-in is resolved to one of
+IAM-3.12, IAM-3.14 and IAM-5.2). It covers the twelve seams `Mfa\MfaSeams` binds, the `mfa` namespace this package
+contributes to `laravel-authentication`'s authentication context, how an MFA sign-in is resolved to one of
 `laravel-authentication`'s sessions, how the members' value types are translated, how each adapter answers and
 refuses, and the transactions and lock order the adapters run in. Code challenges, passkeys, the context resolvers and
-code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context contributor comes later (M10).
+code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 
 ## Invariants
 
@@ -222,7 +223,48 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
     contract allows it) is reported to `factorRemoved()` on the default guard's current session, or with no session
     when that guard holds none of the identity's, so its proofs stop counting all the same. A deleted factor is not
     reported there: the revoker reports it, and a second report would judge the current session twice and lose the
-    pending credential the first judgement issued.
+    pending credential the first judgement issued. Both read only through `laravel-authentication`'s public readers
+    (IAM-13.9) and no `@internal` class of its. The guard's current session is read because MFA's contract names a
+    sign-in by its identity and application alone and hands no session to read instead; `record()`, handed a binding
+    but no identity, finds that identity as the guard is signed in as it.
+  - `SignInProofs` translates a session's recorded proofs, handed in oldest first, to MFA's proofs of the sign-in: bound
+    to the identity, the application and the session's key, stamped with the identity's current verification
+    generation, an external provider's proof naming its connection only under `ProviderTrust::accepted()` for the
+    session's tenant, a proof MFA cannot express left out, and a proof naming a factor the identity no longer holds
+    left out (MFA's factor table read on the write connection, and only when a proof names a factor). The proof store
+    and the `mfa` contributor both read through it, so they count a session's proofs alike.
+- `Mfa\MfaContextContributor` fills the `mfa` namespace of `laravel-authentication`'s authentication context (IAM-3.12,
+  MFA-10.11, AUTH-11.8) with MFA's own `AuthenticationContextContributor::contributeFor()`, the one builder MFA has
+  since IAM-13.4, so the keys are MFA's own eight, exactly what `Mfa::authenticationContext()` answers for the same
+  session. Everything it hands MFA comes from the `ContributionSubject`: the identity the guard bound, the context's
+  `application`, the session's key (`SignIn::reference()`), and the session's proofs through the subject's own
+  `proofs()` and `firstFactor()`, which read the subject's session and never the request's. So a context built for
+  another session, or in a queued job with no guard bound and no request, reports that session; nothing reads the
+  request, a guard's state or `Auth::user()`. MFA's caller obligations are met here: the newest
+  `RequirementSubject::MAX_LIMIT` proofs, reversed to oldest first, with the first factor ahead of them when it is
+  older than all of them (MFA reports evidence only after exactly one first factor); a proof made with a factor since
+  removed left out (`SignInProofs`); and the neutral context, without asking MFA, for an identity that is no
+  `MultiFactorAuthenticatable`, a subject with no session, and a session the subject's readers answer nothing for
+  (pending, revoked, ended, of another guard, or no Eloquent session). MFA itself gives a machine and an inactive
+  identity the neutral context. It is registered under `mfa` from the service provider's `booted()` callback, beside
+  the `sso` contributor and on the same terms: only while `iam.adapters.mfa` was on when the binding rule read it, and
+  only while nothing holds `mfa`, so an application's own contributor is kept (IAM-8.4). `ContextNamespacesCheck`
+  requires the namespace in every application (IAM-10.2), naming `iam.adapters.mfa` when nothing holds it.
+  - Read mode: the subject's readers choose it, as `Auth::sessions()->proofs()` does, and only while the context is
+    being built. `laravel-authentication`'s guard builds `Auth::context()` once per request and keeps it
+    (`HoldsAuthenticationContext`), forgetting it only when the guard binds another identity, principal or session, or
+    when this process changes the session's proofs (`ContextForgetting`): a later read runs no contributor, takes no
+    lock and reads nothing, and a change another process commits does not reach a context already built. A first
+    build outside a transaction on the session model's connection reads the proofs plainly on the write connection; a
+    first build inside one locks the session's row and reads the proofs current, so it takes the session row after
+    whatever that transaction already holds (MFA's identity state and factors among them, where MFA opened it), as
+    every other adapter's current read does, and reads a change committed after the transaction's first read (on
+    PostgreSQL at REPEATABLE READ the lock fails to serialise instead, and the whole transaction is retried). The
+    proofs are as of that build: nothing makes them agree with `laravel-authentication`'s own `amr` and `mfa` keys,
+    worked out before the contributors run. A caller that needs an answer inside a transaction that is current and
+    holds under the lock asks there through `Auth::sessions($guard)->proofs()` and `firstFactor()`, or through
+    `Mfa::authenticationContext()`, which asks the proof store on each call, never `Auth::context()`
+    (`MfaContextContributorTest` holds a context built before a transaction returned unchanged inside it).
 - Refusals are thrown, never answered (IAM-8.2): MFA's `OperationRefusedException` where MFA's contract asks for it
   (`not_accepted` for the step-up and the pending completion, `not_fresh` for the factor-change gate, with
   `laravel-authentication`'s reason kept in the detail), MFA's `ProofRefusedException` from `record()`, an
@@ -269,7 +311,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   completion calls `satisfy()` as MFA's last write; the session activates, and the guard is bound once MFA commits.
 - A step-up with a stateless guard (the reproduction of sinemacula/laravel-iam#3): a bearer token's session verifies a
   further factor on one request, the step-up adapter records it on the session, and the next request with the same
-  token meets the requirement, with no Laravel session started; another session of the same person does not.
+  token meets the requirement, with no Laravel session started; another session of the same person does not. The next
+  request's `Auth::context()` reports `mfa.accepted`, from the same session's proofs.
 - A factor change: MFA locks the identity's state and factors, the gate locks the session row through `factorChange()`
   and allows the change on a fresh step-up (or, for the first additional factor, a fresh reauthentication), and the
   session transition judges the session again once the change is made.
@@ -432,8 +475,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
 - `src/Mfa/AdditionalFactorPolicyAdapter.php`, `RequirementCheckAdapter.php`, `PendingSessionResolverAdapter.php`
   (`fromRequest()`, `revalidate()`, `fromCredential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
   `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
-  `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`, `held()`),
-  `FirstFactorResolverAdapter.php`.
+  `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`),
+  `FirstFactorResolverAdapter.php`, `SignInProofs.php` (`of()`, `holds()`, `holdsAFirstFactor()`, `factorReference()`).
+- `src/Mfa/MfaContextContributor.php` (`contribute()`); `src/IamServiceProvider.php`: `registerContextContributors()`,
+  `registerContributor()`; `src/Checks/ContextNamespacesCheck.php`.
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
   (`verify()`).
 - `src/Exceptions/UnresolvedReferenceException.php` (`forGuard()`, `forSession()`, `forIdentity()`, `forMfaIdentity()`),
@@ -536,6 +581,19 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`; the `mfa` context co
   authenticator app is removed, as MFA's own check judges); `PendingCompletionAdapterTest`
   `testEachProofIsRecordedWithItsOwnEvaluation`
 - `tests/Integration/Mfa/StatelessVerificationTest.php` `testAVerificationCountsOnTheNextRequestWithTheSameToken`
+- `tests/Integration/Mfa/MfaContextContributorTest.php` `testTheRequestsContextIsMfasOwnView`,
+  `testAnotherSessionsContextIsItsOwn`, `testAJobsContextIsTheNamedSessions`, `testASessionNoLongerLiveIsNeutral`,
+  `testNoSessionAndAnIdentityThatCannotHoldFactorsAreNeutral`, `testAProofOfAFactorNoLongerHeldDoesNotCount`,
+  `testAFirstFactorOlderThanEveryProofReadStillCounts`, `testASessionWhoseFirstFactorNoLongerCountsReportsNoEvidence`,
+  `testTheAgeIsTheNewestVerifications`, `testProofsMadeAtOneInstantKeepTheirOrder`,
+  `testInsideATransactionTheProofsAreReadCurrent`; `tests/Integration/Mfa/SignInProofsTest.php`
+  `testProofsNamingNoFactorAreAllKeptWithoutReadingTheFactors`, `testAProofOfAFactorStillHeldIsKept`,
+  `testAProofOfAFactorNoLongerHeldIsLeftOut`, `testAFactorIsNamedByItsIdentifierAsText`
+- `tests/Feature/Sso/ContextContributorRegistrationTest.php` `testTheContributorsAreRegisteredInEveryProviderOrder`,
+  `testTheMfaSwitchOffRegistersNothingUnderMfa`, `testTheMfaSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn`,
+  `testAnApplicationsEarlierMfaContributorIsKept`, `testAnApplicationsLaterMfaContributorIsKept`;
+  `tests/Feature/IamServiceProviderTest.php` `testTheContextContributorsAreRegisteredOnceBooted`;
+  `tests/Feature/Checks/ContextNamespacesCheckTest.php` `testAnMfaNamespaceNobodyRegisteredFails`
 - the caller handed as plain values, a request bound beside each core call never read
   (`tests/Concerns/BindsStrayRequests.php`): `PendingSessionResolverAdapterTest` (`testTheContextKeepsItsCredential`,
   `testRevalidatingReadsTheSessionAsItStandsNow`, `testRevalidatingReadsTheContextsApplication`,
@@ -589,5 +647,9 @@ Update this note when:
   on it atomically outside one (the read mode `CurrentSession::isInTransaction()` decides would then be wrong);
 - MFA changes what `VerificationResult::$refreshesMultifactor` or `Evaluation::$multifactorAt` says, or starts handing
   over a proof it has not accepted after the session's first factor.
+- MFA changes what `contributeFor()` asks of its caller, or its keys, or `laravel-authentication` changes what
+  `ContributionSubject::proofs()` and `firstFactor()` read, their read mode or their limit (`MfaContextContributor`
+  follows), or stops keeping the context a guard built or changes what forgets it (the read mode the guide states
+  follows);
 - `laravel-authentication`'s `start()` gains a first factor, or its sign-in starts completing a pending session for a
   test (`actingAsCaller()` could then verify a started session, or complete a pending one, rather than refuse it).

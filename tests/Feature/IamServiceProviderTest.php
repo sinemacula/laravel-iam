@@ -24,6 +24,7 @@ use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
+use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
@@ -43,8 +44,10 @@ use SineMacula\Laravel\Iam\IamManager;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
+use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
@@ -847,6 +850,22 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertTrue($this->application()->isBooted());
         self::assertSame(self::ELSEWHERE, $this->config()->get('mfa.storage.connection'));
+    }
+
+    /**
+     * Once the application has booted, this package's contributors are
+     * registered under the `mfa` and `sso` namespaces of the authentication
+     * context, each once, while both capabilities' switches are on.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheContextContributorsAreRegisteredOnceBooted(): void
+    {
+        $registered = $this->app?->make(ContextContributors::class)->registered() ?? self::fail('The application has not booted.');
+
+        self::assertSame(['mfa' => MfaContextContributor::class, 'sso' => SsoContextContributor::class], $registered);
     }
 
     /**

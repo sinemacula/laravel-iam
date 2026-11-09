@@ -8,13 +8,16 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
+use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Iam\Sso\LinkCallers;
 
 /**
  * Unit tests for the callers handed in for SSO's freshness in this request:
  * none is named until one is opened, the latest open answers, closing it leaves
- * the one opened before it, and a close with none open changes nothing.
+ * the one opened before it, and a close with none open changes nothing; a
+ * caller holds no session of its own without an access credential and an
+ * Eloquent session that is a model.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -83,6 +86,25 @@ final class LinkCallersTest extends TestCase
         $callers->close();
 
         self::assertNull($callers->current());
+    }
+
+    /**
+     * A caller holds no session of its own with no session, with a credential
+     * other than an access token's, or with a session that is no model, however
+     * it is typed.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testACallerWithoutAnAccessCredentialAndAModelSessionHoldsNone(): void
+    {
+        $session  = self::createStub(EloquentSession::class);
+        $identity = self::createStub(Identity::class);
+
+        self::assertNull(LinkCallers::sessionOf($this->caller('api')));
+        self::assertNull(LinkCallers::sessionOf(new Caller('api', CallerCredential::REFRESH, $identity, null, null, $session)));
+        self::assertNull(LinkCallers::sessionOf(new Caller('api', CallerCredential::ACCESS, $identity, null, null, $session)));
     }
 
     /**

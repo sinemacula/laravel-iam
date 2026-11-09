@@ -11,6 +11,7 @@ use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
 use SineMacula\Laravel\Authentication\Sessions\FactorRemoval;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
+use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\RequirementPart;
@@ -49,6 +50,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ProofStoreAdapter::class)]
+#[CoversClass(SignInProofs::class)]
 #[CoversClass(SessionRevokerAdapter::class)]
 final class FactorRemovalTest extends TestCase
 {
