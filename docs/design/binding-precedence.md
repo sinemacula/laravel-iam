@@ -11,9 +11,11 @@ before that member has merged it, and why the storage connection alone still wai
 
 - Everything the package binds over a member's seam is declared as data, one `Bindings\SeamBinding` per seam: the
   member's contract, the package's adapter, the member's own defaults, a `Bindings\Enums\Lifetime`, an optional switch
-  and whether the seam is mandatory. Each capability lists its rows in a `*Seams` class implementing
-  `Bindings\Contracts\ProvidesSeams`, named in `IamServiceProvider::seamProviders()`, and one `Bindings\BindingRule`
-  collects every capability's rows (`apply()`) and applies them all. Nothing else in the package binds over a member.
+  and whether the seam is mandatory, a flag or a closure the checks ask as they read it (`SeamBinding::isMandatory()`),
+  so a mandate that asks a service the application binds never resolves it while the rule runs. Each capability lists
+  its rows in a `*Seams` class implementing `Bindings\Contracts\ProvidesSeams`, named in
+  `IamServiceProvider::seamProviders()`, and one `Bindings\BindingRule` collects every capability's rows (`apply()`)
+  and applies them all. Nothing else in the package binds over a member.
   M1 lists no capability: it ships the rule, and each later milestone adds its rows.
 - The rule runs over every row once, in `IamServiceProvider::register()` (`registerSeams()`), whenever the provider
   registers: with the other package providers, while the application boots, or after it has booted. Only the tenancy
@@ -151,12 +153,25 @@ before that member has merged it, and why the storage connection alone still wai
 ## Failure / Edge Cases
 
 - A provider that binds a seam unconditionally (`bind()`, `singleton()`) after this package registers replaces the
-  adapter, member or not, though the outcome lists the seam as bound. `laravel-authorization` still binds its resolvers
+  adapter, member or not, though the outcome lists the seam as bound. `laravel-authorization` still binds its defaults
   unconditionally (IAM-13.7; since laravel-authorization#72 with a plain `bind()` of a closure its provider declares,
-  over a scoped `authorization.default:` binding), which is that member's defect for M11 to resolve, not something this
-  package works around; no authorization seam is bound before then. One that binds unconditionally before this package
-  registers replaces any application binding made before it, and the rule then binds the adapter over that member
-  default.
+  over a scoped `authorization.default:` binding holding the class its configuration names), so its rows name that
+  key (`SeamBinding::$defaultKey`): the seam is the member's only while the closure is its provider's and the key still
+  holds its default class (or an instance of exactly that class resolved there, as its boot leaves one), never a class
+  the application names in its configuration. The seams the rule bound are bound again from the booting callback, and
+  once more from the `booted()` callback for a member registered from a provider's `boot()`, where they hold that
+  member's closure once more (`BindingRule::reclaim()`, `MemberDefaults::holdsDefault()`), a binding of the member's
+  default class by name being the application's (`authorization.md`); when the `booted()` pass binds any seam again,
+  what was resolved from the defaults meanwhile is forgotten (`WorkerReset::forgetScopedState()`) and the context's
+  keys are declared on a key catalogue already built. The seams the rule kept with the application's
+  binding over such a member are recorded as the rule runs, with what binds that binding again
+  (`MemberDefaults::restorerOf()`, `BindingOutcome::$restorers`: an alias, an instance, or the closure, shared as it
+  was), and bound back the same way. `iam:check` refuses any of these seams the outcome lists that holds the member's
+  own default again once neither callback can run (`MandatorySeamsCheck`). Any other member that bound unconditionally
+  after this package would still replace the adapter. One that binds unconditionally before this package registers
+  replaces any application binding made before it, and the rule then binds the adapter over that member default; so
+  does one registering between this package and an application binding made after this package registered and before
+  that member.
 - A member renaming a default's class, or moving a closure binding to another class, makes the rule treat the new
   default as the application's and keep it. That fails closed: no adapter is bound over a binding the rule cannot
   recognise, and `iam:check` reports a mandatory seam left on any class of its member's own at deploy. The tests pin the
@@ -185,9 +200,11 @@ before that member has merged it, and why the storage connection alone still wai
   `settle()` (which also applies the tenancy rows again, with the SSO switch as it read in `registerSeams()`),
   `checkStorage()` and `boot()` for the storage step that waits for the booting phase and runs again once the
   application has booted.
-- `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `switches()`, `MEMBER_CONFIGURATION`;
-  `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `bindingOf()`; `src/Tenancy/TenancySeams.php` for the rows
-  applied again.
+- `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `reclaim()`, `switches()`,
+  `MEMBER_CONFIGURATION`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`,
+  `restorerOf()`;
+  `src/Tenancy/TenancySeams.php` for the rows applied again, `src/Authorization/AuthorizationSeams.php` for the rows
+  bound again.
 - `src/Bindings/SeamBinding.php`, `src/Bindings/Enums/Lifetime.php`, `src/Bindings/BindingOutcome.php`,
   `src/Bindings/Contracts/ProvidesSeams.php`.
 - `benchmarks/Bindings/BindingRuleBench.php`: the rule over a 40-seam table on the members' real binding table, binding
@@ -222,6 +239,7 @@ before that member has merged it, and why the storage connection alone still wai
   first, second and fourth with the configuration cached too), `testACachedConfigurationIsReadAsItIs`,
   `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`,
   `testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen`, `testReservingRecordsTheMembersDefaultEachSeamHolds`,
+  `testReclaimingBindsAgainTheApplicationsBindingAMemberBoundItsDefaultOver`,
   `testABindingMadeOverAReservedSeamIsKept`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` (the rows applied again from the booting phase, by register order)
   `testMembershipsAndATreeBoundAfterRegisteringBindTheAdapters`,
@@ -245,8 +263,8 @@ before that member has merged it, and why the storage connection alone still wai
 - A new seam binding: its row in a capability's `*Seams` class, with every default the member binds it to, and its
   capability named in `seamProviders()`.
 - A member changing how it binds a seam (a new default class, a closure moved to another class, a conditional binding
-  turning unconditional), and in particular `laravel-authorization` moving its resolvers to a conditional binding
-  (IAM-13.7) before M11 binds over them.
+  turning unconditional), and in particular `laravel-authorization` moving its defaults to a conditional binding
+  (IAM-13.7), after which `BindingRule::reclaim()` has nothing left to do for it.
 - A member whose configuration stops being merged in its own `register()`, or that starts reading its storage
   connection eagerly (before the application has booted, when a member registered while it boots is aligned), which
   changes what the storage step in the booting phase must do.

@@ -71,13 +71,13 @@ Route::middleware(['auth:api', 'mfa'])->group(static function (): void {
   exempt from the gate (`mfa.exempt`), since it is how the requirement is met.
 - **MFA's gate before `laravel-authorization`'s middleware.** `mfa` comes after authentication and before
   `laravel-authorization`'s `permission:`, `authorize:` and `role:`, so a request that is not signed in strongly enough
-  is answered with a step-up before it can be denied. Until this package binds `laravel-authorization` (see
-  [Authorization](authorization.md)), the step-up a route needs is stated with `mfa:level=` or `mfa:operation=`, never
-  with an `authentication_requirement` in a policy.
-- **No tenant isolation from `authorize:` or `permission:` yet.** Under `laravel-authorization`'s defaults the refund
-  route checks a platform-wide grant and nothing of the invoice's tenant, so a tenant's administrator granted
-  `invoices:refund` could refund another tenant's invoice by its id. Bind your own subject and resource tenant
-  resolvers, or scope the bound invoice to the caller's tenant, before you rely on the route to keep tenants apart (see
+  is answered with a step-up before it can be denied. The step-up a whole route needs is stated with `mfa:level=` or
+  `mfa:operation=`; one a policy statement states with an `authentication_requirement` is answered with the same
+  step-up response, MFA's (see [Authorization](authorization.md#step-up-before-authorization)).
+- **No tenant isolation from `authorize:` or `permission:` yet.** The refund route checks the caller's grants in its
+  active tenant and nothing of the invoice's tenant, so a tenant's administrator granted `invoices:refund` could refund
+  another tenant's invoice by its id. Have the invoice name its tenant, or bind your own resource tenant resolver, or
+  scope the bound invoice to the caller's tenant, before you rely on the route to keep tenants apart (see
   [Authorization](authorization.md#tenants)).
 
 ## Signing in with a password
@@ -508,10 +508,10 @@ fails to serialise or deadlocks, retry the request (see
 - **Your models and contracts.** The identity, principal and tenant models, your memberships, tenant tree, tenant MFA
   requirement and provisioner (see [Provisioning and tenancy](provisioning-and-tenancy.md)).
 - **Your authorisation.** Who may administer a tenant's SSO, refund an invoice or act in a tenant, and
-  `laravel-authentication`'s access contracts (see [Authorization](authorization.md#access-contracts)). Until this
-  package binds `laravel-authorization`, it decides with no active tenant and refuses no resource for its tenant, so
-  bind your own subject and resource tenant resolvers, or scope each route-bound model to the caller's tenant (see
-  [Authorization](authorization.md#tenants)).
+  `laravel-authentication`'s tenant access (see [Authorization](authorization.md#access-contracts)).
+  `laravel-authorization` decides in the caller's tenant but refuses no resource for its tenant, so have your models
+  name their tenant, bind your own resource tenant resolver, or scope each route-bound model to the caller's tenant
+  (see [Authorization](authorization.md#tenants)).
 - **Cross-site request forgery.** Every route above takes its credential from a header or the body. If yours
   authenticate by cookie, put them under Laravel's CSRF protection (see MFA's [middleware guide][mfa-csrf]) and exempt
   only SSO's assertion consumer service.

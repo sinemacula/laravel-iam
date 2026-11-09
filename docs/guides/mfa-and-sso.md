@@ -75,7 +75,9 @@ on the session as a reauthentication at the provider, which MFA reads as a `firs
 connection's channel. It renews the session's authentication time; earlier evidence stays unless this
 authentication's own evidence was accepted. `laravel-authentication`'s `first_additional_factor` freshness takes a
 reauthentication at an external provider, so a person who signed in through SSO can re-authenticate there before
-enrolling their first factor.
+enrolling their first factor. `laravel-authorization`'s authentication requirements read it as MFA's route gate does,
+so a policy statement's `max_age` is renewed by it wherever a route's is (see
+[Authorization](authorization.md#authentication-requirements)).
 
 ## Tenants that require a factor
 

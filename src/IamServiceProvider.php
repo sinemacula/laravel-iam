@@ -20,6 +20,9 @@ use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\JobCallers;
 use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
+use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
@@ -48,6 +51,7 @@ use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
+use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContributor;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 
@@ -57,13 +61,16 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * records SSO's redemptions keep for one request, the callers queued jobs
  * carried, the grant half of SSO's principal scope, the storage connection's
  * alignment, the seam bindings, this package's checks of SSO's side with SSO's
- * own, the storage check's booting and booted callbacks, the audit trail's
- * mappers and codes, the `mfa` and `sso` authentication context contributors,
- * the listeners counting outermost commits and releasing the work held for a
- * commit to finish, the listener provisioning SSO's unlinked results, the
- * listeners handing the operational events to the application's alerting, the
- * listeners carrying the caller into each queued job, the worker reset
- * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
+ * own, the authentication context's keys on `laravel-authorization`'s key
+ * catalogue, the storage check's booting and booted callbacks, the audit
+ * trail's mappers and codes, the `mfa` and `sso` authentication context
+ * contributors, the rendering of `laravel-authorization`'s
+ * insufficient-authentication exception as MFA's step-up, the listeners
+ * counting outermost commits and releasing the work held for a commit to
+ * finish, the listener provisioning SSO's unlinked results, the listeners
+ * handing the operational events to the application's alerting, the listeners
+ * carrying the caller into each queued job, the worker reset listeners, the
+ * publishing tag and the `iam:install` and `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -76,7 +83,14 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * beneath the application's, so a member that has not merged its configuration
  * yet switches them as it will once it has.
  *
- * Two steps still wait for the booting phase, from a `booting()` callback that
+ * `laravel-authorization` binds its defaults unconditionally, so one that
+ * registers after this package replaces the adapters over its seams, and the
+ * application's binding of one made before; the booting phase binds them again
+ * where its default still holds the seam (`BindingRule::reclaim()`), never over
+ * a binding the application made since, and so does the `booted()` callback,
+ * for a `laravel-authorization` registered from another provider's `boot()`.
+ *
+ * Two more steps wait for the booting phase, from a `booting()` callback that
  * runs once every provider has registered and before any boots. The first is
  * SSO's seams answered from the application's memberships and tenant tree,
  * whose switches read whether the application has bound either, which it does
@@ -146,17 +160,22 @@ final class IamServiceProvider extends ServiceProvider
     /** @var bool Whether the SSO capability's switch was on when the binding rule read it, which the `sso` contributor's registration follows. */
     private bool $ssoOn = false;
 
-    /** @var bool Whether the MFA capability's switch was on when the binding rule read it, which the `mfa` contributor's registration follows. */
+    /** @var bool Whether the MFA capability's switch was on when the binding rule read it, which the `mfa` contributor's registration and the step-up's rendering follow. */
     private bool $mfaOn = false;
+
+    /** @var bool Whether the authorization capability's switch was on when the binding rule read it, which the step-up's rendering follows with the MFA capability's. */
+    private bool $authorizationOn = false;
 
     /**
      * Register the configuration, the manager, the request's records, the
      * frames of the queued jobs running and the grant half of SSO's principal
      * scope, write the shared storage connection into every member key that is
      * unset and whose member has registered, apply the binding rule to every
-     * seam binding, register this package's checks of SSO's side with SSO's
-     * own, and register the callback that aligns and checks the storage
-     * connections once every provider has registered.
+     * seam binding, register this package's checks of SSO's side with SSO's own
+     * and the declaration of the authentication context's keys on
+     * `laravel-authorization`'s key catalogue, and register the callback that
+     * aligns and checks the storage connections once every provider has
+     * registered.
      *
      * @return void
      *
@@ -184,6 +203,7 @@ final class IamServiceProvider extends ServiceProvider
 
         $this->registerSeams();
         SsoCheckRegistration::register($this->app);
+        AuthenticationContextKeys::register($this->app);
         $this->registerStorageCheck();
     }
 
@@ -198,8 +218,10 @@ final class IamServiceProvider extends ServiceProvider
      * listeners counting outermost commits and releasing the work held for a
      * commit to finish, the listener provisioning SSO's unlinked results, the
      * listeners handing the operational events to the application's alerting,
-     * the listeners carrying the caller into each queued job, the worker reset
-     * listeners, the publishing tag and the console commands.
+     * the listeners carrying the caller into each queued job, the rendering of
+     * `laravel-authorization`'s insufficient-authentication exception as MFA's
+     * step-up, the worker reset listeners, the publishing tag and the console
+     * commands.
      *
      * @return void
      *
@@ -219,6 +241,7 @@ final class IamServiceProvider extends ServiceProvider
         ProvisionOnUnlinkedResult::listen();
         OperationalAlerts::listen();
         CarryCallerIntoJobs::listen($this->app);
+        InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();
     }
@@ -241,6 +264,7 @@ final class IamServiceProvider extends ServiceProvider
             DeliverySeams::class,
             SsoSeams::class,
             TenancySeams::class,
+            AuthorizationSeams::class,
         ];
     }
 
@@ -336,13 +360,14 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Apply the binding rule to every capability's seam bindings, and keep its
-     * outcome for the checks, and whether the MFA and SSO capabilities'
-     * switches were on for the `mfa` and `sso` contributors' registration; and
-     * bind the default of this package's own port for the grant half of SSO's
-     * principal scope (IAM-6.8), only while nothing is bound to it, so an
-     * application's or a test's binding, made before or after, is kept:
-     * `laravel-authorization`'s grant scope query (AUTHZ-14.2) has not shipped,
-     * so it is `UnknownGrantScope`, which answers `unknown` for everyone (Q9),
+     * outcome for the checks, and whether the MFA, SSO and authorization
+     * capabilities' switches were on for the `mfa` and `sso` contributors'
+     * registration and the step-up's rendering; and bind the default of this
+     * package's own port for the grant half of SSO's principal scope (IAM-6.8),
+     * only while nothing is bound to it, so an application's or a test's
+     * binding, made before or after, is kept: this package does not answer it
+     * from `laravel-authorization`'s grant scope query (AUTHZ-14.2) yet, so it
+     * is `UnknownGrantScope`, which answers `unknown` for everyone (Q9),
      * shared, since it reads and keeps nothing. It is no member's seam, so the
      * binding rule has no default of a member's to tell it from.
      *
@@ -372,10 +397,13 @@ final class IamServiceProvider extends ServiceProvider
         $app          = $this->app;
         $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), self::seamProviders());
 
-        $rule        = $app->make(BindingRule::class);
-        $outcome     = $rule->apply($app, ...$capabilities);
-        $this->ssoOn = SsoSeams::isOn($app->make(ConfigRepository::class));
-        $this->mfaOn = MfaSeams::isOn($app->make(ConfigRepository::class));
+        $rule    = $app->make(BindingRule::class);
+        $outcome = $rule->apply($app, ...$capabilities);
+        $config  = $app->make(ConfigRepository::class);
+
+        $this->ssoOn           = SsoSeams::isOn($config);
+        $this->mfaOn           = MfaSeams::isOn($config);
+        $this->authorizationOn = AuthorizationSeams::isOn($config);
 
         if ($this->ssoOn) {
             $outcome = $rule->reserve($app, $outcome, $app->make(TenancySeams::class));
@@ -518,10 +546,32 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Apply the binding rule once more to the seams answered from the
-     * application's memberships and tenant tree, then align the storage
-     * connections again and refuse a mismatch, once only, whichever phase
-     * reaches it first, and queue the same once more for when the application
-     * has booted, refusing then a member that has still not registered.
+     * application's memberships and tenant tree, bind again the seams of
+     * `laravel-authorization`'s it replaced, then align the storage connections
+     * again and refuse a mismatch, once only, whichever phase reaches it first,
+     * and queue the same once more for when the application has booted,
+     * refusing then a member that has still not registered.
+     *
+     * `laravel-authorization`'s seams the rule bound, or kept with the
+     * application's binding, are bound again where `laravel-authorization`,
+     * registering after this package, has bound its own default over them
+     * since, as it binds every default unconditionally
+     * (`BindingRule::reclaim()`); a binding the application made over one
+     * meanwhile is kept. It runs before any provider boots, so before
+     * `laravel-authorization`'s boot resolves its authentication context, and
+     * once more when the application has booted, for a `laravel-authorization`
+     * a provider registered from its `boot()`, which binds its defaults only
+     * then; its boot resolves its default authentication context under its own
+     * scoped key only to validate its configuration, and the seam bound again
+     * resolves that key no more. Anything resolved from those defaults before
+     * the application finished booting (another provider's `boot()` asking the
+     * manager, or building the key catalogue) would keep them: when that last
+     * pass binds any seam again, the suite's scoped state is forgotten, the
+     * manager, the check context factory and the scoped defaults among it, as a
+     * worker forgets it between jobs (`WorkerReset::forgetScopedState()`), and
+     * the context's keys are declared on a key catalogue already built
+     * (`AuthenticationContextKeys::declareOnResolved()`), which is kept for the
+     * life of the process.
      *
      * The seams answered from the memberships and the tree are applied again
      * only while the SSO capability's switch was on when the binding rule first
@@ -558,18 +608,29 @@ final class IamServiceProvider extends ServiceProvider
             return;
         }
 
+        $rule = $this->app->make(BindingRule::class);
+
         if ($this->ssoOn) {
             $tenancy = $this->app->make(TenancySeams::class, ['ssoOn' => $this->ssoOn]);
-            $outcome = $this->app->make(BindingRule::class)->applyAgain($this->app, $this->app->make(BindingOutcome::class), $tenancy);
+            $outcome = $rule->applyAgain($this->app, $this->app->make(BindingOutcome::class), $tenancy);
 
             $this->app->instance(BindingOutcome::class, $outcome);
         }
+
+        $rule->reclaim($this->app, $this->app->make(BindingOutcome::class), $this->app->make(AuthorizationSeams::class));
 
         $this->checkStorage(false);
 
         $this->settled = true;
 
         $this->app->booted(function (): void {
+
+            $app = $this->app;
+
+            if ($app->make(BindingRule::class)->reclaim($app, $app->make(BindingOutcome::class), $app->make(AuthorizationSeams::class)) !== []) {
+                $app->make(WorkerReset::class)->forgetScopedState();
+                AuthenticationContextKeys::declareOnResolved($app);
+            }
 
             $this->checkStorage(true);
         });

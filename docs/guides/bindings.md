@@ -18,18 +18,21 @@ or call an adapter.
 - [Code delivery](#code-delivery)
 - [Authentication and SSO](#authentication-and-sso)
 - [Tenancy](#tenancy)
+- [Authorization](#authorization)
 - [Other bindings](#other-bindings)
-- [Mandatory seams still to come](#mandatory-seams-still-to-come)
+- [Seams left on their defaults](#seams-left-on-their-defaults)
 
 ## The binding rule
 
 - A seam is bound to its adapter only while it is unbound or still bound to its member's own default. Your
   application's binding always wins: one made before this package registers is kept, and one made after it, in your
   own provider's `register()` or `boot()`, replaces the adapter as any later binding does. The order the service
-  providers register in changes nothing.
-- The rule runs in `register()`. Two switches turn whole groups of bindings off: `iam.adapters.mfa` (authentication
-  and MFA, passkeys, MFA's context) and `iam.adapters.sso` (authentication and SSO, tenancy). Code delivery follows
-  `iam.delivery`. See [Configuration](configuration.md).
+  providers register in changes nothing, except for `laravel-authorization`'s rows (see
+  [Authorization](#authorization)).
+- The rule runs in `register()`. Three switches turn whole groups of bindings off: `iam.adapters.mfa` (authentication
+  and MFA, passkeys, MFA's context), `iam.adapters.sso` (authentication and SSO, tenancy) and
+  `iam.adapters.authorization` (authorization). Code delivery follows `iam.delivery`. See
+  [Configuration](configuration.md).
 - Adapters are transient: each reads what it needs afresh on every call. An adapter that keeps request state is bound
   scoped, under a key of this package's own (`iam.scoped:` followed by the seam), with the seam itself bound to a
   closure that resolves that key. Laravel's queue worker and Octane forget scoped instances between jobs and requests,
@@ -71,9 +74,11 @@ package's adapters keep:
 - Take the locks the member's guide names, in the order it names. SSO's adapters follow SSO's lock order
   ([laravel-sso: lock order][sso-lock-order]).
 
-Turning `iam.adapters.mfa` or `iam.adapters.sso` off leaves every seam of its groups on the members' defaults, most of
-which refuse or do nothing. Bind every seam of those groups yourself; `iam:check` still holds you to the mandatory
-ones.
+Turning `iam.adapters.mfa`, `iam.adapters.sso` or `iam.adapters.authorization` off leaves every seam of its groups on
+the members' defaults, most of which refuse or do nothing: `laravel-authorization`'s subject resolver, context,
+requirement checker and session policy source then know no session, tenant or scopes of `laravel-authentication`'s (see
+[Authorization](#authorization)). Bind every seam of those groups yourself; `iam:check` still holds you to the
+mandatory ones.
 
 ## Authentication and MFA
 
@@ -179,6 +184,29 @@ transient. SSO's own defaults for the membership rows refuse, so leaving them un
 | `Sso\Contracts\PrincipalScope`                        | `Iam\Tenancy\PrincipalScopeAdapter`             | `Sso\Linking\RefusingPrincipalScope`             | No                                                                | Answers `unknown` unless memberships and grants both say otherwise. A contract that answers `within_tenant` too readily lets a tenant's provider reach people with access beyond it. |
 | `Sso\Contracts\EnforcementInheritance`                | `Iam\Tenancy\EnforcementInheritanceAdapter`     | `Sso\Enforcement\OwnTenantInheritance`           | While SSO's enforcement is on and a tenant tree is named or bound | Finds the nearest tenant up the tree with a rule. Left on the default, a parent's SSO-only rule never reaches its descendants.                                                       |
 
+## Authorization
+
+Bound while `iam.adapters.authorization` is on. `laravel-authorization` binds each of its own defaults
+unconditionally, through a closure `Authorization\AuthorizationServiceProvider` declares that resolves a key of its own
+holding the class its configuration names. Its rows replace that binding only while the key still holds
+`laravel-authorization`'s default class, so a class you name in its configuration (`authorization.session.source`, for
+one) is your binding, and kept; and where `laravel-authorization` registers after this package, its rows are bound again
+once every provider has registered, and once more when the application has booted. Its provider binds over whatever
+holds its contracts as it registers, so a binding of one of them made before `laravel-authorization` registers is lost
+to it, unless made before this package registered too, when this package binds it back: name your class in its
+configuration (`authorization.subject_resolver`, `authorization.requirement_checker`, `authorization.session.source`)
+or bind it once `laravel-authorization` has registered. `iam:check` refuses any of these rows that holds
+`laravel-authorization`'s own default again once nothing could bind it back. See [Authorization](authorization.md).
+
+| Contract                                                   | Bound to                                             | Replaces                                                                                                   | Mandatory                                                    | Replacing it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|------------------------------------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Authorization\Contracts\SubjectResolver`                  | `Iam\Authorization\SubjectResolverAdapter`, scoped   | `Authorization\Resolvers\AuthGuardSubjectResolver`, through `Authorization\AuthorizationServiceProvider`   | No                                                           | Answers from `Auth::caller()`: the principal, its identity, the active tenant, the application and the session. A resolver that drops the tenant decides with platform-wide grants only, and one that names a session the caller did not sign in with lets another session's proofs meet a policy's requirement. Keep one resolver for a request or job, as `laravel-authorization`'s own is: it keeps the tenant it resolved for the request only while the resolver bound is the one that resolved it, so one built for each check reads every check's grants again.                      |
+| `Authorization\Contracts\AuthenticationContext`            | `Iam\Authorization\AuthenticationContextAdapter`     | `Authorization\Context\GuardAuthenticationContext`, through `Authorization\AuthorizationServiceProvider`   | No                                                           | Supplies `laravel-authentication`'s context with its `mfa` and `sso` namespaces, whose keys it declares. Yours declares its own keys; one that leaves out a namespace it supplies leaves that namespace's assurance keys testable.                                                                                                                                                                                                                                                                                                                                                          |
+| `Authorization\Contracts\AuthenticationRequirementChecker` | `Iam\Authorization\RequirementCheckerAdapter`        | `Authorization\Resolvers\RefusingRequirementChecker`, through `Authorization\AuthorizationServiceProvider` | No                                                           | Bound only while `iam.adapters.mfa` is on too. Judges a requirement with MFA's requirement check on the proofs of the subject's own session. A checker that reads another session's proofs, or the request's, meets one session's requirement with another's verification; left on the default, every requirement is unmet.                                                                                                                                                                                                                                                                 |
+| `Authorization\Contracts\SessionPolicySource`              | `Iam\Authorization\SessionPolicySourceAdapter`       | `Authorization\Resolvers\NoSessionPolicy`, through `Authorization\AuthorizationServiceProvider`            | While a guard accepts `api_key` or `client_credentials`      | Caps every check about a principal by the scopes of the credential its own guard holds for it now, and caps no person's session. A source that answers one subject with another credential's scopes (the default guard's, say) lends one machine's scopes to another; left on the default, only a machine principal implementing `AuthorizableMachine` is allowed nothing, and any other machine is capped by nothing, so `iam:check` refuses the default, with the switch off too, while a guard accepts a machine credential; a source you name in `authorization.session.source` passes. |
+| `Authentication\Contracts\ScopeRegistry`                   | `Iam\Authorization\ScopeRegistryAdapter`             | `Authentication\Scopes\AcceptAnyScope`                                                                     | While a guard accepts `api_key` or `client_credentials`      | Refuses a credential any scope `laravel-authorization`'s registry does not accept: one naming no declared permission, no pattern covering one and no scope the scope map names. Left on the default, a credential can carry scopes that name no permission, so a typo caps a machine to nothing and a scope meant for a later permission reaches it unseen. Whether a guard accepts either is the bound `ApplicationPolicy`'s to say, so `iam:check` asks yours if you replace it.                                                                                                          |
+| `Authentication\Contracts\ApplicationAccess`               | `Iam\Authorization\ApplicationAccessAdapter`, scoped | `Authentication\Applications\AdmitAnyPrincipal`                                                            | While `authorization.application_access` maps an application | Admits a principal to an application the map names only while its grants on that application allow the permission. Left on the default, every principal can sign in to, refresh on and switch to every application, whatever its grants say. A machine principal is refused on an application the map names, and an application the map leaves out is open to every principal, people included (see [Authorization](authorization.md#access-contracts)).                                                                                                                                    |
+
 ## Other bindings
 
 The package also binds services of its own, which are not members' seams. Most are not yours to replace: replacing one
@@ -206,19 +234,15 @@ The listeners the package registers (the audit mappers, operational alerts, prov
 worker resets and the commit listeners) are described in [The audit trail](audit-trail.md),
 [Provisioning and tenancy](provisioning-and-tenancy.md) and [Operations](operations.md).
 
-## Mandatory seams still to come
+## Seams left on their defaults
 
-`laravel-authentication`'s `Authentication\Contracts\ApplicationAccess`, `Authentication\Contracts\TenantAccess` and
-`Authentication\Contracts\ScopeRegistry` will be answered from `laravel-authorization` once it can answer them. Until
-then this package binds nothing over them and `iam:check` does not hold them mandatory, so they stay on
-`laravel-authentication`'s defaults, which admit any principal to any application with any scope, and to its own
-tenant only. Bind them yourself if that is not what your application means. See [Authorization](authorization.md).
+`laravel-authentication`'s `Authentication\Contracts\TenantAccess` is not `laravel-authorization`'s to answer: which
+tenants a principal may act in is your application's tenancy, not a grant. This package binds nothing over it and
+`iam:check` does not hold it mandatory, so it stays on `laravel-authentication`'s default, which lets a principal act in
+its own tenant only. Bind your own if your principals act in other tenants.
 
-Two more wait the same way, each on a member default that refuses rather than admits:
+One more waits on a member default that refuses rather than admits:
 
-- `laravel-authorization`'s `Authorization\Contracts\SessionPolicySource`, which will be answered from the
-  credential's scopes. Until then its `Authorization\Resolvers\NoSessionPolicy` allows a machine principal nothing;
-  name your own at `authorization.session.source` if machines call routes it guards.
 - Audit-log's `AuditLog\Contracts\AuditAccessPolicy`, which will be answered from `laravel-authorization`. Until then
   its `AuditLog\Access\DenyAllPolicy` shows nobody anything; bind your own to let a viewer read what its scope
   allows, scoping a tenant by `Reference::of('tenant', $tenantId)` as this package records it. Replacing it decides who

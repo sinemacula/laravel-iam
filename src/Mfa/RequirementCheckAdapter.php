@@ -70,7 +70,7 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
  */
 final readonly class RequirementCheckAdapter implements AuthenticationRequirementCheck
 {
-    /** @var list<\SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind> The kinds of proof read beside the first factor: those a requirement can be met with. */
+    /** @var list<\SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind> The kinds of proof read beside the first factor: those a requirement can be met with, but a reauthentication at an external provider, which `laravel-authentication` counts through its external evidence policy first (`laravel-authorization`'s requirement checker, with no such policy, reads that too: `Authorization\RequirementCheckerAdapter::FURTHER_KINDS`). */
     private const array FURTHER_KINDS = [
         ProofKind::FIRST_FACTOR_REAUTHENTICATION,
         ProofKind::ADDITIONAL_FACTOR,
@@ -128,13 +128,14 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
     /**
      * The oldest time a proof can meet a part of the requirement at: its
      * longest maximum age before the time judged, or `null` when a part has
-     * none, so any proof may meet it.
+     * none, so any proof may meet it. `laravel-authorization`'s requirement
+     * checker bounds its read the same way.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \Carbon\CarbonImmutable  $now
      * @return ?\Carbon\CarbonImmutable
      */
-    private static function since(MfaRequirement $requirement, CarbonImmutable $now): ?CarbonImmutable
+    public static function since(MfaRequirement $requirement, CarbonImmutable $now): ?CarbonImmutable
     {
         $longest = 0;
 

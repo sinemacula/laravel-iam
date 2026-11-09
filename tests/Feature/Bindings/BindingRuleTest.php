@@ -408,7 +408,9 @@ final class BindingRuleTest extends TestCase
      * A member that binds its default with a plain `bind()` after this package
      * registers replaces the adapter the rule bound, which the outcome still
      * lists as bound: that is the member's defect (IAM-13.7 for
-     * laravel-authorization), which this package does not work around.
+     * laravel-authorization), which this package works around for
+     * `laravel-authorization`'s seams alone, binding them again as it settles
+     * (`BindingRule::reclaim()`), and not for any other member's.
      *
      * @return void
      *
@@ -476,6 +478,112 @@ final class BindingRuleTest extends TestCase
         self::assertFalse($app->bound(TransientSeam::class));
         self::assertInstanceOf(MemberDefault::class, $app->make(ClosureSeam::class));
         self::assertSame($outcome, $rule->applyAgain($app, $outcome, $capability));
+    }
+
+    /**
+     * Reclaiming binds the adapter again over each seam the outcome lists as
+     * bound that holds the member's own closure once more, as a member that
+     * binds its defaults unconditionally leaves it when it registers after this
+     * package; a seam still holding the adapter, one the application bound, its
+     * member's default class by name among them, and one the rule never bound
+     * are left as they are, and the outcome is not changed.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testReclaimingBindsAgainOnlyTheSeamsAMemberBoundItsDefaultOver(): void
+    {
+        $app     = $this->application();
+        $member  = static fn (): MemberDefault => new MemberDefault;
+        $outcome = new BindingOutcome([SharedSeam::class, TransientSeam::class, PlainSeam::class, ClosureSeam::class], []);
+
+        $app->bind(SharedSeam::class, $member);
+        $app->bind(TransientSeam::class, Adapter::class);
+        $app->bind(PlainSeam::class, MemberDefault::class);
+        $app->bind(ScopedSeam::class, $member);
+        $app->bind(ClosureSeam::class, $member);
+
+        $capability = new readonly class implements ProvidesSeams {
+            /**
+             * Five seams over a member whose defaults this test declares.
+             *
+             * @param  \Illuminate\Contracts\Config\Repository  $config
+             * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
+             */
+            #[\Override]
+            public function seams(Repository $config): array
+            {
+                return array_map(
+                    static fn (string $seam): SeamBinding => new SeamBinding($seam, Adapter::class, [BindingRuleTest::class, MemberDefault::class]),
+                    [SharedSeam::class, TransientSeam::class, PlainSeam::class, ScopedSeam::class, ClosureSeam::class],
+                );
+            }
+        };
+
+        $reclaimed = $app->make(BindingRule::class)->reclaim($app, $outcome, $capability);
+
+        self::assertSame([SharedSeam::class, ClosureSeam::class], $reclaimed);
+        $this->assertResolvesTo(Adapter::class, SharedSeam::class, TransientSeam::class, ClosureSeam::class);
+        $this->assertResolvesTo(MemberDefault::class, PlainSeam::class, ScopedSeam::class);
+        self::assertSame([SharedSeam::class, TransientSeam::class, PlainSeam::class, ClosureSeam::class], $outcome->bound);
+    }
+
+    /**
+     * Applied, the rule records what binds the application's binding again for
+     * each seam it kept whose member binds its defaults unconditionally (a row
+     * naming its default's key), and for no other; reclaimed, it binds that
+     * binding again where the member's own default holds the seam once more,
+     * and leaves every other seam as it is.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testReclaimingBindsAgainTheApplicationsBindingAMemberBoundItsDefaultOver(): void
+    {
+        $app = $this->application();
+        $key = 'member.default:' . PlainSeam::class;
+
+        $app->bind(PlainSeam::class, ApplicationImplementation::class);
+        $app->bind(TransientSeam::class, ApplicationImplementation::class);
+
+        $capability = new readonly class implements ProvidesSeams {
+            /**
+             * A seam over a member that binds its default through a key of its
+             * own, and one over a member that does not.
+             *
+             * @param  \Illuminate\Contracts\Config\Repository  $config
+             * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
+             */
+            #[\Override]
+            public function seams(Repository $config): array
+            {
+                return [
+                    new SeamBinding(PlainSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class], defaultKey: 'member.default:' . PlainSeam::class),
+                    new SeamBinding(TransientSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class]),
+                ];
+            }
+        };
+
+        $rule    = $app->make(BindingRule::class);
+        $outcome = $rule->apply($app, $capability);
+
+        self::assertSame([PlainSeam::class, TransientSeam::class], $outcome->kept);
+        self::assertSame([PlainSeam::class], array_keys($outcome->restorers));
+
+        $member = static fn (ApplicationContract $app): mixed => $app->make('member.default:' . PlainSeam::class);
+
+        $app->scoped($key, MemberDefault::class);
+        $app->bind(PlainSeam::class, $member);
+        $app->bind(TransientSeam::class, static fn (): MemberDefault => new MemberDefault);
+
+        self::assertSame([PlainSeam::class], $rule->reclaim($app, $outcome, $capability));
+        $this->assertResolvesTo(ApplicationImplementation::class, PlainSeam::class);
+        $this->assertResolvesTo(MemberDefault::class, TransientSeam::class);
+        self::assertSame([], $rule->reclaim($app, $outcome, $capability));
     }
 
     /**

@@ -439,7 +439,9 @@ final class InstallCommandTest extends TestCase
         self::assertStringContainsString('`AuditLog::define()`', $owed);
         self::assertStringContainsString('`audit-log.definitions.require_registered`', $owed);
         self::assertStringContainsString('Iam::schedule', $owed);
-        self::assertStringContainsString('`ApplicationAccess`, `TenantAccess`, `ScopeRegistry`', $owed);
+        self::assertStringContainsString('`authorization.application_access`', $owed);
+        self::assertStringContainsString('bind laravel-authentication\'s `TenantAccess`', $owed);
+        self::assertStringNotContainsString('in a later release', $owed);
         self::assertStringContainsString('authentication.freshness', $owed);
         self::assertStringContainsString('external_provider', $owed);
     }

@@ -8,6 +8,7 @@ use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Http\Request;
 use Illuminate\Log\Context\Repository as ContextRepository;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
@@ -20,12 +21,14 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
 use SineMacula\Laravel\Authentication\Database\RequiredWork;
 use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\CheckContextFactory;
+use SineMacula\Laravel\Authorization\Contracts\ConsoleSubjectResolver;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
 use SineMacula\Laravel\Authorization\Contracts\PolicyStore;
 use SineMacula\Laravel\Authorization\Contracts\RequestContext;
@@ -34,6 +37,8 @@ use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
+use SineMacula\Laravel\Authorization\Preview\Previewing;
+use SineMacula\Laravel\Authorization\Query\SchemaInspector;
 use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Authorization\Support\SessionScopes;
@@ -98,8 +103,10 @@ final class WorkerResetTest extends TestCase
     /**
      * Rows of `[abstract]`: each scoped binding `laravel-authentication`,
      * `laravel-sso` and `laravel-authorization` keep request state in,
-     * authorization's manager and the keys that hold its scoped defaults, each
-     * found by their prefix, among them.
+     * authorization's manager, what its previews know, the schema its query
+     * scope reads and the keys that hold its scoped defaults, each found by
+     * their prefix, the console subject resolver its explanations resolve
+     * through among them.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -132,6 +139,9 @@ final class WorkerResetTest extends TestCase
             'authorization.default:' . PolicyResolver::class,
             'authorization.default:' . TenantTree::class,
             'authorization.default:' . RequestContext::class,
+            'authorization.default:' . ConsoleSubjectResolver::class,
+            Previewing::class,
+            SchemaInspector::class,
         ];
 
         foreach ($abstracts as $abstract) {
@@ -163,17 +173,35 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
+     * Rows of `[seam]`: seams this package scopes its adapter over, SSO's
+     * single-use store, `laravel-authorization`'s subject resolver and
+     * `laravel-authentication`'s application access among them.
+     *
+     * @return iterable<string, array{0: class-string}>
+     */
+    public static function provideScopedSeams(): iterable
+    {
+        yield 'SSO\'s single-use store' => [SingleUseStore::class];
+
+        yield 'authorization\'s subject resolver' => [SubjectResolver::class];
+
+        yield 'authentication\'s application access' => [ApplicationAccess::class];
+    }
+
+    /**
      * The reset forgets each adapter this package scopes, under the key the
      * binding rule scopes it under, so the next unit of work builds its own.
      *
+     * @param  class-string  $seam
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testResetForgetsThePackagesScopedAdapters(): void
+    #[DataProvider('provideScopedSeams')]
+    public function testResetForgetsThePackagesScopedAdapters(string $seam): void
     {
         $container = new Container;
-        $abstract  = BindingRule::SCOPED_PREFIX . SingleUseStore::class;
+        $abstract  = BindingRule::SCOPED_PREFIX . $seam;
 
         $container->scoped($abstract, static fn (): \stdClass => new \stdClass);
 
@@ -518,6 +546,71 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
+     * Forgetting the members' state drops the callers `laravel-authentication`
+     * keeps on the current request, for every credential, guard and action, and
+     * keeps every other attribute, the one whose name only starts alike among
+     * them.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testForgettingTheMemberStateDropsTheRequestsCallers(): void
+    {
+        $container = new Container;
+        $request   = Request::create('/');
+
+        $request->attributes->add([
+            'authentication.caller.access.api.'        => new \stdClass,
+            'authentication.caller.pending.api.select' => false,
+            'authentication.callers'                   => 'kept',
+            'authenticationXcaller.access.api.'        => 'kept',
+            'an.authentication.caller.access.api.'     => 'kept',
+            'route'                                    => 'kept',
+            7                                          => 'kept',
+        ]);
+
+        $container->instance('request', $request);
+
+        (new WorkerReset($container))->forgetMemberState();
+
+        self::assertSame([
+            'authentication.callers'               => 'kept',
+            'authenticationXcaller.access.api.'    => 'kept',
+            'an.authentication.caller.access.api.' => 'kept',
+            'route'                                => 'kept',
+            7                                      => 'kept',
+        ], $request->attributes->all());
+    }
+
+    /**
+     * A request nothing has resolved keeps no callers, so the reset does not
+     * build one, and a `request` binding that is not a request is left alone.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testAnUnresolvedOrAnotherRequestIsLeftAlone(): void
+    {
+        $container = new Container;
+
+        $container->singleton('request', static fn (): Request => Request::create('/'));
+
+        (new WorkerReset($container))->forgetMemberState();
+
+        self::assertFalse($container->resolved('request'));
+
+        $other = new \ArrayObject(['authentication.caller.access.api.' => 'kept']);
+
+        $container->instance('request', $other);
+
+        (new WorkerReset($container))->forgetMemberState();
+
+        self::assertSame(['authentication.caller.access.api.' => 'kept'], $other->getArrayCopy());
+    }
+
+    /**
      * A container that keeps no scoped instances still has its guards reset.
      *
      * @return void
@@ -528,6 +621,7 @@ final class WorkerResetTest extends TestCase
     {
         $container = \Mockery::mock(ContainerContract::class);
         $container->shouldReceive('resolved')->with('auth')->andReturnTrue();
+        $container->shouldReceive('resolved')->with('request')->andReturnFalse();
         $container->shouldReceive('resolved')->with(Session::class)->andReturnFalse();
         $container->shouldReceive('make')->with('auth')->andReturn($this->managerForgettingOnce());
         $container->shouldReceive('make')->with(AfterConnectionCommits::class)->andReturn(new AfterConnectionCommits);

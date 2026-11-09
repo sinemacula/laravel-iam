@@ -72,9 +72,9 @@ final readonly class Installer
             . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
             . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
         'Allow the `simplesamlphp/composer-xmlprovider-installer` plugin in your application\'s `composer.json` (`config.allow-plugins`).',
-        'Bind laravel-authentication\'s access contracts (`ApplicationAccess`, `TenantAccess`, `ScopeRegistry`): until you do,'
-            . ' its defaults admit any principal to any application with any scope, and to its own tenant only;'
-            . ' laravel-iam answers them from laravel-authorization in a later release.',
+        'Map each application to the permission to use it in `authorization.application_access`: laravel-iam answers'
+            . ' laravel-authentication\'s application access from laravel-authorization, which admits any principal to an application'
+            . ' the map does not name; and bind laravel-authentication\'s `TenantAccess` if your principals act beyond their own tenant.',
         'Declare laravel-mfa\'s `mfa.*` freshness operations under `authentication.freshness`, or a guard\'s own `freshness`,'
             . ' for every MFA application\'s guard and, while SSO is in use, laravel-sso\'s `sso.*` ones for every SSO application\'s'
             . ' guard, whose sign-in methods must allow `external_provider`; `iam:check` refuses each one missing.',

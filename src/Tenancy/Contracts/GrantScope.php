@@ -13,13 +13,14 @@ use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
  * beyond it (a grant on another tenant, or on the platform), and `unknown` when
  * it cannot be told.
  *
- * It is answered by `laravel-authorization`'s grant scope query (AUTHZ-14.2),
- * which has not shipped, so it is bound to `UnknownGrantScope` until it does
- * (M11): SSO's principal scope then answers `within_tenant` for nobody, and
- * linking by a verified domain stays refused. It is this package's own port,
- * not a member's seam, so it is bound only while unbound, and an application or
- * a test binding of its own is kept. It reads the write connection, keeps
- * nothing of one call for the next, takes no lock, and lets an error propagate.
+ * It is to be answered by `laravel-authorization`'s grant scope query
+ * (AUTHZ-14.2), which this package binds with the second part of M11, so it is
+ * bound to `UnknownGrantScope` until then: SSO's principal scope answers
+ * `within_tenant` for nobody, and linking by a verified domain stays refused.
+ * It is this package's own port, not a member's seam, so it is bound only while
+ * unbound, and an application or a test binding of its own is kept. It reads
+ * the write connection, keeps nothing of one call for the next, takes no lock,
+ * and lets an error propagate.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

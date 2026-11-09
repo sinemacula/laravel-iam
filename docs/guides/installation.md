@@ -101,7 +101,7 @@ Every run ends with what the application still owes. The package cannot do these
 | Call `Iam::schedule()` and run the scheduler                                                                                                                                                         | [Operations](operations.md#the-schedule)                                    |
 | Run a queue worker for `laravel-authentication`'s code delivery and, while SSO is in use, SSO's metadata refresh                                                                                     | [Operations](operations.md#queues)                                          |
 | Allow SSO's Composer plugin                                                                                                                                                                          | [Requirements](#requirements)                                               |
-| Bind `laravel-authentication`'s access contracts                                                                                                                                                     | [Authorization](authorization.md#access-contracts)                          |
+| Map each application to its permission in `authorization.application_access`, and bind `TenantAccess` if your principals act beyond their own tenant                                                 | [Authorization](authorization.md#access-contracts)                          |
 | Declare MFA's and SSO's freshness operations for their guards                                                                                                                                        | [Guards and applications](#guards-and-applications)                         |
 | Keep every `jwt` and `api_key` guard excluded from audit-log's capture                                                                                                                               | [The audit trail](audit-trail.md#no-double-records)                         |
 | Define every audit code your application records itself                                                                                                                                              | [The audit trail](audit-trail.md#codes)                                     |
@@ -202,9 +202,10 @@ Every `jwt` and `api_key` guard you add later goes into `audit-log.capture.larav
 Every member is installed, but a feature you have not configured stays off. With neither `sso.features.saml2` nor
 `sso.features.oidc` on, SSO is not in use: it starts no flow, and the checks of SSO's side (its applications' guards,
 its links) do not apply. The adapters stay bound all the same, so turning a protocol on later needs nothing more from
-this package. Two switches turn the package's adapters off altogether,
-`IAM_ADAPTERS_MFA` and `IAM_ADAPTERS_SSO`. Turn one off only to bind every one of its seams yourself: some are
-mandatory, and their members' defaults leave sessions standing that should end. See [Configuration](configuration.md)
+this package. Three switches turn the package's adapters off altogether,
+`IAM_ADAPTERS_MFA`, `IAM_ADAPTERS_SSO` and `IAM_ADAPTERS_AUTHORIZATION`. Turn one off only to bind every one of its
+seams yourself: some are mandatory, and their members' defaults leave sessions standing that should end, or, for
+`laravel-authorization`, know no session, tenant or scopes of `laravel-authentication`'s. See [Configuration](configuration.md)
 and [Bindings](bindings.md).
 
 ## Checking

@@ -49,10 +49,12 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  * not; `sso.endpoints.base_url` by SSO's own `EndpointsCheck`;
  * `sso.storage.connection` by the storage alignment, at boot and in
  * `StorageCheck`; audit-log's exclusions, Gate capture and `require_registered`
- * by `AuditCheck`. `laravel-authorization`'s resolvers name this package's
- * adapters only once those adapters exist (M11). Whether a provider attribute
- * lies beyond SSO's standard mapping depends on each connection's mapping,
- * which is a database row, so it is left to the guide, as SSO's routes are.
+ * by `AuditCheck`. `laravel-authorization`'s seams are bound through the
+ * container (`Authorization\AuthorizationSeams`), not named in its
+ * configuration, so none of its resolver keys is required to name an adapter.
+ * Whether a provider attribute lies beyond SSO's standard mapping depends on
+ * each connection's mapping, which is a database row, so it is left to the
+ * guide, as SSO's routes are.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

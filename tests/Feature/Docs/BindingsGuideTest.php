@@ -9,6 +9,7 @@ use Illuminate\Contracts\Config\Repository;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use SineMacula\Laravel\AuditLog\Contributors\ContributorRegistry;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
+use SineMacula\Laravel\Iam\Authorization\AccessMandates;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -421,24 +422,28 @@ final class BindingsGuideTest extends TestCase
     /**
      * Every seam binding, keyed by its contract relative to the root namespace,
      * with whether it is mandatory under the tests' configuration and under one
-     * in which every conditional mandate holds.
+     * in which every conditional mandate holds, each base mandate read before
+     * the configuration changes, since a row may ask its mandate only as it is
+     * read.
      *
      * @return array<string, array{seam: \SineMacula\Laravel\Iam\Bindings\SeamBinding, base: bool, full: bool}>
      */
     private function seams(): array
     {
         $config = $this->app?->make('config') ?? self::fail('No configuration.');
-        $base   = $this->bindings($config);
+        $base   = array_map(static fn (SeamBinding $seam): bool => $seam->isMandatory(), $this->bindings($config));
 
         $config->set('sso.features.enforcement', true);
         $config->set('sso.features.saml2', true);
         $config->set('iam.tenancy.tree', FakeTenantTree::class);
         $config->set('iam.tenancy.mfa_requirement', FakeTenantMfaRequirement::class);
+        $config->set('auth.guards.keys', ['driver' => 'api_key', 'application' => ['methods' => ['api_key']]]);
+        $config->set(AccessMandates::APPLICATION_ACCESS, ['api' => 'api:use']);
 
         $seams = [];
 
         foreach ($this->bindings($config) as $abstract => $seam) {
-            $seams[$abstract] = ['seam' => $seam, 'base' => $base[$abstract]->mandatory ?? false, 'full' => $seam->mandatory];
+            $seams[$abstract] = ['seam' => $seam, 'base' => $base[$abstract] ?? false, 'full' => $seam->isMandatory()];
         }
 
         return $seams;
