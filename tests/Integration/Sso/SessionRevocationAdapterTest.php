@@ -709,7 +709,7 @@ final class SessionRevocationAdapterTest extends TestCase
      * Declare a second guard holding sessions of the same people, which allows
      * the `external_provider` method too.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]

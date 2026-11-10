@@ -819,6 +819,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         $members = array_filter($locks, static fn (string $query): bool => str_contains($query, 'mfa_identity_states') || str_contains($query, 'mfa_factors'));
 
         self::assertNotNull($passkey);
+        self::assertNotSame([], $locks);
         self::assertNotSame([], $members);
         self::assertLessThan($passkey, max(array_keys($locks)));
     }

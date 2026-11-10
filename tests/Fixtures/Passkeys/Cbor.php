@@ -57,10 +57,12 @@ final class Cbor
     /**
      * Encode the value: an integer, a byte string, a text string, or a map
      * given as a list of `[key, value]` pairs, so keys keep their order and
-     * type.
+     * type. A map's values are encoded the same way, so maps nest.
      *
-     * @param  int|list<array{0: int|string|\Stringable, 1: mixed}>|string|\Stringable  $value
+     * @param  mixed  $value
      * @return string
+     *
+     * @throws \InvalidArgumentException
      */
     public static function encode(mixed $value): string
     {
@@ -68,22 +70,30 @@ final class Cbor
             is_int($value)                => $value >= 0 ? self::head(0, $value) : self::head(1, -1 - $value),
             is_string($value)             => self::head(2, strlen($value)) . $value,
             $value instanceof \Stringable => self::head(3, strlen((string) $value)) . $value,
-            default                       => self::map($value),
+            is_array($value)              => self::map($value),
+            default                       => throw new \InvalidArgumentException('CBOR encodes an integer, a byte or text string, or a map alone.'),
         };
     }
 
     /**
      * Encode a map of `[key, value]` pairs.
      *
-     * @param  list<array{0: int|string|\Stringable, 1: mixed}>  $pairs
+     * @param  array<array-key, mixed>  $pairs
      * @return string
+     *
+     * @throws \InvalidArgumentException
      */
     private static function map(array $pairs): string
     {
         $encoded = self::head(5, count($pairs));
 
-        foreach ($pairs as [$key, $item]) {
-            $encoded .= self::encode($key) . self::encode($item);
+        foreach ($pairs as $pair) {
+
+            if (!is_array($pair) || !array_key_exists(0, $pair) || !array_key_exists(1, $pair)) {
+                throw new \InvalidArgumentException('A CBOR map is given as [key, value] pairs.');
+            }
+
+            $encoded .= self::encode($pair[0]) . self::encode($pair[1]);
         }
 
         return $encoded;

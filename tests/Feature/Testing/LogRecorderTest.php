@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Testing;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Log\Logger;
 use Illuminate\Log\LogManager;
@@ -411,15 +410,13 @@ final class LogRecorderTest extends TestCase
     /**
      * Send the log nowhere: what is logged is read from its event.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('logging.default', 'null');
     }

@@ -271,7 +271,7 @@ trait RunsSsoFlows
      */
     protected static function referenceOf(Person $person): IdentityReference
     {
-        return new IdentityReference($person->getMorphClass(), (string) $person->getKey());
+        return new IdentityReference($person->getMorphClass(), self::keyOf($person));
     }
 
     /**

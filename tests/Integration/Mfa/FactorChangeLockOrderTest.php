@@ -6,7 +6,6 @@ namespace Tests\Integration\Mfa;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Events\ConnectionEvent;
@@ -581,15 +580,13 @@ final class FactorChangeLockOrderTest extends TestCase
      * Give the worker and the observer connections of their own to the test's
      * database.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make(Repository::class);
 

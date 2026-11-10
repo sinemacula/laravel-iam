@@ -25,6 +25,7 @@ use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionTransitionAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
@@ -128,7 +129,7 @@ trait ArrangesFactorChanges
         return Factor::query()->create([
             ...AuthenticatorApp::FACTOR,
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => (string) $person->getKey(),
+            'authenticatable_id'   => IdentityReference::of($person)->key,
             'label'                => 'Phone',
             'status'               => FactorStatus::CONFIRMED->value,
             'application'          => self::GUARD,

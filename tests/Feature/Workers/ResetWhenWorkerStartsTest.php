@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Sso\Contracts\Fetcher;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Tests\Concerns\PermutesProviderOrder;
+use Tests\Concerns\ReadsRawListeners;
 use Tests\Fixtures\Workers\WorkerStartingStandIn;
 use Tests\TestCase;
 
@@ -32,7 +33,7 @@ use Tests\TestCase;
 #[CoversClass(ResetWhenWorkerStarts::class)]
 final class ResetWhenWorkerStartsTest extends TestCase
 {
-    use PermutesProviderOrder;
+    use PermutesProviderOrder, ReadsRawListeners;
 
     /**
      * The listener is registered for Octane's event by its name, with Octane
@@ -43,7 +44,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     public function testTheListenerIsRegisteredByTheEventsName(): void
     {
         self::assertFalse(class_exists(ResetWhenWorkerStarts::EVENT));
-        self::assertContains(ResetWhenWorkerStarts::class, Event::getRawListeners()[ResetWhenWorkerStarts::EVENT] ?? []);
+        self::assertContains(ResetWhenWorkerStarts::class, self::rawListenersOf(ResetWhenWorkerStarts::EVENT));
     }
 
     /**

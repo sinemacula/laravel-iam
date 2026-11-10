@@ -204,7 +204,7 @@ final readonly class SendersCheck implements Check
         $key      = DeliverySeams::GATEWAYS . $channel->value;
         $named    = $this->config->get($key);
 
-        if ($this->container->bound($contract) || !DeliverySeams::isNamed($this->config, $channel) || is_subclass_of($named, $contract)) {
+        if ($this->container->bound($contract) || !DeliverySeams::isNamed($this->config, $channel) || (is_string($named) && is_subclass_of($named, $contract))) {
             return;
         }
 

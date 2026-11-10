@@ -255,7 +255,7 @@ final class CodeTranslatorTest extends TestCase
         $disabled = self::translator()->admission(ChallengeAdmission::locked(Lockout::disabled()));
 
         self::assertSame(FactorCodeStanding::LOCKED, $locked->standing);
-        self::assertTrue($until->equalTo($locked->lockedUntil));
+        self::assertEquals($until, $locked->lockedUntil);
         self::assertSame(FactorCodeStanding::LOCKED, $disabled->standing);
         self::assertNull($disabled->lockedUntil);
     }
@@ -322,7 +322,7 @@ final class CodeTranslatorTest extends TestCase
         $admission = self::translator()->attempt(AttemptOutcome::refuse(Lockout::endingAt(AttemptScope::FACTOR, $until)), false);
 
         self::assertSame(FactorCodeStanding::LOCKED, $admission->standing);
-        self::assertTrue($until->equalTo($admission->lockedUntil));
+        self::assertEquals($until, $admission->lockedUntil);
     }
 
     /**
@@ -340,9 +340,9 @@ final class CodeTranslatorTest extends TestCase
         $disabled = self::translator()->attempt(AttemptOutcome::fail(Lockout::disabled()), false);
 
         self::assertSame(FactorCodeStanding::LOCKED, $factor->standing);
-        self::assertTrue($until->equalTo($factor->lockedUntil));
+        self::assertEquals($until, $factor->lockedUntil);
         self::assertSame(FactorCodeStanding::LOCKED, $identity->standing);
-        self::assertTrue($until->addMinute()->equalTo($identity->lockedUntil));
+        self::assertEquals($until->addMinute(), $identity->lockedUntil);
         self::assertNull($disabled->lockedUntil);
     }
 
@@ -358,7 +358,7 @@ final class CodeTranslatorTest extends TestCase
 
         self::assertTrue($result->wasSent());
         self::assertSame('challenge-1', $result->challengeId);
-        self::assertTrue($expires->equalTo($result->expiresAt));
+        self::assertEquals($expires, $result->expiresAt);
     }
 
     /**
@@ -490,9 +490,9 @@ final class CodeTranslatorTest extends TestCase
         $refused = self::translator()->outcome(new FactorCodeCheck(FactorCodeOutcome::REFUSED, 'challenge-1', refusal: FactorCodeRefusal::MACHINE_IDENTITY));
         $limited = self::translator()->outcome(new FactorCodeCheck(FactorCodeOutcome::RATE_LIMITED, 'challenge-1', retryAfter: 90));
 
-        self::assertTrue($until->equalTo($locked->lockedUntil));
+        self::assertEquals($until, $locked->lockedUntil);
         self::assertSame(FailureReason::MACHINE_IDENTITY, $refused->reason);
-        self::assertTrue($this->now->addSeconds(90)->equalTo($limited->lockedUntil));
+        self::assertEquals($this->now->addSeconds(90), $limited->lockedUntil);
     }
 
     /**

@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -135,7 +134,7 @@ final class CodeSignInTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame(self::GUARD, $message->application);
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
         self::assertTrue($message->expiresAt->isFuture());
         self::assertSame([], $this->otherGatewayThan($channel)->sent());
@@ -207,15 +206,13 @@ final class CodeSignInTest extends TestCase
     /**
      * Name both gateways before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $this->nameTheGateways($app);
     }

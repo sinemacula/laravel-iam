@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Str;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
@@ -147,7 +146,7 @@ abstract class TestCase extends OrchestraTestCase
      * Register every member's service provider, then this package's, unless the
      * test asked for another order.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return array<int, class-string<\Illuminate\Support\ServiceProvider>>
      */
     #[\Override]
@@ -197,7 +196,7 @@ abstract class TestCase extends OrchestraTestCase
      * to in-memory SQLite when unset, so local development needs no extra
      * configuration.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
@@ -214,8 +213,6 @@ abstract class TestCase extends OrchestraTestCase
             return;
         }
 
-        assert($app instanceof Application);
-
         FakeAuditStore::fake($app);
     }
 
@@ -224,15 +221,13 @@ abstract class TestCase extends OrchestraTestCase
      * application people sign in on, before any provider registers, as an
      * application's own configuration files would hold them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $this->defineSignIn($app->make(ConfigRepository::class));
     }
@@ -259,6 +254,19 @@ abstract class TestCase extends OrchestraTestCase
     protected function signInMethods(): array
     {
         return ['password'];
+    }
+
+    /**
+     * Assert the identity given is the person: a person, of the same row.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  mixed  $identity
+     * @return void
+     */
+    protected static function assertIsThePerson(Person $person, mixed $identity): void
+    {
+        static::assertInstanceOf(Person::class, $identity);
+        static::assertTrue($person->is($identity));
     }
 
     /**

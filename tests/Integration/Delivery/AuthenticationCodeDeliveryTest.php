@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Delivery;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -136,7 +135,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
         self::assertSame($channel, $message->channel);
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
 
         $reset = $this->auth()->passwords(self::GUARD)->resetWithCode($type, [
@@ -264,15 +263,13 @@ final class AuthenticationCodeDeliveryTest extends TestCase
      * configuration file holds them, so `laravel-authentication`'s one-time
      * code sender is pointed at the gateways.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('iam.delivery', [
             'email' => FakeEmailGateway::class,
@@ -286,15 +283,13 @@ final class AuthenticationCodeDeliveryTest extends TestCase
      * response is sent, and admit every factor code, so a further factor's code
      * can be sent without MFA's counters.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('queue.default', 'sync');
         $app->bind(FactorCodeCounters::class, AdmitsEveryFactorCode::class);

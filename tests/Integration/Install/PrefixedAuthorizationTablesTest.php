@@ -6,7 +6,6 @@ namespace Tests\Integration\Install;
 
 use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -106,15 +105,13 @@ final class PrefixedAuthorizationTablesTest extends TestCase
      * Point the application's configuration, database and language directories
      * at the test's own before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->useConfigPath($this->scratch('config'));
         $app->useDatabasePath($this->scratch('database'));
