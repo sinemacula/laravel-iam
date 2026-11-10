@@ -128,12 +128,28 @@ abstract class TenantTreeContract
      */
     public static function assertSubtreeIsTheTenantAndItsDescendants(TenantTree $tree, string $tenantId, array $descendants): void
     {
-        $selected = array_map(strval(...), $tree->subtree($tenantId)->pluck(TenantTree::ID_COLUMN)->all());
+        $selected = array_map(self::selectedIdentifier(...), $tree->subtree($tenantId)->pluck(TenantTree::ID_COLUMN)->all());
         $expected = [$tenantId, ...$descendants];
 
         sort($selected);
         sort($expected);
 
         Assert::assertSame($expected, $selected, 'The tenant tree\'s subtree selected other tenants than the tenant and its descendants.');
+    }
+
+    /**
+     * The identifier a subtree selected, as text; anything but an identifier
+     * fails the test case.
+     *
+     * @param  mixed  $id
+     * @return string
+     */
+    private static function selectedIdentifier(mixed $id): string
+    {
+        if (!is_int($id) && !is_string($id)) {
+            Assert::fail('The tenant tree\'s subtree selected a tenant by no identifier.');
+        }
+
+        return (string) $id;
     }
 }

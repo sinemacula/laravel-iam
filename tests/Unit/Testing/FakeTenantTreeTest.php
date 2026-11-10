@@ -53,7 +53,7 @@ final class FakeTenantTreeTest extends TestCase
         self::assertSame([], $fake->descendants('stray'));
         self::assertTrue($fake->isWithin('stray', 'stray'));
         self::assertFalse($fake->isWithin('stray', 'root'));
-        self::assertSame(['stray'], array_map(strval(...), $fake->subtree('stray')->pluck(TenantTree::ID_COLUMN)->all()));
+        self::assertSame(['stray'], $fake->subtree('stray')->pluck(TenantTree::ID_COLUMN)->all());
         self::assertSame(
             [
                 ['question' => 'ancestors', 'tenant' => 'stray'],
@@ -165,7 +165,7 @@ final class FakeTenantTreeTest extends TestCase
         $fake      = FakeTenantTree::fake($container, self::CONNECTION);
 
         self::assertSame($fake, $container->make(TenantTree::class));
-        self::assertSame(['solo'], array_map(strval(...), $fake->subtree('solo')->pluck(TenantTree::ID_COLUMN)->all()));
+        self::assertSame(['solo'], $fake->subtree('solo')->pluck(TenantTree::ID_COLUMN)->all());
 
         $other = FakeTenantTree::fake();
 
