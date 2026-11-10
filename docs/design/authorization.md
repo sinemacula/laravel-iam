@@ -9,7 +9,7 @@ requirement check on the proofs of the subject's own session (IAM-6.3); its insu
 rendered as MFA's step-up (IAM-6.4); its session policy source and `laravel-authentication`'s scope registry, answered
 from the caller's credential scopes and from `laravel-authorization`'s registry (IAM-6.5); and
 `laravel-authentication`'s application access, answered from `laravel-authorization`'s grants (IAM-6.6). It covers how
-the binding rule keeps a class the application names in `laravel-authorization`'s configuration, when the access
+a class the application names in `laravel-authorization`'s configuration stands over the adapter, when the access
 contracts are mandatory, what the second part of this work still adds, and the gaps in the members the adapters work
 around. The rule itself is
 in `binding-precedence.md`, and the worker reset in `long-running-processes.md`.
@@ -42,16 +42,17 @@ in `binding-precedence.md`, and the worker reset in `long-running-processes.md`.
   `instance()`, fires `laravel-authorization`'s rebinding listener, which empties the request's resolution memo, so
   every check would read its grants again. The adapter still reads `Auth::caller()` afresh on each call.
 - `laravel-authorization` binds each default only where nothing is bound yet (`bindIf()`, since
-  laravel-authorization#129): its provider scopes the class its configuration names under `authorization.default:` and
-  the contract, and binds the contract to a closure it declares that resolves that key. So each of its rows names the
-  provider and the default class (`AuthorizationSeams::authorizationRow()`), and the seam is replaced only while it is
-  unbound or holds that closure. A class the application names in `authorization.subject_resolver`,
-  `authorization.requirement_checker` or `authorization.session.source` is the application's, and kept: the row names
-  that key (`SeamBinding::$configurationKey`), and the rule reads it as `laravel-authorization` will
-  (`SeamBinding::namesApplicationClass()`), leaving the seam for `laravel-authorization` to bind to that class whichever
-  registers first. Anything the application binds over the contract is kept too, made before this package registers or
-  after, and a `laravel-authorization` that registers after this package, with the other providers or from another
-  provider's `boot()`, leaves the adapters bound.
+  laravel-authorization#129), and says itself whether a contract still holds its default
+  (`AuthorizationServiceProvider::isPackageDefault()`). So each of its rows names the default class and asks it
+  (`AuthorizationSeams::authorizationRow()`, `SeamBinding::$holdsDefault`), and the seam is replaced only while it is
+  unbound or holds that default. A class the application names in `authorization.subject_resolver`,
+  `authorization.requirement_checker` or `authorization.session.source` is no default: `laravel-authorization` binds it
+  over any earlier binding, the adapter included, through a closure `isPackageDefault()` answers `false` for, so this
+  package reads none of those keys. Registered before this package, `laravel-authorization` has bound the class, and
+  the rule keeps it; registered after, it binds the class over the adapter, though the outcome lists the seam as bound.
+  Anything the application binds over the contract is kept too, made before this package registers or after, and a
+  `laravel-authorization` that registers after this package, with the other providers or from another provider's
+  `boot()`, leaves the adapters bound.
 - The subject (`SubjectResolverAdapter`). `resolve()` takes nothing, so it reads the request's caller
   (`Auth::caller()`): the principal, its identity, the active tenant, the guard as the application and the session's
   key. No caller, or a pending session that has not chosen its principal, is no subject. `forUser()` is handed the model
@@ -203,10 +204,12 @@ in `binding-precedence.md`, and the worker reset in `long-running-processes.md`.
   alike, so nothing is owed. The session policy source shares the scope registry's mandate: `NoSessionPolicy` allows
   nothing only to a principal carrying `AuthorizableMachine` and caps any other machine by nothing, so a machine whose
   credential was issued `orders.read` could do whatever its grants allow. `iam:check` refuses it whatever the switch
-  says, the application's binding of it by class name included. Since `laravel-authorization` binds the seam through a
-  closure that resolves the class `authorization.session.source` names, the check names a seam still holding that
-  closure by that class (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused, and a class the application
-  names there passes.
+  says, the application's binding of it by class name included. The check asks `isPackageDefault()` as the binding rule
+  does, and names a seam it says holds `laravel-authorization`'s default by the row's default class
+  (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused. A class the application names in
+  `authorization.session.source` is bound through a closure of `laravel-authorization`'s own that `isPackageDefault()`
+  answers `false` for, so the check refuses only the row's default class for these rows, never any other class of the
+  member's, and that class passes without this package reading the key.
 - Request state. None of the adapters keeps anything between calls. The subject resolver and application access are
   scoped all the same, under `iam.scoped:` (`BindingRule::bindScoped()`), so the seams themselves are never scoped, and
   the worker reset and Laravel's `forgetScopedInstances()` forget them between units of work. The caller
@@ -218,10 +221,9 @@ in `binding-precedence.md`, and the worker reset in `long-running-processes.md`.
 ## Success Path
 
 1. The provider registers. The binding rule binds the six rows over the members' defaults where the switch is on; the
-   requirement checker only while `iam.adapters.mfa` is on too, and none of `laravel-authorization`'s rows whose class
-   the application names in its configuration. The context's keys are queued for the key catalogue.
+   requirement checker only while `iam.adapters.mfa` is on too. The context's keys are queued for the key catalogue.
 2. `laravel-authorization` registers, before this package or after, and binds its defaults only where nothing is bound,
-   so the adapters stand.
+   so the adapters stand; a class the application names in its configuration it binds over whatever is bound.
 3. `laravel-authorization` boots, reads the context's namespaces and assurance keys once every provider has registered,
    and later builds its key catalogue, with the context's keys declared on it.
 4. A request on `auth:api` asks `Authorization::authorize('invoices:refund')`. The subject is the caller, with its
@@ -318,18 +320,19 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   and which no adapter could do as it answers. `Authorization\Translation\RequirementTranslator` crosses a requirement
   from `laravel-authorization`'s terms to MFA's and back, shared by the requirement checker and the step-up mapping,
   each of which would otherwise translate alone; its unit test sits beside it.
-- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`), since a row over
-  `laravel-authorization` keeps a class the application names in its configuration, which the manifest, expecting its
-  resolvers to be named in configuration, did not foresee. For the same reason `iam:install` writes none of
+- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`, `Bindings\MemberDefaults`),
+  since a row over `laravel-authorization` asks it whether the seam holds its default, so a class the application names
+  in its configuration is kept, which the manifest, expecting its resolvers to be named in configuration, did not
+  foresee. For the same reason `iam:install` writes none of
   `laravel-authorization`'s resolver keys and `CrossMemberConfigurationCheck` requires none (`install-and-check.md`).
 
 ## Implementation Anchors
 
 - `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `authorizationRow()`, `SWITCH`;
   `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`: `adapters.authorization`.
-- `src/Bindings/SeamBinding.php`: `$configurationKey`, `configuredClass()`, `namesApplicationClass()`, `isMandatory()`;
+- `src/Bindings/SeamBinding.php`: `$holdsDefault`, `isMandatory()`;
   `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`; `src/Bindings/BindingRule.php`: `apply()`;
-  `src/Checks/MandatorySeamsCheck.php`: `holderOf()`.
+  `src/Checks/MandatorySeamsCheck.php`: `holderOf()`, `isMemberDefault()`.
 - `src/Authorization/SubjectResolverAdapter.php`: `resolve()`, `forUser()`.
 - `src/Authorization/AuthenticationContextAdapter.php`: `namespaces()`, `assuranceKeys()`, `values()`, `NAMESPACES`,
   `ASSURANCE_KEYS`;
@@ -353,7 +356,7 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testTheSwitchOffBindsNothing`,
   `testTheRequirementCheckerFollowsTheMfaSwitch`,
-  `testEachRowReadsLaravelAuthorizationsConfigurationKeyAndOnlyTheResolverIsScoped`,
+  `testEachRowAsksLaravelAuthorizationForItsDefaultAndOnlyTheResolverIsScoped`,
   `testTheSubjectResolverIsOneForAUnitOfWork`,
   `testTheSwitchIsReadLeniently`, `testTheContextsKeysAreDeclared`, `testAKeyTheApplicationDeclaresKeepsItsDeclaration`,
   `testNoKeyIsDeclaredForAnApplicationsOwnContext`, `testTheContextsAssuranceKeysAreUntestableUnderEveryNamespace`,
@@ -368,9 +371,9 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   `testIamCheckPassesASourceTheApplicationNamesInAuthorizationsConfiguration`,
   `testIamCheckAsksTheBoundApplicationPolicyWhichMachineCredentialsAGuardAccepts`,
   `testTheApplicationPolicyIsAskedOnlyWhenTheMandateIsRead`
-- `tests/Unit/Bindings/MemberDefaultsTest.php` `testADefaultClassBoundByNameIsNoMembersOwnBinding`,
-  `testAClosureNoMemberDefaultDeclaresIsNoMembersOwnBinding`
-- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseConfigurationNamesAnotherClassIsKept`
+- `tests/Unit/Bindings/MemberDefaultsTest.php` `testAMemberThatAnswersIsAskedWhetherTheSeamHoldsItsDefault`,
+  `testAMemberThatAnswersIsNotAskedWithNoBindingToRead`
+- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault`
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` (every isolation level where it signs in)
   `testTheRequestsCallerIsTheSubject`, `testACallerWithoutASessionIsTheSubjectWithNone`,
   `testTheGuardsOwnPrincipalIsTheCallerWithItsSession`, `testACopyOfTheCallerLoadedAgainIsTheCaller`,
@@ -447,7 +450,8 @@ The M11 File Change Manifest is followed for part (a), with these departures:
 
 ## Change Triggers
 
-- `laravel-authorization` binds its defaults unconditionally again, or renames its configuration keys or its defaults.
+- `laravel-authorization` binds its defaults unconditionally again, renames its defaults, or changes what
+  `isPackageDefault()` answers.
 - `laravel-authorization` changes how it matches an assurance key, or reads the context's types itself.
 - `laravel-authentication`, MFA or SSO adds a key that says how strongly or how recently the session was authenticated:
   it joins `ASSURANCE_KEYS`.

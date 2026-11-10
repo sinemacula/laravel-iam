@@ -36,14 +36,17 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * inert ones, and a member that renames its default (which the binding rule
  * then keeps as though it were the application's) is caught here rather than
  * passed. A seam the application bound to a member's own default class by name
- * is reported too, though the rule keeps it. A seam whose member binds it to
- * the class its configuration names (`laravel-authorization`) is named by that
- * class while the seam holds the member's binding
- * (`SeamBinding::configuredClass()`), so a class the application names in the
- * member's configuration is passed and the member's default refused. A binding
- * that names no class (a closure of the application's own, whose implementation
- * cannot be read without building it) is refused too: the check takes nothing
- * on trust, so a mandatory seam is bound by class name or as an instance.
+ * is reported too, though the rule keeps it. A member that says itself whether
+ * the seam holds its default (`laravel-authorization`'s `isPackageDefault()`,
+ * `SeamBinding::$holdsDefault`) is asked instead of its own classes being
+ * refused wholesale: while it says the seam holds its default, the seam is
+ * named by the row's default class and refused, and otherwise only the row's
+ * defaults are, so a class the application names in that member's
+ * configuration, which the member binds through a closure of its own, is
+ * passed. A binding that names no class (a closure of the application's own,
+ * whose implementation cannot be read without building it) is refused too: the
+ * check takes nothing on trust, so a mandatory seam is bound by class name or
+ * as an instance.
  *
  * While SSO is in use, the seams of the capabilities this package's check of
  * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check,
@@ -209,11 +212,9 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * The class the seam's live binding answers with. A seam its member binds
-     * to the class its configuration names (`SeamBinding::configuredClass()`),
-     * while it still holds that member's own binding, answers with that class:
-     * the member's default, or a class the application names in the member's
-     * configuration, so the one is refused and the other passed.
+     * The class the seam's live binding answers with. A seam whose member says
+     * it holds the member's default (`SeamBinding::$holdsDefault`) answers with
+     * the row's default class, which the member's binding resolves to.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
      * @return ?string
@@ -222,10 +223,8 @@ final readonly class MandatorySeamsCheck implements Check
      */
     private function holderOf(SeamBinding $binding): ?string
     {
-        $configured = $binding->configuredClass($this->config);
-
-        if ($configured !== null && $this->defaults->holdsDefault($this->container, $binding->abstract, $binding->memberDefaults)) {
-            return $configured;
+        if ($binding->holdsDefault !== null && $this->defaults->holdsDefault($this->container, $binding->abstract, $binding->holdsDefault)) {
+            return $binding->memberDefaults[0] ?? $binding->abstract;
         }
 
         return $this->holders->of($this->container, $binding->abstract);
@@ -267,7 +266,10 @@ final readonly class MandatorySeamsCheck implements Check
      * Whether the class named is one of the row's member defaults, or any class
      * of a member's own other than the row's adapter (SSO's own link store is
      * the linker's) and the member classes the row accepts (SSO's link store on
-     * the link storage).
+     * the link storage). A member that says itself whether the seam holds its
+     * default has said so already (`holderOf()`), so only the row's defaults
+     * are refused for it: its own class that declares the closure binding a
+     * class the application names in its configuration is passed.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
      * @param  string  $holder
@@ -279,6 +281,6 @@ final readonly class MandatorySeamsCheck implements Check
             return false;
         }
 
-        return in_array($holder, $binding->memberDefaults, true) || SeamHolders::isMembersOwn($holder);
+        return in_array($holder, $binding->memberDefaults, true) || ($binding->holdsDefault === null && SeamHolders::isMembersOwn($holder));
     }
 }
