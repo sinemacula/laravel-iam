@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix;
+use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
@@ -30,7 +31,7 @@ use Tests\TestCase;
 #[CoversClass(AuthorizationTablePrefix::class)]
 final class PrefixedAuthorizationTablesTest extends TestCase
 {
-    use UsesScratchDirectory;
+    use NamesAuthorizationTables, UsesScratchDirectory;
 
     /**
      * Destroy the application, then delete the test's directory.
@@ -66,10 +67,10 @@ final class PrefixedAuthorizationTablesTest extends TestCase
 
         $config->set('authorization.tables', $configuration['tables']);
 
-        $migrations = glob($this->scratch('database/migrations/2026_04_14_*.php')) ?: [];
+        $migrations = array_map(fn (string $name): string => $this->scratch('database/migrations/' . $name), self::authorizationMigrations());
         $ran        = [];
 
-        self::assertCount(10, $migrations);
+        self::assertNotSame([], $migrations);
 
         try {
             foreach ($migrations as $file) {
@@ -82,8 +83,9 @@ final class PrefixedAuthorizationTablesTest extends TestCase
                 $ran[] = $migration;
             }
 
+            self::assertSame(self::prefixedAuthorizationTables($prefix), $configuration['tables']);
+
             foreach ($configuration['tables'] as $key => $table) {
-                self::assertSame($prefix . $key, $table);
                 self::assertTrue(Schema::hasTable($table), $table);
                 self::assertFalse(Schema::hasTable($key), $key);
             }
