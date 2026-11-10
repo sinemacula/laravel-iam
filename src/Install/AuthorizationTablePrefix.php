@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Install;
 
 use Illuminate\Filesystem\Filesystem;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 
 /**
  * Prefixed names for `laravel-authorization`'s tables (IAM-2.4), whose own
@@ -76,12 +77,13 @@ final readonly class AuthorizationTablePrefix
 
     /**
      * Whether every table name `laravel-authorization`'s published
-     * configuration file defaults to is the prefix followed by the table's own
-     * name (its key under `authorization.tables`), as a run that wrote the
-     * prefix leaves them: a prefix that is only the start of the one written
-     * (`iam` where `iam_` was written) is not carried, since the tables are not
-     * named with it. A file holding no table name default, or no file there,
-     * carries none.
+     * configuration file defaults to is the name the prefix gives that table,
+     * as a run that wrote the prefix leaves them: the prefix followed by the
+     * name `laravel-authorization` ships for it, or that name alone where it
+     * already starts with the prefix. A prefix that is only the start of the
+     * one written (`iam` where `iam_` was written) is not carried, since the
+     * tables are not named with it. A file holding no table name default, or no
+     * file there, carries none.
      *
      * @param  string  $file
      * @param  string  $prefix
@@ -97,15 +99,24 @@ final readonly class AuthorizationTablePrefix
 
         preg_match_all(self::TABLE_DEFAULT, $this->files->get($file), $matches);
 
-        $names = array_combine($matches[2], $matches[3]);
+        $names   = array_combine($matches[2], $matches[3]);
+        $shipped = $this->shipped();
 
-        return $names !== [] && array_filter($names, static fn (string $table, string $key): bool => $table !== $prefix . $key, ARRAY_FILTER_USE_BOTH) === [];
+        $unprefixed = array_filter(
+            $names,
+            static fn (string $table, string $key): bool => $table !== self::prefixed($prefix, $shipped[$key] ?? $key),
+            ARRAY_FILTER_USE_BOTH,
+        );
+
+        return $names !== [] && $unprefixed === [];
     }
 
     /**
      * Prefix every table name `laravel-authorization`'s published configuration
      * file defaults to, and return the key under `authorization.tables` of each
-     * name written, with the name it now defaults to.
+     * name written, with the name it now defaults to. A name that already
+     * starts with the prefix (`authorization_grant_usage` under the suggested
+     * `authorization_`) keeps it, rather than carrying the prefix twice.
      *
      * @param  string  $file
      * @param  string  $prefix
@@ -121,9 +132,9 @@ final readonly class AuthorizationTablePrefix
         $written  = [];
         $contents = (string) preg_replace_callback(self::TABLE_DEFAULT, static function (array $match) use ($prefix, &$written): string {
 
-            $written[$match[2]] = $prefix . $match[3];
+            $written[$match[2]] = self::prefixed($prefix, $match[3]);
 
-            return $match[1] . $prefix . $match[3] . $match[4];
+            return $match[1] . $written[$match[2]] . $match[4];
         }, $this->files->get($file));
 
         if ($written !== []) {
@@ -131,5 +142,36 @@ final readonly class AuthorizationTablePrefix
         }
 
         return $written;
+    }
+
+    /**
+     * The name the prefix gives a table `laravel-authorization` ships under the
+     * name given: the prefix followed by it, or the name alone where it already
+     * starts with the prefix.
+     *
+     * @param  string  $prefix
+     * @param  string  $name
+     * @return string
+     */
+    private static function prefixed(string $prefix, string $name): string
+    {
+        return str_starts_with($name, $prefix) ? $name : $prefix . $name;
+    }
+
+    /**
+     * The table names `laravel-authorization` ships, keyed by their key under
+     * `authorization.tables`, read from its own configuration file.
+     *
+     * @return array<string, string>
+     *
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    private function shipped(): array
+    {
+        $file = dirname((string) (new \ReflectionClass(AuthorizationServiceProvider::class))->getFileName(), 2) . '/config/authorization.php';
+
+        preg_match_all(self::TABLE_DEFAULT, $this->files->get($file), $matches);
+
+        return array_combine($matches[2], $matches[3]);
     }
 }
