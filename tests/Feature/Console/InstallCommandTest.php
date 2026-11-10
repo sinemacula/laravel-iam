@@ -52,6 +52,12 @@ final class InstallCommandTest extends TestCase
 {
     use UsesScratchDirectory;
 
+    /** @var array<string, string> The tables `laravel-authorization` names under its own prefix, by their key. */
+    private const array OWN_TABLES = [
+        'grant_usage'    => 'authorization_grant_usage',
+        'usage_coverage' => 'authorization_usage_coverage',
+    ];
+
     /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each member's configuration key and the provider that ships its files. */
     private const array MEMBERS = [
         'authentication' => AuthenticationServiceProvider::class,
@@ -512,7 +518,8 @@ final class InstallCommandTest extends TestCase
 
     /**
      * `--prefix` prefixes every `laravel-authorization` table in its
-     * configuration published in the run.
+     * configuration published in the run, but those it names under its own
+     * prefix, which keep their names.
      *
      * @return void
      */
@@ -525,9 +532,11 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(10, $configuration['tables']);
+        self::assertCount(12, $configuration['tables']);
+        self::assertSame(self::OWN_TABLES, array_intersect_key($configuration['tables'], self::OWN_TABLES));
+        self::assertStringNotContainsString('authz_authorization_', $output);
 
-        foreach ($configuration['tables'] as $key => $table) {
+        foreach (array_diff_key($configuration['tables'], self::OWN_TABLES) as $key => $table) {
             self::assertSame('authz_' . $key, $table);
             self::assertStringContainsString("[written] authorization.tables.{$key}: authz_{$key}", $output);
         }
@@ -964,9 +973,10 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(10, $configuration['tables']);
+        self::assertCount(12, $configuration['tables']);
+        self::assertSame(self::OWN_TABLES, array_intersect_key($configuration['tables'], self::OWN_TABLES));
 
-        foreach ($configuration['tables'] as $key => $table) {
+        foreach (array_diff_key($configuration['tables'], self::OWN_TABLES) as $key => $table) {
             self::assertSame('authz_' . $key, $table);
         }
 

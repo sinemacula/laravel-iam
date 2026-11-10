@@ -17,7 +17,9 @@ use Illuminate\Filesystem\Filesystem;
  * `laravel-authorization`'s migrations and models read the prefixed names from
  * the first migration on. A configuration file the application had already
  * published is never written, nor one whose migrations were published before:
- * their tables keep the names they have.
+ * their tables keep the names they have. A table `laravel-authorization`
+ * already names under its own prefix (`OWN_PREFIX`, as its grant usage tables
+ * are) collides with nothing, so it keeps that name.
  *
  * A prefix is lower-case letters, digits and underscores, starting with a
  * letter, at most `MAX_LENGTH` characters long: the longest table, index or
@@ -37,6 +39,9 @@ final readonly class AuthorizationTablePrefix
 
     /** @var int The longest prefix allowed. */
     public const int MAX_LENGTH = 16;
+
+    /** @var string The prefix `laravel-authorization` names some of its own tables with, which collide with nothing. */
+    private const string OWN_PREFIX = 'authorization_';
 
     /** @var string The shape of a prefix. */
     private const string SHAPE = '/^[a-z][a-z0-9_]*$/D';
@@ -78,10 +83,11 @@ final readonly class AuthorizationTablePrefix
      * Whether every table name `laravel-authorization`'s published
      * configuration file defaults to is the prefix followed by the table's own
      * name (its key under `authorization.tables`), as a run that wrote the
-     * prefix leaves them: a prefix that is only the start of the one written
-     * (`iam` where `iam_` was written) is not carried, since the tables are not
-     * named with it. A file holding no table name default, or no file there,
-     * carries none.
+     * prefix leaves them, a table the package names under its own prefix aside:
+     * a prefix that is only the start of the one written (`iam` where `iam_`
+     * was written) is not carried, since the tables are not named with it. A
+     * file holding no table name default, none but the package's own prefixed
+     * ones, or no file there, carries none.
      *
      * @param  string  $file
      * @param  string  $prefix
@@ -97,15 +103,18 @@ final readonly class AuthorizationTablePrefix
 
         preg_match_all(self::TABLE_DEFAULT, $this->files->get($file), $matches);
 
-        $names = array_combine($matches[2], $matches[3]);
+        $names    = array_combine($matches[2], $matches[3]);
+        $prefixed = array_filter($names, static fn (string $table, string $key): bool => $table === $prefix . $key, ARRAY_FILTER_USE_BOTH);
+        $own      = array_filter($names, static fn (string $table, string $key): bool => $table === self::OWN_PREFIX . $key, ARRAY_FILTER_USE_BOTH);
 
-        return $names !== [] && array_filter($names, static fn (string $table, string $key): bool => $table !== $prefix . $key, ARRAY_FILTER_USE_BOTH) === [];
+        return $prefixed !== [] && count($prefixed + $own) === count($names);
     }
 
     /**
      * Prefix every table name `laravel-authorization`'s published configuration
-     * file defaults to, and return the key under `authorization.tables` of each
-     * name written, with the name it now defaults to.
+     * file defaults to, but those the package names under its own prefix, and
+     * return the key under `authorization.tables` of each name written, with
+     * the name it now defaults to.
      *
      * @param  string  $file
      * @param  string  $prefix
@@ -120,6 +129,10 @@ final readonly class AuthorizationTablePrefix
 
         $written  = [];
         $contents = (string) preg_replace_callback(self::TABLE_DEFAULT, static function (array $match) use ($prefix, &$written): string {
+
+            if ($match[3] === self::OWN_PREFIX . $match[2]) {
+                return $match[0];
+            }
 
             $written[$match[2]] = $prefix . $match[3];
 

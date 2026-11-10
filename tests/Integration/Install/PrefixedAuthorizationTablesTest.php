@@ -32,6 +32,12 @@ final class PrefixedAuthorizationTablesTest extends TestCase
 {
     use UsesScratchDirectory;
 
+    /** @var array<string, string> The tables `laravel-authorization` names under its own prefix, by their key. */
+    private const array OWN_TABLES = [
+        'grant_usage'    => 'authorization_grant_usage',
+        'usage_coverage' => 'authorization_usage_coverage',
+    ];
+
     /**
      * Destroy the application, then delete the test's directory.
      *
@@ -47,7 +53,8 @@ final class PrefixedAuthorizationTablesTest extends TestCase
 
     /**
      * With the longest prefix allowed, `laravel-authorization`'s published
-     * migrations create every table under its prefixed name, and drop them.
+     * migrations create every table under its prefixed name, and drop them; a
+     * table it names under its own prefix keeps that name.
      *
      * @return void
      */
@@ -82,7 +89,7 @@ final class PrefixedAuthorizationTablesTest extends TestCase
                 $ran[] = $migration;
             }
 
-            foreach ($configuration['tables'] as $key => $table) {
+            foreach (array_diff_key($configuration['tables'], self::OWN_TABLES) as $key => $table) {
                 self::assertSame($prefix . $key, $table);
                 self::assertTrue(Schema::hasTable($table), $table);
                 self::assertFalse(Schema::hasTable($key), $key);
@@ -98,6 +105,8 @@ final class PrefixedAuthorizationTablesTest extends TestCase
         foreach ($configuration['tables'] as $table) {
             self::assertFalse(Schema::hasTable($table), $table);
         }
+
+        self::assertSame(self::OWN_TABLES, array_intersect_key($configuration['tables'], self::OWN_TABLES));
     }
 
     /**

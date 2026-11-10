@@ -40,6 +40,12 @@ final class AuthorizationTablePrefixTest extends TestCase
         'guardrails'               => 'guardrails',
     ];
 
+    /** @var array<string, string> The tables `laravel-authorization` names under its own prefix, by their key. */
+    private const array OWN_TABLES = [
+        'grant_usage'    => 'authorization_grant_usage',
+        'usage_coverage' => 'authorization_usage_coverage',
+    ];
+
     /**
      * Delete the test's directory and forget the variables a test set.
      *
@@ -57,7 +63,8 @@ final class AuthorizationTablePrefixTest extends TestCase
 
     /**
      * Every table name `laravel-authorization`'s configuration defaults to is
-     * prefixed, and nothing else in the file changes.
+     * prefixed, but those it names under its own prefix, and nothing else in
+     * the file changes.
      *
      * @return void
      *
@@ -72,7 +79,7 @@ final class AuthorizationTablePrefixTest extends TestCase
         $expected = array_map(static fn (string $table): string => 'authz_' . $table, self::TABLES);
 
         self::assertSame($expected, $written);
-        self::assertSame($expected, self::configuration($file)['tables']);
+        self::assertSame([...$expected, ...self::OWN_TABLES], self::configuration($file)['tables']);
 
         foreach (self::TABLES as $key => $table) {
             $variable = 'AUTHORIZATION_TABLE_' . strtoupper($key);
@@ -232,6 +239,12 @@ final class AuthorizationTablePrefixTest extends TestCase
             . "    'permissions' => env('AUTHORIZATION_TABLE_PERMISSIONS', 'permissions'),\n]];\n");
 
         self::assertFalse($prefixer->carries($partly, 'authz_'));
+
+        $own = $this->writeScratch('config/own.php', "<?php\n\nreturn ['tables' => [\n"
+            . "    'grant_usage' => env('AUTHORIZATION_TABLE_GRANT_USAGE', 'authorization_grant_usage'),\n]];\n");
+
+        self::assertFalse($prefixer->carries($own, 'authz_'));
+        self::assertTrue($prefixer->carries($own, AuthorizationTablePrefix::SUGGESTED));
         self::assertFalse($prefixer->carries($this->writeScratch('config/empty.php', "<?php\n\nreturn ['tables' => ['roles' => 'authz_roles']];\n"), 'authz_'));
         self::assertFalse($prefixer->carries($this->scratch('config/missing.php'), 'authz_'));
         self::assertFalse($prefixer->carries($this->scratch('config'), 'authz_'));
