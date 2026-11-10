@@ -4,7 +4,9 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Testing;
 
+use Carbon\CarbonImmutable;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
+use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Authentication\Sessions\Enums\PendingRequirement;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
@@ -28,22 +30,25 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * completes it by verifying one of their factors, so a person who already holds
  * a confirmed factor, under an application that then requires one at sign-in,
  * can be acted as: a person seeded with a factor, and a person `$verified`
- * enrolled one for before.
+ * enrolled one for before. `VerifiedSignInRecorderAdapter` completes the
+ * sign-in it began for MFA's `actingAsVerified()` the same way (`satisfy()`),
+ * with the evidence and at the time of the further proof MFA's helper made.
  *
  * The further proof is the level's evidence (`LevelEvidence`; an authenticator
- * app, AAL2, when no level is asked for), made now with a confirmed factor of
- * its type the person holds, or with one enrolled for them when they hold none
- * (`FixtureFactors`), bound to the pending session for sign-in. It reaches
- * `laravel-authentication` as MFA's verification reaches it: through this
- * package's pending completion, for the pending context this package resolves
- * from the pending credential, with the caller's client, inside the sign-in's
- * transaction, flagged multifactor exactly when MFA's requirement check,
- * judging the pending session's first factor and this proof alone, dates the
- * multifactor evidence to this proof. A refusal is thrown as MFA's
- * `OperationRefusedException`, so the sign-in rolls back with it.
+ * app, AAL2, when no level is asked for), made now (or at the time `satisfy()`
+ * is handed) with a confirmed factor of its type the person holds, or with one
+ * enrolled for them when they hold none (`FixtureFactors`), bound to the
+ * pending session for sign-in. It reaches `laravel-authentication` as MFA's
+ * verification reaches it: through this package's pending completion, for the
+ * pending context this package resolves from the pending credential, with the
+ * caller's client, inside the caller's transaction, flagged multifactor exactly
+ * when MFA's requirement check, judging the pending session's first factor and
+ * this proof alone, dates the multifactor evidence to this proof. A refusal is
+ * thrown as MFA's `OperationRefusedException`, so the sign-in rolls back with
+ * it.
  *
  * A sign-in that signed in, failed, or waits first on a choice of principal is
- * handed back as it is, for `CallerSignIn` to judge.
+ * handed back by `complete()` as it is, for `CallerSignIn` to judge.
  *
  * Stateless: the pending session is read on every call.
  *
@@ -107,10 +112,33 @@ final readonly class CallerCompletion
             return $result;
         }
 
+        return $this->satisfy($guard, $credential, LevelEvidence::of($level ?? AssuranceLevel::AAL2), CarbonImmutable::now(), $client);
+    }
+
+    /**
+     * Satisfy the pending session of the guard the credential names with a
+     * further proof of the evidence, made at the time given, from the client,
+     * and return the result.
+     *
+     * @param  string  $guard
+     * @param  \SineMacula\Laravel\Authentication\Secrets\Secret  $credential
+     * @param  \SineMacula\Laravel\Iam\Testing\LevelEvidence  $evidence
+     * @param  \Carbon\CarbonImmutable  $provedAt
+     * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
+     * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult
+     *
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \Throwable
+     */
+    public function satisfy(string $guard, #[\SensitiveParameter] Secret $credential, LevelEvidence $evidence, CarbonImmutable $provedAt, ClientContext $client): SignInResult
+    {
         $pending  = $this->pending($guard, $this->pendings->fromCredential($guard, $credential->reveal()));
-        $evidence = LevelEvidence::of($level ?? AssuranceLevel::AAL2);
         $identity = $pending->identity;
-        $proof    = $evidence->proof($this->factors->held($identity, $pending->application, $evidence->type), self::binding($pending), VerificationGeneration::current($identity));
+        $factor   = $this->factors->held($identity, $pending->application, $evidence->type);
+        $proof    = $evidence->proof($factor, self::binding($pending), VerificationGeneration::current($identity), $provedAt);
         $judged   = $this->check->check(Requirement::none(), ...array_filter([$this->proofs->ofPending($identity, $pending), $proof]));
 
         return $this->completion->complete(CallerContext::forPending($pending, ClientTranslator::toMfa($client)), VerificationResult::verified(

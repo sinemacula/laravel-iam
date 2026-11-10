@@ -224,8 +224,11 @@ Walk the exception's previous ones too, as `Iam::transaction()` does. See [Opera
 
 ## Testing
 
-MFA's `actingAsVerified()` does not work under this package: it records its proof through the proof store, which
-refuses it. Use this package's `InteractsWithIam` helpers instead (see [Testing](testing.md)).
+MFA's `actingAsVerified()` works under this package: the package binds the recorder it begins its sign-in and records
+its proofs through, which starts the identity's session from a password first factor and steps it up, or completes it
+when it waits on a further factor, through `laravel-authentication`, since the proof store refuses the helper's own
+proofs. This package's `InteractsWithIam` helpers arrange more of the caller (see
+[Testing](testing.md)).
 
 ## Further reading
 
