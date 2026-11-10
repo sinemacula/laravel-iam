@@ -224,7 +224,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
 
         $trust    = ProviderTrust::accepted($pending->session->getTenantId());
         $counting = $pending->proofs(null, null, RequirementSubject::MAX_LIMIT);
-        $further  = array_reverse(array_filter($counting, static fn (RecordedProof $proof): bool => $proof->kind !== ProofKind::FIRST_FACTOR));
+        $further  = array_reverse(array_values(array_filter($counting, static fn (RecordedProof $proof): bool => $proof->kind !== ProofKind::FIRST_FACTOR)));
 
         return new PendingContext(
             $identity,

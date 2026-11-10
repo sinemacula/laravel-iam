@@ -110,7 +110,10 @@ final class InsertionWitness implements Dispatcher
     }
 
     /**
-     * Register the listener with Eloquent's dispatcher.
+     * Register the listener with Eloquent's dispatcher, as given: a model
+     * booting while the call runs registers listeners the contract does not
+     * name but Eloquent's dispatcher takes, such as a queued closure or an
+     * invokable listener.
      *
      * @param  mixed  $events
      * @param  mixed  $listener
@@ -119,13 +122,13 @@ final class InsertionWitness implements Dispatcher
     #[\Override]
     public function listen(mixed $events, mixed $listener = null): void
     {
-        $this->events->listen($events, $listener);
+        $this->forwardDecoratedCallTo($this->events, 'listen', [$events, $listener]);
     }
 
     /**
      * Whether Eloquent's dispatcher has listeners of the event.
      *
-     * @param  mixed  $eventName
+     * @param  string  $eventName
      * @return bool
      */
     #[\Override]
@@ -137,7 +140,7 @@ final class InsertionWitness implements Dispatcher
     /**
      * Register the subscriber with Eloquent's dispatcher.
      *
-     * @param  mixed  $subscriber
+     * @param  object|string  $subscriber
      * @return void
      */
     #[\Override]
@@ -150,7 +153,7 @@ final class InsertionWitness implements Dispatcher
      * Dispatch the event through Eloquent's dispatcher until a listener
      * answers.
      *
-     * @param  mixed  $event
+     * @param  string|object  $event
      * @param  mixed  $payload
      * @return mixed
      */
@@ -164,9 +167,9 @@ final class InsertionWitness implements Dispatcher
      * Witness the model a `created` event carries, Eloquent's or the model's
      * own, and dispatch the event through Eloquent's dispatcher.
      *
-     * @param  mixed  $event
+     * @param  string|object  $event
      * @param  mixed  $payload
-     * @param  mixed  $halt
+     * @param  bool  $halt
      * @return ($halt is true ? mixed : array<array-key, mixed>|null)
      */
     #[\Override]
@@ -180,8 +183,8 @@ final class InsertionWitness implements Dispatcher
     /**
      * Push the event onto Eloquent's dispatcher.
      *
-     * @param  mixed  $event
-     * @param  mixed  $payload
+     * @param  string  $event
+     * @param  array<array-key, mixed>  $payload
      * @return void
      */
     #[\Override]
@@ -193,7 +196,7 @@ final class InsertionWitness implements Dispatcher
     /**
      * Flush the event pushed onto Eloquent's dispatcher.
      *
-     * @param  mixed  $event
+     * @param  string  $event
      * @return void
      */
     #[\Override]
@@ -205,7 +208,7 @@ final class InsertionWitness implements Dispatcher
     /**
      * Forget the event's listeners on Eloquent's dispatcher.
      *
-     * @param  mixed  $event
+     * @param  string  $event
      * @return void
      */
     #[\Override]
