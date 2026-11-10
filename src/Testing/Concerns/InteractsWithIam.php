@@ -33,9 +33,12 @@ use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
  *
  * With this package's proof store bound, a session's proofs are the ones
  * `laravel-authentication` records and a proof counts only while it names one
- * of the identity's factors, so MFA's `InteractsWithMfa::actingAsVerified()`,
- * which records synthetic proofs through the store, is refused with MFA's
- * `ProofRefusedException`. `actingOnVerifiedSession()` arranges the same thing
+ * of the identity's factors, so MFA's `InteractsWithMfa::actingAsVerified()`
+ * begins its sign-in and records its proofs through the recorder this package
+ * binds (`Testing\VerifiedSignInRecorderAdapter`), which starts the session
+ * from a password first factor and steps it up, or completes it, as
+ * `actingOnVerifiedSession()` and `actingAsCaller()` do.
+ * `actingOnVerifiedSession()` arranges it on a session the test already holds,
  * the way a real step-up does: it acts on the session, as
  * `laravel-authentication`'s `actingOnSession()` does, takes a confirmed factor
  * the session's identity holds (enrolling a fixture one when it holds none) and

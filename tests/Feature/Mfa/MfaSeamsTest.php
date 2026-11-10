@@ -37,6 +37,7 @@ use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionTransitionAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\TenantRequirementAdapter;
+use SineMacula\Laravel\Iam\Testing\VerifiedSignInRecorderAdapter;
 use SineMacula\Laravel\Mfa\Applications\DeclaredFirstFactorResolver;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Context\NoPendingSessionResolver;
@@ -63,6 +64,7 @@ use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
 use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
+use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\TestCase;
 
@@ -102,6 +104,7 @@ final class MfaSeamsTest extends TestCase
         SessionTransition::class              => SessionTransitionAdapter::class,
         ProofStore::class                     => ProofStoreAdapter::class,
         FirstFactorResolver::class            => FirstFactorResolverAdapter::class,
+        VerifiedSignInRecorder::class         => VerifiedSignInRecorderAdapter::class,
         ChallengeGateway::class               => ChallengeGatewayAdapter::class,
         FactorCodeCounters::class             => FactorCodeCountersAdapter::class,
         TenantRequirement::class              => TenantRequirementAdapter::class,
@@ -386,7 +389,8 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * Every binding is transient over the member's own default, and only
+     * Every binding is transient over the member's own default (none for the
+     * recorder of MFA's test helper, which MFA does not bind), and only
      * revocation on factor removal and reset is mandatory (IAM-3.7).
      *
      * @return void
@@ -405,9 +409,13 @@ final class MfaSeamsTest extends TestCase
             self::assertSame(Lifetime::TRANSIENT, $binding->lifetime, $binding->abstract);
             self::assertSame($binding->abstract === SessionRevoker::class, $binding->mandatory, $binding->abstract);
 
-            $default = $binding->abstract === ProofStore::class ? ProofBindings::class : self::MEMBER_DEFAULTS[$binding->abstract];
+            $defaults = match ($binding->abstract) {
+                ProofStore::class             => [ProofBindings::class],
+                VerifiedSignInRecorder::class => [],
+                default                       => [self::MEMBER_DEFAULTS[$binding->abstract]],
+            };
 
-            self::assertSame([$default], $binding->memberDefaults, $binding->abstract);
+            self::assertSame($defaults, $binding->memberDefaults, $binding->abstract);
         }
     }
 

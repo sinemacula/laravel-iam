@@ -182,10 +182,38 @@ helpers are there too: `assertBoundIdentity()`, `assertBoundPrincipal()`, `asser
 
 ### MFA's own helper
 
-MFA's `InteractsWithMfa::actingAsVerified()` records synthetic proofs through MFA's proof store. Under this package the
-proof store is `laravel-authentication`'s sessions, which only `laravel-authentication` writes, so the helper is refused
-with MFA's `ProofRefusedException`. Use `$verified` instead. MFA's other helpers, such as
-`SineMacula\Laravel\Mfa\Testing\AuthenticatorApp`, work as MFA's guide describes.
+MFA's `InteractsWithMfa::actingAsVerified($identity, $level, $at, $guard, $application)` works under this package too.
+The proof store here is `laravel-authentication`'s sessions, which only `laravel-authentication` writes, so the package
+binds MFA's `Mfa\Testing\Contracts\VerifiedSignInRecorder` to `VerifiedSignInRecorderAdapter`, which begins the helper's
+sign-in and records its proofs through `laravel-authentication`:
+
+- A session is started for the identity on the guard through `laravel-authentication`'s `start()`, from a password
+  first factor, as an application that checked a password itself starts one. The guard must allow the `password`
+  method. The identity's stored password is never read or changed. The test then acts on the new session, as
+  `actingOnSession()` does, so the requests it sends are served on it.
+- The level's further proof is recorded as `$verified` records it, with a confirmed factor of the level's type the
+  identity holds, or one enrolled for it when it holds none: an email factor for AAL1, an authenticator app for AAL2,
+  and a passkey for AAL3, which needs a combination policy that rates a hardware-protected passkey AAL3.
+- A person who already holds a confirmed factor, under an application that requires one at sign-in, is left pending
+  by the sign-in, as they would be. That includes the person the helper enrolled a factor for, the next time. The
+  helper's further proof then completes the sign-in, as the person would complete it, before the test acts on it.
+- Both proofs are made at the `$at` you give, or now. The sign-in is started, and the further proof recorded, with the
+  clock held at that time, so an earlier `$at` works, even one further back than a pending sign-in's credential lives,
+  and the clock is then as it was.
+
+```php
+$this->actingAsVerified($user, AssuranceLevel::AAL2)->getJson('/api/account')->assertOk();
+$this->actingAsVerified($user, AssuranceLevel::AAL2, now()->subMinutes(20)); // verified twenty minutes ago
+```
+
+MFA's route gate and the `mfa` context namespace then read the session at exactly that level. A sign-in the guard
+refuses (it does not allow the `password` method, say), or one left waiting on anything but a further factor, throws a
+`LogicException` naming the reason, and leaves nothing behind. An `$at` further back than the guard's session lifetimes
+gives a session that has already ended.
+
+Without that binding, the helper's synthetic proofs reach the proof store, which refuses them with MFA's
+`ProofRefusedException`. MFA's other helpers, such as `SineMacula\Laravel\Mfa\Testing\AuthenticatorApp`, work as MFA's
+guide describes.
 
 ## Verifying a session you already hold
 

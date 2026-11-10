@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Testing;
 
-use SineMacula\Laravel\Authentication\Contracts\Identity;
+use Carbon\CarbonImmutable;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
@@ -31,10 +31,11 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  *
  * With this package's proof store bound, a session's proofs are the ones
  * `laravel-authentication` records, and a proof counts only while it names a
- * factor the identity holds in MFA's factor table. So MFA's own
- * `actingAsVerified()`, which records synthetic proofs through the store, is
- * refused here. This records the proof as a real step-up does instead: it takes
- * a confirmed factor of the level's type the identity holds, or enrols a
+ * factor the identity holds in MFA's factor table. So the store refuses the
+ * synthetic proofs MFA's own `actingAsVerified()` records by default, and its
+ * recorder here (`VerifiedSignInRecorderAdapter`) steps the session up through
+ * `stepUp()` instead. This records the proof as a real step-up does: it takes a
+ * confirmed factor of the level's type the identity holds, or enrols a
  * confirmed fixture factor of that type for it on the guard's application when
  * it holds none (`FixtureFactors`), and steps the session up with a proof made
  * with it through the step-up adapter, so `laravel-authentication` locks the
@@ -107,10 +108,37 @@ final readonly class VerifiedSession
 
         $application = $this->current->defaultGuard();
         $identity    = $this->current->caller($application);
-        $session     = $this->current->current($identity, $application);
-        $evidence    = LevelEvidence::of($level);
-        $binding     = self::binding($identity, $application, SignIn::reference($session, $application));
-        $proof       = $evidence->proof($this->factors->held($identity, $application, $evidence->type), $binding, VerificationGeneration::current($identity));
+
+        $this->stepUp($identity, $application, LevelEvidence::of($level), CarbonImmutable::now());
+
+        self::assertReached($level, $this->check->check(
+            Requirement::none()->withAdditionalVerification()->withMinimumLevel($level),
+            ...$this->proofs->proofs($identity, $application),
+        ));
+    }
+
+    /**
+     * Step the guard's current session of the identity up with a further proof
+     * of the evidence, made at the time given with a confirmed factor of its
+     * type the identity holds, or one enrolled for it on the application when
+     * it holds none, through the step-up adapter.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  \SineMacula\Laravel\Iam\Testing\LevelEvidence  $evidence
+     * @param  \Carbon\CarbonImmutable  $provedAt
+     * @return void
+     *
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \Throwable
+     */
+    public function stepUp(MultiFactorAuthenticatable $identity, string $application, LevelEvidence $evidence, CarbonImmutable $provedAt): void
+    {
+        $session = $this->current->current($identity, $application);
+        $binding = self::binding($identity, $application, SignIn::reference($session, $application));
+        $proof   = $evidence->proof($this->factors->held($identity, $application, $evidence->type), $binding, VerificationGeneration::current($identity), $provedAt);
 
         $this->stepUp->stepUp(CallerContext::forIdentity($identity, $application), VerificationResult::verified(
             $proof,
@@ -118,11 +146,6 @@ final readonly class VerifiedSession
             $evidence->amr,
             $evidence->type,
             $this->refreshesMultifactor($identity, $application, $proof),
-        ));
-
-        self::assertReached($level, $this->check->check(
-            Requirement::none()->withAdditionalVerification()->withMinimumLevel($level),
-            ...$this->proofs->proofs($identity, $application),
         ));
     }
 
@@ -166,14 +189,14 @@ final readonly class VerifiedSession
     /**
      * What a step-up proof of the session is bound to.
      *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
      * @param  string  $signIn
      * @return \SineMacula\Laravel\Mfa\Proofs\ProofBinding
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private static function binding(Identity&MultiFactorAuthenticatable $identity, string $application, string $signIn): ProofBinding
+    private static function binding(MultiFactorAuthenticatable $identity, string $application, string $signIn): ProofBinding
     {
         $owner = IdentityReference::of($identity);
 
