@@ -36,6 +36,7 @@ use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
+use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\LockoutApplied;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
@@ -631,6 +632,42 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
+     * Ask this package's counters whether they admit a challenge of the factor
+     * under the binding, translated to the factor code binding
+     * `laravel-authentication` asks them under.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @return bool
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function isChallengeAdmitted(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding): bool
+    {
+        return $this->adapter()->admit($this->codeBindingOf($identity, $factor, $binding))->isAdmitted();
+    }
+
+    /**
+     * Report a challenge's outcome through this package's counters, under the
+     * factor code binding `laravel-authentication` reports under.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @param  bool  $passed
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function reportChallenge(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding, bool $passed): void
+    {
+        $this->adapter()->report($this->codeBindingOf($identity, $factor, $binding), 'challenge-1', $passed);
+    }
+
+    /**
      * Bind the application's gateways before the application boots.
      *
      * @param  \Illuminate\Foundation\Application  $app
@@ -704,6 +741,54 @@ final class FactorCodeCountersAdapterTest extends TestCase
         self::assertSame(CodeRequestStatus::SENT, $request->status, (string) $request->refusal?->value);
 
         return $this->challenge = [(string) $request->challengeId, $this->deliveredCodeTo(self::DELIVERED_PHONE)];
+    }
+
+    /**
+     * A stored person of the same type under the key given, held as a string
+     * so a key no integer can hold (the kit's other identity) is kept as it is.
+     *
+     * @param  string  $key
+     * @return \Tests\Fixtures\Models\Person
+     */
+    private static function personKeyed(string $key): Person
+    {
+        $person = (new Person)->setKeyType('string')->setIncrementing(false);
+
+        $person->forceFill([$person->getKeyName() => $key])->exists = true;
+
+        return $person;
+    }
+
+    /**
+     * This package's challenge counters.
+     *
+     * @return \SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter
+     */
+    private function adapter(): FactorCodeCountersAdapter
+    {
+        return $this->app?->make(FactorCodeCountersAdapter::class) ?? self::fail('The application has not booted.');
+    }
+
+    /**
+     * The factor code binding `laravel-authentication` asks the counters
+     * under for MFA's binding: the identity the binding names (the person, or
+     * another identity of the same type and the key the binding gives), and
+     * the factor's SMS channel.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @return \SineMacula\Laravel\Authentication\Codes\FactorCodeBinding
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function codeBindingOf(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding): FactorCodeBinding
+    {
+        self::assertInstanceOf(Person::class, $identity);
+
+        $named = IdentityReference::of($identity)->key === $binding->identityKey ? $identity : self::personKeyed($binding->identityKey);
+
+        return $this->app?->make(CodeTranslator::class)->toAuthentication($named, $factor, MfaChannelKind::SMS, $binding) ?? self::fail('The application has not booted.');
     }
 
     /**
