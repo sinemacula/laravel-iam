@@ -165,11 +165,13 @@ final class InsertionWitness implements Dispatcher
 
     /**
      * Witness the model a `created` event carries, Eloquent's or the model's
-     * own, and dispatch the event through Eloquent's dispatcher.
+     * own, and dispatch the event through Eloquent's dispatcher, as given:
+     * an event that is neither a name nor an object vouches for nothing, and
+     * still goes on.
      *
-     * @param  string|object  $event
+     * @param  mixed  $event
      * @param  mixed  $payload
-     * @param  bool  $halt
+     * @param  mixed  $halt
      * @return ($halt is true ? mixed : array<array-key, mixed>|null)
      */
     #[\Override]
@@ -177,7 +179,7 @@ final class InsertionWitness implements Dispatcher
     {
         array_push($this->inserted, ...self::carried($event, $payload));
 
-        return $this->events->dispatch($event, $payload, $halt);
+        return $this->forwardDecoratedCallTo($this->events, 'dispatch', [$event, $payload, $halt]);
     }
 
     /**
