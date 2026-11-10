@@ -153,7 +153,7 @@ final class InsertionWitness implements Dispatcher
      * Dispatch the event through Eloquent's dispatcher until a listener
      * answers.
      *
-     * @param  string|object  $event
+     * @param  object|string  $event
      * @param  mixed  $payload
      * @return mixed
      */
@@ -165,9 +165,9 @@ final class InsertionWitness implements Dispatcher
 
     /**
      * Witness the model a `created` event carries, Eloquent's or the model's
-     * own, and dispatch the event through Eloquent's dispatcher, as given:
-     * an event that is neither a name nor an object vouches for nothing, and
-     * still goes on.
+     * own, and dispatch the event through Eloquent's dispatcher, as given: an
+     * event that is neither a name nor an object vouches for nothing, and still
+     * goes on.
      *
      * @param  mixed  $event
      * @param  mixed  $payload

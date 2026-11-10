@@ -41,7 +41,9 @@ trait LeavesTheSavepointAfterAConcurrencyFailure
         if ($this->causedByConcurrencyError($e) && $this->transactions > 1) {
             $this->transactions--;
 
-            $this->transactionsManager?->rollback($this->getName() ?? throw new \LogicException('The connection has no name to roll its transactions back under.'), $this->transactions);
+            $name = $this->getName() ?? throw new \LogicException('The connection has no name to roll its transactions back under.');
+
+            $this->transactionsManager?->rollback($name, $this->transactions);
 
             throw new DeadlockException($e->getMessage(), is_int($e->getCode()) ? $e->getCode() : 0, $e);
         }

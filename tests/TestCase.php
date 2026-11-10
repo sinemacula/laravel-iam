@@ -265,8 +265,8 @@ abstract class TestCase extends OrchestraTestCase
      */
     protected static function assertIsThePerson(Person $person, mixed $identity): void
     {
-        self::assertInstanceOf(Person::class, $identity);
-        self::assertTrue($person->is($identity));
+        static::assertInstanceOf(Person::class, $identity);
+        static::assertTrue($person->is($identity));
     }
 
     /**

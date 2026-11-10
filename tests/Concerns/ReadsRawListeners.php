@@ -7,8 +7,8 @@ namespace Tests\Concerns;
 use Illuminate\Support\Facades\Event;
 
 /**
- * Reads the listeners registered for an event as they were registered, for
- * the tests that check which listeners the package registers.
+ * Reads the listeners registered for an event as they were registered, for the
+ * tests that check which listeners the package registers.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
