@@ -893,6 +893,28 @@ final class BindingRuleTest extends TestCase
     }
 
     /**
+     * Capabilities given by name are applied as those given in order are.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testCapabilitiesGivenByNameAreApplied(): void
+    {
+        $app = $this->application();
+
+        $outcome = $app->make(BindingRule::class)->apply(
+            $app,
+            transient: new DeclaredSeams(new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class])),
+            shared: new DeclaredSeams(new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED)),
+        );
+
+        self::assertSame([TransientSeam::class, SharedSeam::class], $outcome->bound);
+        $this->assertResolvesTo(Adapter::class, SharedSeam::class);
+    }
+
+    /**
      * Rows of `[providers, cached]`: every provider order, with the
      * configuration loaded and merged as each provider registers, and cached.
      *
