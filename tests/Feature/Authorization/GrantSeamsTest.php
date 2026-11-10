@@ -14,6 +14,7 @@ use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
+use SineMacula\Laravel\Authorization\Hooks\ListedGrantHooks;
 use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\GuardUserIdentityDirectory;
 use SineMacula\Laravel\Authorization\Support\Operation;
@@ -44,12 +45,12 @@ use Tests\TestCase;
  * unconditional default in every provider order, none over a class the
  * application names in `laravel-authorization`'s configuration or a binding it
  * makes (IAM-8.4); the grant hook follows the SSO capability's switch too, is
- * bound over the composite whatever hooks the application lists, and is
- * mandatory while SSO's linking by a verified domain is on; the tree is the
- * adapter only while the application names or binds a tree, and
- * `laravel-authorization`'s own flat tree otherwise; and an identity the hook
- * cannot resolve refuses the grant. The application names a tree unless a test
- * says otherwise.
+ * bound over the composite whatever hooks the application lists, which
+ * `laravel-authorization` runs once, before it, and is mandatory while SSO's
+ * linking by a verified domain is on; the tree is the adapter only while the
+ * application names or binds a tree, and `laravel-authorization`'s own flat
+ * tree otherwise; and an identity the hook cannot resolve refuses the grant.
+ * The application names a tree unless a test says otherwise.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -98,13 +99,15 @@ final class GrantSeamsTest extends TestCase
 
     /**
      * The grant hook is bound over the composite whatever hooks the application
-     * lists in `laravel-authorization`'s configuration, which the adapter still
-     * runs.
+     * lists in `laravel-authorization`'s configuration, in every provider
+     * order: `laravel-authorization` wraps the adapter in the listed hooks,
+     * which run once, before it, and `iam:check` passes the adapter while SSO
+     * links by a verified domain.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Throwable
      */
     #[DataProvider('provideProviderOrders')]
     public function testTheGrantHookIsBoundWhateverHooksAreListed(array $providers): void
@@ -113,12 +116,29 @@ final class GrantSeamsTest extends TestCase
 
         $this->bootInOrder($providers);
 
-        self::assertInstanceOf(GrantHookAdapter::class, $this->resolved(GrantHook::class));
+        $app      = $this->app ?? self::fail('The application has not booted.');
+        $listed   = new RecordingGrantHook;
+        $identity = new Reference('no-such-identity', '1');
+        $widening = GrantWidening::of(new Operation('operation-1', null, new \DateTimeImmutable), $identity, $identity, [], new \DateTimeImmutable);
+
+        $app->instance(RecordingGrantHook::class, $listed);
+        $app->make('config')->set(AuthorizationSeams::DOMAIN_LINKING, true);
+
+        $hook = $this->resolved(GrantHook::class);
+
+        self::assertInstanceOf(ListedGrantHooks::class, $hook);
+        self::assertSame([], $this->grantHookProblems());
+
+        $hook->beforeWidening($widening);
+
+        self::assertSame([$widening], $listed->widenings);
     }
 
     /**
      * A tree and an identity directory the application names in
-     * `laravel-authorization`'s configuration are kept in every provider order.
+     * `laravel-authorization`'s configuration win in every provider order,
+     * `laravel-authorization` binding each over the adapter where this package
+     * registered first, and `iam:check` passes them.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -135,6 +155,10 @@ final class GrantSeamsTest extends TestCase
         self::assertInstanceOf(NamedTenantTree::class, $this->resolved(TenantTree::class));
         self::assertInstanceOf(NamedIdentityDirectory::class, $this->resolved(IdentityDirectory::class));
         self::assertInstanceOf(GrantHookAdapter::class, $this->resolved(GrantHook::class));
+
+        $check = $this->app?->make(MandatorySeamsCheck::class) ?? self::fail('The application has not booted.');
+
+        self::assertSame([], self::problems($check->checks()));
     }
 
     /**
@@ -286,14 +310,13 @@ final class GrantSeamsTest extends TestCase
     #[WithConfig(AuthorizationSeams::DOMAIN_LINKING, true, defer: false)]
     public function testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn(): void
     {
-        $app   = $this->app ?? self::fail('The application has not booted.');
-        $check = $app->make(MandatorySeamsCheck::class);
+        $app = $this->app ?? self::fail('The application has not booted.');
 
-        self::assertSame([], array_values(array_filter(self::problems($check->checks()), static fn (string $problem): bool => str_contains($problem, GrantHook::class))));
+        self::assertSame([], $this->grantHookProblems());
 
         $app->bind(GrantHook::class, GrantHooks::class);
 
-        self::assertNotSame([], array_values(array_filter(self::problems($check->checks()), static fn (string $problem): bool => str_contains($problem, GrantHook::class))));
+        self::assertNotSame([], $this->grantHookProblems());
     }
 
     /**
@@ -331,7 +354,8 @@ final class GrantSeamsTest extends TestCase
     /**
      * A widening of an identity whose type names no `laravel-authentication`
      * identity, which SSO never links, is not reported to SSO, nor refused: the
-     * hooks the application lists still run for it.
+     * hooks the application lists once the application has booted still run for
+     * it, once, as the grant service wraps the adapter in them.
      *
      * @return void
      *
@@ -351,7 +375,7 @@ final class GrantSeamsTest extends TestCase
 
         self::assertInstanceOf(GrantHookAdapter::class, $hook);
 
-        $hook->beforeWidening($widening);
+        ListedGrantHooks::wrap($hook, $this->app ?? self::fail('The application has not booted.'))->beforeWidening($widening);
 
         self::assertSame([$widening], $listed->widenings);
     }
@@ -373,6 +397,21 @@ final class GrantSeamsTest extends TestCase
         foreach ($this->authorization as $key => $value) {
             $app->make('config')->set('authorization.' . $key, $value);
         }
+    }
+
+    /**
+     * Every problem `iam:check`'s mandatory seams check reports of the grant
+     * hook.
+     *
+     * @return list<string>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function grantHookProblems(): array
+    {
+        $check = $this->app?->make(MandatorySeamsCheck::class) ?? self::fail('The application has not booted.');
+
+        return array_values(array_filter(self::problems($check->checks()), static fn (string $problem): bool => str_contains($problem, GrantHook::class)));
     }
 
     /**

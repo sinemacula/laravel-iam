@@ -44,7 +44,7 @@ requirement checker and the step-up only while `iam.adapters.mfa` is on too, and
 | `laravel-authentication`'s application access | The permission `authorization.application_access` maps the application to                      |
 | The principals an identity owns               | `laravel-authentication`'s principals of that identity                                         |
 | The tenant tree                               | Your `SineMacula\Laravel\Iam\Contracts\TenantTree`, or its own flat tree without one           |
-| The grant hook                                | SSO's scope widening, then the hooks `authorization.grant_hooks` lists                         |
+| The grant hook                                | SSO's scope widening, after the hooks `authorization.grant_hooks` lists                        |
 | Audit-log's access policy                     | The catalogue's audit permissions the viewer holds                                             |
 
 `laravel-authorization` binds its own defaults only where nothing is bound yet, so this package replaces them only
@@ -53,7 +53,7 @@ its configuration (`authorization.subject_resolver`, `authorization.requirement_
 `authorization.session.source`, `authorization.identity_directory`, `authorization.tenant_tree`) is kept, and so is
 anything you bind over its contracts in a service provider's `register()` or `boot()`, before `laravel-authorization`
 registers or after. Hooks you list in `authorization.grant_hooks` are not a class of their own: the grant hook is bound
-over them and runs them after SSO's widening.
+over the default whatever you list, and `laravel-authorization` runs your hooks before it, so before SSO's widening.
 
 ## The subject
 
@@ -271,7 +271,7 @@ on too (see [Bindings](bindings.md#authorization)).
   SSO's scope widening, inside the grant's own transaction: a grant to a person, or to a principal they own, that
   reaches beyond what they held (another tenant, the platform, a subtree) suspends their SSO links in every other
   tenant before it is written, and a refusal rolls the grant back. Grant hooks you list in
-  `authorization.grant_hooks` still run, after SSO's. A grant to a grantee that is not `laravel-authentication`'s
+  `authorization.grant_hooks` still run, before SSO's. A grant to a grantee that is not `laravel-authentication`'s
   identity (an admin panel's user on a Laravel session guard, say) is not reported to SSO, which never links one, and
   its tenants are not resolved; your listed hooks still run for it. See
   [Provisioning and tenancy](provisioning-and-tenancy.md#scope-widening). Each tenant such a grant holds in is named

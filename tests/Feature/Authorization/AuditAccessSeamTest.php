@@ -122,7 +122,7 @@ final class AuditAccessSeamTest extends TestCase
         self::assertSame(AuditAccessPolicyAdapter::class, $row->adapter);
         self::assertSame(Lifetime::SHARED, $row->lifetime);
         self::assertSame([DenyAllPolicy::class], $row->memberDefaults);
-        self::assertNull($row->configurationKey);
+        self::assertNull($row->holdsDefault);
         self::assertFalse($row->isMandatory());
     }
 

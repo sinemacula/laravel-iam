@@ -49,12 +49,13 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * binding of the member's own default class, which by its class alone could not
  * be told from the member's.
  *
- * A member that binds the seam to the class its configuration names
- * (`laravel-authorization`) keeps a class the application names there
- * (`SeamBinding::namesApplicationClass()`): the rule reads the configuration,
- * as the member will, and keeps the seam rather than bind the adapter, so the
- * member, binding its defaults only where nothing is bound, binds the
- * application's class whichever registers first.
+ * A member that says itself whether a seam holds its default
+ * (`laravel-authorization`'s `isPackageDefault()`,
+ * `SeamBinding::$holdsDefault`) is asked rather than its binding read, so a
+ * class the application names in that member's configuration, which the member
+ * binds through a closure of its own, is kept. Registering after this package,
+ * the member binds that class over the adapter itself, so the application's
+ * class stands whichever registers first.
  *
  * A scoped adapter is never scoped under the member's seam itself: Laravel
  * keeps a scoped abstract on its list of scoped instances for good, and forgets
@@ -123,8 +124,7 @@ final readonly class BindingRule
     {
         $switches    = self::switches($app);
         $bindings    = self::bindingsOf($switches, $capabilities);
-        $replaceable = fn (SeamBinding $binding): bool => !$binding->namesApplicationClass($switches)
-            && $this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults);
+        $replaceable = fn (SeamBinding $binding): bool => $this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->holdsDefault);
 
         return $this->applied($app, $switches, $bindings, new BindingOutcome([], []), $replaceable);
     }
@@ -206,7 +206,7 @@ final readonly class BindingRule
     {
         $default = $binding->memberDefaults[0] ?? null;
 
-        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults)) {
+        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->holdsDefault)) {
             return null;
         }
 

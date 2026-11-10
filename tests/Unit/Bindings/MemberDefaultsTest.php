@@ -319,44 +319,68 @@ final class MemberDefaultsTest extends TestCase
     }
 
     /**
-     * An unbound seam may be bound over, but holds no member default.
+     * A member that answers whether the seam holds its default is asked, with
+     * the container and the seam, in place of reading the class that declares
+     * the binding: the seam may be bound over, and holds the default, exactly
+     * while the member says so, even a binding of a default class by its name.
      *
      * @return void
      */
-    public function testAnUnboundSeamHoldsNoDefault(): void
+    public function testAMemberThatAnswersIsAskedWhetherTheSeamHoldsItsDefault(): void
     {
-        self::assertTrue((new MemberDefaults)->isReplaceable($this->container, PlainSeam::class, [MemberDefault::class]));
-        self::assertFalse((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, [MemberDefault::class]));
-    }
+        $asked = [];
+        $says  = static function (bool $answer) use (&$asked): \Closure {
+            return static function (Container $container, string $abstract) use (&$asked, $answer): bool {
+                $asked[] = [$container, $abstract];
 
-    /**
-     * A seam bound to the member's default class by its name may be bound over,
-     * but holds no binding of the member's own: a member that binds through a
-     * closure never binds it so.
-     *
-     * @return void
-     */
-    public function testADefaultClassBoundByNameIsNoMembersOwnBinding(): void
-    {
-        $this->container->bind(PlainSeam::class, MemberDefault::class);
+                return $answer;
+            };
+        };
 
-        self::assertTrue((new MemberDefaults)->isReplaceable($this->container, PlainSeam::class, [MemberDefault::class]));
-        self::assertFalse((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, [MemberDefault::class]));
-    }
-
-    /**
-     * A seam bound to a closure no member default declares, or one no class
-     * declares, holds no binding of the member's own.
-     *
-     * @return void
-     */
-    public function testAClosureNoMemberDefaultDeclaresIsNoMembersOwnBinding(): void
-    {
         $this->container->bind(PlainSeam::class, static fn (): MemberDefault => new MemberDefault);
-        $this->container->bind(SharedSeam::class, \Closure::fromCallable('strval'));
+        $this->container->bind(SharedSeam::class, MemberDefault::class);
 
-        self::assertFalse((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, [MemberDefault::class]));
-        self::assertFalse((new MemberDefaults)->holdsDefault($this->container, SharedSeam::class, [MemberDefault::class]));
-        self::assertTrue((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, [self::class]));
+        self::assertTrue((new MemberDefaults)->isReplaceable($this->container, PlainSeam::class, [], $says(true)));
+        self::assertTrue((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, $says(true)));
+        self::assertFalse((new MemberDefaults)->isReplaceable($this->container, PlainSeam::class, [self::class], $says(false)));
+        self::assertFalse((new MemberDefaults)->holdsDefault($this->container, PlainSeam::class, $says(false)));
+        self::assertFalse((new MemberDefaults)->isReplaceable($this->container, SharedSeam::class, [MemberDefault::class], $says(false)));
+        self::assertSame([$this->container, PlainSeam::class], $asked[0]);
+        self::assertCount(5, $asked);
+    }
+
+    /**
+     * A member that answers is never asked about a seam with no binding to
+     * read: an unbound seam may be bound over but holds no default, and an
+     * instance or an alias held over the member's binding is kept, as is a seam
+     * in a container whose binding table cannot be read.
+     *
+     * @return void
+     */
+    public function testAMemberThatAnswersIsNotAskedWithNoBindingToRead(): void
+    {
+        $asked = 0;
+        $says  = static function () use (&$asked): bool {
+            $asked++;
+
+            return true;
+        };
+
+        $this->container->bind(PlainSeam::class, static fn (): MemberDefault => new MemberDefault);
+        $this->container->instance(PlainSeam::class, new MemberDefault);
+        $this->container->bind(SharedSeam::class, static fn (): MemberDefault => new MemberDefault);
+        $this->container->alias(PlainSeam::class, SharedSeam::class);
+
+        $other = \Mockery::mock(ContainerContract::class);
+
+        $other->shouldReceive('bound')->with(PlainSeam::class)->andReturnTrue();
+
+        self::assertTrue((new MemberDefaults)->isReplaceable(new Container, PlainSeam::class, [], $says));
+        self::assertFalse((new MemberDefaults)->holdsDefault(new Container, PlainSeam::class, $says));
+        self::assertFalse((new MemberDefaults)->isReplaceable($this->container, PlainSeam::class, [], $says));
+        self::assertFalse((new MemberDefaults)->isReplaceable($this->container, SharedSeam::class, [], $says));
+        self::assertFalse((new MemberDefaults)->isReplaceable($other, PlainSeam::class, [], $says));
+        self::assertFalse((new MemberDefaults)->holdsDefault($other, PlainSeam::class, $says));
+        self::assertSame(0, $asked);
     }
 }

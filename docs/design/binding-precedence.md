@@ -29,8 +29,12 @@ before that member has merged it, and why the storage connection alone still wai
     `laravel-authentication` and `laravel-authorization` and before `laravel-mfa` and `laravel-sso`; both cases occur
     in a default installation.
 - A seam is bound only where `Bindings\MemberDefaults::isReplaceable()` allows it: the seam is unbound, or the
-  container's binding table shows it still bound to one of the member's defaults the row declares. No member exposes
-  its defaults as data, so the table (`Container::getBindings()`) is the only public source:
+  member's default holds it. A member that says itself whether a contract holds its default is asked: the rows over
+  `laravel-authorization`'s contracts carry `AuthorizationServiceProvider::isPackageDefault()` as
+  `SeamBinding::$holdsDefault`, asked only while the table has a binding of the seam to read (an instance over the
+  member's default leaves that default in the table, and the member's answer would count it). No other member exposes
+  its defaults, so for them the container's binding table (`Container::getBindings()`) is the only public source,
+  read against the defaults the row declares:
   - "Unbound" is `bound()`, which also counts instances, aliases and, on the application, deferred services, so none
     of them looks unbound because it is missing from the table.
   - A class-string binding is held as the closure Laravel's `getClosure()` builds around it, which carries the class
@@ -153,21 +157,22 @@ before that member has merged it, and why the storage connection alone still wai
 ## Failure / Edge Cases
 
 - A provider that binds a seam unconditionally (`bind()`, `singleton()`) after this package registers replaces the
-  adapter, member or not, though the outcome lists the seam as bound. No member does: `laravel-authorization` binds its
-  defaults with `bindIf()` since laravel-authorization#129, through a closure its provider declares over a scoped
-  `authorization.default:` binding holding the class its configuration names. A class the application names in that
-  configuration is the application's binding though the member makes it, so its rows name the configuration key
-  (`SeamBinding::$configurationKey`), and the rule keeps the seam, unbound, while the key names any other class
-  (`SeamBinding::namesApplicationClass()`), in whatever order the providers register (`authorization.md`). One that
-  binds unconditionally before this package registers replaces any application binding made before it, and the rule
-  then binds the adapter over that member default; so does one registering between this package and an application
-  binding made after this package registered and before that member.
-- A member renaming a default's class, or moving a closure binding to another class, makes the rule treat the new
-  default as the application's and keep it. That fails closed: no adapter is bound over a binding the rule cannot
-  recognise, and `iam:check` reports a mandatory seam left on any class of its member's own at deploy. The tests pin the
-  members' defaults, in every provider order, on every supported Laravel version.
+  adapter, member or not, though the outcome lists the seam as bound. Only `laravel-authorization` does, and only for a
+  class the application names in its configuration in place of its default (since laravel-authorization#130): it binds
+  its defaults with `bindIf()`, but binds that class over any earlier binding, the adapter included, through a closure
+  `isPackageDefault()` says is no default. So the rule never reads that configuration: registered before this package,
+  the member has bound the class, which the rule keeps; registered after, it binds the class over the adapter, which the
+  outcome still lists as bound (`authorization.md`). Any other member that binds unconditionally before this package
+  registers replaces any application binding made before it, and the rule then binds the adapter over that member
+  default; so does one registering between this package and an application binding made after this package registered
+  and before that member.
+- A member that answers no question of its own renaming a default's class, or moving a closure binding to another class,
+  makes the rule treat the new default as the application's and keep it. That fails closed: no adapter is bound over a
+  binding the rule cannot recognise, and `iam:check` reports a mandatory seam left on any class of its member's own at
+  deploy. The tests pin the members' defaults, in every provider order, on every supported Laravel version.
 - An application that binds a seam to the member's own default class by name, before this package registers, is
-  indistinguishable from the member and gets the adapter. To keep the member's default deliberately, turn the row's
+  indistinguishable from the member and gets the adapter, unless the member answers for itself (`laravel-authorization`,
+  which says such a binding is no default, so it is kept). To keep the member's default deliberately, turn the row's
   switch off, or bind the default with a closure or an instance.
 - A switch the application sets from a provider's `register()` after this package's, or from any `boot()`, is read too
   late to change what the rule bound. Set switches in configuration files or the environment.
@@ -193,7 +198,7 @@ before that member has merged it, and why the storage connection alone still wai
 - `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `switches()`, `MEMBER_CONFIGURATION`;
   `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`;
   `src/Tenancy/TenancySeams.php` for the rows applied again, `src/Authorization/AuthorizationSeams.php` for the rows
-  that name a configuration key.
+  that ask their member whether a seam holds its default.
 - `src/Bindings/SeamBinding.php`, `src/Bindings/Enums/Lifetime.php`, `src/Bindings/BindingOutcome.php`,
   `src/Bindings/Contracts/ProvidesSeams.php`.
 - `benchmarks/Bindings/BindingRuleBench.php`: the rule over a 40-seam table on the members' real binding table, binding
@@ -228,7 +233,7 @@ before that member has merged it, and why the storage connection alone still wai
   first, second and fourth with the configuration cached too), `testACachedConfigurationIsReadAsItIs`,
   `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`,
   `testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen`, `testReservingRecordsTheMembersDefaultEachSeamHolds`,
-  `testARowWhoseConfigurationNamesAnotherClassIsKept`,
+  `testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault`,
   `testABindingMadeOverAReservedSeamIsKept`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` (the rows applied again from the booting phase, by register order)
   `testMembershipsAndATreeBoundAfterRegisteringBindTheAdapters`,
@@ -252,7 +257,7 @@ before that member has merged it, and why the storage connection alone still wai
 - A new seam binding: its row in a capability's `*Seams` class, with every default the member binds it to, and its
   capability named in `seamProviders()`.
 - A member changing how it binds a seam (a new default class, a closure moved to another class, a conditional binding
-  turning unconditional, a configuration key naming the class it binds).
+  turning unconditional, a member starting or ceasing to say itself which binding is its default).
 - A member whose configuration stops being merged in its own `register()`, or that starts reading its storage
   connection eagerly (before the application has booted, when a member registered while it boots is aligned), which
   changes what the storage step in the booting phase must do.

@@ -4,13 +4,11 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Authorization;
 
-use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\DeadlockException;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Exceptions\TransactionConflictException;
-use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
@@ -21,7 +19,7 @@ use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * `laravel-authorization`'s grant hook, answered by SSO's scope widening first
+ * `laravel-authorization`'s grant hook, answered by SSO's scope widening
  * (IAM-6.7, AUTHZ-11.3, SSO-8.8): before a grant that widens an identity's
  * scope is written, the identity's links by a verified domain in every other
  * tenant's connections are suspended, their reservations deleted and the
@@ -48,11 +46,12 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * is bound, `iam:check` refuses `laravel-authentication`'s `ResolveNoTenant`
  * (`Checks\CrossMemberConfigurationCheck`), which would refuse every one.
  *
- * Only then are the hooks the application lists in `authorization.grant_hooks`
- * run, in order, as `laravel-authorization`'s own default would run them
- * (`GrantHooks::fromConfig()`), so binding this adapter over that default drops
- * none of them. Whatever either throws refuses the grant: the whole call rolls
- * back, the suspensions and revocations with it, and nothing is dispatched.
+ * The hooks the application lists in `authorization.grant_hooks` are not run
+ * here: `laravel-authorization` wraps whatever grant hook is bound in them
+ * (`ListedGrantHooks`, N108), so they run first, in order, and this adapter
+ * after them, and binding it over the default drops none of them. Whatever any
+ * of them throws refuses the grant: the whole call rolls back, the suspensions
+ * and revocations with it, and nothing is dispatched.
  *
  * SSO's `widened()` refuses with a `LogicException` unless a transaction is
  * open on SSO's storage connection, so `authorization.connection` must name the
@@ -106,15 +105,11 @@ final readonly class GrantHookAdapter implements GrantHook
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      */
     public function __construct(
-
-        /** Builds the hooks the application lists in `authorization.grant_hooks`. */
-        private Container $container,
 
         /** Resolves the identity the grants widen. */
         private IdentityReferences $identities,
@@ -127,8 +122,8 @@ final readonly class GrantHookAdapter implements GrantHook
     ) {}
 
     /**
-     * Report the widening to SSO for each tenant the widening grants hold in,
-     * then run the application's listed hooks; throw to refuse the grant.
+     * Report the widening to SSO for each tenant the widening grants hold in;
+     * throw to refuse the grant.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
      * @return void
@@ -142,11 +137,11 @@ final readonly class GrantHookAdapter implements GrantHook
     #[\Override]
     public function beforeWidening(GrantWidening $widening): void
     {
-        if ($this->identities->namesIdentity($widening->identity->type)) {
-            $this->reportToSso($widening);
+        if (!$this->identities->namesIdentity($widening->identity->type)) {
+            return;
         }
 
-        GrantHooks::fromConfig($this->container)->beforeWidening($widening);
+        $this->reportToSso($widening);
     }
 
     /**

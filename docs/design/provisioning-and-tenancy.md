@@ -180,7 +180,8 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   hook (`Authorization\GrantHookAdapter`, `AuthorizationSeams`, on while `iam.adapters.sso` is on too): inside the
   grant call's transaction, before `laravel-authorization` takes any lock, `ScopeWidenings::widen()` once for each
   distinct tenant the widening grants hold in (`null` for a platform-wide grant), with a client of which nothing is
-  known (the widening carries none), then the hooks `authorization.grant_hooks` lists. The design of the hook, its
+  known (the widening carries none), after the hooks `authorization.grant_hooks` lists, which `laravel-authorization`
+  runs first. The design of the hook, its
   lock order and its retries are in `authorization.md`.
 - `EnforcementInheritanceAdapter` answers the nearest tenant, from the one asked up through the tree's ancestors, that
   has a rule, on or off, as IAM-7.5 words it (a stored version, `EnforcementService::get()->version`, SSO's own reader
@@ -618,9 +619,10 @@ storage connection and the retry helper in `storage-and-transactions.md`.
 - `tests/Integration/Authorization/GrantHookAdapterTest.php`, at the connection's own level on every engine, then at
   READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
-  `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testARefusalAfterTheWideningRollsEverythingBack`,
+  `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testARefusalFromAListedHookRefusesTheGrant`,
+  `testTheHooksTheApplicationListsRunOnceBeforeTheAdapter`, `testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant`,
   `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`; and `testTheAdapterIsTheBoundGrantHook`,
-  `testAHookTheApplicationListsStillRunsAfterTheWidening`
+  `testAHookTheApplicationListsStillRunsBesideTheWidening`
 - `tests/Integration/Authorization/GrantScopeAdapterTest.php` `testAPersonIsPlacedByTheirGrants`,
   `testTheJudgementReadsInsideTheCallersTransaction` (every level), `testAPersonIsPlacedByTheirPrincipalsGrants`,
   `testTheTreePlacesAGrantBelowTheTenantWithinIt`, `testATenantThatCannotBeResolvedThrows`,

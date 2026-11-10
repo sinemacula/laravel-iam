@@ -221,13 +221,14 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     nothing is reported twice; `laravel-authorization`'s seams are bound through the container, so none of its resolver
     keys is required to name an adapter. While the application has memberships (`TenancyContracts::hasMemberships()`),
     so its people act in tenants, `laravel-authorization`'s resource tenant resolver left on its default is a note,
-    never a failure: `authorization.resource_tenant_resolver` still naming `NoResourceTenant` and the contract still
-    bound to `laravel-authorization`'s own closure (`MemberDefaults::holdsDefault()`), the closure being the same
-    whatever class is configured. A model declaring its tenancy (`QueryableResource`) or naming its tenant
-    (`AuthorizableResource`) needs no resolver, which no check can see, and which tenant owns a record is the
-    application's rule (`authorization.md`). A provider attribute beyond SSO's standard mapping depends on each
-    connection's mapping, a database row, so it stays with the guides (`docs/guides/authentication-and-sso.md`, Mapped
-    attributes, and `checks.md`), as SSO's routes do (`docs/guides/example-application.md`).
+    never a failure, as `laravel-authorization` says whether the contract still holds its default
+    (`AuthorizationServiceProvider::isPackageDefault()`, asked through `MemberDefaults::holdsDefault()`): a class the
+    application names in `authorization.resource_tenant_resolver` it binds as no default, so no key is read. A model
+    declaring its tenancy (`QueryableResource`) or naming its tenant (`AuthorizableResource`) needs no resolver, which
+    no check can see, and which tenant owns a record is the application's rule (`authorization.md`). A provider
+    attribute beyond SSO's standard mapping depends on each connection's mapping, a database row, so it stays with the
+    guides (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
+    (`docs/guides/example-application.md`).
   - `PlatformCheck` (IAM-2.8): every extension `composer.json` declares is loaded in the PHP running the check, and
     SSO's Composer plugin is installed with the registry of every installed `simplesamlphp-xmlprovider` package linked
     into its directory, compared by content. It fails closed: a provider Composer lists without an install path, without
@@ -495,7 +496,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testSsosBulletsAreHeldBySsosCheck`, `testAuditLogsBulletsAreHeldByTheAuditCheck`,
   `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testGrantsNeedNoResolverWhileSsoIsOff`,
   `testNoTenantsRuleRequiresNoResolver`,
-  `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`
+  `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`,
+  `testAResourceTenantResolverTheApplicationNamesIsNotNoted`
 - `tests/Unit/Checks/PlatformCheckTest.php` `testAMissingExtensionIsReported`,
   `testAProviderWhoseRegistryIsNotLinkedIsReported`, `testAProviderWhoseRegistryCannotBeReadIsReported`
 - `tests/Feature/Checks/SchedulesCheckTest.php` `testAuditLogsRunsSwitchedOffAreNotedUntilSomethingRunsThem`,

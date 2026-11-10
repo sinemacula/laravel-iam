@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Feature\Checks;
 
 use Illuminate\Contracts\Foundation\Application;
+use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
@@ -333,9 +334,8 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     /**
      * While the application has memberships, `laravel-authorization`'s
      * resource tenant resolver left on its default is noted, never failed;
-     * a resolver the application names in `laravel-authorization`'s
-     * configuration, or binds itself, is not, nor is the default where nobody
-     * acts in a tenant.
+     * a resolver the application binds itself is not, nor is the default where
+     * nobody acts in a tenant.
      *
      * @return void
      */
@@ -363,16 +363,26 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         self::assertSame([], self::problems($this->check()->checks()));
         self::assertSame([$note], self::notes($this->check()->checks()));
 
-        $config->set('authorization.resource_tenant_resolver', OwnResourceTenants::class);
-
-        self::assertSame([], self::notes($this->check()->checks()));
-
-        $config->set('authorization.resource_tenant_resolver', NoResourceTenant::class);
-
-        self::assertSame([$note], self::notes($this->check()->checks()));
-
         $app->bind(ResourceTenantResolver::class, OwnResourceTenants::class);
 
+        self::assertSame([], self::notes($this->check()->checks()));
+    }
+
+    /**
+     * A resource tenant resolver the application names in
+     * `laravel-authorization`'s configuration is no default, as
+     * `laravel-authorization` says, so it is not noted while people act in
+     * tenants.
+     *
+     * @return void
+     */
+    #[WithConfig('authorization.resource_tenant_resolver', OwnResourceTenants::class, defer: false)]
+    #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
+    public function testAResourceTenantResolverTheApplicationNamesIsNotNoted(): void
+    {
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        self::assertSame([], self::problems($this->check()->checks()));
         self::assertSame([], self::notes($this->check()->checks()));
     }
 

@@ -63,12 +63,12 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   each model declares its tenancy (`QueryableResource`) or names its tenant
  *   (`AuthorizableResource`), which no check can see without the application's
  *   models. Which tenant owns a record is the application's answer, never this
- *   package's (IAM-1.2), so nothing here binds one. The default is read where
- *   it is unmistakable: `authorization.resource_tenant_resolver` still naming
- *   `NoResourceTenant`, and the contract still bound to the closure
- *   `laravel-authorization`'s provider declares
- *   (`MemberDefaults::holdsDefault()`), since that closure is the same for any
- *   class configured.
+ *   package's (IAM-1.2), so nothing here binds one. Whether it is still the
+ *   default is `laravel-authorization`'s own answer
+ *   (`AuthorizationServiceProvider::isPackageDefault()`, asked through
+ *   `MemberDefaults::holdsDefault()`): a class the application names in
+ *   `authorization.resource_tenant_resolver` it binds as no default, so this
+ *   package reads no key to tell.
  *
  * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
  * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`, which SSO's
@@ -117,7 +117,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
         . ' bind a resolver that resolves every tenant id'
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
 
-    /** @var string The key of `laravel-authorization`'s resource tenant resolver. */
+    /** @var string The key of `laravel-authorization`'s configuration naming its resource tenant resolver, which the note names. */
     private const string RESOURCE_TENANTS = 'authorization.resource_tenant_resolver';
 
     /** @var string The note of a resource tenant resolver still on `laravel-authorization`'s default while people act in tenants. */
@@ -241,15 +241,14 @@ final readonly class CrossMemberConfigurationCheck implements Check
 
     /**
      * The note of `laravel-authorization`'s resource tenant resolver left on
-     * its default, configured and bound, or nothing once either names another.
+     * its default, as `laravel-authorization` says, or nothing once the
+     * application names or binds another.
      *
      * @return ?string
      */
     private function resourceTenantsNote(): ?string
     {
-        $named = $this->config->get(self::RESOURCE_TENANTS, NoResourceTenant::class) === NoResourceTenant::class;
-
-        if (!$named || !$this->defaults->holdsDefault($this->container, ResourceTenantResolver::class, [AuthorizationServiceProvider::class])) {
+        if (!$this->defaults->holdsDefault($this->container, ResourceTenantResolver::class, AuthorizationServiceProvider::isPackageDefault(...))) {
             return null;
         }
 

@@ -8,6 +8,7 @@ use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
@@ -17,6 +18,7 @@ use SineMacula\Laravel\Authorization\Administration\ConflictRetries;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Exceptions\TransactionConflictException;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
+use SineMacula\Laravel\Authorization\Hooks\ListedGrantHooks;
 use SineMacula\Laravel\Authorization\Hooks\ProposedGrant;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
@@ -46,17 +48,18 @@ use Tests\TestCase;
 
 /**
  * Integration tests for `laravel-authorization`'s grant hook, answered by SSO's
- * scope widening first (IAM-6.7, AUTHZ-11.3): a grant that widens a person's
- * scope into a tenant suspends their link by a verified domain in another
- * tenant's connection and revokes the session established through it, inside
- * the grant's own transaction, before the grant is written; a platform-wide
- * grant does so for every tenant, and a grant in the link's own tenant leaves
- * it alone; a grant to a grantee that is not `laravel-authentication`'s
- * identity, which SSO never links, is written with nothing reported to SSO; a
- * hook the application lists in `authorization.grant_hooks` still runs after
- * the widening, and its refusal rolls the grant, the suspension and the
- * revocation back together; and a grant made inside the application's own
- * transaction is rolled back with it, the suspension included.
+ * scope widening (IAM-6.7, AUTHZ-11.3): a grant that widens a person's scope
+ * into a tenant suspends their link by a verified domain in another tenant's
+ * connection and revokes the session established through it, inside the grant's
+ * own transaction, before the grant is written; a platform-wide grant does so
+ * for every tenant, and a grant in the link's own tenant leaves it alone; a
+ * grant to a grantee that is not `laravel-authentication`'s identity, which SSO
+ * never links, is written with nothing reported to SSO; the hooks the
+ * application lists in `authorization.grant_hooks` alongside it run once,
+ * before it, as `laravel-authorization` wraps the bound hook in them, and a
+ * refusal from either refuses the grant, the adapter's after the listed hooks
+ * ran included; and a grant made inside the application's own transaction is
+ * rolled back with it, the suspension included.
  *
  * The grant runs inside `laravel-authorization`'s transaction, where SSO's
  * scope widening takes its identity guard and locks the connections holding the
@@ -351,14 +354,15 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A hook the application lists in `authorization.grant_hooks` still runs,
-     * after SSO's widening, and is handed the widening of the grant.
+     * A hook the application lists in `authorization.grant_hooks` once the
+     * application has booted still runs, once, beside SSO's widening, and is
+     * handed the widening of the grant.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAHookTheApplicationListsStillRunsAfterTheWidening(): void
+    public function testAHookTheApplicationListsStillRunsBesideTheWidening(): void
     {
         $hook = new RecordingGrantHook;
 
@@ -374,8 +378,8 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A refusal from a hook the application lists, after SSO's widening has
-     * run, rolls the grant, the suspension and the revocation back together.
+     * A refusal from a hook the application lists refuses the grant: nothing is
+     * written, suspended or revoked.
      *
      * @param  ?string  $level
      * @return void
@@ -383,7 +387,7 @@ final class GrantHookAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testARefusalAfterTheWideningRollsEverythingBack(?string $level): void
+    public function testARefusalFromAListedHookRefusesTheGrant(?string $level): void
     {
         self::runAtIsolationLevel($level);
 
@@ -402,6 +406,74 @@ final class GrantHookAdapterTest extends TestCase
         self::assertSame(LinkState::ACTIVE, $this->link()->state);
         self::assertNull($this->stored($session)->getRevokedAt());
         self::assertFalse($this->holdsRole(self::TENANT));
+        self::assertSame(0, DB::connection()->transactionLevel());
+    }
+
+    /**
+     * An application that lists its own grant hooks in its configuration, read
+     * as `laravel-authorization` registers, has them run alongside the adapter:
+     * the hook resolved is the adapter wrapped in the listed hooks, which run
+     * once, before it, and the grant is written with the link suspended.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    #[WithConfig('authorization.grant_hooks', [RecordingGrantHook::class], defer: false)]
+    public function testTheHooksTheApplicationListsRunOnceBeforeTheAdapter(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $listed = new RecordingGrantHook;
+
+        $this->app?->instance(RecordingGrantHook::class, $listed);
+
+        self::assertInstanceOf(ListedGrantHooks::class, $this->resolved(GrantHook::class));
+
+        $this->grant(self::TENANT);
+
+        self::assertCount(1, $listed->widenings);
+        self::assertEquals(Reference::of($this->person()), $listed->widenings[0]->identity);
+        self::assertSame(LinkState::SUSPENDED, $this->link()->state);
+        self::assertTrue($this->holdsRole(self::TENANT));
+    }
+
+    /**
+     * The adapter's refusal, after the hooks the application lists have run,
+     * still refuses the grant: the listed hook was handed the widening first,
+     * and nothing is written, suspended or revoked.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    #[WithConfig('authorization.grant_hooks', [RecordingGrantHook::class], defer: false)]
+    public function testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $listed  = new RecordingGrantHook;
+        $session = $this->signInThrough($this->person(), $this->otherConnectionId, $this->linkId);
+
+        $this->app?->instance(RecordingGrantHook::class, $listed);
+        $this->app?->instance(TenantResolver::class, new ResolveNoTenant);
+
+        try {
+            $this->grant(self::TENANT);
+
+            self::fail('A grant the adapter refused was written.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertSame(UnresolvedReferenceException::forGrantTenant(self::TENANT)->getMessage(), $exception->getMessage());
+        }
+
+        self::assertCount(1, $listed->widenings);
+        self::assertFalse($this->holdsRole(self::TENANT));
+        self::assertSame(LinkState::ACTIVE, $this->link()->state);
+        self::assertNull($this->stored($session)->getRevokedAt());
         self::assertSame(0, DB::connection()->transactionLevel());
     }
 

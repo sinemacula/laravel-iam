@@ -180,7 +180,8 @@ final class AccessSeamsTest extends TestCase
     /**
      * The session policy source and the scope registry are transient, and
      * application access is scoped (IAM-6.6); the source is replaced only while
-     * `authorization.session.source` names its default, and the others over
+     * `AuthorizationServiceProvider::isPackageDefault()` says it holds
+     * `laravel-authorization`'s default, and the others over
      * `laravel-authentication`'s defaults.
      *
      * @return void
@@ -193,11 +194,16 @@ final class AccessSeamsTest extends TestCase
         self::assertSame(Lifetime::TRANSIENT, $bindings[ScopeRegistry::class]->lifetime);
         self::assertSame(Lifetime::SCOPED, $bindings[ApplicationAccess::class]->lifetime);
 
-        self::assertSame([AuthorizationServiceProvider::class, NoSessionPolicy::class], $bindings[SessionPolicySource::class]->memberDefaults);
-        self::assertSame('authorization.session.source', $bindings[SessionPolicySource::class]->configurationKey);
+        self::assertSame([NoSessionPolicy::class], $bindings[SessionPolicySource::class]->memberDefaults);
         self::assertSame([AcceptAnyScope::class], $bindings[ScopeRegistry::class]->memberDefaults);
         self::assertSame([AdmitAnyPrincipal::class], $bindings[ApplicationAccess::class]->memberDefaults);
-        self::assertNull($bindings[ApplicationAccess::class]->configurationKey);
+
+        $holdsDefault = new \ReflectionFunction($bindings[SessionPolicySource::class]->holdsDefault ?? self::fail('The source asks no member.'));
+
+        self::assertSame('isPackageDefault', $holdsDefault->getName());
+        self::assertSame(AuthorizationServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
+        self::assertNull($bindings[ScopeRegistry::class]->holdsDefault);
+        self::assertNull($bindings[ApplicationAccess::class]->holdsDefault);
     }
 
     /**

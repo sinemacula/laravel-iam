@@ -9,7 +9,7 @@ requirement check on the proofs of the subject's own session (IAM-6.3); its insu
 rendered as MFA's step-up (IAM-6.4); its session policy source and `laravel-authentication`'s scope registry, answered
 from the caller's credential scopes and from `laravel-authorization`'s registry (IAM-6.5); and
 `laravel-authentication`'s application access, answered from `laravel-authorization`'s grants (IAM-6.6). It covers how
-the binding rule keeps a class the application names in `laravel-authorization`'s configuration, when the access
+a class the application names in `laravel-authorization`'s configuration stands over the adapter, when the access
 contracts are mandatory, and the gaps in the members the adapters work around. It then covers the second part of this
 work: the grants and the tree (IAM-6.7, IAM-6.8, IAM-7.5), the permission catalogue and the audit access policy
 (IAM-6.9, IAM-6.10), forgetting the decisions that depended on authentication (IAM-6.11), and
@@ -73,19 +73,20 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   `ancestors()` read for a check. It holds nothing itself, and the worker reset forgets it with the rest of
   `iam.scoped:`.
 - `laravel-authorization` binds each default only where nothing is bound yet (`bindIf()`, since
-  laravel-authorization#129): its provider scopes the class its configuration names under `authorization.default:` and
-  the contract, and binds the contract to a closure it declares that resolves that key. So each of its rows names the
-  provider and the default class (`AuthorizationSeams::authorizationRow()`), and the seam is replaced only while it is
-  unbound or holds that closure. A class the application names in `authorization.subject_resolver`,
+  laravel-authorization#129), and says itself whether a contract still holds its default
+  (`AuthorizationServiceProvider::isPackageDefault()`). So each of its rows names the default class and asks it
+  (`AuthorizationSeams::authorizationRow()`, `SeamBinding::$holdsDefault`), and the seam is replaced only while it is
+  unbound or holds that default. A class the application names in `authorization.subject_resolver`,
   `authorization.requirement_checker`, `authorization.session.source`, `authorization.identity_directory` or
-  `authorization.tenant_tree` is the application's, and kept: the row names that key
-  (`SeamBinding::$configurationKey`), and the rule reads it as `laravel-authorization` will
-  (`SeamBinding::namesApplicationClass()`), leaving the seam for `laravel-authorization` to bind to that class whichever
-  registers first. No key names the grant hook's class: `laravel-authorization` binds the composite
-  `GrantHooks::fromConfig()` builds from `authorization.grant_hooks`, so its row names `GrantHooks` beside the provider.
-  Anything the application binds over the contract is kept too, made before this package registers or after, and a
-  `laravel-authorization` that registers after this package, with the other providers or from another provider's
-  `boot()`, leaves the adapters bound.
+  `authorization.tenant_tree` is no default: `laravel-authorization` binds it over any earlier binding, the adapter
+  included, through a closure `isPackageDefault()` answers `false` for, so this package reads none of those keys.
+  Registered before this package, `laravel-authorization` has bound the class, and the rule keeps it; registered after,
+  it binds the class over the adapter, though the outcome lists the seam as bound. No key names the grant hook's class:
+  its default is the composite holding no hook (`GrantHooks`), and the hooks `authorization.grant_hooks` lists wrap
+  whatever grant hook is bound (`ListedGrantHooks`, N108), so they run before the adapter. Anything the application
+  binds over the contract is kept too, made before this package registers or after, and a `laravel-authorization` that
+  registers after this package, with the other providers or from another provider's `boot()`, leaves the adapters
+  bound.
 - `laravel-authorization` empties the resolution memo when the subject resolver or the tenant tree is bound again
   (`forgetResolutionsOnRebinding()`), in every provider order: where the seam is still unbound as it registers it
   listens at once, and where this package bound the adapter first it listens from the seam's first resolution in each
@@ -242,10 +243,12 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   alike, so nothing is owed. The session policy source shares the scope registry's mandate: `NoSessionPolicy` allows
   nothing only to a principal carrying `AuthorizableMachine` and caps any other machine by nothing, so a machine whose
   credential was issued `orders.read` could do whatever its grants allow. `iam:check` refuses it whatever the switch
-  says, the application's binding of it by class name included. Since `laravel-authorization` binds the seam through a
-  closure that resolves the class `authorization.session.source` names, the check names a seam still holding that
-  closure by that class (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused, and a class the application
-  names there passes.
+  says, the application's binding of it by class name included. The check asks `isPackageDefault()` as the binding rule
+  does, and names a seam it says holds `laravel-authorization`'s default by the row's default class
+  (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused. A class the application names in
+  `authorization.session.source` is bound through a closure of `laravel-authorization`'s own that `isPackageDefault()`
+  answers `false` for, so the check refuses only the row's default class for these rows, never any other class of the
+  member's, and that class passes without this package reading the key.
 - Request state. None of the adapters keeps anything between calls. The subject resolver and application access are
   scoped all the same, under `iam.scoped:` (`BindingRule::bindScoped()`), so the seams themselves are never scoped, and
   the worker reset and Laravel's `forgetScopedInstances()` forget them between units of work. The caller
@@ -254,25 +257,26 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   resolve through included, is scoped, and the worker reset forgets it with every `authorization.default:` key; its
   explanations keep nothing beyond the check.
 
-- The grant hook (`GrantHookAdapter`, IAM-6.7, AUTHZ-11.3). `laravel-authorization` calls it inside the grant call's
-  own transaction on `authorization.connection`, with every grant of the call that widens an identity's scope, before
-  it takes any lock of its own (`Hooks\WideningPhase::before()`), and never for a grant to a role. The adapter reports
-  the widening to SSO first: for each distinct tenant the widening grants hold in, by the key `laravel-authorization`
-  names it by once it resolves back to that tenant (`TenantTranslator::idOf()`), or `null` for a platform-wide grant,
-  `ScopeWidenings::widen()`, which runs
-  SSO's `widened()` in a savepoint of that transaction. Only then does it run the hooks `authorization.grant_hooks`
-  lists, as `laravel-authorization`'s own composite would (`GrantHooks::fromConfig()`), so binding the adapter over the
-  composite drops none of the application's. Whatever either throws refuses the grant: the call rolls back whole, the
-  suspensions, deleted reservations and revoked sessions with it, and nothing is dispatched. The widening's identity
-  is reported to SSO only when its type names an Eloquent model of `laravel-authentication`'s `Identity` contract
+- The grant hook (`GrantHookAdapter`, IAM-6.7, AUTHZ-11.3). `laravel-authorization` calls it inside the grant call's own
+  transaction on `authorization.connection`, with every grant of the call that widens an identity's scope, before it
+  takes any lock of its own (`Hooks\WideningPhase::before()`), and never for a grant to a role. The adapter reports the
+  widening to SSO: for each distinct tenant the widening grants hold in, by the key `laravel-authorization` names it by
+  once it resolves back to that tenant (`TenantTranslator::idOf()`), or `null` for a platform-wide grant,
+  `ScopeWidenings::widen()`, which runs SSO's `widened()` in a savepoint of that transaction. The adapter runs none of
+  the hooks `authorization.grant_hooks` lists: `laravel-authorization` wraps whatever grant hook is bound in them
+  (`ListedGrantHooks`, N108), so they run first, in order, then the adapter, and binding the adapter over the composite
+  drops none of the application's. Whatever any of them throws refuses the grant: the call rolls back whole, the
+  suspensions, deleted reservations and revoked sessions with it, and nothing is dispatched. The widening's identity is
+  reported to SSO only when its type names an Eloquent model of `laravel-authentication`'s `Identity` contract
   (`IdentityReferences::namesIdentity()`), and then resolved, a row that cannot be found refusing the grant (IAM-8.2).
-  Any other identity, such as an admin panel's user on a Laravel session guard, which `SubjectResolverAdapter::forUser()`
-  answers as its own subject and identity, so the classifier names it as the recipient and every grant to it widens,
-  is one SSO never links, so it has nothing to suspend: its widening is not reported to SSO, its tenants are not
-  resolved, and only the listed hooks run, as `SubtreeGrantees` passes the same grantee over on a move. Decision this
-  note records: SSO's `widened()` would take such a reference as it is, but `ScopeWidenings::widen()`, the one core
-  path every widening goes through, takes `laravel-authentication`'s identity, and a widening of something SSO cannot
-  hold is no widening to SSO, so the hook passes it over rather than add a second path for references.
+  Any other identity, such as an admin panel's user on a Laravel session guard, which
+  `SubjectResolverAdapter::forUser()` answers as its own subject and identity, so the classifier names it as the
+  recipient and every grant to it widens, is one SSO never links, so it has nothing to suspend: its widening is not
+  reported to SSO, its tenants are not resolved, and only the listed hooks run, as `SubtreeGrantees` passes the same
+  grantee over on a move. Decision this note records: SSO's `widened()` would take such a reference as it is, but
+  `ScopeWidenings::widen()`, the one core path every widening goes through, takes `laravel-authentication`'s identity,
+  and a widening of something SSO cannot hold is no widening to SSO, so the hook passes it over rather than add a second
+  path for references.
 - The lock order of a grant is SSO's first, then `laravel-authorization`'s: SSO's widening takes the identity's guard
   (`IdentityLock`), its first lock, then the identity's links and reservations in every other tenant's connections and
   the sessions established through them; `laravel-authorization` then takes its own locks and reclassifies the call
@@ -397,19 +401,19 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   `ResourceTenantResolver`, whose default, `NoResourceTenant`, knows none. Which tenant owns a record is the
   application's own rule (IAM-1.2), on its own models, which this package cannot read, so nothing here binds a resolver
   and `iam:install` names none. While the application has memberships (`TenancyContracts::hasMemberships()`), so its
-  people act in tenants, `CrossMemberConfigurationCheck` notes, never fails, a resolver left on the default: the key
-  still naming `NoResourceTenant` and the contract still bound to `laravel-authorization`'s own closure
-  (`MemberDefaults::holdsDefault()`). A note, since models declaring their tenancy need no resolver, which no check can
-  see.
+  people act in tenants, `CrossMemberConfigurationCheck` notes, never fails, a resolver left on the default, as
+  `laravel-authorization` says (`isPackageDefault()`, through `MemberDefaults::holdsDefault()`): a class the
+  application names in `authorization.resource_tenant_resolver` is no default, so no key is read. A note, since models
+  declaring their tenancy need no resolver, which no check can see.
 
 ## Success Path
 
 1. The provider registers. The binding rule binds the ten rows over the members' defaults where the switch is on; the
-   requirement checker only while `iam.adapters.mfa` is on too, the grant hook only while `iam.adapters.sso` is, and
-   none of `laravel-authorization`'s rows whose class the application names in its configuration. The grant half of
-   SSO's principal scope is bound to `GrantScopeAdapter`. The context's keys are queued for the key catalogue.
+   requirement checker only while `iam.adapters.mfa` is on too, and the grant hook only while `iam.adapters.sso` is.
+   The grant half of SSO's principal scope is bound to `GrantScopeAdapter`. The context's keys are queued for the key
+   catalogue.
 2. `laravel-authorization` registers, before this package or after, and binds its defaults only where nothing is bound,
-   so the adapters stand.
+   so the adapters stand; a class the application names in its configuration it binds over whatever is bound.
 3. `laravel-authorization` boots, reads the context's namespaces and assurance keys once every provider has registered,
    and later builds its key catalogue, with the context's keys declared on it.
 4. A request on `auth:api` asks `Authorization::authorize('invoices:refund')`. The subject is the caller, with its
@@ -502,9 +506,6 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   - `laravel-authorization`'s `authorization:prune` names its command in its signature alone, with no constant to
     schedule it by, so `IamSchedule::AUTHORIZATION_PRUNE` spells it; and `authorization:check` reports only its Gate
     hook and always exits `0`, so `iam:check` runs it for its report and fails on nothing it says.
-  - `laravel-authorization` binds its resource tenant resolver through one closure its provider declares, whatever
-    class `authorization.resource_tenant_resolver` names, so the binding alone cannot tell the application's resolver
-    from `NoResourceTenant`; the check reads the configuration beside it (above).
   - `laravel-authorization`'s grant widening (`Hooks\GrantWidening`) carries no client, so the suspensions and
     revocations a grant causes are reported to SSO for a client of which nothing is known. Carrying the operation's
     client (its IP address and user agent) on `Support\Operation` and the widening would close it.
@@ -542,9 +543,10 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   and which no adapter could do as it answers. `Authorization\Translation\RequirementTranslator` crosses a requirement
   from `laravel-authorization`'s terms to MFA's and back, shared by the requirement checker and the step-up mapping,
   each of which would otherwise translate alone; its unit test sits beside it.
-- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`), since a row over
-  `laravel-authorization` keeps a class the application names in its configuration, which the manifest, expecting its
-  resolvers to be named in configuration, did not foresee. For the same reason `iam:install` writes none of
+- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`, `Bindings\MemberDefaults`),
+  since a row over `laravel-authorization` asks it whether the seam holds its default, so a class the application names
+  in its configuration is kept, which the manifest, expecting its resolvers to be named in configuration, did not
+  foresee. For the same reason `iam:install` writes none of
   `laravel-authorization`'s resolver keys and `CrossMemberConfigurationCheck` requires none (`install-and-check.md`).
 
 Part (b) follows the manifest's remaining rows, with these departures:
@@ -563,9 +565,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `Authorization\Translation\TenantTranslator`, which the manifest does not list, crosses a tenant between the two
   naming schemes for the grant hook, the grant scope, the tree changes, the administrative check and the audit access
   policy, as `RequirementCheckerAdapter` already equates them; no new application contract is needed.
-- The grant hook is bound over `laravel-authorization`'s composite whatever hooks it lists, and runs them after SSO's
-  widening, rather than being listed in `authorization.grant_hooks` by `iam:install`: the application's own list is
-  kept, and the binding follows the same rule as every other row.
+- The grant hook is bound over `laravel-authorization`'s composite whatever hooks it lists, which
+  `laravel-authorization` runs before it, rather than being listed in `authorization.grant_hooks` by `iam:install`: the
+  application's own list is kept, and the binding follows the same rule as every other row.
 - The tree's row is bound whenever the switch is on, through a factory (`SeamBinding::$factory`, which the manifest does
   not list) that builds the adapter while the application names or binds a tree and `laravel-authorization`'s own
   `FlatTenantTree` otherwise, decided as each request or job first resolves the scoped seam, rather than a row that
@@ -648,9 +650,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `reportsWidenings()`, `authorizationRow()`,
   `SWITCH`, `DOMAIN_LINKING`; `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`:
   `adapters.authorization`.
-- `src/Bindings/SeamBinding.php`: `$configurationKey`, `$factory`, `configuredClass()`, `namesApplicationClass()`,
-  `isMandatory()`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`;
-  `src/Bindings/BindingRule.php`: `apply()`; `src/Checks/MandatorySeamsCheck.php`: `holderOf()`.
+- `src/Bindings/SeamBinding.php`: `$holdsDefault`, `$factory`, `isMandatory()`;
+  `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`; `src/Bindings/BindingRule.php`: `apply()`;
+  `src/Checks/MandatorySeamsCheck.php`: `holderOf()`, `isMemberDefault()`.
 - `src/Authorization/SubjectResolverAdapter.php`: `resolve()`, `forUser()`.
 - `src/Authorization/AuthenticationContextAdapter.php`: `namespaces()`, `assuranceKeys()`, `values()`, `NAMESPACES`,
   `ASSURANCE_KEYS`;
@@ -695,7 +697,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testTheSwitchOffBindsNothing`,
   `testTheRequirementCheckerFollowsTheMfaSwitch`,
-  `testEachRowReadsLaravelAuthorizationsConfigurationKeyAndOnlyTheResolverIsScoped`,
+  `testEachRowAsksLaravelAuthorizationForItsDefaultAndOnlyTheResolverIsScoped`,
   `testTheSubjectResolverIsOneForAUnitOfWork`,
   `testRebindingTheResolverOrTheTreeForgetsResolutionsInEveryProviderOrder`,
   `testTheSwitchIsReadLeniently`, `testTheContextsKeysAreDeclared`, `testAKeyTheApplicationDeclaresKeepsItsDeclaration`,
@@ -711,9 +713,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testIamCheckPassesASourceTheApplicationNamesInAuthorizationsConfiguration`,
   `testIamCheckAsksTheBoundApplicationPolicyWhichMachineCredentialsAGuardAccepts`,
   `testTheApplicationPolicyIsAskedOnlyWhenTheMandateIsRead`
-- `tests/Unit/Bindings/MemberDefaultsTest.php` `testADefaultClassBoundByNameIsNoMembersOwnBinding`,
-  `testAClosureNoMemberDefaultDeclaresIsNoMembersOwnBinding`
-- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseConfigurationNamesAnotherClassIsKept`
+- `tests/Unit/Bindings/MemberDefaultsTest.php` `testAMemberThatAnswersIsAskedWhetherTheSeamHoldsItsDefault`,
+  `testAMemberThatAnswersIsNotAskedWithNoBindingToRead`
+- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault`
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` (every isolation level where it signs in)
   `testTheRequestsCallerIsTheSubject`, `testACallerWithoutASessionIsTheSubjectWithNone`,
   `testTheGuardsOwnPrincipalIsTheCallerWithItsSession`, `testACopyOfTheCallerLoadedAgainIsTheCaller`,
@@ -798,7 +800,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `tests/Integration/Authorization/GrantHookAdapterTest.php` (every isolation level)
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
   `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testEveryTenantTheWideningGrantsHoldInIsReported`,
-  `testAHookTheApplicationListsStillRunsAfterTheWidening`, `testARefusalAfterTheWideningRollsEverythingBack`,
+  `testAHookTheApplicationListsStillRunsBesideTheWidening`, `testARefusalFromAListedHookRefusesTheGrant`,
+  `testTheHooksTheApplicationListsRunOnceBeforeTheAdapter`,
+  `testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant`,
   `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`,
   `testAGrantWhoseLinkCandidatesChangedIsTriedAgainWithItsTransaction`,
   `testAGrantToAGranteeThatIsNoIdentityIsWrittenAndItsHooksRun`;
@@ -853,13 +857,14 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `tests/Feature/Checks/SchedulesCheckTest.php` `testThePrunesAreNotedUntilThePackageSchedulesThem`
 - `tests/Feature/Checks/CrossMemberConfigurationCheckTest.php`
   `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`,
+  `testAResourceTenantResolverTheApplicationNamesIsNotNoted`,
   `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testGrantsNeedNoResolverWhileSsoIsOff`,
   `testTheTenantResolverMustResolveWhileAuthorizationReadsATree`
 
 ## Change Triggers
 
-- `laravel-authorization` binds its defaults unconditionally again, or renames its `authorization.default:` prefix, its
-  configuration keys or its defaults.
+- `laravel-authorization` binds its defaults unconditionally again, renames its defaults, changes what
+  `isPackageDefault()` answers, or stops running the hooks `authorization.grant_hooks` lists before the bound hook.
 - `laravel-authorization` changes how it matches an assurance key, or reads the context's types itself.
 - `laravel-authentication`, MFA or SSO adds a key that says how strongly or how recently the session was authenticated:
   it joins `ASSURANCE_KEYS`.
@@ -868,8 +873,6 @@ Part (b) follows the manifest's remaining rows, with these departures:
   instead.
 - `laravel-authorization` renames `authorization.connection` or `authorization:prune`, gives the prune a constant of its
   own, or lets `authorization:check` fail.
-- `laravel-authorization` binds its resource tenant resolver so the configured class can be read from the binding: the
-  note reads the binding alone.
 - `laravel-authorization`'s grant widening carries a client, or its hook runs under its own locks, or a try runs again
   inside the application's transaction: the hook passes the client on, and the lock order and retries here change.
 - `laravel-authorization` names a tenant by an identifier of its own, or its default identity directory becomes complete
