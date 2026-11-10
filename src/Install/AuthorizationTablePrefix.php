@@ -115,8 +115,7 @@ final readonly class AuthorizationTablePrefix
      * Prefix every table name `laravel-authorization`'s published configuration
      * file defaults to, and return the key under `authorization.tables` of each
      * name written, with the name it now defaults to. A name that already
-     * starts with the prefix (`authorization_grant_usage` under the suggested
-     * `authorization_`) keeps it, rather than carrying the prefix twice.
+     * starts with the prefix keeps it, rather than carrying the prefix twice.
      *
      * @param  string  $file
      * @param  string  $prefix

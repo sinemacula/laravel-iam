@@ -83,8 +83,8 @@ php artisan iam:install --prefix=iam_
 The prefix is lower-case letters, digits and underscores, starts with a letter, and is at most 16 characters, so every
 name the migrations derive stays within PostgreSQL's and MySQL's limits. It is written into the published
 `config/authorization.php` as the default of each `AUTHORIZATION_TABLE_*` variable, so a variable you set still wins.
-A table `laravel-authorization` already ships under a name starting with the prefix (`authorization_grant_usage` under
-`authorization_`) keeps that name, rather than carrying the prefix twice. With `--no-interaction` the command asks
+A table `laravel-authorization` already ships under a name starting with the prefix keeps that name, rather than
+carrying the prefix twice. With `--no-interaction` the command asks
 nothing and prefixes nothing unless the option says so. Once any of the member's files is published the tables have
 their names, so a prefix is no longer offered.
 
