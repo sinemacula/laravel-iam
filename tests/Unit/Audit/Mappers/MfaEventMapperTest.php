@@ -28,6 +28,7 @@ use SineMacula\Laravel\Mfa\Events\EnrollmentExpired;
 use SineMacula\Laravel\Mfa\Events\EnrollmentStarted;
 use SineMacula\Laravel\Mfa\Events\FactorConfirmed;
 use SineMacula\Laravel\Mfa\Events\FactorDisabled;
+use SineMacula\Laravel\Mfa\Events\FactorEnabled;
 use SineMacula\Laravel\Mfa\Events\FactorRemoved;
 use SineMacula\Laravel\Mfa\Events\FactorRenamed;
 use SineMacula\Laravel\Mfa\Events\FactorsReset;
@@ -127,6 +128,8 @@ final class MfaEventMapperTest extends TestCase
         yield 'a passkey associated' => [new PasskeyAssociated($context, $factor), MfaActivity::PASSKEY_ASSOCIATED, $kept];
 
         yield 'a factor disabled' => [new FactorDisabled($context, $factor, Purpose::SIGN_IN), MfaActivity::FACTOR_DISABLED, $first];
+
+        yield 'a factor enabled' => [new FactorEnabled($context, $factor, $actor), MfaActivity::FACTOR_ENABLED, $kept];
 
         yield 'a factor removed' => [new FactorRemoved($context, $factor), MfaActivity::FACTOR_REMOVED, $kept];
 
@@ -332,6 +335,8 @@ final class MfaEventMapperTest extends TestCase
         yield 'a reset' => [new FactorsReset(self::context(), $actor, 'Lost their phone')];
 
         yield 'a removal' => [new FactorRemoved(self::context(), self::factor(), $actor)];
+
+        yield 'a factor enabled' => [new FactorEnabled(self::context(), self::factor(), $actor)];
 
         yield 'a lockout lifted' => [new LockoutLifted(self::context(), null, $actor)];
 

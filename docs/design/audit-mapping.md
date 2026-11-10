@@ -135,7 +135,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   revocation, an identity's sessions ended together, a return to pending after a factor change, a passkey removed, an
   API key managed, an MFA enrolment abandoned, an SSO administration helper called with no acting identity, a link a
   connection's subject migration made among them). An operator the event names (MFA's `Actor`, SSO's acting identity) is
-  the actor whatever the attribution says.
+  the actor whatever the attribution says. MFA's `FactorEnabled`, a factor its failures disabled enabled again through
+  `Mfa::enableFactor()`, always names its actor, so `mfa.factor_enabled` is that actor's, on the identity, keeping the
+  factor's id and type as a lifted lockout's `mfa.lockout_lifted` does.
 - MFA abandons an enrolment (`EnrollmentAbandoned`) when the identity replaces or cancels it, when an operator resets
   the identity's factors, and by itself once its confirmation attempts run out, and the event names neither its cause
   nor an operator, so the record is never the identity's: it is left to the contributors, which name the operator

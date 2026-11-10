@@ -49,6 +49,9 @@ enum MfaActivity: string implements ListsProperties
     // A factor was disabled after too many failures
     case FACTOR_DISABLED = 'mfa.factor_disabled';
 
+    // A factor disabled after too many failures was enabled again
+    case FACTOR_ENABLED = 'mfa.factor_enabled';
+
     // A factor was removed
     case FACTOR_REMOVED = 'mfa.factor_removed';
 

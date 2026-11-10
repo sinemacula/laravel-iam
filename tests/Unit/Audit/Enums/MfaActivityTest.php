@@ -61,6 +61,7 @@ final class MfaActivityTest extends CodesTestCase
             'mfa.bootstrap_enrollment_completed' => ['security', self::retained(...$factor)],
             'mfa.passkey_associated'             => ['security', self::retained(...$factor)],
             'mfa.factor_disabled'                => ['security', self::retained(...$factor, ...['purpose'])],
+            'mfa.factor_enabled'                 => ['security', self::retained(...$factor)],
             'mfa.factor_removed'                 => ['security', self::retained(...$factor)],
             'mfa.factor_renamed'                 => ['security', self::retained(...$factor)],
             'mfa.factors_reset'                  => ['security', self::retained('application', 'reenrollment_required', 'unreadable_factors')],
