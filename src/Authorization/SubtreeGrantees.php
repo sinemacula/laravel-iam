@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Database\WriteConnection;
+use SineMacula\Laravel\Authorization\Config\TableNames;
 use SineMacula\Laravel\Authorization\Database\AuthorizationConnection;
 use SineMacula\Laravel\Authorization\Database\LiveGrants;
 use SineMacula\Laravel\Authorization\Support\Reference;
@@ -34,7 +35,12 @@ use SineMacula\Laravel\Iam\Sso\IdentityReferences;
  * permission and policy grant (an expired one holds nowhere) whose tenant is in
  * the subtree, in chunks, so a large subtree never binds more values to one
  * statement than an engine takes. A boundary only ever narrows a scope, so its
- * rows are not read. The tables are those `authorization.tables` names.
+ * rows are not read. The tables are those `authorization.tables` names, read
+ * through `laravel-authorization`'s own reader of them (`TableNames`), so each
+ * resolves exactly as `laravel-authorization` resolves it: a table the block
+ * leaves out is named by its key, and a block or a name that is no name is
+ * refused (`InvalidAuthorizationConfigException`), never read as the default
+ * table.
  *
  * Each grantee is resolved through the morph map on its own write connection:
  * an identity is itself, and a principal its identity, as
@@ -145,12 +151,12 @@ final readonly class SubtreeGrantees
      *
      * @param  string  $table
      * @return string
+     *
+     * @throws \SineMacula\Laravel\Authorization\Exceptions\InvalidAuthorizationConfigException
      */
     private function tableNamed(string $table): string
     {
-        $named = $this->config->get('authorization.tables.' . $table, $table);
-
-        return is_string($named) ? $named : $table;
+        return TableNames::get($table, $this->config);
     }
 
     /**

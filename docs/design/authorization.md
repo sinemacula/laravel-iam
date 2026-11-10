@@ -583,17 +583,19 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `unknown` for everyone under a tree over integer keys. `Contracts\TenantTree` is unchanged.
 - A move reports every identity holding a live grant rooted in the moved subtree to SSO's scope widening, in the moved
   tenant, while the grant hook is bound (`Authorization\SubtreeGrantees`, which the manifest does not list, reading
-  `laravel-authorization`'s grant tables on its connection): the grant half counts a grant below a tenant within it, so
-  a move out from under a linked tenant widens the person's scope with no grant written, and no grant hook runs. The
-  package sees only where a tenant ends up, so this is broader than needed, never narrower: a link in a tenant the
-  subtree still stands below is suspended too, latched, and is linked again. A boundary only narrows, and a grant to a
-  role widens nobody, so neither is read. Every grantee's identity guard is taken first, in SSO's order, ascending by
-  SSO's digest, before any widening locks a connection (`Sso\IdentityGuards`, which the manifest does not list either):
-  SSO's widening reports one identity, its guard then its connections, so one widening after another would take a guard
-  after a connection and deadlock with a grant, reservation or activation of a later grantee holding its guard and
-  waiting for that connection. SSO offers neither a widening of several identities nor a public way to take the guard,
-  so this reaches SSO's internal `Linking\IdentityLock` (`acquire()`, `digest()`); each widening then takes its guard
-  again, held already, and waits for nothing.
+  `laravel-authorization`'s grant tables on its connection, under the names its own reader gives them,
+  `Config\TableNames` (laravel-authorization#141), so a renamed table resolves exactly as `laravel-authorization`
+  resolves it and one named by no name is refused rather than read under its default name): the grant half counts a
+  grant below a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant
+  written, and no grant hook runs. The package sees only where a tenant ends up, so this is broader than needed, never
+  narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again. A boundary
+  only narrows, and a grant to a role widens nobody, so neither is read. Every grantee's identity guard is taken first,
+  in SSO's order, ascending by SSO's digest, before any widening locks a connection (`Sso\IdentityGuards`, which the
+  manifest does not list either): SSO's widening reports one identity, its guard then its connections, so one widening
+  after another would take a guard after a connection and deadlock with a grant, reservation or activation of a later
+  grantee holding its guard and waiting for that connection. SSO offers neither a widening of several identities nor a
+  public way to take the guard, so this reaches SSO's internal `Linking\IdentityLock` (`acquire()`, `digest()`); each
+  widening then takes its guard again, held already, and waits for nothing.
 - The group re-sync runs once the sign-in's transaction has committed, in a transaction of its own, rather than inside
   it: a re-synced grant that widens reports to SSO's scope widening, which takes the identity's guard, and SSO's lock
   order puts the guard before every connection, which the redemption had already locked, so the re-sync under its locks
@@ -671,7 +673,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
   `src/Authorization/GrantScopeAdapter.php`: `judge()`, `outside()`; `src/Authorization/TenantTreeAdapter.php`:
   `ancestors()`, `isWithin()`, `subtree()`, `tenantsIn()`, `forApplication()`;
-  `src/Exceptions/TenancyMisconfiguredException.php`: `forMixedTree()`; `src/Authorization/SubtreeGrantees.php`: `of()`;
+  `src/Exceptions/TenancyMisconfiguredException.php`: `forMixedTree()`; `src/Authorization/SubtreeGrantees.php`: `of()`,
+  `tableNamed()`;
   `src/Sso/IdentityGuards.php`: `acquire()`; `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
   `src/Bindings/SeamBinding.php`: `$factory`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `src/IamServiceProvider.php`:
@@ -821,7 +824,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `tests/Integration/Authorization/TreeMoveWideningTest.php` (every isolation level)
   `testAMoveOutFromUnderTheLinkedTenantSuspendsTheLinkInTheMovesTransaction`, `testAMoveThatRollsBackSuspendsNothing`,
   `testAMoveOfASubtreeHoldingAnotherTenantTypeIsRefused`;
-  `testWithTheSsoSwitchOffNobodyIsReported`, `testThePeopleGrantedAreReadFromEveryGrantTableEachOnce`
+  `testWithTheSsoSwitchOffNobodyIsReported`, `testThePeopleGrantedAreReadFromEveryGrantTableEachOnce`,
+  `testTheGrantTablesAreReadUnderTheirConfiguredNames`, `testAGrantTableNamedByWhatIsNoNameIsRefused`
 - `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php` (every isolation level)
   `testAFirstSignInIsGrantedWhatItsGroupsMapTo`, `testARefusedMappingRollsTheProvisioningBack`,
   `testALaterSignInReSyncsTheGroups`, `testTheReSyncTakesTheIdentityGuardOnlyOnceTheRedemptionHasCommitted`,
@@ -871,6 +875,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
   proofs, or offers a way to forget the decisions of a session or identity: `DecisionCacheInvalidation` calls that
   instead.
 - `laravel-authorization` renames `authorization.connection`, or lets `authorization:check` fail.
+- `laravel-authorization` changes how it reads a table's name (`Config\TableNames`), or makes it no longer readable
+  from a sibling: `SubtreeGrantees` reads it as `laravel-authorization` then does.
 - `laravel-authorization`'s grant hook runs under its own locks, or a try runs again inside the application's
   transaction: the lock order and retries here change.
 - `laravel-authorization` names a tenant by an identifier of its own, or its default identity directory becomes complete
