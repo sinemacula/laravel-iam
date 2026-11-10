@@ -14,6 +14,7 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use SineMacula\Laravel\Authentication\Console\ConfigurationChecks;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
@@ -26,6 +27,7 @@ use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
+use SineMacula\Laravel\Iam\Checks\AuthenticationConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
@@ -212,7 +214,10 @@ final class IamServiceProvider extends ServiceProvider
      * the listeners carrying the caller into each queued job, the rendering of
      * `laravel-authorization`'s insufficient-authentication exception as MFA's
      * step-up, the worker reset listeners, the publishing tag and the console
-     * commands.
+     * commands, and register this package's checks of
+     * `laravel-authentication`'s side with `authentication:check` as its checks
+     * are resolved (IAM-10.3), which never happens where it offers no
+     * registration point.
      *
      * @return void
      *
@@ -235,6 +240,9 @@ final class IamServiceProvider extends ServiceProvider
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();
+        $this->callAfterResolving(ConfigurationChecks::class, static function (ConfigurationChecks $checks): void {
+            $checks->register(AuthenticationConfigurationCheck::class);
+        });
     }
 
     /**

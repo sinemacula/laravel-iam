@@ -35,6 +35,9 @@ final class CheckerTest extends TestCase
     /** @var array<string, int|\Throwable> What each member's command exits with, or throws. */
     private array $commands = [];
 
+    /** @var list<mixed> What `Checker::RUNNING` was bound to as each member's command ran. */
+    private array $running = [];
+
     /**
      * Start every test with every member's command registered and exiting
      * successfully, and every check of this package's passing.
@@ -52,7 +55,8 @@ final class CheckerTest extends TestCase
 
         $this->console->shouldReceive('all')->andReturnUsing(fn (): array => $this->commands);
         $this->console->shouldReceive('call')->andReturnUsing(function (string $command, array $parameters, BufferedOutput $output): int {
-            $outcome = $this->commands[$command];
+            $outcome         = $this->commands[$command];
+            $this->running[] = $this->container->make(Checker::RUNNING);
 
             if ($outcome instanceof \Throwable) {
                 throw $outcome;
@@ -110,6 +114,30 @@ final class CheckerTest extends TestCase
             '[SchedulesCheck] OK',
             'Every check passed.',
         ], $output);
+    }
+
+    /**
+     * `Checker::RUNNING` is `true` while each member's command runs, and
+     * `false` once they have, a command that throws included.
+     *
+     * @return void
+     */
+    public function testTheMembersCommandsRunMarked(): void
+    {
+        $this->runChecker();
+
+        self::assertSame(array_fill(0, count(Checker::MEMBER_COMMANDS), true), $this->running);
+        self::assertFalse($this->container->make(Checker::RUNNING));
+
+        $this->commands['sso:check'] = new \RuntimeException('SSO stopped.');
+
+        $this->expectExceptionObject(new \RuntimeException('SSO stopped.'));
+
+        try {
+            $this->runChecker();
+        } finally {
+            self::assertFalse($this->container->make(Checker::RUNNING));
+        }
     }
 
     /**
