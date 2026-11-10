@@ -22,6 +22,7 @@ use SineMacula\Laravel\Iam\Install\Installer;
 use SineMacula\Laravel\Iam\Install\InstallReport;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
+use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
@@ -50,13 +51,7 @@ use Tests\TestCase;
 #[CoversClass(PublicationFailedException::class)]
 final class InstallCommandTest extends TestCase
 {
-    use UsesScratchDirectory;
-
-    /** @var array<string, string> The tables `laravel-authorization` names under its own prefix, by their key. */
-    private const array OWN_TABLES = [
-        'grant_usage'    => 'authorization_grant_usage',
-        'usage_coverage' => 'authorization_usage_coverage',
-    ];
+    use NamesAuthorizationTables, UsesScratchDirectory;
 
     /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each member's configuration key and the provider that ships its files. */
     private const array MEMBERS = [
@@ -518,8 +513,7 @@ final class InstallCommandTest extends TestCase
 
     /**
      * `--prefix` prefixes every `laravel-authorization` table in its
-     * configuration published in the run, but those it names under its own
-     * prefix, which keep their names.
+     * configuration published in the run.
      *
      * @return void
      */
@@ -532,13 +526,12 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(12, $configuration['tables']);
-        self::assertSame(self::OWN_TABLES, array_intersect_key($configuration['tables'], self::OWN_TABLES));
-        self::assertStringNotContainsString('authz_authorization_', $output);
+        $expected = self::prefixedAuthorizationTables('authz_');
 
-        foreach (array_diff_key($configuration['tables'], self::OWN_TABLES) as $key => $table) {
-            self::assertSame('authz_' . $key, $table);
-            self::assertStringContainsString("[written] authorization.tables.{$key}: authz_{$key}", $output);
+        self::assertSame($expected, $configuration['tables']);
+
+        foreach ($expected as $key => $table) {
+            self::assertStringContainsString("[written] authorization.tables.{$key}: {$table}", $output);
         }
     }
 
@@ -973,12 +966,7 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(12, $configuration['tables']);
-        self::assertSame(self::OWN_TABLES, array_intersect_key($configuration['tables'], self::OWN_TABLES));
-
-        foreach (array_diff_key($configuration['tables'], self::OWN_TABLES) as $key => $table) {
-            self::assertSame('authz_' . $key, $table);
-        }
+        self::assertSame(self::prefixedAuthorizationTables('authz_'), $configuration['tables']);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 

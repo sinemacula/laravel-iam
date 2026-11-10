@@ -60,14 +60,14 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   (`Installer::offersTablePrefix()`). It is written into the configuration file published in the run, as soon as it is
   published and before any of `laravel-authorization`'s migrations is copied, as the default of each
   `AUTHORIZATION_TABLE_*` variable (`Install\AuthorizationTablePrefix::apply()`), so the variable still wins and
-  `laravel-authorization`'s migrations and models read the prefixed names from the first migration on. A table the
-  member names under its own prefix (`authorization_grant_usage`, `authorization_usage_coverage`) collides with
-  nothing and keeps its name, and is left out when a configuration is judged to carry a prefix. A prefix is
+  `laravel-authorization`'s migrations and models read the prefixed names from the first migration on. A prefix is
   lower-case letters, digits and underscores, starting with a letter, at most 16 characters: the longest name the
   migrations derive from a table name (a foreign key's) is 46 characters before the prefix, so every one stays within
   PostgreSQL's 63 and MySQL's 64. A prefix given when it cannot be written is reported as owed, unless the configuration
-  published before already carries it on every table name it defaults to, each the prefix followed by the table's own
-  name (`AuthorizationTablePrefix::carries()`), as a run with the same prefix leaves it: running `--prefix` again is
+  published before already carries it on every table name it defaults to, each the name the prefix gives the table:
+  the prefix followed by the name `laravel-authorization` ships for it, read from the installed package's own
+  configuration, or that name alone where it already starts with the prefix (`AuthorizationTablePrefix::carries()`), as
+  a run with the same prefix leaves it, since `apply()` never prefixes a name twice: running `--prefix` again is
   then noted, never owed. A prefix that is only the start of the one written (`iam` after `iam_`) is not carried, since
   the tables are not named with it, so it is owed.
 - Everything the run reads from the configuration (the exclusions, whether the prefix can be written) and the prefix
