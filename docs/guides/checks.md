@@ -12,7 +12,7 @@ connection's or a model's name may appear in it.
 
 - [Reading the output](#reading-the-output)
 - [The members' checks](#the-members-checks)
-- [In authentication:check](#in-authenticationcheck)
+- [In laravel-authentication's check](#in-laravel-authentications-check)
 - [storage](#storage)
 - [seams](#seams)
 - [sso](#sso)
@@ -55,7 +55,7 @@ you run it yourself, and one that exits non-zero fails the run. One that is not 
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 
-## In authentication:check
+## In laravel-authentication's check
 
 This package adds its checks of `laravel-authentication`'s side to `authentication:check`, so running that command on
 its own reports them too, after `laravel-authentication`'s own:

@@ -272,7 +272,9 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $config?->set('sso.applications', ['api' => [], 'portal' => []]);
 
         self::assertSame([], $this->check()->authenticationChecks());
-        self::assertSame([sprintf(self::UNDECLARED, 'mfa.add_factor, mfa.replace_factor, mfa.remove_factor, mfa.generate_recovery_codes')], self::problems($this->check()->guardChecks('api')));
+        $undeclared = 'mfa.add_factor, mfa.replace_factor, mfa.remove_factor, mfa.generate_recovery_codes';
+
+        self::assertSame([sprintf(self::UNDECLARED, $undeclared)], self::problems($this->check()->guardChecks('api')));
         self::assertCount(2, $this->check()->guardChecks('api'));
         self::assertSame([], $this->check()->guardChecks('portal'));
 
