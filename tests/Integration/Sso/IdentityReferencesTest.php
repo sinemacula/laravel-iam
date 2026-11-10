@@ -73,7 +73,11 @@ final class IdentityReferencesTest extends TestCase
             Schema::dropIfExists($name);
             Schema::create($name, static function (Blueprint $table) use ($key, $collation): void {
 
-                $key($table)->primary()->collation($collation);
+                $column = $key($table)->primary();
+
+                if ($collation !== null) {
+                    $column->collation($collation);
+                }
 
                 $table->timestamps();
             });

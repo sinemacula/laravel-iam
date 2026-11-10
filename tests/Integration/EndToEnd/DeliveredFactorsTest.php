@@ -178,7 +178,7 @@ final class DeliveredFactorsTest extends TestCase
         $stepUp = $gateway->sent()[1];
 
         $this->assertMessage($stepUp, $person, $channel, $type, $destination, CodePurpose::MFA, Purpose::ADDITIONAL_FACTOR);
-        self::assertTrue($stepUp->expiresAt->equalTo($sent->expiresAt));
+        self::assertEquals($stepUp->expiresAt, $sent->expiresAt);
 
         $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP);
 
@@ -363,7 +363,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertSame($destination, $enrolment->destination());
         self::assertNotNull($enrolment->factor);
         self::assertNotSame($destination, $enrolment->factor->maskedDestination);
-        self::assertTrue($person->is($enrolment->recipient()));
+        self::assertIsThePerson($person, $enrolment->recipient());
 
         self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
@@ -459,7 +459,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame(self::GUARD, $message->application);
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
         self::assertTrue($message->expiresAt->isFuture());
     }

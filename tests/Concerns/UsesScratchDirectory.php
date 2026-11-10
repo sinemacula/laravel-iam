@@ -18,14 +18,14 @@ use Illuminate\Filesystem\Filesystem;
  */
 trait UsesScratchDirectory
 {
-    /** @var ?string The test's directory, once created. */
+    /** @var ?non-empty-string The test's directory, once created. */
     private ?string $scratch = null;
 
     /**
      * Return a path in the test's directory, creating the directory first.
      *
      * @param  string  $path
-     * @return string
+     * @return non-empty-string
      */
     protected function scratch(string $path = ''): string
     {

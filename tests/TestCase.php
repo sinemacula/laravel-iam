@@ -257,6 +257,19 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
+     * Assert the identity given is the person: a person, of the same row.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  mixed  $identity
+     * @return void
+     */
+    protected static function assertIsThePerson(Person $person, mixed $identity): void
+    {
+        self::assertInstanceOf(Person::class, $identity);
+        self::assertTrue($person->is($identity));
+    }
+
+    /**
      * Configure the guard people sign in on: a `jwt` guard of
      * `laravel-authentication`'s, the default, over the fixtures' people,
      * signing in with the methods `signInMethods()` names, with the relying

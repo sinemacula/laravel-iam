@@ -135,7 +135,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         self::assertSame('sms', $messages[0]->type);
         self::assertSame(self::DELIVERED_PHONE, $messages[0]->identifier);
         self::assertSame(self::GUARD, $messages[0]->guard);
-        self::assertTrue($messages[0]->expiresAt->equalTo($sent->expiresAt));
+        self::assertEquals($messages[0]->expiresAt, $sent->expiresAt);
         self::assertSame($this->person()->getKey(), $messages[0]->identity->getAuthIdentifier());
 
         foreach ($this->gateways() as $gateway) {
@@ -726,7 +726,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         self::assertSame(FailureReason::LOCKED, $outcome->reason);
         self::assertSame(CodeTranslator::LOCKED, $outcome->detail);
         self::assertFalse($outcome->counted);
-        self::assertTrue($until->equalTo($outcome->lockedUntil));
+        self::assertEquals($until, $outcome->lockedUntil);
     }
 
     /**

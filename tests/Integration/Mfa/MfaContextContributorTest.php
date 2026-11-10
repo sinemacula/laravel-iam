@@ -226,7 +226,7 @@ final class MfaContextContributorTest extends TestCase
         $this->actingOnVerifiedSession($verified);
         $this->actingOnSession($unverified, self::GUARD);
 
-        dispatch(new ContributesInAJob($person->getKey(), self::keyOf($verified), self::GUARD));
+        dispatch(new ContributesInAJob($person->id, self::keyOf($verified), self::GUARD));
 
         self::assertNotNull(ContributesInAJob::$contributed);
         self::assertTrue(ContributesInAJob::$contributed['accepted']);
@@ -234,7 +234,7 @@ final class MfaContextContributorTest extends TestCase
 
         $this->actingOnSession($verified, self::GUARD);
 
-        dispatch(new ContributesInAJob($person->getKey(), self::keyOf($unverified), self::GUARD));
+        dispatch(new ContributesInAJob($person->id, self::keyOf($unverified), self::GUARD));
 
         self::assertNotNull(ContributesInAJob::$contributed);
         self::assertFalse(ContributesInAJob::$contributed['accepted']);

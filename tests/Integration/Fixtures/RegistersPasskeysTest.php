@@ -81,7 +81,7 @@ final class RegistersPasskeysTest extends TestCase
 
         self::assertTrue($this->registerPasskey($person)->isRegistered());
         self::assertTrue($this->registerPasskey($person)->isRegistered());
-        self::assertCount(2, array_unique(Passkey::query()->pluck('credential_id')->all()));
+        self::assertSame(2, Passkey::query()->distinct()->count('credential_id'));
         self::assertCount(2, $this->passkeys()->passkeys($person));
     }
 

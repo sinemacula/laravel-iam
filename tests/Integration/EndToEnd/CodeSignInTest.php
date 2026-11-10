@@ -134,7 +134,7 @@ final class CodeSignInTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame(self::GUARD, $message->application);
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
         self::assertTrue($message->expiresAt->isFuture());
         self::assertSame([], $this->otherGatewayThan($channel)->sent());

@@ -128,7 +128,7 @@ final class MfaCodeDeliveryTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame($sent->expiresAt?->getTimestamp(), $message->expiresAt->getTimestamp());
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertSame($factor->id, $message->factor?->id);
         self::assertNotSame($destination, $message->factor->maskedDestination);
 

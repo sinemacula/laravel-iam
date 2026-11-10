@@ -135,7 +135,7 @@ final class AuthenticationCodeDeliveryTest extends TestCase
         self::assertSame($channel, $message->channel);
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
 
         $reset = $this->auth()->passwords(self::GUARD)->resetWithCode($type, [
