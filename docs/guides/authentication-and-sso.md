@@ -131,10 +131,11 @@ application the link is redeemed for. SSO asks three things of the link:
 - **Link confirmation.** An identity that holds, or has ever held, a link by a verified domain may link a provider, or
   confirm that link, only once SSO's `SineMacula\Laravel\Sso\Contracts\LinkConfirmation` says the caller's
   authentication is independent of it, or the `link` is refused as `independent_authentication_required`. The package
-  answers it in place of SSO's `SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`, from the proofs
-  `laravel-authentication` records for the session the caller holds, its own: the session is independent when it
-  signed in with a password or a passkey, or through your own account recovery, and was never renewed through a
-  provider. A session any provider established is not, whichever link it stood on, so a person whose only session
+  answers it in place of SSO's `SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation`, from the proofs and the
+  provenance `laravel-authentication` records for the session the caller holds, its own: the session is independent
+  when it signed in with a password or a passkey, or through your own account recovery, was never renewed through a
+  provider, and records no link by a verified domain. A session any provider established is not, whichever link it
+  stood on, so a person whose only session
   came through their verified domain link signs in with a password or a passkey first
   ([laravel-sso: confirming it is the person][sso-links-confirming]).
 

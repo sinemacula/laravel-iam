@@ -190,9 +190,10 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   factors MFA offers the caller and whether its identity holds a confirmed factor (`Mfa::factors()`), and the handler
   renders MFA's exception as the application renders it. A refusal none of whose candidates MFA can express stays
   Laravel's 403. It is registered while both the authorization and MFA switches are on, on Laravel's own handler only.
-- The session policy (`SessionPolicySourceAdapter`). `laravel-authentication` keeps a credential's scopes on the guard
-  that admitted it alone (`ContextualGuard::scopes()`), and neither its caller nor `laravel-authorization`'s subject
-  carries them, so this one read is ambient, and its docblock says why. It reads only the guard the subject names, never
+- The session policy (`SessionPolicySourceAdapter`). `laravel-authentication` hands a credential's scopes to the guard
+  that admitted it (`ContextualGuard::scopes()`) and to the request's caller (`Caller::$scopes`), but
+  `laravel-authorization`'s subject, all the source is handed, carries none, so this one read is ambient, and its
+  docblock says why. It reads only the guard the subject names, never
   the default one, afresh on every call, and only while that guard holds the subject now: its current principal is the
   subject, the same object or the same model, and, where the subject carries a session, its current session is that
   session, compared by key as text. Any other subject, a principal the caller names (`Authorization::for()`) or another
@@ -305,9 +306,10 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
 - The hook is handed the widening as a value alone, and reads no request, current user or guard: the identity, named
   by its morph type and key, is resolved through the morph map on the write connection (`IdentityReferences`), and one
   that cannot be resolved throws `UnresolvedReferenceException`, refusing the grant rather than writing it with no
-  widening reported (IAM-8.2). `laravel-authorization`'s widening carries no client, so the suspensions are reported for
-  a client of which nothing is known (`new ClientContext(null, null)`), as a job's are: the contract leaves no other
-  way, and the adapter's docblock says so. SSO's `widened()` refuses unless a transaction is open on SSO's storage
+  widening reported (IAM-8.2). The suspensions are reported for the client the widening carries, its operation's IP
+  address and user agent (`GrantWidening::$ip`, `$userAgent`): the routed request's for a delegated call made in one,
+  or what the caller passed when it built the operation, and none for trusted, console and queued work otherwise, as a
+  job's are. SSO's `widened()` refuses unless a transaction is open on SSO's storage
   connection, so a grant on a connection other than the storage connection is refused rather than written without its
   widening; the alignment of `authorization.connection` (below) keeps them one. The row is bound while the SSO
   capability's switch is on too, since it is SSO's widening that reports; with it off, `laravel-authorization`'s
@@ -492,9 +494,11 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     reset between queued jobs (`ForgetGuardStateBeforeJob`) resets the guards but not that memo, so a worker's later
     jobs would read the first job's caller. The worker reset drops it; a reset of its own memo beside the guards' would
     close it.
-  - `laravel-authentication`'s caller carries no credential scopes (they live on `ContextualGuard::scopes()` alone), which
-    forces the session policy source's ambient read. Scopes on `Caller`, filled as the access credential is admitted,
-    would let the subject carry them and the source take them as a plain value.
+  - `laravel-authorization`'s `Subject`, all its session policy source is handed, carries no credential scopes, so the
+    source reads them from the guard the subject names, an ambient read. `laravel-authentication`'s caller now carries
+    them (`Caller::$scopes`, `null` where no credential limits the caller), which the subject resolver reads, but a
+    `Subject` has nowhere to put them; scopes on `Subject`, filled by the resolver and kept distinct from `null`, would
+    let the source take them as a plain value.
   - `laravel-mfa` builds its step-up exception only in its middleware, and the confirmed-factor read it uses
     (`ConfirmedFactors`) is `@internal`, so the mapping derives whether a confirmed factor is held from `Mfa::factors()`.
     A public factory for the step-up exception from a caller and a requirement would close it.
@@ -503,27 +507,22 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     identity, only `forgetLastDecision()`. `DecisionCacheInvalidation` forgets it through the store, judged by its
     `RequirementFreshness` and its provenance (above). A `sessionChanged()` of its own, or dropping the last decision
     whose session's proofs changed, would close it.
-  - `laravel-authorization`'s `authorization:prune` names its command in its signature alone, with no constant to
-    schedule it by, so `IamSchedule::AUTHORIZATION_PRUNE` spells it; and `authorization:check` reports only its Gate
-    hook and always exits `0`, so `iam:check` runs it for its report and fails on nothing it says.
-  - `laravel-authorization`'s grant widening (`Hooks\GrantWidening`) carries no client, so the suspensions and
-    revocations a grant causes are reported to SSO for a client of which nothing is known. Carrying the operation's
-    client (its IP address and user agent) on `Support\Operation` and the widening would close it.
-  - `laravel-authorization` names a tenant by its morph type and key (`Support\Reference`), never by
-    `laravel-authentication`'s identifier, so the package equates the key with the identifier
-    (`TenantTranslator`), refusing a tenant keyed otherwise wherever it names one, the grant hook and the tree
-    included. Letting
-    `AuthorizableTenant` name its identifier, or documenting the equivalence, would close it.
-  - `laravel-authorization`'s default identity directory (`GuardUserIdentityDirectory`) is complete only under its own
-    subject resolver, so under any other its grant scope query never answers `within` and every grant to an identity
-    is classified as widening. `IdentityDirectoryAdapter` answers it; the README naming the umbrella's adapter would
-    say so.
+  - `laravel-authorization`'s `authorization:check` reports only its Gate hook and always exits `0`, so `iam:check` runs
+    it for its report and fails on nothing it says.
+  - `laravel-authorization` names a tenant by its morph type and key alone (`Support\Reference`), the key being the only
+    identifier it knows (`AuthorizableTenant`), never by `laravel-authentication`'s identifier, so the package equates
+    the key with the identifier (`TenantTranslator`), refusing a tenant keyed otherwise wherever it names one, the
+    grant hook and the tree included. Letting `AuthorizableTenant` name `laravel-authentication`'s identifier would
+    close it.
   - `laravel-authorization` has no query for the tenants where a subject holds an action, so the audit access policy
     lists the viewer's actions in the tenants its memberships name, and a grant in any other tenant, or reached only
     through a subtree, is not seen (`audit-mapping.md`). A read-only query naming those tenants would close it.
-  - `laravel-authorization`'s `for(Subject)` decides in the request's resolved tenant whatever tenant the subject
-    names, so `AdministrativeCheck` puts the subject's own scope in place for the check
-    (`AuthorizationScope::within()`). Deciding a named subject in its own tenant and application would close it.
+  - `laravel-authorization`'s `for(Subject)` decides a subject naming a tenant or an application there, but one naming
+    neither in the scope in place, the request's, so it cannot tell a subject acting on the platform with no
+    application from one naming no scope at all. `AdministrativeCheck` therefore still puts the subject's own scope in
+    place for the check (`AuthorizationScope::within()`), the platform for no tenant, so a subject built for a job or a
+    command is never decided in the tenant of the request it is checked in. Deciding a `Subject` naming no tenant on
+    the platform would close it.
   - `laravel-authorization` dispatches `DecisionEvaluated` for every check, allows included (its BL-72), so the mapper
     filters denials itself; and a decision's `usedBreakGlass` is always `false` until break-glass grants exist (its
     BL-70), so `authorization.break_glass_used` is defined and mapped but never recorded (`audit-mapping.md`).
@@ -800,7 +799,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `tests/Integration/Authorization/GrantHookAdapterTest.php` (every isolation level)
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
   `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testEveryTenantTheWideningGrantsHoldInIsReported`,
-  `testAHookTheApplicationListsStillRunsBesideTheWidening`, `testARefusalFromAListedHookRefusesTheGrant`,
+  `testASuspensionIsReportedForTheWideningsClient`, `testAHookTheApplicationListsStillRunsBesideTheWidening`, `testARefusalFromAListedHookRefusesTheGrant`,
   `testTheHooksTheApplicationListsRunOnceBeforeTheAdapter`,
   `testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant`,
   `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`,
@@ -871,16 +870,16 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `laravel-authorization` caches decisions across checks, or drops the last decision on a change to its session's
   proofs, or offers a way to forget the decisions of a session or identity: `DecisionCacheInvalidation` calls that
   instead.
-- `laravel-authorization` renames `authorization.connection` or `authorization:prune`, gives the prune a constant of its
-  own, or lets `authorization:check` fail.
-- `laravel-authorization`'s grant widening carries a client, or its hook runs under its own locks, or a try runs again
-  inside the application's transaction: the hook passes the client on, and the lock order and retries here change.
+- `laravel-authorization` renames `authorization.connection`, or lets `authorization:check` fail.
+- `laravel-authorization`'s grant hook runs under its own locks, or a try runs again inside the application's
+  transaction: the lock order and retries here change.
 - `laravel-authorization` names a tenant by an identifier of its own, or its default identity directory becomes complete
   under another subject resolver: `TenantTranslator` and `IdentityDirectoryAdapter` change or go.
-- `laravel-authorization` adds a query for the tenants where a subject holds an action, or decides a named subject in its
-  own tenant: the audit access policy and `AdministrativeCheck` use it.
+- `laravel-authorization` adds a query for the tenants where a subject holds an action, or decides a `Subject` naming no
+  tenant on the platform: the audit access policy and `AdministrativeCheck` use it.
 - SSO's `widened()` takes a client the widening can carry, or stops requiring a transaction on its storage connection.
-- `laravel-authentication` adds a namespace of its own to the context, or carries a credential's scopes on its caller.
+- `laravel-authentication` adds a namespace of its own to the context, or `laravel-authorization`'s `Subject` carries a
+  credential's scopes: the session policy source takes them from the subject.
 - MFA adds an assurance level, or a requirement part.
 - Laravel stops turning an authorization exception into an HTTP exception before its render callbacks, or stops keeping
   it as the previous exception.

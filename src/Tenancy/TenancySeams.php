@@ -32,19 +32,17 @@ use SineMacula\Laravel\Sso\Linking\RefusingPrincipalScope;
  * It is the one answer for both of its sources, SSO's enforcement and the
  * tenant MFA requirement MFA is given the same answer of, so it is declared
  * apart from either capability. It is bound while the SSO capability's switch
- * is on (`iam.adapters.sso`), whatever MFA's: a sign-in, whose session is not
- * written yet, is established through the connection of the redemption this
+ * is on (`iam.adapters.sso`), whatever MFA's: it composes SSO's enforcement and
+ * exemption gate, and hands the gate the client of the redemption this
  * package's SSO capability admitted in the request (`AdmittedRedemptions`),
- * which nothing records with that capability off, so the adapter would take
- * every SSO sign-in for one through no connection and ask SSO's exemption gate
- * of a compliant one. With `iam.adapters.sso` off, the application binds it
- * itself, beside the SSO seams it binds. It is bound whatever SSO's enforcement
- * and the requirement say, since either may be turned on while the application
- * runs, and with neither on it requires nothing and reads nothing, as the
- * default does, answering a version of its own. It is mandatory while SSO's
- * `enforcement` feature is on or the application names or binds a tenant MFA
- * requirement, whoever binds it: left on the default then, no tenant's
- * enforcement or requirement would reach a session.
+ * which nothing records with that capability off. With `iam.adapters.sso` off,
+ * the application binds it itself, beside the SSO seams it binds. It is bound
+ * whatever SSO's enforcement and the requirement say, since either may be
+ * turned on while the application runs, and with neither on it requires nothing
+ * and reads nothing, as the default does, answering a version of its own. It is
+ * mandatory while SSO's `enforcement` feature is on or the application names or
+ * binds a tenant MFA requirement, whoever binds it: left on the default then,
+ * no tenant's enforcement or requirement would reach a session.
  *
  * The seams SSO answers from the application's memberships and tenant tree
  * (IAM-6.8, IAM-7.4, IAM-7.5) are declared here too, each on while the SSO

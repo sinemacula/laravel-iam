@@ -83,8 +83,8 @@ php artisan iam:install --prefix=iam_
 The prefix is lower-case letters, digits and underscores, starts with a letter, and is at most 16 characters, so every
 name the migrations derive stays within PostgreSQL's and MySQL's limits. It is written into the published
 `config/authorization.php` as the default of each `AUTHORIZATION_TABLE_*` variable, so a variable you set still wins.
-A table `laravel-authorization` already ships under a name starting with the prefix (`authorization_grant_usage` under
-`authorization_`) keeps that name, rather than carrying the prefix twice. With `--no-interaction` the command asks
+A table `laravel-authorization` already ships under a name starting with the prefix keeps that name, rather than
+carrying the prefix twice. With `--no-interaction` the command asks
 nothing and prefixes nothing unless the option says so. Once any of the member's files is published the tables have
 their names, so a prefix is no longer offered.
 
@@ -254,10 +254,8 @@ publishing anything twice.
 5. Replace your own redemption of SSO's handoff codes. A direct install redeems a code through SSO's
    `SineMacula\Laravel\Sso\Handoffs\HandoffRedemption` (`admit()` or `redeem()`) and then hands the result to
    `laravel-authentication`'s `signInExternally()` or `reauthenticateExternally()`. Under this package, its
-   `ExternalIdentityLinks` adapter finds a link, and the tenant authentication policy a sign-in's connection, only
-   from a redemption the package's own core methods recorded, so that route stops finding links once the package binds
-   its adapter, and with SSO's enforcement on its sessions are refused as `sso_required`. `iam:check` cannot see a
-   route.
+   `ExternalIdentityLinks` adapter finds a link only from a redemption the package's own core methods recorded, so
+   that route stops finding links once the package binds its adapter. `iam:check` cannot see a route.
    Replace every such controller with `Iam::signIns()->redeem()`, `Iam::reauthentications()->redeem()` and
    `Iam::links()->redeem()`, as [Signing in through SSO](example-application.md#signing-in-through-sso) shows.
 6. Remove the glue you wrote. Your own binding of a member's contract always wins over this package's adapter, so an

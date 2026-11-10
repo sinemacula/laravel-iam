@@ -14,6 +14,7 @@ use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Events\Enums\RevocationReason;
+use SineMacula\Laravel\Authentication\External\ProviderContext;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
@@ -22,6 +23,7 @@ use SineMacula\Laravel\Authentication\Proofs\FirstFactor;
 use SineMacula\Laravel\Authentication\Proofs\NewProof;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofWriter;
+use SineMacula\Laravel\Authentication\Proofs\Provenance;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\LinkConfirmationAdapter;
@@ -249,6 +251,63 @@ final class LinkConfirmationAdapterTest extends TestCase
         ));
 
         self::assertSame(LinkConfirmationVerdict::DEPENDENT, $this->judgeInTransaction($caller));
+    }
+
+    /**
+     * Rows of `[isolation level, link provenance, verdict]`: a provenance
+     * naming a link of verified domain provenance makes a session `dependent`,
+     * and one naming a link the person made, or carrying no provider context
+     * (`null`), does not, at each isolation level.
+     *
+     * @return iterable<string, array{0: ?string, 1: ?\SineMacula\Laravel\Sso\Links\Enums\LinkOrigin, 2: \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict}>
+     */
+    public static function provideRecordedLinks(): iterable
+    {
+        foreach (self::provideEveryIsolationLevel() as $name => [$level]) {
+
+            yield 'a verified domain link, ' . $name => [$level, LinkOrigin::VERIFIED_DOMAIN, LinkConfirmationVerdict::DEPENDENT];
+
+            yield 'a link the person made, ' . $name => [$level, LinkOrigin::LINK_PURPOSE, LinkConfirmationVerdict::INDEPENDENT];
+
+            yield 'no provider context, ' . $name => [$level, null, LinkConfirmationVerdict::INDEPENDENT];
+        }
+    }
+
+    /**
+     * A password session whose recorded provenance names a link of verified
+     * domain provenance (SSO's `sso.link_provenance`), read through
+     * `laravel-authentication`'s public reader of a session's provenance, is
+     * `dependent`, whatever its first factor; one naming a link of any other
+     * provenance, or carrying no provider context, stays `independent`.
+     *
+     * @param  ?string  $level
+     * @param  ?\SineMacula\Laravel\Sso\Links\Enums\LinkOrigin  $origin
+     * @param  \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict  $verdict
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideRecordedLinks')]
+    public function testASessionRecordingAVerifiedDomainLinkIsDependent(?string $level, ?LinkOrigin $origin, LinkConfirmationVerdict $verdict): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $domain  = $this->signInByDomain()->session->record ?? self::fail('The member did not sign in.');
+        $through = $this->sessions()->provenance($domain)   ?? self::fail('The domain session recorded no provenance.');
+        $stored  = $through->providerContext?->toArray()    ?? self::fail('The domain session recorded no provider context.');
+        $session = $this->signIn($this->member())->record;
+        $caller  = $this->callerHolding($session);
+
+        self::assertSame(LinkOrigin::VERIFIED_DOMAIN->value, $stored['link_provenance'] ?? null);
+        self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($caller));
+
+        // laravel-authentication records a provenance only for a session a
+        // provider established, so it is written as its own writer would
+        $context = $origin === null ? null : new ProviderContext([...$stored, 'link_provenance' => $origin->value]);
+
+        ProofWriter::provenance($session, new Provenance($through->connectionId, $through->tenantId, linkId: $through->linkId, providerContext: $context));
+
+        self::assertSame($verdict, $this->judgeInTransaction($caller));
     }
 
     /**

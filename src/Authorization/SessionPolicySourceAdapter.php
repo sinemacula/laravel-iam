@@ -40,20 +40,21 @@ use SineMacula\Laravel\Authorization\Subject;
  * machine's own guard always answers a list for it
  * (`ContextualGuard::scopes()`), so `null` is left for people alone.
  *
- * The read is ambient, and has to be: `laravel-authentication` keeps a
- * credential's scopes on the guard that admitted it alone (`scopes()`, which
- * `Auth::scopes()` reads for the default guard), and neither its caller
- * (`Auth::caller()`) nor `laravel-authorization`'s subject carries them. It
- * reads only the guard the subject names, never the default one, and reads it
- * afresh on every call, and only once that guard has already resolved its
- * request (`hasUser()`): a guard that has not, or one that is still admitting
- * its request (a principal's application access asked as an API key is
- * admitted), holds no credential yet, so the subject it is asked about is
- * answered as one the guard does not hold, `null` for a person and `[]` for a
- * machine, and the guard's resolution is never started or entered again from
- * here. Whatever the guard throws (an identity that no longer resolves, a guard
- * the subject names that is not configured) propagates, and
- * `laravel-authorization` makes no decision.
+ * The read is ambient, and has to be: `laravel-authentication` hands a
+ * credential's scopes to the guard that admitted it (`scopes()`, which
+ * `Auth::scopes()` reads for the default guard) and to the request's caller
+ * (`Caller::$scopes`), but `laravel-authorization`'s subject, all the source is
+ * handed, carries none, and the request's caller is no less ambient a read than
+ * the guard, nor names the guard the subject does. It reads only the guard the
+ * subject names, never the default one, and reads it afresh on every call, and
+ * only once that guard has already resolved its request (`hasUser()`): a guard
+ * that has not, or one that is still admitting its request (a principal's
+ * application access asked as an API key is admitted), holds no credential yet,
+ * so the subject it is asked about is answered as one the guard does not hold,
+ * `null` for a person and `[]` for a machine, and the guard's resolution is
+ * never started or entered again from here. Whatever the guard throws (an
+ * identity that no longer resolves, a guard the subject names that is not
+ * configured) propagates, and `laravel-authorization` makes no decision.
  *
  * It holds nothing between calls (IAM-8.1), so it is bound transient.
  *

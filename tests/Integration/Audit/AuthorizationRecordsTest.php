@@ -18,7 +18,6 @@ use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Services\RoleService;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
-use SineMacula\Laravel\Iam\Audit\Mappers\GranteeManifests;
 use Tests\Concerns\MigratesAuthorization;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Fixtures\Authorization\Enums\InvoicePermission;
@@ -47,7 +46,6 @@ use Tests\TestCase;
  */
 #[CoversClass(AuditRegistrations::class)]
 #[CoversClass(AuthorizationEventMapper::class)]
-#[CoversClass(GranteeManifests::class)]
 #[WithConfig('audit-log.definitions.require_registered', true)]
 final class AuthorizationRecordsTest extends TestCase
 {

@@ -12,7 +12,9 @@ use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
@@ -20,6 +22,7 @@ use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
@@ -233,6 +236,49 @@ trait SignsInPeople
     protected function signInReference(Session $session, string $guard = self::GUARD): string
     {
         return SignIn::reference($session, $guard);
+    }
+
+    /**
+     * The context a tenant authentication policy is asked with about the
+     * session acting in the tenant, or the sign-in about to write one (no
+     * session), on the guard, built through its public constructor: the
+     * connection the session was established through is the one the closure
+     * names, found only once the policy asks.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @param  ?\SineMacula\Laravel\Authentication\Contracts\Session  $session
+     * @param  \Closure(): ?string  $connectionId
+     * @param  string  $guard
+     * @return \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext
+     */
+    protected static function tenantPolicyContext(
+        Identity $identity,
+        Principal $principal,
+        Tenant $tenant,
+        ?Session $session,
+        \Closure $connectionId,
+        string $guard = self::GUARD,
+    ): TenantPolicyContext {
+        return new TenantPolicyContext($guard, $identity, $principal, $tenant, $session, $connectionId);
+    }
+
+    /**
+     * The connection the session was established through, as its recorded
+     * provenance names it, read through `laravel-authentication`'s public
+     * reader of a session's provenance for the guard; `null` for a session no
+     * provider established.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
+     * @param  string  $guard
+     * @return ?string
+     *
+     * @throws \Throwable
+     */
+    protected function recordedConnectionOf(Session $session, string $guard = self::GUARD): ?string
+    {
+        return $this->sessions($guard)->provenance($session)?->connectionId;
     }
 
     /**

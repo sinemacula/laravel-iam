@@ -15,7 +15,6 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
-use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
@@ -170,8 +169,11 @@ final class EnforcementRaceTest extends TestCase
 
         self::assertInstanceOf(EloquentSession::class, $stored);
 
-        $policy = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $now    = $policy->requirementFor(new TenantPolicyContext(self::GUARD, $answer->session->identity, $answer->session->principal, new ClaimedTenant(self::TENANT), $stored));
+        $policy   = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
+        $signedIn = $answer->session;
+        $through  = fn (): ?string => $this->recordedConnectionOf($stored);
+        $context  = self::tenantPolicyContext($signedIn->identity, $signedIn->principal, new ClaimedTenant(self::TENANT), $stored, $through);
+        $now      = $policy->requirementFor($context);
 
         self::assertNull($stored->getRevokedAt());
         self::assertSame($now->version, $stored->getTenantPolicyVersion());

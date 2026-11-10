@@ -17,9 +17,9 @@ use PhpBench\Attributes\Warmup;
  * under the session's row lock, so its cost is held while the lock is.
  *
  * Answers a sign-in with SSO's enforcement off and no requirement, which reads
- * nothing, and one with a rule through the admitted redemption's connection and
- * a requirement held in memory, so the measure is the adapter's own work: the
- * redemption looked up, the answer composed and its version digested.
+ * nothing, and one with a rule through the redemption's connection and a
+ * requirement held in memory, so the measure is the adapter's own work: the
+ * sign-in's connection asked, the answer composed and its version digested.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

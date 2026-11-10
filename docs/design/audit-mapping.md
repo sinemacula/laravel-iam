@@ -380,15 +380,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   dispatches that are changes to who may do what: `grant_expiry_changed` (a grantee's or a role's grant's expiry
   changed), `resource_policy_attached` and `_detached`, and `system_override_used`. Leaving them unrecorded would leave
   a privilege change out of the change-management evidence IAM-9.3 keeps.
-- A role, permission or policy deleted while grantees held it lists them (AUTHZ-15.2), and its record carries them as
-  its manifest, as audit-log's bulk record carries a bulk operation's subjects (`Audit\Mappers\GranteeManifests`): each
-  grantee once, read through the morph map, under audit-log's configured bounds, refused rather than truncated beyond
-  them, and refused where the bound store keeps no attachment, as `AuditLog::bulk()` refuses it. Audit-log builds a
-  manifest only through `bulk()`, which starts a builder of its own, while a mapper describes the builder audit-log's
-  capture hands it, so the mapper takes `bulk()`'s three steps itself (`StoreCapabilities::assertAcceptsAttachments()`,
-  `Manifest::of()`, `PendingRecord::withManifest()`, each `@internal` to audit-log), as `Snapshot` already reaches
-  audit-log's fillers. A refusal is contained by audit-log's capture (`AuditCaptureFailed`), never thrown to the
-  change's caller. The gap is audit-log's, listed below.
+- A role, permission or policy deleted while grantees held it lists them (AUTHZ-15.2), and its record covers them as
+  a bulk operation's subjects, through audit-log's `PendingRecord::covering()` on the builder its capture hands the
+  mapper: each grantee once, read through the morph map, under audit-log's configured bounds, refused rather than
+  truncated beyond them, and refused where the bound store keeps no attachment. A refusal is contained by audit-log's
+  capture (`AuditCaptureFailed`), never thrown to the change's caller. A deletion that took no grant covers nothing,
+  since audit-log refuses an empty bulk operation.
 - Audit access (IAM-6.10). `Authorization\AuditAccessPolicyAdapter` answers audit-log's `AuditAccessPolicy`, bound
   shared over audit-log's `DenyAllPolicy` (a `singletonIf()`, so the application's own binding is kept) while
   `iam.adapters.authorization` is on, never mandatory. It lists the viewer's actions with `laravel-authorization`'s
@@ -584,10 +581,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
     a bound-only snapshot of the caller would let it read any), and `AuthManager::resolvedGuard()`, which gives a guard
     without building one, is `@internal`, so the contributor builds the guards audit-log's actor contributor already
     builds.
-  - Audit-log builds a bulk manifest only through `AuditLog::bulk()`, which starts its own builder, so a mapper can
-    give a record its manifest only through `Manifest::of()`, `PendingRecord::withManifest()` and
-    `StoreCapabilities::assertAcceptsAttachments()`, each `@internal` (`GranteeManifests`); a public
-    `PendingRecord` method that takes the subjects, built and bounded as `bulk()` builds them, would close it.
   - `laravel-authorization` dispatches `usedBreakGlass` false on every decision until break-glass grants arrive
     (BL-70), so `authorization.break_glass_used` is defined and mapped but never recorded yet; and it dispatches
     `DecisionEvaluated` for every check, allows included, until configurable firing arrives (BL-72), so the mapper
@@ -627,8 +620,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `holds()`, `DRIVERS`, `EXCEPT_GUARDS_KEY`, `GATE_KEY`.
 - `src/Audit/OperationalAlerts.php`: `listen()`, `validate()`, `KEY`, `EVENTS`; `config/iam.php`: `audit.alerts`.
 - `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Mappers/AuthorizationChange.php`: `of()`;
-  `src/Audit/Mappers/GranteeManifests.php`: `carry()`; `src/Audit/Enums/AuthorizationActivity.php`: `definition()`,
-  `properties()`.
+  `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
   `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`, `CATEGORIES`;
   `src/Authorization/AdministrativeCheck.php`: `authorize()`; `src/Authorization/Enums/AdministrativeOperation.php`:
@@ -804,7 +796,5 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `laravel-authorization` makes decision events configurable (BL-72), dispatches `usedBreakGlass` true (BL-70), adds
   events or fields, or a query for the tenants where a subject holds an action: the authorization mapper, its codes,
   `AuthorizationActivity`'s definitions and the access policy's candidate tenants follow.
-- Audit-log offers a mapper a public way to carry a bulk manifest: `GranteeManifests` uses it in place of the three
-  internal steps.
 - SSO or MFA names another administrative operation, or MFA adds a requirement operation:
   `AdministrativeOperation` gains or reuses its name.

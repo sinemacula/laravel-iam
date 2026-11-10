@@ -130,19 +130,22 @@ run through are in `storage-and-transactions.md`.
   with no session, and so is `stale` without the policy being asked, since that snapshot may still count a proof voided
   or a session revoked before the call.
 - SSO's link confirmation (`LinkConfirmationAdapter`, IAM-4.10, SSO-8.8) answers from how the caller's session was
-  signed in, read through `laravel-authentication`'s public reader of a session's proofs (IAM-13.9,
-  `Auth::sessions($guard)->firstFactor()` and `proofs()`), and never from `Auth::context()` keys (Decision Q13 (a)). The
+  signed in, read through `laravel-authentication`'s public readers of a session's proofs and provenance (IAM-13.9,
+  `Auth::sessions($guard)->firstFactor()`, `proofs()` and `provenance()`), and never from `Auth::context()` keys
+  (Decision Q13 (a)). The
   session judged is found exactly as freshness finds it: the session the caller SSO hands over names, among its
   identity's own (`CurrentSession::owned()`), read through the reader of the guard it belongs to; SSO has checked that
   the caller's identity is the one the code is bound to. It is `independent` only when the session's first factor, the
   oldest counting first-factor proof, was made over the `password`, `passkey` or `recovery` channel (the application's
   own recovery, a `start()` from a first factor on that channel, which `laravel-authentication` admits as a first factor
-  only), and the session holds no counting `external_reauthentication` proof. Everything else is `dependent`: an SSO
+  only), the session holds no counting `external_reauthentication` proof, and its recorded provenance names no link
+  of verified domain provenance (SSO's `link_provenance` in the provider context). Everything else is `dependent`: an SSO
   session, whichever link it stood on, a code sign-in, any other `start()`, a first factor that no longer counts, a
   pending, revoked or ended session (the reader answers none), a caller with no session, a session that
   is not its identity's or is of a guard that holds no sessions, and any judgement outside a transaction. SSO asks it
   inside a `link` redemption's transaction, after the application's eligibility; there the reader locks the session's
-  row until the transaction ends and reads its proofs current, so the answer holds until the redeemer commits by the
+  row until the transaction ends and reads its proofs and provenance current, so the answer holds until the redeemer
+  commits by the
   lock every writer of the session takes first (SSO's "guard writers of sessions take"), and the session's row is the
   last lock in SSO's order. Outside a transaction nothing can hold it true, so the answer is `dependent` without a read.
   Unlike freshness, a caller named inside the caller's own transaction needs no rule of its own: the read is current,
@@ -150,13 +153,14 @@ run through are in `storage-and-transactions.md`.
   the transaction to be retried; such a caller is named with no session for freshness's sake, so it is `dependent` here
   too, and such a `link` is refused for freshness first in any case. SSO's rule is phrased by the session's link
   provenance (`sso.link_provenance`): `laravel-authentication` records a provenance only for a session an external
-  provider established, whose first factor is on the `external_provider` channel, so every session with one is
-  `dependent` here and the provenance is never read (Decision, M10). A session through a link of no verified domain
-  provenance is therefore `dependent` too: FEATURES (IAM-4.10) names only a password, a passkey and the application's
-  recovery, stricter than SSO's contract, never looser. This delivers IAM-4.10's judgement from the proofs alone: its
-  reading of the provenance waits on a public reader of a session's provenance in `laravel-authentication`, a member gap
-  (see Failure / Edge Cases), and until one ships every session a provider established stays `dependent`. The connection
-  and the domain link ids SSO hands over are not read for the same reason. The adapter is not mandatory: SSO's default
+  provider established, whose first factor is on the `external_provider` channel, so every session with one is already
+  `dependent` by its first factor (Decision, M10). The provenance is read as well, so a session is never `independent`
+  while its record names a link of verified domain provenance, but it never makes a session `independent` on its own: a
+  session through a link of no verified domain provenance is `dependent` too, since FEATURES (IAM-4.10) names only a
+  password, a passkey and the application's recovery, stricter than SSO's contract, never looser. A provider context
+  SSO's `Provenance::restore()` cannot read back throws `UnexpectedValueException`, never read as none. The connection
+  and the domain link ids SSO hands over are not read: no session the adapter answers `independent` for stood on any
+  link. The adapter is not mandatory: SSO's default
   refuses every `link` it is asked about.
 - SSO's application policy (`ApplicationPolicyAdapter`, IAM-4.6, SSO-5.1) answers `allowed` exactly when
   `laravel-authentication`'s application policy lets the guard of the application's name start sessions by the
@@ -491,11 +495,6 @@ run through are in `storage-and-transactions.md`.
     cannot judge current there: it trusts a plain read only from a transaction opened after the caller was named, so
     a caller named inside a transaction carries no session, and a `link` inside the caller's own transaction is
     `stale`.
-  - `laravel-authentication` publishes a session's provenance (and so SSO's `link_provenance` inside its provider
-    context) to no other package outside its context contributors (`ContributionSubject::provenance()`; the session
-    service has no reader of it), so link confirmation judges by the first factor's channel alone, which makes every
-    session a provider established `dependent`, a `link_purpose` link's included: IAM-4.10's reading of
-    `sso.link_provenance` is not delivered until a public provenance reader ships, and nothing reads it in its place.
   - `laravel-mfa`'s `Proof` carries no provider methods, so a rebound combination policy can trust a provider only by
     its connection, not by the methods SSO accepted.
   - `laravel-authentication` has no public lookup of an identity by a verified identifier, and the verified-at column
@@ -699,6 +698,7 @@ run through are in `storage-and-transactions.md`.
   reads inside a transaction) `testTheAdapterIsSsosLinkConfirmation`,
   `testASessionThroughTheDomainLinkCannotConfirmIt`, `testASessionThePersonHoldsApartConfirmsTheLink`,
   `testOnlyAStartedSessionOnTheRecoveryChannelIsIndependent`, `testASessionRenewedThroughAProviderIsDependent`,
+  `testASessionRecordingAVerifiedDomainLinkIsDependent`,
   `testACallerHoldingNothingOfThePersonsOwnIsDependent`, `testOutsideATransactionEveryoneIsDependent`,
   `testTheSessionsRowIsLockedUntilTheTransactionEnds`, `testASessionRevokedSinceTheTransactionReadIsDependent`
 - `tests/Performance/Sso/SignInRedemptionQueryBudgetTest.php` `testALinkedSignIn`, `testARefusalOfAnUnknownCode`
@@ -727,9 +727,9 @@ Update this note when:
   `laravel-mfa`'s proofs carry a provider's methods (a rebound combination policy can then trust them),
   `laravel-authentication` gains a lookup by verified identifier or names a connection's tenant to the evidence policy,
   or SSO's `AuthenticationContext` keys or stored form change;
-- `laravel-authentication` publishes a session's provenance to other packages (link confirmation may then judge by
-  `sso.link_provenance` and admit a session through a link of no verified domain provenance, if FEATURES allows it),
-  changes what its `recovery` channel admits, or changes what its proof reader locks or answers for;
+- FEATURES allows a session through a link of no verified domain provenance to confirm a link (link confirmation may
+  then admit one by its `sso.link_provenance`), `laravel-authentication` changes what its `recovery` channel admits, or
+  changes what its proof or provenance reader locks or answers for;
 - the rate-limit counters move off the storage connection by default, which changes what an authentication refusal
   rolls back;
 - Laravel runs a transaction's remaining commit callbacks, or fires `TransactionCommitted`, when one of them fails

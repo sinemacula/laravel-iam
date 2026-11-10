@@ -37,9 +37,10 @@ use Tests\Performance\PerformanceContractTestCase;
  * With SSO's enforcement off and no tenant MFA requirement, the policy reads
  * nothing at all. With the enforcement on, it reads the enforcing tenant's
  * rule and its satisfying connections, two plain reads on every call, never
- * cached; for a session (a refresh), it reads the connection the session's
- * provenance records too, a third; a sign-in through SSO is judged by the
- * redemption SSO admitted, with no read of its own. The application's tenant
+ * cached; for a session (a refresh), it asks for the connection the session's
+ * provenance records too, a third read, which `laravel-authentication` makes
+ * once for the policy and its own judgement; a sign-in through SSO is judged by
+ * the connection its evidence names, with no read at all. The application's tenant
  * MFA requirement costs whatever the application's own reads cost, and the
  * fake's none.
  *
@@ -136,7 +137,7 @@ final class TenantPolicyQueryBudgetTest extends PerformanceContractTestCase
         // tenant, then under the locks the enforcing tenant's rule, the
         // connections, the code and the link); the identity, twice; MFA's three;
         // the policy's two, the rule and its connections, the sign-in judged by
-        // the redemption SSO admitted with no read of its own;
+        // the connection its evidence names, with no read of its own;
         // laravel-authentication's three of the new session's proofs and
         // provenance; and the two the guard binds the session with. Writes (9):
         // SSO's (the attempt counted, the rule's lock row, the code recorded as
@@ -182,13 +183,13 @@ final class TenantPolicyQueryBudgetTest extends PerformanceContractTestCase
     {
         $this->enforce();
 
-        // Reads (9): as with nothing on, and the policy's three, the rule, its
-        // connections and the connection the session's provenance records, then
-        // laravel-authentication's own read of that connection, current, as it
-        // judges the answer. Writes (2) and transactions: as with nothing on.
+        // Reads (8): as with nothing on, and the policy's three, the rule, its
+        // connections and the connection the session's provenance records, read
+        // current once by laravel-authentication for the policy and its own
+        // judgement alike. Writes (2) and transactions: as with nothing on.
         $token   = $this->refreshTokenOf($this->redeemInTenant());
         $refresh = fn (): RefreshResult => $this->sessions()->refresh(PresentedRefreshToken::fromBody($token), self::client());
-        $answer  = $this->assertQueryBudget(9, 2, $refresh, begins: 1, commits: 1);
+        $answer  = $this->assertQueryBudget(8, 2, $refresh, begins: 1, commits: 1);
 
         self::assertFalse($answer->isFailed());
     }

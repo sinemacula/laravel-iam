@@ -14,13 +14,10 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\IamServiceProvider;
-use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
-use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
@@ -39,8 +36,9 @@ use Tests\Fixtures\Tenancy\ScriptedEnforcement;
  * the answer's version alone. With a rule and a requirement, it is given SSO's
  * policy and the application's rule in memory (a scripted enforcement and the
  * fake requirement, whose own reads are the members' and the application's),
- * finds the sign-in's connection in the redemption admitted in the request, and
- * composes the answer and its version: everything the adapter does itself.
+ * asks the sign-in's connection, which `laravel-authentication` names from the
+ * sign-in's evidence in memory, and composes the answer and its version:
+ * everything the adapter does itself.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,12 +51,12 @@ final readonly class TenantAuthenticationPolicyBenchHarness
     /** @var \Illuminate\Contracts\Foundation\Application The application the policy is resolved from. */
     private Application $app;
 
-    /** @var \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext A sign-in of a person through the admitted redemption's connection. */
+    /** @var \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext A sign-in of a person through the redemption's connection. */
     private TenantPolicyContext $signIn;
 
     /**
      * Build the application and the sign-in, with SSO's enforcement off and no
-     * tenant MFA requirement, or with a rule through the admitted redemption's
+     * tenant MFA requirement, or with a rule through the redemption's
      * connection and a requirement, both held in memory, and check that the
      * policy bound is the composite adapter.
      *
@@ -74,10 +72,10 @@ final readonly class TenantAuthenticationPolicyBenchHarness
 
         $person->forceFill(['id' => 1]);
 
-        $this->signIn = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(Redemptions::TENANT), null);
+        $this->signIn = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(Redemptions::TENANT), null, static fn (): string => Redemptions::CONNECTION);
 
         if ($enforced) {
-            $this->enforce($person);
+            $this->enforce();
         }
 
         if (!$this->policy() instanceof TenantAuthenticationPolicyAdapter) {
@@ -96,23 +94,16 @@ final readonly class TenantAuthenticationPolicyBenchHarness
     }
 
     /**
-     * Require the sign-in to come through one of the admitted redemption's
-     * connection and another, and multifactor authentication within five
-     * minutes, and record the person's admitted redemption for the request.
+     * Require the sign-in to come through the redemption's connection or
+     * another, and multifactor authentication within five minutes.
      *
-     * @param  \Tests\Fixtures\Models\Person  $person
      * @return void
      */
-    private function enforce(Person $person): void
+    private function enforce(): void
     {
         $this->app->instance(Enforcement::class, (new ScriptedEnforcement)->requireThrough([Redemptions::CONNECTION, 'connection-2']));
 
         FakeTenantMfaRequirement::fake($this->app)->require(Redemptions::TENANT, new Requirement(multifactor: new RequirementPart(300)));
-
-        $identity   = new IdentityReference($person->getMorphClass(), '1');
-        $redemption = RedemptionResult::redeemed(Redemptions::verified(), $identity, linkId: Redemptions::LINK, admitted: true);
-
-        $this->app->make(AdmittedRedemptions::class)->record($redemption, Redemptions::client());
     }
 
     /**

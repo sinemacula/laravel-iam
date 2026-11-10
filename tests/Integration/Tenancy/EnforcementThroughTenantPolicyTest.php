@@ -22,7 +22,6 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
-use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
@@ -68,10 +67,10 @@ use Tests\TestCase;
  * sessions the rule no longer allows and keeps an exempt person's and a
  * compliant one's; turning a rule off revokes nothing; a
  * session records the very version the policy answers while nothing changes;
- * the policy takes no lock under the session's but the shared lock of its
- * provenance read current, with SSO's stored rule read; and a tenant MFA
- * requirement the application starts to hold revokes the sessions without its
- * factor once the tenant's policy is reported changed.
+ * the policy takes no lock of its own under the session's, with SSO's stored
+ * rule read; and a tenant MFA requirement the application starts to hold
+ * revokes the sessions without its factor once the tenant's policy is reported
+ * changed.
  *
  * Each scenario that commits runs at the connection's own level on every
  * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
@@ -470,7 +469,8 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         $session = $this->signedIn($this->redeemInTenant($this->handoff()));
         $tenant  = new ClaimedTenant(self::TENANT);
         $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $answer  = $policy->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, $tenant, $this->stored($session)));
+        $stored  = $this->stored($session);
+        $answer  = $policy->requirementFor(self::tenantPolicyContext($person, $person, $tenant, $stored, fn (): ?string => $this->recordedConnectionOf($stored)));
 
         self::assertNotNull($answer->version);
         self::assertSame($answer->version, $this->stored($session)->getTenantPolicyVersion());
@@ -483,9 +483,9 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
      * Asked while the transaction holds the session's row locked, as a refresh,
      * a switch, an external re-authentication and `tenantPolicyChanged()` ask
      * it, the policy reads SSO's stored rule and its satisfying connections
-     * with SSO's own enforcement, and the session's provenance current, and
-     * takes no lock but the shared lock of the provenance that read takes on
-     * MySQL, at either isolation level.
+     * with SSO's own enforcement, judges by the connection the context names,
+     * the one the session came through, and takes no lock of its own, at either
+     * isolation level.
      *
      * @param  string  $level
      * @return void
@@ -493,7 +493,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testThePolicyTakesNoLockButTheProvenancesUnderTheSessionsLock(string $level): void
+    public function testThePolicyTakesNoLockUnderTheSessionsLock(string $level): void
     {
         self::runAtIsolationLevel($level);
 
@@ -502,15 +502,16 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         $this->linkThroughFlow($person);
         $this->enforce(linked: true);
 
-        $session = $this->signedIn($this->redeemInTenant($this->handoff()));
-        $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::TENANT), $this->stored($session));
+        $session    = $this->signedIn($this->redeemInTenant($this->handoff()));
+        $policy     = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
+        $connection = $this->connectionId;
+        $context    = self::tenantPolicyContext($person, $person, new ClaimedTenant(self::TENANT), $this->stored($session), static fn (): string => $connection);
 
         [$requirement, $locks] = $this->askedUnderTheSessionsLock($session, static fn (): TenantRequirement => $policy->requirementFor($context));
 
         self::assertSame([$this->connectionId], $requirement->connections);
         self::assertSame([], $this->exemptions()->asked());
-        self::assertSame(self::provenanceLocks(), $locks, 'The policy took a lock other than its current read of the session\'s provenance.');
+        self::assertSame([], $locks, 'The policy took a lock of its own.');
     }
 
     /**

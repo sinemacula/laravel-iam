@@ -8,6 +8,7 @@ use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -29,6 +30,7 @@ use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Facades\Iam;
+use SineMacula\Laravel\Sso\Events\LinkSuspended;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Linking\ScopeWidening;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
@@ -58,8 +60,9 @@ use Tests\TestCase;
  * application lists in `authorization.grant_hooks` alongside it run once,
  * before it, as `laravel-authorization` wraps the bound hook in them, and a
  * refusal from either refuses the grant, the adapter's after the listed hooks
- * ran included; and a grant made inside the application's own transaction is
- * rolled back with it, the suspension included.
+ * ran included; a suspension is reported for the client the widening carries,
+ * and for none when it carries none; and a grant made inside the application's
+ * own transaction is rolled back with it, the suspension included.
  *
  * The grant runs inside `laravel-authorization`'s transaction, where SSO's
  * scope widening takes its identity guard and locks the connections holding the
@@ -351,6 +354,55 @@ final class GrantHookAdapterTest extends TestCase
         Iam::transaction(static fn () => $hook->beforeWidening(self::widening($identity, [$own, $own, $other])));
 
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
+    }
+
+    /**
+     * Rows of the client a widening carries, as its operation's IP address and
+     * user agent: a request's, and none, as a trusted, console or queued call
+     * carries.
+     *
+     * @return iterable<string, array{0: ?string, 1: ?string}>
+     */
+    public static function provideClients(): iterable
+    {
+        yield 'a request\'s client' => [self::CLIENT_IP, self::CLIENT_AGENT];
+
+        yield 'no client' => [null, null];
+    }
+
+    /**
+     * The suspension a widening causes is reported for the client the widening
+     * carries, its operation's, and for none when it carries none.
+     *
+     * @param  ?string  $ip
+     * @param  ?string  $userAgent
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideClients')]
+    public function testASuspensionIsReportedForTheWideningsClient(?string $ip, ?string $userAgent): void
+    {
+        $hook      = $this->resolved(GrantHook::class);
+        $identity  = Reference::of($this->person());
+        $grant     = new ProposedGrant('authorization:role.grant', new Reference('role', '1'), new Reference(self::TENANT_TYPE, self::TENANT), null, false, null);
+        $operation = new Operation('operation-1', null, new \DateTimeImmutable, ip: $ip, userAgent: $userAgent);
+
+        /** @var \ArrayObject<int, \SineMacula\Laravel\Sso\Events\LinkSuspended> $suspended */
+        $suspended = new \ArrayObject;
+
+        Event::listen(LinkSuspended::class, static function (LinkSuspended $event) use ($suspended): void {
+            $suspended->append($event);
+        });
+
+        self::assertInstanceOf(GrantHookAdapter::class, $hook);
+
+        Iam::transaction(static fn () => $hook->beforeWidening(GrantWidening::of($operation, $identity, $identity, [$grant], new \DateTimeImmutable)));
+
+        $context = ($suspended[0] ?? self::fail('No suspension was reported.'))->context;
+
+        self::assertCount(1, $suspended);
+        self::assertSame([$ip, $userAgent], [$context->ip, $context->userAgent]);
     }
 
     /**
