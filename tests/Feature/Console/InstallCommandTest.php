@@ -22,6 +22,7 @@ use SineMacula\Laravel\Iam\Install\Installer;
 use SineMacula\Laravel\Iam\Install\InstallReport;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
+use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
@@ -50,7 +51,7 @@ use Tests\TestCase;
 #[CoversClass(PublicationFailedException::class)]
 final class InstallCommandTest extends TestCase
 {
-    use UsesScratchDirectory;
+    use NamesAuthorizationTables, UsesScratchDirectory;
 
     /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each member's configuration key and the provider that ships its files. */
     private const array MEMBERS = [
@@ -525,11 +526,12 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(10, $configuration['tables']);
+        $expected = self::prefixedAuthorizationTables('authz_');
 
-        foreach ($configuration['tables'] as $key => $table) {
-            self::assertSame('authz_' . $key, $table);
-            self::assertStringContainsString("[written] authorization.tables.{$key}: authz_{$key}", $output);
+        self::assertSame($expected, $configuration['tables']);
+
+        foreach ($expected as $key => $table) {
+            self::assertStringContainsString("[written] authorization.tables.{$key}: {$table}", $output);
         }
     }
 
@@ -964,11 +966,7 @@ final class InstallCommandTest extends TestCase
         /** @var array{tables: array<string, string>} $configuration */
         $configuration = require $this->scratch('config/authorization.php');
 
-        self::assertCount(10, $configuration['tables']);
-
-        foreach ($configuration['tables'] as $key => $table) {
-            self::assertSame('authz_' . $key, $table);
-        }
+        self::assertSame(self::prefixedAuthorizationTables('authz_'), $configuration['tables']);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
