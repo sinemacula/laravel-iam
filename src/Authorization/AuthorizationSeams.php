@@ -192,6 +192,19 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         $widening = self::reportsWidenings(...);
         $domains  = static fn (): bool => filter_var($config->get(self::DOMAIN_LINKING), FILTER_VALIDATE_BOOL);
 
+        // The tree's row builds the adapter or `laravel-authorization`'s own
+        // flat tree as each unit of work first resolves it, so it names the
+        // factory that decides, beside what every other row of the member names
+        $tree = new SeamBinding(
+            TenantTree::class,
+            TenantTreeAdapter::class,
+            [AuthorizationServiceProvider::class, FlatTenantTree::class],
+            Lifetime::SCOPED,
+            appliesWhen: $on,
+            configurationKey: self::TENANT_TREE,
+            factory: TenantTreeAdapter::forApplication(...),
+        );
+
         return [
             self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, AuthGuardSubjectResolver::class, $on, self::SUBJECT_RESOLVER, Lifetime::SCOPED),
             self::authorizationRow(AuthenticationContext::class, AuthenticationContextAdapter::class, GuardAuthenticationContext::class, $on),
@@ -200,7 +213,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             new SeamBinding(ScopeRegistry::class, ScopeRegistryAdapter::class, [AcceptAnyScope::class], appliesWhen: $on, mandatory: $machines),
             new SeamBinding(ApplicationAccess::class, ApplicationAccessAdapter::class, [AdmitAnyPrincipal::class], Lifetime::SCOPED, appliesWhen: $on, mandatory: $access),
             self::authorizationRow(IdentityDirectory::class, IdentityDirectoryAdapter::class, GuardUserIdentityDirectory::class, $on, self::IDENTITY_DIRECTORY),
-            self::authorizationRow(TenantTree::class, TenantTreeAdapter::class, FlatTenantTree::class, $on, self::TENANT_TREE, Lifetime::SCOPED, factory: TenantTreeAdapter::forApplication(...)),
+            $tree,
             self::authorizationRow(GrantHook::class, GrantHookAdapter::class, GrantHooks::class, $widening, mandatory: $domains),
             new SeamBinding(AuditAccessPolicy::class, AuditAccessPolicyAdapter::class, [DenyAllPolicy::class], Lifetime::SHARED, appliesWhen: $on),
         ];
@@ -241,8 +254,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
      * The binding of the adapter over one of `laravel-authorization`'s
      * contracts: replaced only while the contract is unbound or bound to the
      * closure its service provider declares, and the configuration key given,
-     * if any, names the default class, with the lifetime, the mandate and the
-     * factory given.
+     * if any, names the default class, with the lifetime and the mandate given.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter
@@ -251,7 +263,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
      * @param  ?string  $configurationKey
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  bool|\Closure(): bool  $mandatory
-     * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
      * @return \SineMacula\Laravel\Iam\Bindings\SeamBinding
      */
     private static function authorizationRow(
@@ -262,7 +273,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         ?string $configurationKey = null,
         Lifetime $lifetime = Lifetime::TRANSIENT,
         bool|\Closure $mandatory = false,
-        ?\Closure $factory = null,
     ): SeamBinding {
         return new SeamBinding(
             $contract,
@@ -272,7 +282,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
             configurationKey: $configurationKey,
-            factory: $factory,
         );
     }
 }
