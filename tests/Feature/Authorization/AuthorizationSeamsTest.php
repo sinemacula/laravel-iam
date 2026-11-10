@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Authorization\Cache\Resolution;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
-use SineMacula\Laravel\Authorization\Context\DeclaredContextKeyCatalogue;
 use SineMacula\Laravel\Authorization\Context\GuardAuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
@@ -33,6 +32,8 @@ use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\GrantHookAdapter;
+use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
 use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\SessionPolicySourceAdapter;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
@@ -44,7 +45,6 @@ use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
-use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\Concerns\RunsChecks;
 use Tests\Fixtures\Authorization\NamedRequirementChecker;
@@ -57,17 +57,15 @@ use Tests\TestCase;
  * Feature tests for the seams `laravel-authorization` decides about its subject
  * through (IAM-6.1 to IAM-6.3): its subject resolver, its authentication
  * context and its requirement checker, each bound over
- * `laravel-authorization`'s unconditional default in every provider order, the
- * order that registers it after this package included, and one registering it
- * from another provider's `boot()`, with whatever was resolved from the
- * defaults meanwhile built again, and none over a class the application names
- * in `laravel-authorization`'s configuration or a binding it makes before this
- * package registers or once every provider has registered (IAM-8.4);
- * `iam:check` refuses a seam `laravel-authorization` has bound its default over
- * again once the rule could no longer bind it back. The requirement checker
- * follows the MFA capability's switch too. The context's keys are declared on
- * `laravel-authorization`'s key catalogue while the context bound is this
- * package's, the application's own declarations kept.
+ * `laravel-authorization`'s default in every provider order, the order that
+ * registers it after this package included, and one registering it from another
+ * provider's `boot()` or registering it again, and none over a class the
+ * application names in `laravel-authorization`'s configuration or a binding it
+ * makes before this package registers or once every provider has registered
+ * (IAM-8.4). The requirement checker follows the MFA capability's switch too.
+ * The context's keys are declared on `laravel-authorization`'s key catalogue
+ * with their types while the context bound is this package's, the application's
+ * own declarations kept, and its assurance keys are untestable.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,7 +78,7 @@ use Tests\TestCase;
 #[CoversClass(MemberDefaults::class)]
 #[CoversClass(MandatorySeamsCheck::class)]
 #[CoversClass(IamServiceProvider::class)]
-#[CoversClass(WorkerReset::class)]
+#[CoversClass(AuthenticationContextAdapter::class)]
 final class AuthorizationSeamsTest extends TestCase
 {
     use PermutesProviderOrder, RunsChecks;
@@ -99,14 +97,34 @@ final class AuthorizationSeamsTest extends TestCase
         AuthenticationRequirementChecker::class => RefusingRequirementChecker::class,
     ];
 
+    /** @var list<string> The context's keys that say how strongly or how recently the session was authenticated, which no condition may test. */
+    private const array ASSURANCE_KEYS = [
+        'authentication.amr',
+        'authentication.auth_time',
+        'authentication.mfa',
+        'authentication.recovery_code',
+        'authentication.multifactor',
+        'authentication.seconds_since_step_up',
+        'mfa.accepted',
+        'mfa.multifactor',
+        'mfa.factor_types',
+        'mfa.level',
+        'mfa.phishing_resistant',
+        'mfa.user_verification',
+        'mfa.last_verification_age_seconds',
+        'sso.provider_auth_time',
+        'sso.provider_amr',
+        'sso.provider_acr',
+        'sso.provider_authn_context_class_ref',
+    ];
+
     /** @var array<string, mixed> What the application sets in `laravel-authorization`'s configuration before any provider registers. */
     private array $authorization = [];
 
     /**
      * Every adapter is bound over `laravel-authorization`'s default in every
      * provider order, including those that register it after this package,
-     * where it binds its own over the adapter and the adapter is bound again as
-     * the providers settle.
+     * where it leaves the adapter bound.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -123,11 +141,10 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Binding the subject resolver or the tenant tree again forgets the
-     * resolutions read through it in every provider order, once:
-     * `laravel-authorization` listens for the rebinding only where the seam is
-     * unbound as it registers, so where this package binds first, the binding
-     * rule listens as it would have.
+     * Binding the subject resolver or the tenant tree again, once either has
+     * been resolved, forgets the resolutions read through it in every provider
+     * order, once: `laravel-authorization` listens for the rebinding of a seam
+     * this package bound first from its first resolution.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -136,6 +153,9 @@ final class AuthorizationSeamsTest extends TestCase
     public function testRebindingTheResolverOrTheTreeForgetsResolutionsInEveryProviderOrder(array $providers): void
     {
         $this->bootInOrder($providers);
+
+        $this->app?->make(SubjectResolver::class);
+        $this->app?->make(TenantTree::class);
 
         $callbacks = \Closure::bind(static fn (Container $container): array => $container->reboundCallbacks, null, Container::class)($this->app);
 
@@ -171,7 +191,7 @@ final class AuthorizationSeamsTest extends TestCase
      * A subject resolver and a requirement checker the application names in
      * `laravel-authorization`'s configuration are kept in every provider order,
      * though `laravel-authorization` binds them with the very closure it binds
-     * its defaults with.
+     * its defaults with, and are noted as kept.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -188,6 +208,7 @@ final class AuthorizationSeamsTest extends TestCase
         self::assertInstanceOf(NamedSubjectResolver::class, $this->resolved(SubjectResolver::class));
         self::assertInstanceOf(NamedRequirementChecker::class, $this->resolved(AuthenticationRequirementChecker::class));
         self::assertInstanceOf(AuthenticationContextAdapter::class, $this->resolved(AuthenticationContext::class));
+        $this->assertOutcome([AuthenticationContext::class], [SubjectResolver::class, AuthenticationRequirementChecker::class]);
     }
 
     /**
@@ -211,6 +232,7 @@ final class AuthorizationSeamsTest extends TestCase
             $instance = \Mockery::mock($abstract);
 
             $instance->allows('namespaces')->andReturn(['authentication']);
+            $instance->allows('assuranceKeys')->andReturn([]);
 
             $instances[$abstract] = $instance;
             $bindings[$abstract]  = static fn (): object => $instance;
@@ -225,16 +247,14 @@ final class AuthorizationSeamsTest extends TestCase
 
     /**
      * A `laravel-authorization` another provider registers from its `boot()`,
-     * which binds its defaults over the adapters only then, once the booting
-     * phase has bound them again, has every adapter bound over its default once
-     * more when the application has booted, and the context's keys are still
-     * declared; `iam:check` finds nothing to refuse.
+     * which binds its defaults only then, leaves every adapter bound, and the
+     * context's keys are declared; `iam:check` finds nothing to refuse.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testAnAuthorizationRegisteredWhileBootingHasEveryAdapterBoundAgain(): void
+    public function testAnAuthorizationRegisteredWhileBootingLeavesEveryAdapterBound(): void
     {
         $members = array_values(array_filter(self::MEMBER_PROVIDERS, static fn (string $provider): bool => $provider !== AuthorizationServiceProvider::class));
 
@@ -248,17 +268,17 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * What another provider resolves from `laravel-authorization`'s defaults as
-     * it boots, after a `laravel-authorization` registered from a provider's
-     * `boot()`, is forgotten once the adapters are bound again: the manager is
-     * built again with the adapter as its subject resolver, and the key
-     * catalogue already built has the context's keys declared on it.
+     * What another provider resolves from `laravel-authorization` as it boots,
+     * after a `laravel-authorization` registered from a provider's `boot()`, is
+     * built with the adapters: the manager holds the adapter as its subject
+     * resolver, and the key catalogue has the context's keys declared on it,
+     * its assurance keys untestable.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testWhatIsResolvedFromTheDefaultsWhileBootingIsBuiltAgainWithTheAdapters(): void
+    public function testWhatIsResolvedWhileBootingIsBuiltWithTheAdapters(): void
     {
         $members = array_values(array_filter(self::MEMBER_PROVIDERS, static fn (string $provider): bool => $provider !== AuthorizationServiceProvider::class));
 
@@ -278,12 +298,10 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * An application binding made before this package registers, which a
-     * `laravel-authorization` registering after this package binds its own
-     * default over, is bound again once every provider has registered, so the
-     * application's binding still wins and the note `iam:check` makes of it is
-     * true; bound over once more where nothing binds it back, `iam:check`
-     * refuses it as it refuses an adapter lost.
+     * An application binding made before this package registers is kept in the
+     * order that registers `laravel-authorization` after this package, and
+     * `laravel-authorization` registered again binds nothing over it, so the
+     * note `iam:check` makes of it stays true.
      *
      * @return void
      *
@@ -298,43 +316,33 @@ final class AuthorizationSeamsTest extends TestCase
             AuthenticationRequirementChecker::class => NamedRequirementChecker::class,
         ]);
 
+        $this->app?->register(AuthorizationServiceProvider::class, force: true);
+
         self::assertInstanceOf(NamedSubjectResolver::class, $this->resolved(SubjectResolver::class));
         self::assertInstanceOf(NamedRequirementChecker::class, $this->resolved(AuthenticationRequirementChecker::class));
         $this->assertOutcome([AuthenticationContext::class], [SubjectResolver::class, AuthenticationRequirementChecker::class]);
         self::assertSame([], self::problems($this->check()->checks()));
-
-        $this->app?->register(AuthorizationServiceProvider::class, force: true);
-
-        $problems = self::problems($this->check()->checks());
-
-        self::assertCount(7, $problems);
-        self::assertStringStartsWith(SubjectResolver::class . ' holds its member\'s own default again', $problems[0]);
-        self::assertStringStartsWith(AuthenticationRequirementChecker::class . ' holds its member\'s own default again', $problems[2]);
     }
 
     /**
-     * `iam:check` refuses each seam the binding rule bound or kept that holds
-     * `laravel-authorization`'s own default again, bound over once the rule
-     * could no longer bind it back, though the outcome still lists it, and
-     * nothing while every seam holds what the rule decided.
+     * `laravel-authorization` registered again once the application has booted
+     * leaves every adapter bound, and `iam:check` finds nothing to refuse.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testIamCheckRefusesASeamLaravelAuthorizationBoundItsDefaultOverAgain(): void
+    public function testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound(): void
     {
-        self::assertSame([], self::problems($this->check()->checks()));
-
         $this->app?->register(AuthorizationServiceProvider::class, force: true);
 
-        $problems = self::problems($this->check()->checks());
-
-        self::assertCount(7, $problems);
-
-        foreach ([...array_keys(self::ADAPTERS), SessionPolicySource::class, IdentityDirectory::class, TenantTree::class, GrantHook::class] as $index => $seam) {
-            self::assertStringStartsWith($seam . ' holds its member\'s own default again', $problems[$index]);
-        }
+        $this->assertResolvesTo([
+            ...self::ADAPTERS,
+            SessionPolicySource::class => SessionPolicySourceAdapter::class,
+            IdentityDirectory::class   => IdentityDirectoryAdapter::class,
+            GrantHook::class           => GrantHookAdapter::class,
+        ]);
+        self::assertSame([], self::problems($this->check()->checks()));
     }
 
     /**
@@ -355,8 +363,7 @@ final class AuthorizationSeamsTest extends TestCase
     /**
      * With the MFA capability's switch off, the requirement checker keeps
      * `laravel-authorization`'s default, since MFA's requirement check is what
-     * judges, while the subject and the context are bound; the seam the rule
-     * never decided is not refused for holding that default.
+     * judges, while the subject and the context are bound.
      *
      * @return void
      *
@@ -371,23 +378,24 @@ final class AuthorizationSeamsTest extends TestCase
             AuthenticationRequirementChecker::class => RefusingRequirementChecker::class,
         ]);
         $this->assertOutcome([SubjectResolver::class, AuthenticationContext::class], []);
-
-        $overwritten = array_filter(self::problems($this->check()->checks()), static fn (string $problem): bool => str_contains($problem, 'own default again'));
-
-        self::assertSame([], $overwritten);
     }
 
     /**
-     * Each row replaces `laravel-authorization`'s default only through the key
-     * its provider holds it under, and is no mandatory seam; the subject
-     * resolver is scoped, as `laravel-authorization`'s own default is, and the
-     * others transient.
+     * Each row replaces `laravel-authorization`'s default only while the key of
+     * its configuration naming the seam's class, if any, names the default, and
+     * is no mandatory seam; the subject resolver is scoped, as
+     * `laravel-authorization`'s own default is, and the others transient.
      *
      * @return void
      */
-    public function testEachRowReadsLaravelAuthorizationsDefaultKeyAndOnlyTheResolverIsScoped(): void
+    public function testEachRowReadsLaravelAuthorizationsConfigurationKeyAndOnlyTheResolverIsScoped(): void
     {
         $rows = [];
+        $keys = [
+            SubjectResolver::class                  => 'authorization.subject_resolver',
+            AuthenticationContext::class            => null,
+            AuthenticationRequirementChecker::class => 'authorization.requirement_checker',
+        ];
 
         foreach ((new AuthorizationSeams)->seams(new Repository) as $binding) {
             $rows[$binding->abstract] = $binding;
@@ -397,7 +405,7 @@ final class AuthorizationSeamsTest extends TestCase
             self::assertSame($adapter, $rows[$abstract]->adapter);
             self::assertSame($abstract === SubjectResolver::class ? Lifetime::SCOPED : Lifetime::TRANSIENT, $rows[$abstract]->lifetime);
             self::assertSame([AuthorizationServiceProvider::class, self::MEMBER_DEFAULTS[$abstract]], $rows[$abstract]->memberDefaults);
-            self::assertSame('authorization.default:' . $abstract, $rows[$abstract]->defaultKey);
+            self::assertSame($keys[$abstract], $rows[$abstract]->configurationKey);
             self::assertFalse($rows[$abstract]->mandatory);
         }
     }
@@ -467,8 +475,9 @@ final class AuthorizationSeamsTest extends TestCase
 
     /**
      * The context's keys are declared on the key catalogue with their types,
-     * those that say how the session was authenticated untestable, so a policy
-     * states a requirement instead.
+     * and those that say how the session was authenticated are untestable, as
+     * the context's assurance keys or `laravel-authorization`'s own, so a
+     * policy states a requirement instead; every other key may be tested.
      *
      * @return void
      *
@@ -478,13 +487,13 @@ final class AuthorizationSeamsTest extends TestCase
     {
         $catalogue = $this->catalogue();
 
-        foreach (AuthenticationContextKeys::KEYS as $path => [$type, $isTestable]) {
+        foreach (AuthenticationContextKeys::KEYS as $path => $type) {
 
             $key = $catalogue->find($path);
 
             self::assertNotNull($key, $path);
             self::assertSame($type, $key->type, $path);
-            self::assertSame($isTestable, $key->isTestable, $path);
+            self::assertSame(!in_array($path, self::ASSURANCE_KEYS, true), $key->isTestable, $path);
         }
 
         self::assertTrue($catalogue->permits('authentication.tenant_id', 'eq'));
@@ -521,44 +530,43 @@ final class AuthorizationSeamsTest extends TestCase
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Psr\Container\ContainerExceptionInterface
      */
     public function testNoKeyIsDeclaredForAnApplicationsOwnContext(): void
     {
         $this->bootInOrder(self::providerOrder(), after: [AuthenticationContext::class => GuardAuthenticationContext::class]);
 
         self::assertNull($this->catalogue()->find('authentication.tenant_id'));
-
-        AuthenticationContextKeys::declareOnResolved($this->app ?? self::fail('The application has not booted.'));
-
-        self::assertNull($this->catalogue()->find('authentication.tenant_id'));
     }
 
     /**
-     * The keys are declared on a key catalogue already built only: one not
-     * built yet is left to be declared on as it is built.
+     * A key under any of the context's namespaces any segment of which is one
+     * of the context's assurance keys is untestable, however it is declared;
+     * a key the context leaves testable stays so, even one sharing a prefix
+     * with assurance keys (`sso.provider_session_deadline`).
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Psr\Container\ContainerExceptionInterface
      */
-    public function testTheKeysAreDeclaredOnACatalogueAlreadyBuiltOnly(): void
+    public function testTheContextsAssuranceKeysAreUntestableUnderEveryNamespace(): void
     {
-        $app = $this->app ?? self::fail('The application has not booted.');
+        $catalogue = $this->catalogue();
 
-        AuthenticationContextKeys::declareOnResolved($app);
+        foreach (AuthenticationContextAdapter::ASSURANCE_KEYS as $name) {
 
-        self::assertFalse($app->resolved(ContextKeyCatalogue::class));
+            foreach (AuthenticationContextAdapter::NAMESPACES as $namespace) {
 
-        $catalogue = new DeclaredContextKeyCatalogue;
+                $path = $namespace . '.declared.' . $name;
 
-        $app->instance(ContextKeyCatalogue::class, $catalogue);
+                $catalogue->declare($path, ContextKeyType::STRING);
 
-        AuthenticationContextKeys::declareOnResolved($app);
+                self::assertFalse($catalogue->find($path)?->isTestable, $path);
+                self::assertFalse($catalogue->permits($path, 'eq'), $path);
+            }
+        }
 
-        self::assertNotNull($catalogue->find('mfa.level'));
-        self::assertNotNull($catalogue->find('authentication.tenant_id'));
+        self::assertTrue($catalogue->permits('sso.provider_session_deadline', 'before'));
+        self::assertTrue($catalogue->permits('mfa.has_confirmed_factor', 'bool'));
     }
 
     /**

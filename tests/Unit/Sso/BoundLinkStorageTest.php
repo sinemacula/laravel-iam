@@ -10,7 +10,6 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
-use SineMacula\Laravel\Sso\Administration\ActingIdentity;
 use SineMacula\Laravel\Sso\Contracts\Clock;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\LinkStorage;
@@ -18,6 +17,7 @@ use SineMacula\Laravel\Sso\Contracts\SsoConnection;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Flows\RequestReference;
 use SineMacula\Laravel\Sso\Http\ClientContext;
+use SineMacula\Laravel\Sso\Identities\Caller;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Links\LinkCreation;
 use SineMacula\Laravel\Sso\Links\LinkReservations;
@@ -121,15 +121,15 @@ final class BoundLinkStorageTest extends TestCase
         $subject    = LinkSubject::of(Redemptions::verified());
         $identity   = Redemptions::identity();
         $client     = self::client();
-        $actor      = new ActingIdentity('person', '7');
+        $caller     = new Caller($identity, 'session-7');
         $reference  = RequestReference::fromString(Redemptions::REFERENCE);
         $creation   = LinkCreation::subjectAlreadyLinked();
 
         $this->linker->expects('create')
-            ->with($connection, $subject, $identity, LinkOrigin::LINK_PURPOSE, $client, $actor, Redemptions::APPLICATION, Purpose::LINK, $reference)
+            ->with($connection, $subject, $identity, LinkOrigin::LINK_PURPOSE, $client, $caller, Redemptions::APPLICATION, Purpose::LINK, $reference)
             ->andReturn($creation);
 
-        $created = $this->storage->create($connection, $subject, $identity, LinkOrigin::LINK_PURPOSE, $client, $actor, Redemptions::APPLICATION, Purpose::LINK, $reference);
+        $created = $this->storage->create($connection, $subject, $identity, LinkOrigin::LINK_PURPOSE, $client, $caller, Redemptions::APPLICATION, Purpose::LINK, $reference);
 
         self::assertSame($creation, $created);
     }

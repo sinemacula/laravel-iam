@@ -20,8 +20,10 @@ use SineMacula\Laravel\Authentication\Contracts\PrincipalResolver;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthenticationChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
+use SineMacula\Laravel\Authentication\Proofs\FirstFactor;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Sessions\Enums\PendingRequirement;
 use SineMacula\Laravel\Authentication\Sessions\Enums\SessionStatus;
@@ -228,7 +230,9 @@ final class InteractsWithIamTest extends TestCase
 
         $factor   = $this->onlyFactorOf($person);
         $recorded = $this->furtherProofOf($session);
-        $proofs   = $this->app?->make(ProofStore::class)->proofs($person, self::GUARD) ?? [];
+        $store    = $this->app?->make(ProofStore::class);
+        $current  = $store?->currentSession($person, self::GUARD);
+        $proofs   = $store === null || $current === null ? [] : $store->proofs($person, self::GUARD, $current);
 
         self::assertSame($type, $factor->getType());
         self::assertSame(FactorStatus::CONFIRMED, $factor->getStatus());
@@ -1219,10 +1223,10 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A started session's first factor names no channel, so a further proof
-     * made after it does not complete a holder's sign-in: the sign-in stays
-     * pending on the factor, with nothing more enrolled, which is why
-     * `CallerSignIn` never completes a started session.
+     * A started session's first factor is on the `unknown` channel, so a
+     * further proof made after it does not complete a holder's sign-in: the
+     * sign-in stays pending on the factor, with nothing more enrolled, which is
+     * why `CallerSignIn` never completes a started session.
      *
      * @return void
      *
@@ -1234,7 +1238,8 @@ final class InteractsWithIamTest extends TestCase
 
         $this->holdFactor($person, 'totp');
 
-        $started = $this->sessions()->start($person, null, CallerSession::DEFAULT_METHOD, new SignInContext(self::client()));
+        $factor  = new FirstFactor($person, new Channel(AuthenticationChannelKind::UNKNOWN));
+        $started = $this->sessions()->start($factor, null, CallerSession::DEFAULT_METHOD, new SignInContext(self::client()));
         $result  = $this->app?->make(CrossMemberTransaction::class)->run(
             fn (): SignInResult => $this->app?->make(CallerCompletion::class)->complete($started, self::GUARD, null, self::client()) ?? self::fail('No completion.'),
         );

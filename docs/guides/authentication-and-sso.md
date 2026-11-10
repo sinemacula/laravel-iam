@@ -138,42 +138,45 @@ application the link is redeemed for. SSO asks three things of the link:
   came through their verified domain link signs in with a password or a passkey first
   ([laravel-sso: confirming it is the person][sso-links-confirming]).
 
-A recovery session counts only when your recovery starts it with `Auth::sessions($guard)->start()` under a method you
-name at `iam.sso.recovery_methods` (see [Configuration](configuration.md#sso)); no other session started that way
-does. What a password, a passkey or your recovery proves is yours to keep true: one enrolled from a session the
-verified domain link established, or a recovery its provider can drive, proves nothing the provider could not do. A
-caller with no session of its own, and a session that is pending, revoked or ended, never confirms. Inside SSO's
-transaction the session's row is locked until the link commits, so revoking the session waits for it. Freshness renewed
-through a provider never counts here, whatever SSO's `Freshness` answers.
+A recovery session counts only when your recovery starts it with `Auth::sessions($guard)->start()` from a `FirstFactor`
+on the `recovery` channel (`ChannelKind::RECOVERY`, which `laravel-authentication` admits as a first factor only); a
+session started on any other channel, `unknown` included, does not. What a password, a passkey or your recovery proves
+is yours to keep true: one enrolled from a session the verified domain link established, or a recovery its provider can
+drive, proves nothing the provider could not do. A caller with no session of its own, and a session that is pending,
+revoked or ended, never confirms. Inside SSO's transaction the session's row is locked until the link commits, so
+revoking the session waits for it. Freshness renewed through a provider never counts here, whatever SSO's `Freshness`
+answers.
 
 ## SSO's own calls that ask for freshness
 
 SSO asks for a fresh session before its sensitive changes (a connection's trust, enabling or disabling it, a key's
-rotation, a domain's claim, the enforcement rule, a link's removal) and before a `link` flow starts, but hands its
-freshness contract no caller. The package never takes one from the request, so hand it in around the call:
+rotation, a domain's claim, the enforcement rule, a link's removal) and before a `link` flow starts, and judges the
+caller each of those calls is handed. The package never takes one from the request, so hand SSO the caller as it names
+it:
 
 ```php
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Sso\Flows\AuthorizationRequestService;
-use SineMacula\Laravel\Sso\Flows\StartResult;
 
-$result = Iam::callers()->run($caller, fn (): StartResult => app(AuthorizationRequestService::class)->start(
-    // ...the start's own arguments
-));
+$result = app(AuthorizationRequestService::class)->start(
+    // ...the start's own arguments, then
+    Iam::callers()->of($caller),
+);
 ```
 
-`$caller` is the `Auth::caller()` of the request. While the closure runs, SSO's freshness judges the session that
-caller's access credential holds, and only while it is a session of the caller's own guard that the caller's identity
-owns; the package never asks the guard. A caller signed in with a refresh or pending credential, or one holding a
-session of another guard or identity, is `stale`. Without `Iam::callers()->run()` it answers `stale`, and SSO refuses
-with `freshness_required`. Declare SSO's operations for the guard (see
+`$caller` is the `Auth::caller()` of the request. `Iam::callers()->of()` names its identity as SSO names it, with the
+session that caller's access credential holds, and only while it is a session of the caller's own guard that the
+caller's identity owns; the package never asks the guard. SSO's freshness judges that session alone, and only while it
+is live and the caller's identity's. A caller signed in with a refresh or pending credential, or one holding a session
+of another guard or identity, is `stale`. Without a caller it answers `stale`, and SSO refuses with
+`freshness_required`. Declare SSO's operations for the guard (see
 [Installation](installation.md#guards-and-applications)).
 
-Call `Iam::callers()->run()` with no transaction open on the storage connection, never inside `Iam::transaction()` or
-a transaction of your own: a caller handed in inside one is `stale` until that transaction ends, since its snapshot
-may be older than the call and the session's row cannot be locked where SSO asks. So a freshly stepped-up caller still
-meets `freshness_required` there. Do not loosen the `sso.*` freshness entries for it: move the call out of the
-transaction, and write your own bookkeeping in a transaction after it.
+Call `Iam::callers()->of()` with no transaction open on the storage connection, never inside `Iam::transaction()` or a
+transaction of your own: a caller named inside one carries no session, so it is `stale`, since that transaction's
+snapshot may be older than the call and the session's row cannot be locked where SSO asks. So a freshly stepped-up
+caller still meets `freshness_required` there. Do not loosen the `sso.*` freshness entries for it: move the call out of
+the transaction, and write your own bookkeeping in a transaction after it.
 
 ## Revocation
 

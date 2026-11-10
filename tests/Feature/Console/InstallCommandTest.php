@@ -1193,23 +1193,6 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Return how many migrations the members ship between them, each of which
-     * the run publishes once.
-     *
-     * @return int
-     */
-    private static function migrationCount(): int
-    {
-        $count = 0;
-
-        foreach (self::MEMBERS as $provider) {
-            $count += count(glob(self::packagePath($provider) . '/database/migrations/*.php') ?: []);
-        }
-
-        return $count;
-    }
-
-    /**
      * Return the root of the package a provider ships.
      *
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
@@ -1218,5 +1201,16 @@ final class InstallCommandTest extends TestCase
     private static function packagePath(string $provider): string
     {
         return dirname((string) (new \ReflectionClass($provider))->getFileName(), 2);
+    }
+
+    /**
+     * The number of migrations the members ship between them, every one of
+     * which the install publishes.
+     *
+     * @return int
+     */
+    private static function migrationCount(): int
+    {
+        return array_sum(array_map(static fn (string $provider): int => count(glob(self::packagePath($provider) . '/database/migrations/*.php') ?: []), self::MEMBERS));
     }
 }

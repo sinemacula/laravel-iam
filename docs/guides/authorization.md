@@ -47,17 +47,13 @@ requirement checker and the step-up only while `iam.adapters.mfa` is on too, and
 | The grant hook                                | SSO's scope widening, then the hooks `authorization.grant_hooks` lists                         |
 | Audit-log's access policy                     | The catalogue's audit permissions the viewer holds                                             |
 
-`laravel-authorization` binds its own defaults whether or not anything is bound already, so this package replaces them
-only while they are still `laravel-authorization`'s defaults. A class you name in its configuration
-(`authorization.subject_resolver`, `authorization.requirement_checker`, `authorization.session.source`,
-`authorization.identity_directory`, `authorization.tenant_tree`) is kept, and so is anything you bind over its contracts
-in a service provider's `register()` or `boot()`. Hooks you list in `authorization.grant_hooks` are not a class of their
-own: the grant hook is bound over them and runs them after SSO's widening. A binding of one of its
-contracts made before `laravel-authorization` registers is lost to its own provider, unless you made it before this
-package registered too, when this package binds it back: name your class in its configuration instead. Should
-`laravel-authorization` bind its defaults over this package's adapters or your binding once nothing can bind them
-back (a provider registering it once the application has booted), `iam:check` refuses each seam it took (see
-[Checks](checks.md#seams)).
+`laravel-authorization` binds its own defaults only where nothing is bound yet, so this package replaces them only
+while they are still `laravel-authorization`'s defaults, in whatever order the providers register. A class you name in
+its configuration (`authorization.subject_resolver`, `authorization.requirement_checker`,
+`authorization.session.source`, `authorization.identity_directory`, `authorization.tenant_tree`) is kept, and so is
+anything you bind over its contracts in a service provider's `register()` or `boot()`, before `laravel-authorization`
+registers or after. Hooks you list in `authorization.grant_hooks` are not a class of their own: the grant hook is bound
+over them and runs them after SSO's widening.
 
 ## The subject
 
@@ -241,9 +237,8 @@ to, and is mandatory while `authorization.application_access` maps an applicatio
 `laravel-authentication`'s `AdmitAnyPrincipal` then. **An application the map does not name is open to every
 principal**, people included, whatever their grants: `laravel-authorization` answers `true` for it, and this package
 changes nothing of that, nor does `iam:check` warn while the map names any other application. A machine principal is
-refused on an application the map names, since it holds no credential yet whose scopes could cap it. So for an
-application your machines call, either bind an `ApplicationAccess` of your own that admits the machines and holds
-everyone else to their grants, or leave it out of the map and accept that every principal may use it.
+admitted on its grants as a person is: admission is decided without the caps of a credential's scopes, since the
+principal being admitted holds no session yet, while a deny, a boundary or a guardrail still refuses it.
 Which tenants a principal may act in is your tenancy, not a grant, so bind your own tenant access if your principals act
 in other tenants. Your own binding of any of the three, in a service provider's `register()`, is kept. See
 `laravel-authentication`'s [extending guide][authentication-extending].

@@ -15,9 +15,9 @@ use SineMacula\Laravel\Sso\Sessions\Provenance;
  * - `started()` starts the session for the identity as
  *   `laravel-authentication`'s `start()` does for an identity the application
  *   verified itself, under the method named: the first proof names the method,
- *   but no channel and no `amr` value, so MFA can judge no first factor, and no
- *   level can be verified after it. The default, for a test that needs a
- *   session and no MFA state.
+ *   on the `unknown` channel with no `amr` value, so MFA can judge no first
+ *   factor, and no level can be verified after it. The default, for a test that
+ *   needs a session and no MFA state.
  * - `signedIn()` signs in with the credentials given, through the method named,
  *   as a sign-in endpoint does, so the first proof is the one the method proves
  *   (the password's channel, say), which MFA judges, so a level can be verified
@@ -63,8 +63,8 @@ final readonly class CallerSession
     ) {}
 
     /**
-     * A session started for the identity under the method, its first factor
-     * unattested.
+     * A session started for the identity under the method, its first factor on
+     * the `unknown` channel.
      *
      * @param  string  $method
      * @return self

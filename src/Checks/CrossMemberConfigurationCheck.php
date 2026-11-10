@@ -244,8 +244,6 @@ final readonly class CrossMemberConfigurationCheck implements Check
      * its default, configured and bound, or nothing once either names another.
      *
      * @return ?string
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     private function resourceTenantsNote(): ?string
     {

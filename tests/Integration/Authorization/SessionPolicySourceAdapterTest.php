@@ -285,7 +285,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     {
         Route::get(self::ROUTE, function (Request $request) use ($subjects, $guard): array {
 
-            assert(Auth::guard($guard)->check());
+            self::assertTrue(Auth::guard($guard)->check());
 
             $made   = $subjects();
             $source = $this->source();

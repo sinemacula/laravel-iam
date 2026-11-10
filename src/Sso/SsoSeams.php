@@ -108,10 +108,10 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  *
  * Each adapter replaces the member's own default only; an application's binding
  * is kept (IAM-8.4). The adapters keep nothing and resolve the records this
- * package keeps for a redemption (`AdmittedRedemptions`, `RenewalRecorder`,
- * `LinkCallers`) on every call, so each is transient. The whole capability is
- * switched by `iam.adapters.sso`: off, nothing here binds, and each member
- * keeps its own default.
+ * package keeps for a redemption (`AdmittedRedemptions`, `RenewalRecorder`) on
+ * every call, so each is transient. The whole capability is switched by
+ * `iam.adapters.sso`: off, nothing here binds, and each member keeps its own
+ * default.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

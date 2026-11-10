@@ -9,13 +9,14 @@ requirement check on the proofs of the subject's own session (IAM-6.3); its insu
 rendered as MFA's step-up (IAM-6.4); its session policy source and `laravel-authentication`'s scope registry, answered
 from the caller's credential scopes and from `laravel-authorization`'s registry (IAM-6.5); and
 `laravel-authentication`'s application access, answered from `laravel-authorization`'s grants (IAM-6.6). It covers how
-the binding rule replaces a member that binds its defaults unconditionally, when the access contracts are mandatory,
-and the gaps in the members the adapters work around. It then covers the second part of this work: the grants and the
-tree (IAM-6.7, IAM-6.8, IAM-7.5), the permission catalogue and the audit access policy (IAM-6.9, IAM-6.10), forgetting
-the decisions that depended on authentication (IAM-6.11), and `laravel-authorization`'s operations: its connection, its
-prune, its check, its request state and its resource tenants (IAM-2.3, IAM-2.6, IAM-10.1, IAM-11.3). Group mapping is
-in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-mapping.md`. The rule itself is in
-`binding-precedence.md`, and the worker reset in `long-running-processes.md`.
+the binding rule keeps a class the application names in `laravel-authorization`'s configuration, when the access
+contracts are mandatory, and the gaps in the members the adapters work around. It then covers the second part of this
+work: the grants and the tree (IAM-6.7, IAM-6.8, IAM-7.5), the permission catalogue and the audit access policy
+(IAM-6.9, IAM-6.10), forgetting the decisions that depended on authentication (IAM-6.11), and
+`laravel-authorization`'s operations: its connection, its prune, its check, its request state and its resource tenants
+(IAM-2.3, IAM-2.6, IAM-10.1, IAM-11.3). Group mapping is in `provisioning-and-tenancy.md` and the authorization audit
+codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and the worker reset in
+`long-running-processes.md`.
 
 ## Invariants
 
@@ -71,44 +72,25 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
   every query on a tenant-scoped model; `TenantTreeAdapterTest::testACheckReadsTheTreeOncePerUnitOfWork` pins one
   `ancestors()` read for a check. It holds nothing itself, and the worker reset forgets it with the rest of
   `iam.scoped:`.
-- `laravel-authorization` binds every default unconditionally: its provider scopes the class its configuration names
-  under `authorization.default:` and the contract, and binds the contract with a plain `bind()` to a closure it declares
-  that resolves that key (IAM-13.7 still says a plain `singleton`; at the commit this package requires it is a plain
-  `bind()` over a scoped key, unconditional either way). So each of its rows names the provider and the default class,
-  and the key (`AuthorizationSeams::authorizationRow()`, `SeamBinding::$defaultKey`): the seam is replaced only while
-  the closure is the provider's and the key still holds the default class. A class the application names in
-  `authorization.subject_resolver`, `authorization.requirement_checker` or `authorization.session.source` is bound by
-  `laravel-authorization` with the very same closure, and is kept, as is anything the application binds over the
-  contract.
-- Registering after this package, `laravel-authorization` replaces the adapters. The booting callback binds each one
-  the rule bound again where the seam holds the member's own closure once more (`BindingRule::reclaim()`), before any
-  provider boots, so before `laravel-authorization`'s boot builds its authentication context, and the `booted()`
-  callback does so once more, for a `laravel-authorization` another provider registers from its `boot()`. Whatever
-  another provider's `boot()` resolved from the defaults in between would keep them: the manager, holding the default
-  subject resolver and with it the default session cap, check context factory and requirement checker, and the key
-  catalogue, a singleton built without the context's keys. So when that last pass binds any seam again, the suite's
-  scoped state is forgotten as a worker forgets it between jobs (`WorkerReset::forgetScopedState()`: the manager, the
-  check context factory, the resolved tenant, the `authorization.default:` and `iam.scoped:` keys, and every facade's
-  root), and the context's keys are declared on a catalogue already built
-  (`AuthenticationContextKeys::declareOnResolved()`). The key
-  holds the default while it holds the default class, or an instance of exactly that class resolved there, as
-  `laravel-authorization`'s boot leaves its authentication context. A seam holding anything else is kept: the
-  application's binding, made in its own provider's `register()` after the packages', the member's default class bound
-  by name among them, since a member binding through a closure never binds a class name. A binding the application made
-  before this package registered, which the rule kept, is overwritten by `laravel-authorization` too: the rule records
-  what binds it again as it keeps it (`MemberDefaults::restorerOf()`, `BindingOutcome::$restorers`) and `reclaim()`
-  binds it back the same way. One made after this package registered and before `laravel-authorization` did is lost to
-  `laravel-authorization` itself, which no rule of this package can undo. `iam:check` refuses each of these rows the
-  outcome lists, bound or kept, whose live binding holds `laravel-authorization`'s own default again
-  (`MandatorySeamsCheck::decidedChecks()`), so a member registered once neither callback can run is not passed silently.
-- `laravel-authorization` empties the resolution memo when the subject resolver or the tenant tree is bound again, but
-  registers that rebinding listener only where the seam is still unbound as it registers
-  (`forgetResolutionsOnRebinding()`). Where this package registers first, the rule binds both seams before it, so it
-  would listen for neither, and a tree or resolver bound again in a unit of work (a test's `actingAsSubject()`, an
-  `instance()`) would leave resolutions read through the previous one memoised, in that provider order alone. Both rows
-  name the listener (`SeamBinding::$rebinding`, `AuthorizationSeams::FORGETS_ON_REBINDING`), and the rule registers it
-  before binding the adapter over a seam that is still unbound, so each seam has exactly one listener in every
-  provider order.
+- `laravel-authorization` binds each default only where nothing is bound yet (`bindIf()`, since
+  laravel-authorization#129): its provider scopes the class its configuration names under `authorization.default:` and
+  the contract, and binds the contract to a closure it declares that resolves that key. So each of its rows names the
+  provider and the default class (`AuthorizationSeams::authorizationRow()`), and the seam is replaced only while it is
+  unbound or holds that closure. A class the application names in `authorization.subject_resolver`,
+  `authorization.requirement_checker`, `authorization.session.source`, `authorization.identity_directory` or
+  `authorization.tenant_tree` is the application's, and kept: the row names that key
+  (`SeamBinding::$configurationKey`), and the rule reads it as `laravel-authorization` will
+  (`SeamBinding::namesApplicationClass()`), leaving the seam for `laravel-authorization` to bind to that class whichever
+  registers first. No key names the grant hook's class: `laravel-authorization` binds the composite
+  `GrantHooks::fromConfig()` builds from `authorization.grant_hooks`, so its row names `GrantHooks` beside the provider.
+  Anything the application binds over the contract is kept too, made before this package registers or after, and a
+  `laravel-authorization` that registers after this package, with the other providers or from another provider's
+  `boot()`, leaves the adapters bound.
+- `laravel-authorization` empties the resolution memo when the subject resolver or the tenant tree is bound again
+  (`forgetResolutionsOnRebinding()`), in every provider order: where the seam is still unbound as it registers it
+  listens at once, and where this package bound the adapter first it listens from the seam's first resolution in each
+  container, the earliest a rebinding could change anything memoised. So the rows name no listener of their own, and
+  each seam has exactly one listener once resolved.
 - The subject (`SubjectResolverAdapter`). `resolve()` takes nothing, so it reads the request's caller
   (`Auth::caller()`): the principal, its identity, the active tenant, the guard as the application and the session's
   key. No caller, or a pending session that has not chosen its principal, is no subject. `forUser()` is handed the model
@@ -138,16 +120,22 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
   its `mfa` and `sso` contributors once every provider has booted, and a namespace missing then would leave its
   assurance keys testable for good; one that holds no keys costs nothing. The values are
   `AuthenticationContexts::current()->toArray()` for those namespaces, `[]` for a guest, `laravel-authentication`'s key
-  names untouched. A namespace an application's own contributor adds is not supplied. It is scope invariant.
+  names untouched. A namespace an application's own contributor adds is not supplied. It is scope invariant. Its
+  assurance keys (`assuranceKeys()`, `ASSURANCE_KEYS`), beside `laravel-authorization`'s own (`amr`, `auth_time`,
+  `multifactor`, `seconds_since_step_up`), are the names that say how strongly or how recently the session was
+  authenticated: `laravel-authentication`'s `mfa` and `recovery_code`, MFA's verdicts (`accepted`, `factor_types`,
+  `level`, `phishing_resistant`, `user_verification`, `last_verification_age_seconds`) and SSO's record of the
+  provider's authentication (`provider_auth_time`, `provider_amr`, `provider_acr`, `provider_authn_context_class_ref`).
+  `laravel-authorization` makes a key of any of the three namespaces any segment of which is one of them untestable,
+  and refuses a policy that tests or references one, on write and on read, so a policy states an
+  `authentication_requirement` instead. Each is an exact name, not the prefix form: SSO's `provider_session_deadline`,
+  which a policy may test, shares the `provider_` prefix. Like the namespaces, they are fixed for the life of the
+  process.
 - The keys (`AuthenticationContextKeys`). Each key of the three namespaces is declared on `laravel-authorization`'s key
-  catalogue with its type, once, as the catalogue is built, while the context bound is this package's. Those that say
-  how strongly or how recently the session was authenticated are declared untestable, beyond the ones
-  `laravel-authorization` makes untestable itself: `authentication.mfa` and `authentication.recovery_code`, MFA's
-  verdicts (`mfa.accepted`, `mfa.factor_types`, `mfa.level`, `mfa.phishing_resistant`, `mfa.user_verification`,
-  `mfa.last_verification_age_seconds`) and SSO's record of the provider's authentication (`sso.provider_auth_time`,
-  `sso.provider_amr`, `sso.provider_acr`, `sso.provider_authn_context_class_ref`), so a policy states an
-  `authentication_requirement` instead. A key already declared, by `authorization.context.keys` or an attribute
-  provider, keeps its declaration.
+  catalogue with its type, once, as the catalogue is built, while the context bound is this package's: a policy reads
+  only a declared key, and the context's contract carries no types. Each is declared testable; the catalogue makes the
+  assurance keys untestable, whatever they are declared as. A key already declared, by `authorization.context.keys` or
+  an attribute provider, keeps its declaration.
 - The requirement checker (`RequirementCheckerAdapter`) reads nothing of the request or the guard:
   `laravel-authorization` hands it the subject, carrying its session. The session is the subject's guard's, found by
   its key through the subject's identity's own sessions on the write connection (`CurrentSession::named()`), so another
@@ -232,14 +220,13 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
   about, never the request's caller or its active tenant: a sign-in, a switch or a refresh asks about a principal that
   is not yet, or no longer, the request's. The principal becomes the subject through `forUser()`, which reads no caller,
   so a guard asking while it admits is never entered again; `laravel-authentication` asks inside
-  `WriteConnection::during()`, so the grants are read from the primary. `laravel-authorization` decides with the session
-  caps applied, and a principal being admitted holds no credential yet, so a machine principal is refused on any
-  application the map names (a member gap, below). An application the map does not name is open to every principal,
-  people included, whatever its grants, as `laravel-authorization` decides (`mayUse()` answers `true` for it), and the
-  adapter changes nothing of that: leaving an application out of the map to let machines call it opens it to everyone,
-  and `iam:check` raises nothing, since the mandate holds while the map names any application. An application whose
-  machines call it binds an `ApplicationAccess` of its own, or accepts that it is open. The adapter keeps nothing, but
-  is bound scoped under `iam.scoped:`, as IAM-6.6 asks.
+  `WriteConnection::during()`, so the grants are read from the primary. `laravel-authorization` decides it without
+  session caps, since a principal being admitted holds no session yet: neither the request's credential scopes nor a
+  machine's missing ones refuse it, so a machine is admitted on its grants as a person is, while a deny, a boundary, a
+  guardrail or an explicit `capped()` cap still refuses. An application the map does not name is open to every
+  principal, people included, whatever its grants, as `laravel-authorization` decides (`mayUse()` answers `true` for
+  it), and the adapter changes nothing of that. The adapter keeps nothing, but is bound scoped under `iam.scoped:`, as
+  IAM-6.6 asks.
 - The mandates (`AccessMandates`), declared by the binding rule as it applies and read by `iam:check` as it runs: the
   scope registry is mandatory while any configured guard accepts `api_key` or `client_credentials`, since left on
   `AcceptAnyScope` a credential could be issued a scope naming no permission. Which machine credentials a guard accepts
@@ -256,9 +243,9 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
   nothing only to a principal carrying `AuthorizableMachine` and caps any other machine by nothing, so a machine whose
   credential was issued `orders.read` could do whatever its grants allow. `iam:check` refuses it whatever the switch
   says, the application's binding of it by class name included. Since `laravel-authorization` binds the seam through a
-  closure that resolves its `authorization.default:` key, the check names a seam still holding that closure by what the
-  key holds (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused, and a class the application names in
-  `authorization.session.source` passes.
+  closure that resolves the class `authorization.session.source` names, the check names a seam still holding that
+  closure by that class (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused, and a class the application
+  names there passes.
 - Request state. None of the adapters keeps anything between calls. The subject resolver and application access are
   scoped all the same, under `iam.scoped:` (`BindingRule::bindScoped()`), so the seams themselves are never scoped, and
   the worker reset and Laravel's `forgetScopedInstances()` forget them between units of work. The caller
@@ -418,14 +405,13 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
 ## Success Path
 
 1. The provider registers. The binding rule binds the ten rows over the members' defaults where the switch is on; the
-   requirement checker only while `iam.adapters.mfa` is on too, and the grant hook only while `iam.adapters.sso` is.
-   The grant half of SSO's principal scope is bound to `GrantScopeAdapter`. The context's keys are queued for the key catalogue.
-2. The booting callback runs before any provider boots, and binds again any of `laravel-authorization`'s seams it
-   replaced after this package registered, the adapter or the application's binding the rule kept; the `booted()`
-   callback does the same once every provider has booted, and, when it binds anything again, forgets what was resolved
-   from the defaults meanwhile and declares the context's keys on a catalogue already built.
-3. `laravel-authorization` boots, reads the context's namespaces, and later builds its key catalogue, with the
-   context's keys declared on it.
+   requirement checker only while `iam.adapters.mfa` is on too, the grant hook only while `iam.adapters.sso` is, and
+   none of `laravel-authorization`'s rows whose class the application names in its configuration. The grant half of
+   SSO's principal scope is bound to `GrantScopeAdapter`. The context's keys are queued for the key catalogue.
+2. `laravel-authorization` registers, before this package or after, and binds its defaults only where nothing is bound,
+   so the adapters stand.
+3. `laravel-authorization` boots, reads the context's namespaces and assurance keys once every provider has registered,
+   and later builds its key catalogue, with the context's keys declared on it.
 4. A request on `auth:api` asks `Authorization::authorize('invoices:refund')`. The subject is the caller, with its
    session's key. A statement allowing the action states `{"authentication": {"multifactor": {}}}`; the requirement
    checker reads the session's proofs and MFA finds multifactor unmet, so `laravel-authorization` throws its
@@ -491,18 +477,6 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
   rotation holds the scopes to the registry again; a guard the subject names that is not configured throws, and
   `laravel-authorization` makes no decision.
 - Gaps in the members the adapters work around:
-  - `laravel-authorization` binds every default with a plain `bind()` over its scoped `authorization.default:` key
-    (`bindScopedDefault()`), never `bindIf()`, so an application binding made before it registers is lost and the
-    adapters bound before it are overwritten (IAM-13.7, still open in substance: its resolvers moved from a plain
-    `singleton()` to a plain `bind()` over a scoped key, unconditional either way). The rows name the provider, the
-    default class and the key, `BindingRule::reclaim()` binds the adapters and the application's kept bindings again
-    from the booting and the `booted()` callbacks, and `iam:check` refuses what neither could bind back; with
-    `bindIf()` none of it would be needed.
-  - `laravel-authorization` listens for its subject resolver or tenant tree being bound again only where the seam is
-    unbound as it registers, so the rows name the listener for the binding rule to register where it binds first
-    (`SeamBinding::$rebinding`). An application that binds either seam before `laravel-authorization` registers loses
-    the listener with or without this package; registering it whatever is bound (it avoided `rebinding()` on a bound
-    abstract, which resolves it at once) would close it.
   - `laravel-authorization` recognises a machine only by its own marker (`AuthorizableMachine`): a session policy
     source answering `null` allows such a subject nothing, and caps any other by nothing, though
     `laravel-authentication` marks its machines `MachineIdentity`. The adapter answers a machine `[]` itself; with the
@@ -513,18 +487,6 @@ in `provisioning-and-tenancy.md` and the authorization audit codes in `audit-map
     reset between queued jobs (`ForgetGuardStateBeforeJob`) resets the guards but not that memo, so a worker's later
     jobs would read the first job's caller. The worker reset drops it; a reset of its own memo beside the guards' would
     close it.
-  - `laravel-authorization` reads `AuthenticationContext::namespaces()` once as it boots (its context configuration
-    validation) and once into a singleton key catalogue, both before a sibling's contributors register, so the adapter
-    answers a fixed list. Reading the namespaces per check, or documenting that they must not change, would close it.
-  - `laravel-authorization`'s assurance keys (`AssuranceKeys`) do not cover the keys the suite's context carries that say
-    how the session was authenticated (`authentication.mfa`, `recovery_code`, MFA's verdicts, SSO's `provider_*`), so
-    `AuthenticationContextKeys` declares them untestable itself.
-  - `laravel-authorization`'s `Services\ApplicationAccess::mayUse()` decides with the session caps applied, though an
-    admission holds no credential whose scopes could cap it, so a machine principal is always refused on a mapped
-    application. Deciding application access without the session stage, a grant question rather than a credential's,
-    would close it; `ApplicationAccessAdapterTest` pins today's answer, so the fix shows. It also answers `true` for any
-    application the map does not name, so the only way to let a machine use an application through it is to open the
-    application to every principal.
   - `laravel-authentication`'s caller carries no credential scopes (they live on `ContextualGuard::scopes()` alone), which
     forces the session policy source's ambient read. Scopes on `Caller`, filled as the access credential is admitted,
     would let the subject carry them and the source take them as a plain value.
@@ -579,10 +541,9 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   and which no adapter could do as it answers. `Authorization\Translation\RequirementTranslator` crosses a requirement
   from `laravel-authorization`'s terms to MFA's and back, shared by the requirement checker and the step-up mapping,
   each of which would otherwise translate alone; its unit test sits beside it.
-- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\MemberDefaults`, `Bindings\SeamBinding`,
-  `Bindings\BindingOutcome`), and `iam:check`'s seams check refuses a decided seam back on its default, because
-  `laravel-authorization` binds its defaults unconditionally (IAM-13.7), which the manifest, expecting its resolvers to
-  be named in configuration, did not foresee. For the same reason `iam:install` writes none of
+- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`), since a row over
+  `laravel-authorization` keeps a class the application names in its configuration, which the manifest, expecting its
+  resolvers to be named in configuration, did not foresee. For the same reason `iam:install` writes none of
   `laravel-authorization`'s resolver keys and `CrossMemberConfigurationCheck` requires none (`install-and-check.md`).
 
 Part (b) follows the manifest's remaining rows, with these departures:
@@ -607,9 +568,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - The tree's row is bound whenever the switch is on, through a factory (`SeamBinding::$factory`, which the manifest does
   not list) that builds the adapter while the application names or binds a tree and `laravel-authorization`'s own
   `FlatTenantTree` otherwise, decided as each request or job first resolves the scoped seam, rather than a row that
-  applies only while the application has a tree: the reserve and apply-again machinery of the SSO tenancy rows, which
-  `reclaim()` does not cover for these rows, is not needed, and a tree bound after the providers register (a test's
-  `FakeTenantTree::fake()`) is read from the next unit of work. `laravel-authorization` tells a flat application by the
+  applies only while the application has a tree: the reserve and apply-again machinery of the SSO tenancy rows is not
+  needed, and a tree bound after the providers register (a test's `FakeTenantTree::fake()`) is read from the next unit
+  of work. `laravel-authorization` tells a flat application by the
   class of the tree bound, so an adapter answering as a flat tree took a flat application down the hierarchical paths,
   and `whereAuthorized()` refused a model on another connection than the storage connection (`subtree_connection`).
   `Iam::treeChanges()->changed()` reports to `laravel-authorization` beside a tree, whatever SSO's enforcement says, and
@@ -675,23 +636,23 @@ Part (b) follows the manifest's remaining rows, with these departures:
   grant below a tenant as one beyond it. `iam:check` cannot tell such a tree: the tree contract lists no tenants without
   one to start from. `Transactions\OpenTransactions`, which the manifest does not list, holds the transactions a
   rollback callback must wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
-- IAM-13.7 (decision Q15) is stale on every count at the commit this package requires: the resolvers are a plain
-  `bind()` over scoped keys rather than a plain `singleton()` (still unconditional, which the binding rule handles),
+- IAM-13.7 (decision Q15) is stale on every count at the commit this package requires: the resolvers are bound with
+  `bindIf()` over scoped keys rather than a plain `singleton()`, so they give way to anything bound before or after,
   change events fire after commit, the connection setting exists, the authentication context is a contract, and the
   resource tenant resolver is consulted by the decision path (a resource of another tenant is denied as
   `tenant_scope`). FEATURES is not edited here.
 
 ## Implementation Anchors
 
-- `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `authorizationRow()`, `FORGETS_ON_REBINDING`,
-  `SWITCH`, `DEFAULT_KEY_PREFIX`; `src/IamServiceProvider.php`: `seamProviders()`, `settle()`; `config/iam.php`:
+- `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `reportsWidenings()`, `authorizationRow()`,
+  `SWITCH`, `DOMAIN_LINKING`; `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`:
   `adapters.authorization`.
-- `src/Bindings/SeamBinding.php`: `$defaultKey`, `$rebinding`, `isMandatory()`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`,
-  `holdsDefault()`, `restorerOf()`; `src/Bindings/BindingRule.php`: `apply()`, `reclaim()`;
-  `src/Bindings/BindingOutcome.php`: `$restorers`; `src/Checks/MandatorySeamsCheck.php`: `decidedChecks()`,
-  `holderOf()`.
+- `src/Bindings/SeamBinding.php`: `$configurationKey`, `$factory`, `configuredClass()`, `namesApplicationClass()`,
+  `isMandatory()`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`;
+  `src/Bindings/BindingRule.php`: `apply()`; `src/Checks/MandatorySeamsCheck.php`: `holderOf()`.
 - `src/Authorization/SubjectResolverAdapter.php`: `resolve()`, `forUser()`.
-- `src/Authorization/AuthenticationContextAdapter.php`: `namespaces()`, `values()`, `NAMESPACES`;
+- `src/Authorization/AuthenticationContextAdapter.php`: `namespaces()`, `assuranceKeys()`, `values()`, `NAMESPACES`,
+  `ASSURANCE_KEYS`;
   `src/Authorization/AuthenticationContextKeys.php`: `register()`, `declareOn()`, `KEYS`.
 - `src/Authorization/RequirementCheckerAdapter.php`: `check()`, `identityOf()`, `inTenantOf()`, `tenantOf()`,
   `FURTHER_KINDS`;
@@ -733,15 +694,15 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testTheSwitchOffBindsNothing`,
   `testTheRequirementCheckerFollowsTheMfaSwitch`,
-  `testEachRowReadsLaravelAuthorizationsDefaultKeyAndOnlyTheResolverIsScoped`,
+  `testEachRowReadsLaravelAuthorizationsConfigurationKeyAndOnlyTheResolverIsScoped`,
   `testTheSubjectResolverIsOneForAUnitOfWork`,
   `testRebindingTheResolverOrTheTreeForgetsResolutionsInEveryProviderOrder`,
   `testTheSwitchIsReadLeniently`, `testTheContextsKeysAreDeclared`, `testAKeyTheApplicationDeclaresKeepsItsDeclaration`,
-  `testNoKeyIsDeclaredForAnApplicationsOwnContext`, `testAnAuthorizationRegisteredWhileBootingHasEveryAdapterBoundAgain`,
-  `testWhatIsResolvedFromTheDefaultsWhileBootingIsBuiltAgainWithTheAdapters`,
-  `testTheKeysAreDeclaredOnACatalogueAlreadyBuiltOnly`,
+  `testNoKeyIsDeclaredForAnApplicationsOwnContext`, `testTheContextsAssuranceKeysAreUntestableUnderEveryNamespace`,
+  `testAnAuthorizationRegisteredWhileBootingLeavesEveryAdapterBound`,
+  `testWhatIsResolvedWhileBootingIsBuiltWithTheAdapters`,
   `testAnApplicationBindingMadeBeforeAuthorizationRegistersAfterThisPackageIsKept`,
-  `testIamCheckRefusesASeamLaravelAuthorizationBoundItsDefaultOverAgain`
+  `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
 - `tests/Feature/Authorization/AccessSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
   `testASourceTheApplicationNamesInAuthorizationsConfigurationIsKept`,
   `testTheAccessSeamsAreMandatoryWhileTheConfigurationSaysSo`, `testIamCheckRefusesTheDefaultSourceWithTheSwitchOff`,
@@ -749,12 +710,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testIamCheckPassesASourceTheApplicationNamesInAuthorizationsConfiguration`,
   `testIamCheckAsksTheBoundApplicationPolicyWhichMachineCredentialsAGuardAccepts`,
   `testTheApplicationPolicyIsAskedOnlyWhenTheMandateIsRead`
-- `tests/Unit/Bindings/MemberDefaultsTest.php` `testASeamResolvingAKeyThatHoldsTheDefaultIsReplaceable`,
-  `testASeamResolvingAKeyThatHoldsAnotherClassIsKept`, `testADefaultClassBoundByNameIsNoMembersOwnBinding`,
-  `testAClosureNoMemberDefaultDeclaresIsNoMembersOwnBinding`, `testAKeyHoldingAResolvedInstanceIsJudgedByItsClass`,
-  `testAKeyResolvedTransientlyIsNotBuiltToBeJudged`, `testWhatBindsASeamAgainRebindsItAsItWas`
-- `tests/Feature/Bindings/BindingRuleTest.php` `testReclaimingBindsAgainOnlyTheSeamsAMemberBoundItsDefaultOver`,
-  `testReclaimingBindsAgainTheApplicationsBindingAMemberBoundItsDefaultOver`
+- `tests/Unit/Bindings/MemberDefaultsTest.php` `testADefaultClassBoundByNameIsNoMembersOwnBinding`,
+  `testAClosureNoMemberDefaultDeclaresIsNoMembersOwnBinding`
+- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseConfigurationNamesAnotherClassIsKept`
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` (every isolation level where it signs in)
   `testTheRequestsCallerIsTheSubject`, `testACallerWithoutASessionIsTheSubjectWithNone`,
   `testTheGuardsOwnPrincipalIsTheCallerWithItsSession`, `testACopyOfTheCallerLoadedAgainIsTheCaller`,
@@ -825,7 +783,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAMemberSignsInOnlyWithThePermissionToUseTheApplication`, `testAGrantForAnotherApplicationDoesNotCount`,
   `testAnApplicationTheMapDoesNotNameAdmitsEveryone`, `testAWithdrawnGrantRefusesTheNextRefresh`,
   `testAPrincipalIsAdmittedOnItsIdentitysGrantWhicheverGuardIsTheDefault`,
-  `testAMachineIsRefusedOnAnApplicationTheMapNames`
+  `testAMachineIsAdmittedOnAnApplicationTheMapNamesOnItsGrants`
 - `tests/Unit/Workers/WorkerResetTest.php` `testResetForgetsTheMembersScopedState`,
   `testResetForgetsThePackagesScopedAdapters`, `testForgettingTheMemberStateDropsTheRequestsCallers`
 - `tests/Feature/Authorization/GrantSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
@@ -899,10 +857,11 @@ Part (b) follows the manifest's remaining rows, with these departures:
 
 ## Change Triggers
 
-- `laravel-authorization` binds its defaults with `bindIf()` or `scopedIf()` (IAM-13.7): `reclaim()` then has nothing to
-  do for it, and a binding the application makes before it registers survives.
-- `laravel-authorization` registers its rebinding listener whether or not the seam is bound: the rows' `rebinding` is
-  then dropped, or the seam would be listened for twice.
+- `laravel-authorization` binds its defaults unconditionally again, or renames its `authorization.default:` prefix, its
+  configuration keys or its defaults.
+- `laravel-authorization` changes how it matches an assurance key, or reads the context's types itself.
+- `laravel-authentication`, MFA or SSO adds a key that says how strongly or how recently the session was authenticated:
+  it joins `ASSURANCE_KEYS`.
 - `laravel-authorization` caches decisions across checks, or drops the last decision on a change to its session's
   proofs, or offers a way to forget the decisions of a session or identity: `DecisionCacheInvalidation` calls that
   instead.
@@ -917,9 +876,6 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `laravel-authorization` adds a query for the tenants where a subject holds an action, or decides a named subject in its
   own tenant: the audit access policy and `AdministrativeCheck` use it.
 - SSO's `widened()` takes a client the widening can carry, or stops requiring a transaction on its storage connection.
-- `laravel-authorization` renames its `authorization.default:` prefix, its configuration keys or its defaults.
-- `laravel-authorization`'s assurance keys grow to cover `mfa`, `recovery_code`, MFA's verdicts or SSO's provider keys:
-  the untestable declarations here become redundant.
 - `laravel-authentication` adds a namespace of its own to the context, or carries a credential's scopes on its caller.
 - MFA adds an assurance level, or a requirement part.
 - Laravel stops turning an authorization exception into an HTTP exception before its render callbacks, or stops keeping

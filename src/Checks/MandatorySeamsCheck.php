@@ -36,14 +36,14 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * inert ones, and a member that renames its default (which the binding rule
  * then keeps as though it were the application's) is caught here rather than
  * passed. A seam the application bound to a member's own default class by name
- * is reported too, though the rule keeps it. A seam whose member binds it only
- * to resolve a key of its own (`laravel-authorization`) is named by what that
- * key holds while the seam holds the member's binding, so a class the
- * application names in the member's configuration is passed and the member's
- * default refused. A binding that names no class (a closure of the
- * application's own, whose implementation cannot be read without building it)
- * is refused too: the check takes nothing on trust, so a mandatory seam is
- * bound by class name or as an instance.
+ * is reported too, though the rule keeps it. A seam whose member binds it to
+ * the class its configuration names (`laravel-authorization`) is named by that
+ * class while the seam holds the member's binding
+ * (`SeamBinding::configuredClass()`), so a class the application names in the
+ * member's configuration is passed and the member's default refused. A binding
+ * that names no class (a closure of the application's own, whose implementation
+ * cannot be read without building it) is refused too: the check takes nothing
+ * on trust, so a mandatory seam is bound by class name or as an instance.
  *
  * While SSO is in use, the seams of the capabilities this package's check of
  * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check,
@@ -55,13 +55,6 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * The binding rule's outcome (`BindingOutcome`), the seams it bound and kept as
  * the application registered, is reported as a note for every seam it kept with
  * the application's binding, so the application sees which of its bindings won.
- * A seam the outcome lists, bound or kept, whose member binds its defaults
- * unconditionally (`laravel-authorization`) is refused while its live binding
- * is that member's own default again, whatever its mandate: the member bound it
- * over the adapter or the application's binding once the rule could no longer
- * bind either again, so the outcome's note, or the adapter's binding, would
- * otherwise be false. Which seams these are is the rows' own data, the key each
- * names its member's default under (`SeamBinding::$defaultKey`).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,11 +73,6 @@ final readonly class MandatorySeamsCheck implements Check
     /** @var string Why a mandatory seam whose implementation cannot be read is refused. */
     private const string OPAQUE = '%s is bound through a closure, whose implementation cannot be read without building it; '
         . 'bind %s, or an implementation of your own, to it by class name or as an instance.';
-
-    /** @var string Why a seam the binding rule decided that its member's own default holds again is refused. */
-    private const string OVERWRITTEN = '%s holds its member\'s own default again, bound over what the binding rule decided once it had run '
-        . '(its member registered from a provider\'s boot() once the application had booted, say); register the member with the other '
-        . 'providers, or bind %s, or an implementation of your own, to it once the member has registered.';
 
     /** @var string The note of a seam the binding rule kept with the application's binding. */
     private const string KEPT = '%s keeps the application\'s binding, not this package\'s adapter.';
@@ -108,7 +96,7 @@ final readonly class MandatorySeamsCheck implements Check
         /** Names the class each seam's live binding answers with. */
         private SeamHolders $holders,
 
-        /** Tells whether a seam holds its member's own default again. */
+        /** Tells whether a seam holds its member's own binding. */
         private MemberDefaults $defaults = new MemberDefaults,
     ) {}
 
@@ -150,7 +138,7 @@ final readonly class MandatorySeamsCheck implements Check
         $providers    = array_diff(IamServiceProvider::seamProviders(), $this->heldBySso());
         $capabilities = array_map(fn (string $provider): ProvidesSeams => $this->container->make($provider), $providers);
 
-        return [...$this->checksFor(...$capabilities), ...$this->decidedChecks(...$capabilities), ...$this->keptNotes()];
+        return [...$this->checksFor(...$capabilities), ...$this->keptNotes()];
     }
 
     /**
@@ -222,11 +210,10 @@ final readonly class MandatorySeamsCheck implements Check
 
     /**
      * The class the seam's live binding answers with. A seam its member binds
-     * only to resolve a key of its own that holds its default
-     * (`SeamBinding::$defaultKey`), while it still holds that member's own
-     * binding, answers with what the key holds: the member's default, or a
-     * class the application names in the member's configuration, which the
-     * member binds under that key, so the one is refused and the other passed.
+     * to the class its configuration names (`SeamBinding::configuredClass()`),
+     * while it still holds that member's own binding, answers with that class:
+     * the member's default, or a class the application names in the member's
+     * configuration, so the one is refused and the other passed.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
      * @return ?string
@@ -235,59 +222,13 @@ final readonly class MandatorySeamsCheck implements Check
      */
     private function holderOf(SeamBinding $binding): ?string
     {
-        $throughKey = $binding->defaultKey !== null && $this->defaults->holdsDefault($this->container, $binding->abstract, $binding->memberDefaults);
+        $configured = $binding->configuredClass($this->config);
 
-        return $this->holders->of($this->container, $throughKey ? $binding->defaultKey : $binding->abstract);
-    }
-
-    /**
-     * One check for each seam the binding rule bound or kept whose member binds
-     * its defaults unconditionally (a row naming the key its default is held
-     * under, `SeamBinding::$defaultKey`), refusing one that holds that member's
-     * own default again: the member registered once the rule could no longer
-     * bind its decision again, so the adapter, or the application's binding,
-     * was lost without a word, though the outcome still lists it.
-     *
-     * @param  \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams  ...$capabilities
-     * @return list<\Closure(): mixed>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function decidedChecks(ProvidesSeams ...$capabilities): array
-    {
-        $outcome  = $this->outcome();
-        $decided  = $outcome === null ? [] : [...$outcome->bound, ...$outcome->kept];
-        $bindings = array_merge(...array_map(fn (ProvidesSeams $capability): array => $capability->seams($this->config), $capabilities));
-        $checks   = [];
-
-        foreach ($bindings as $binding) {
-
-            if ($binding->defaultKey === null || !in_array($binding->abstract, $decided, true)) {
-                continue;
-            }
-
-            $checks[] = function () use ($binding): void {
-                $this->assertNotOverwritten($binding);
-            };
+        if ($configured !== null && $this->defaults->holdsDefault($this->container, $binding->abstract, $binding->memberDefaults)) {
+            return $configured;
         }
 
-        return $checks;
-    }
-
-    /**
-     * Refuse a seam the binding rule decided that holds its member's own
-     * default again.
-     *
-     * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
-     * @return void
-     *
-     * @throws \LogicException
-     */
-    private function assertNotOverwritten(SeamBinding $binding): void
-    {
-        if ($this->defaults->holdsDefault($this->container, $binding->abstract, $binding->memberDefaults, $binding->defaultKey)) {
-            throw new \LogicException(sprintf(self::OVERWRITTEN, $binding->abstract, $binding->adapter));
-        }
+        return $this->holders->of($this->container, $binding->abstract);
     }
 
     /**

@@ -19,6 +19,7 @@ use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Flows\StartResult;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
+use SineMacula\Laravel\Sso\Identities\Caller;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Keys\KeyService;
 use SineMacula\Laravel\Sso\Protocols\CompletionRequest;
@@ -304,8 +305,7 @@ trait RunsSsoFlows
             $connectionId,
             self::ssoClient(),
             null,
-            $identity === null ? null : self::referenceOf($identity),
-            $sessionId,
+            $identity === null ? null : new Caller(self::referenceOf($identity), $sessionId),
         );
 
         self::assertTrue($start->isStarted(), sprintf('The flow did not start: [%s].', $start->reason->value ?? $start->status->value));

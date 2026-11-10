@@ -18,6 +18,7 @@ use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
+use SineMacula\Laravel\Iam\Sso\Callers;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
@@ -205,7 +206,7 @@ final class LinkRedemptionTest extends TestCase
 
         $transaction = new CrossMemberTransaction($database, $storage, $settings, $failures);
 
-        return new LinkRedemption($container, new IdentityReferences, $database, $storage, $settings, $failures, $transaction, SessionGuards::resolving('api'));
+        return new LinkRedemption($container, new Callers(new IdentityReferences, SessionGuards::resolving('api')), $database, $storage, $settings, $failures, $transaction);
     }
 
     /**

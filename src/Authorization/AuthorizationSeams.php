@@ -13,7 +13,6 @@ use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
 use SineMacula\Laravel\Authentication\Contracts\ScopeRegistry;
 use SineMacula\Laravel\Authentication\Scopes\AcceptAnyScope;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
-use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\GuardAuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
@@ -45,22 +44,20 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * insufficient-authentication exception is mapped to MFA's step-up exception
  * beside them (`InsufficientAuthenticationMapping`, registered by the service
  * provider, as a handler's mapping is, rather than bound), and the keys of the
- * authentication context are declared on its key catalogue
+ * authentication context are declared on its key catalogue with their types
  * (`AuthenticationContextKeys`).
  *
- * `laravel-authorization` binds each of its seams unconditionally, with a plain
- * `bind()` resolving a scoped key of its own, `authorization.default:` and the
- * contract, which holds the class its configuration names. So a row over one of
- * its contracts names the provider that declares that closure and the default
- * class, and the key (`authorizationRow()`): the seam is replaced only while
- * the key still holds the default class, never where the application names its
- * own class in `laravel-authorization`'s configuration
+ * `laravel-authorization` binds each of its seams only where nothing is bound
+ * yet, with a closure resolving a scoped key of its own, which holds the class
+ * its configuration names. So a row over one of its contracts names the
+ * provider that declares that closure and the default class, and the
+ * configuration key naming the class, if any (`authorizationRow()`): the seam
+ * is replaced only while it is unbound or holds that closure, never where the
+ * application names its own class in `laravel-authorization`'s configuration
  * (`authorization.subject_resolver`, `authorization.requirement_checker`,
- * `authorization.session.source`) or binds the contract itself. Registering
- * after this package, `laravel-authorization` replaces the adapters, and the
- * application's bindings the rule kept, and the binding rule binds them again
- * once every provider has registered, and once more when the application has
- * booted (`BindingRule::reclaim()`), where the seam still holds its default.
+ * `authorization.session.source`, `authorization.identity_directory`,
+ * `authorization.tenant_tree`), whichever registers first, or binds the
+ * contract itself.
  *
  * The requirement checker is bound only while the MFA capability's switch is on
  * too, since it is MFA's requirement check that judges, as the mapping of the
@@ -108,9 +105,10 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * reports, and mandatory while SSO's linking by a verified domain is on
  * (`sso.features.domain_linking`): left on `laravel-authorization`'s default
  * then, a grant that takes a person beyond a tenant would leave their link by
- * that tenant's verified domain active. The grant hook's default key holds the
- * composite `GrantHooks::fromConfig()` builds, whatever hooks are listed, so
- * `GrantHooks` names it beside the provider. Each holds nothing between calls;
+ * that tenant's verified domain active. No configuration key names a class for
+ * the grant hook: `laravel-authorization` binds the composite
+ * `GrantHooks::fromConfig()` builds, whatever hooks are listed, so `GrantHooks`
+ * names it beside the provider. Each holds nothing between calls;
  * the identity directory and the grant hook are transient, and the tree is
  * scoped, under this package's own `iam.scoped:` key, one for a request or job
  * as `laravel-authorization`'s own default is: it keeps the request's tenant
@@ -119,10 +117,8 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * instance), so a tree built afresh for each read would walk the application's
  * tree and resolve every ancestor again on every check and every tenant-scoped
  * query. `laravel-authorization` forgets the resolutions read through the
- * subject resolver or the tree when either is bound again, but listens only
- * where the seam is unbound as it registers, so both rows name that listener
- * for the binding rule to register where it binds first
- * (`SeamBinding::$rebinding`). The grant half of SSO's principal scope is this
+ * subject resolver or the tree when either is bound again, in whichever order
+ * the providers register. The grant half of SSO's principal scope is this
  * package's own port, not a member's seam, and is bound by the service provider
  * (`GrantScopeAdapter`).
  *
@@ -150,11 +146,20 @@ final readonly class AuthorizationSeams implements ProvidesSeams
     /** @var string SSO's switch for linking by a verified domain, which the grant hook's binding is mandatory while on. */
     public const string DOMAIN_LINKING = 'sso.features.domain_linking';
 
-    /** @var string The prefix of the keys `laravel-authorization` holds each contract's default under, followed by the contract. */
-    public const string DEFAULT_KEY_PREFIX = 'authorization.default:';
+    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its subject resolver to. */
+    private const string SUBJECT_RESOLVER = 'authorization.subject_resolver';
 
-    /** @var list<class-string> The contracts `laravel-authorization` forgets its resolutions on binding again, listening only where each is unbound as it registers. */
-    private const array FORGETS_ON_REBINDING = [SubjectResolver::class, TenantTree::class];
+    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its requirement checker to. */
+    private const string REQUIREMENT_CHECKER = 'authorization.requirement_checker';
+
+    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its session policy source to. */
+    private const string SESSION_SOURCE = 'authorization.session.source';
+
+    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its identity directory to. */
+    private const string IDENTITY_DIRECTORY = 'authorization.identity_directory';
+
+    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its tenant tree to. */
+    private const string TENANT_TREE = 'authorization.tenant_tree';
 
     /**
      * Constructor.
@@ -188,14 +193,14 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         $domains  = static fn (): bool => filter_var($config->get(self::DOMAIN_LINKING), FILTER_VALIDATE_BOOL);
 
         return [
-            self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, AuthGuardSubjectResolver::class, $on, Lifetime::SCOPED),
+            self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, AuthGuardSubjectResolver::class, $on, self::SUBJECT_RESOLVER, Lifetime::SCOPED),
             self::authorizationRow(AuthenticationContext::class, AuthenticationContextAdapter::class, GuardAuthenticationContext::class, $on),
-            self::authorizationRow(AuthenticationRequirementChecker::class, RequirementCheckerAdapter::class, RefusingRequirementChecker::class, $mfa),
-            self::authorizationRow(SessionPolicySource::class, SessionPolicySourceAdapter::class, NoSessionPolicy::class, $on, mandatory: $machines),
+            self::authorizationRow(AuthenticationRequirementChecker::class, RequirementCheckerAdapter::class, RefusingRequirementChecker::class, $mfa, self::REQUIREMENT_CHECKER),
+            self::authorizationRow(SessionPolicySource::class, SessionPolicySourceAdapter::class, NoSessionPolicy::class, $on, self::SESSION_SOURCE, mandatory: $machines),
             new SeamBinding(ScopeRegistry::class, ScopeRegistryAdapter::class, [AcceptAnyScope::class], appliesWhen: $on, mandatory: $machines),
             new SeamBinding(ApplicationAccess::class, ApplicationAccessAdapter::class, [AdmitAnyPrincipal::class], Lifetime::SCOPED, appliesWhen: $on, mandatory: $access),
-            self::authorizationRow(IdentityDirectory::class, IdentityDirectoryAdapter::class, GuardUserIdentityDirectory::class, $on),
-            self::authorizationRow(TenantTree::class, TenantTreeAdapter::class, FlatTenantTree::class, $on, Lifetime::SCOPED, factory: TenantTreeAdapter::forApplication(...)),
+            self::authorizationRow(IdentityDirectory::class, IdentityDirectoryAdapter::class, GuardUserIdentityDirectory::class, $on, self::IDENTITY_DIRECTORY),
+            self::authorizationRow(TenantTree::class, TenantTreeAdapter::class, FlatTenantTree::class, $on, self::TENANT_TREE, Lifetime::SCOPED, factory: TenantTreeAdapter::forApplication(...)),
             self::authorizationRow(GrantHook::class, GrantHookAdapter::class, GrantHooks::class, $widening, mandatory: $domains),
             new SeamBinding(AuditAccessPolicy::class, AuditAccessPolicyAdapter::class, [DenyAllPolicy::class], Lifetime::SHARED, appliesWhen: $on),
         ];
@@ -234,16 +239,16 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 
     /**
      * The binding of the adapter over one of `laravel-authorization`'s
-     * contracts: replaced only while the contract is bound to the closure its
-     * service provider declares and the key that closure resolves still holds
-     * the default class, with the lifetime and the mandate given, and, over the
-     * subject resolver and the tree, the listener `laravel-authorization`
-     * forgets its resolutions with when either is bound again.
+     * contracts: replaced only while the contract is unbound or bound to the
+     * closure its service provider declares, and the configuration key given,
+     * if any, names the default class, with the lifetime, the mandate and the
+     * factory given.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter
      * @param  class-string  $default
      * @param  \Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
+     * @param  ?string  $configurationKey
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  bool|\Closure(): bool  $mandatory
      * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
@@ -254,14 +259,11 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         string $adapter,
         string $default,
         \Closure $appliesWhen,
+        ?string $configurationKey = null,
         Lifetime $lifetime = Lifetime::TRANSIENT,
         bool|\Closure $mandatory = false,
         ?\Closure $factory = null,
     ): SeamBinding {
-        $forget = static function (): void {
-            ResolutionCache::instance()?->tenantChanged();
-        };
-
         return new SeamBinding(
             $contract,
             $adapter,
@@ -269,9 +271,8 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             $lifetime,
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
-            defaultKey: self::DEFAULT_KEY_PREFIX . $contract,
+            configurationKey: $configurationKey,
             factory: $factory,
-            rebinding: in_array($contract, self::FORGETS_ON_REBINDING, true) ? $forget : null,
         );
     }
 }

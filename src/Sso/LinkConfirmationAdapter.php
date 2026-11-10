@@ -4,19 +4,15 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Sso;
 
-use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
-use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
-use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\SsoConnection;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Sso\Identities\Caller;
 use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
 
 /**
@@ -29,21 +25,20 @@ use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
  * anything. The session is `independent` only when it was signed in with
  * something the person holds apart from every provider: its first factor, the
  * oldest counting first-factor proof `Auth::sessions($guard)->firstFactor()`
- * answers, was made over the `password` channel (a password sign-in) or the
- * `passkey` channel (a passkey sign-in), or it is the application's own
- * recovery, a session the application started through
- * `Auth::sessions($guard)->start()` under one of the sign-in methods it names
- * at `iam.sso.recovery_methods` (`RECOVERY_METHODS`), which
- * `laravel-authentication` records on the `unknown` channel. Its freshness must
+ * answers, was made over the `password` channel (a password sign-in), the
+ * `passkey` channel (a passkey sign-in) or the `recovery` channel (the
+ * application's own recovery, a session it started through
+ * `Auth::sessions($guard)->start()` from a first factor on that channel, which
+ * `laravel-authentication` admits as a first factor only). Its freshness must
  * not have been renewed through a provider either: a session holding a counting
  * `external_reauthentication` proof is `dependent`. Everything else is
  * `dependent`: a session an external provider established (its first factor on
  * the `external_provider` channel, whichever link it stood on and whatever that
  * link's provenance was or is now), a code sign-in (a mailbox or a phone number
  * of the organisation's domain is no more the person's own than its provider),
- * any other `start()`, a session whose first factor no longer counts, and every
- * session the reader does not answer for (a pending, revoked or ended one, a
- * machine's, another guard's).
+ * any other `start()` (one on the `unknown` channel among them), a session
+ * whose first factor no longer counts, and every session the reader does not
+ * answer for (a pending, revoked or ended one, a machine's, another guard's).
  *
  * SSO's own words for the rule are the session's recorded link provenance
  * (`sso.link_provenance`): a session that was not established through a link of
@@ -60,18 +55,16 @@ use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
  * connection and the domain links SSO hands over read: no session this adapter
  * answers `independent` for stood on any link.
  *
- * SSO hands the contract no caller and no session, and the adapter never takes
- * one from the request, the default guard or the session a guard serves: the
- * session judged is found only where this package was handed the caller as a
- * plain value, `laravel-authentication`'s `Caller`, in this request's record of
- * callers (`LinkCallers`), as SSO's freshness is (`FreshnessAdapter`). Inside a
- * `link` redemption this package runs (`LinkRedemption`), or the application's
- * own call into SSO it hands the caller in around (`CallerScope::run()`), it is
- * the session the caller's access credential holds, when that is a session of
- * the caller's guard that the caller's identity owns
- * (`LinkCallers::sessionOf()`), and only when the caller is the identity SSO
- * asks about, byte for byte (`IdentityReferences::reference()`). With no caller
- * handed in, or a caller holding no session of its own, it is `dependent`.
+ * SSO hands the contract the caller the redemption is made for
+ * (`Identities\Caller`), whose identity it has checked is the one the code is
+ * bound to, and the adapter judges that caller's session alone, never the
+ * request, the default guard or the session a guard serves: the session the
+ * caller names by its key, found among its identity's own sessions
+ * (`CurrentSession::owned()`), and read through the public reader of the guard
+ * it belongs to, which answers only for a live, active session of a person. A
+ * caller with no session, a session that is not its identity's, and one of a
+ * guard that holds no sessions are `dependent`. An identity reference that
+ * names no identity throws `UnresolvedReferenceException` (IAM-8.2).
  *
  * SSO asks the contract inside a `link` redemption's transaction, in its
  * judgement and again in its admission, under the identity's guard and the
@@ -93,8 +86,8 @@ use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
  * true: a password or passkey enrolled from a session a verified domain link
  * established, or a recovery a provider can drive, proves nothing the provider
  * could not do (SSO's `docs/guides/links.md`). It keeps nothing between calls
- * (IAM-8.1): the record of callers, the configuration and the session's proofs
- * are read on each one, and an error propagates.
+ * (IAM-8.1): the caller's session and its proofs are read on each one, and an
+ * error propagates.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -103,33 +96,22 @@ use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
  */
 final readonly class LinkConfirmationAdapter implements LinkConfirmation
 {
-    /** @var string The setting naming the sign-in methods of the application's own recovery. */
-    public const string RECOVERY_METHODS = 'iam.sso.recovery_methods';
-
     /** @var list<\SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind> The first factors' channels a person holds apart from every provider. */
-    private const array INDEPENDENT_CHANNELS = [ChannelKind::PASSWORD, ChannelKind::PASSKEY];
+    private const array INDEPENDENT_CHANNELS = [ChannelKind::PASSWORD, ChannelKind::PASSKEY, ChannelKind::RECOVERY];
 
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
-     * @param  \Illuminate\Contracts\Config\Repository  $config
      */
     public function __construct(
 
-        /** Resolves the record of link callers on each call. */
-        private Container $container,
-
-        /** Resolves the caller's guard to its session service, and tells whether a transaction is open. */
+        /** Finds the caller's session among its identity's own, resolves its guard to its session service, and tells whether a transaction is open. */
         private CurrentSession $sessions,
 
-        /** Names the caller's identity as SSO names the identity it asks about. */
+        /** Resolves the identity SSO names. */
         private IdentityReferences $identities,
-
-        /** Holds the sign-in methods of the application's own recovery. */
-        private Repository $config,
     ) {}
 
     /**
@@ -137,48 +119,45 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
      * link: signed in with a password, a passkey or the application's own
      * recovery, and never renewed through a provider.
      *
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoConnection  $connection
      * @param  list<string>  $domainLinkIds
      * @return \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
-    public function judge(IdentityReference $identity, SsoConnection $connection, array $domainLinkIds): LinkConfirmationVerdict
+    public function judge(Caller $caller, SsoConnection $connection, array $domainLinkIds): LinkConfirmationVerdict
     {
         unset($connection, $domainLinkIds);
 
-        $caller = $this->container->make(LinkCallers::class)->current()['caller'] ?? null;
+        $session = $this->session($caller);
+        $guard   = $session?->getGuard();
 
-        if ($caller === null || !$this->sessions->isInTransaction()) {
-            return LinkConfirmationVerdict::DEPENDENT;
-        }
-
-        $session = $this->sessionOf($caller, $identity);
-
-        return $session !== null && $this->isIndependent($this->sessions->sessions($caller->guard), $session)
+        return $session !== null && in_array($guard, $this->sessions->sessionGuards(), true) && $this->isIndependent($this->sessions->sessions($guard), $session)
             ? LinkConfirmationVerdict::INDEPENDENT
             : LinkConfirmationVerdict::DEPENDENT;
     }
 
     /**
-     * The caller's own session, when the caller is the identity SSO asks about,
-     * or `null` otherwise.
+     * The caller's session, among its identity's own, or `null` for a caller
+     * with no session, a session that is not its identity's, or any asked
+     * outside a transaction, where no guard could be held.
      *
-     * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
+     * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function sessionOf(Caller $caller, IdentityReference $identity): (EloquentSession&Model)|null
+    private function session(Caller $caller): (EloquentSession&Model)|null
     {
-        return $this->identities->reference($caller->identity)->is($identity) ? LinkCallers::sessionOf($caller) : null;
+        if ($caller->sessionId === null || !$this->sessions->isInTransaction()) {
+            return null;
+        }
+
+        return $this->sessions->owned($this->identities->identity($caller->identity), $caller->sessionId);
     }
 
     /**
@@ -198,42 +177,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
         $firstFactor = $service->firstFactor($session);
 
         return $firstFactor !== null
-            && $this->isHeldApart($firstFactor)
+            && in_array($firstFactor->channel->kind, self::INDEPENDENT_CHANNELS, true)
             && $service->proofs($session, kinds: [ProofKind::EXTERNAL_REAUTHENTICATION]) === [];
-    }
-
-    /**
-     * Whether the first factor is one the person holds apart from every
-     * provider: a password or a passkey sign-in, or a sign-in the application
-     * started under one of its recovery methods.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $firstFactor
-     * @return bool
-     */
-    private function isHeldApart(RecordedProof $firstFactor): bool
-    {
-        $channel = $firstFactor->channel->kind;
-
-        return in_array($channel, self::INDEPENDENT_CHANNELS, true)
-            || ($channel === ChannelKind::UNKNOWN && $this->isRecovery($firstFactor->method));
-    }
-
-    /**
-     * Whether the method is one the application names as its own recovery: one
-     * the setting lists, which names none when it is anything but a list of
-     * method names: a keyed array, or a list holding anything but strings, is
-     * refused whole, never read in part.
-     *
-     * @param  string  $method
-     * @return bool
-     */
-    private function isRecovery(string $method): bool
-    {
-        $methods = $this->config->get(self::RECOVERY_METHODS);
-
-        return is_array($methods)
-            && array_is_list($methods)
-            && array_filter($methods, is_string(...)) === $methods
-            && in_array($method, $methods, true);
     }
 }

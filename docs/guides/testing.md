@@ -63,8 +63,9 @@ the `mfa` and `sso` context namespaces among them, so a session verified at a le
 `CallerSession` says how the person signs in, and so what the session's first factor is:
 
 - `CallerSession::started($method = 'password')` starts the session as `laravel-authentication`'s `start()` does for an
-  identity your application verified itself. Its first proof names the method, but no channel, so MFA can judge no
-  first factor and no level can be verified after it. Use it for a test that needs a session and no MFA state.
+  identity your application verified itself. Its first proof names the method, on the `unknown` channel with no `amr`
+  value, so MFA can judge no first factor and no level can be verified after it. Use it for a test that needs a session
+  and no MFA state.
 - `CallerSession::signedIn($credentials, $method = 'password')` signs in with the credentials, as a sign-in endpoint
   does, so the first factor is the one the method proves (the password's, say). The credentials must sign in the very
   identity given. They are held wrapped, so a dump or a stack trace never shows them.

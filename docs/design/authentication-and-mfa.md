@@ -224,9 +224,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
     when that guard holds none of the identity's, so its proofs stop counting all the same. A deleted factor is not
     reported there: the revoker reports it, and a second report would judge the current session twice and lose the
     pending credential the first judgement issued. Both read only through `laravel-authentication`'s public readers
-    (IAM-13.9) and no `@internal` class of its. The guard's current session is read because MFA's contract names a
-    sign-in by its identity and application alone and hands no session to read instead; `record()`, handed a binding
-    but no identity, finds that identity as the guard is signed in as it.
+    (IAM-13.9) and no `@internal` class of its. MFA hands every call the identity, and `proofs()` the sign-in it asked
+    `currentSession()` about; the guard's current session is read only to answer which sign-in is current, as MFA's
+    contract asks, so `proofs()` of a sign-in that is no longer current answers none, and `record()` refuses a proof
+    whose binding the identity it is handed does not own.
   - `SignInProofs` translates a session's recorded proofs, handed in oldest first, to MFA's proofs of the sign-in: bound
     to the identity, the application and the session's key, stamped with the identity's current verification
     generation, an external provider's proof naming its connection only under `ProviderTrust::accepted()` for the
@@ -366,7 +367,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   acts on the new session, so every adapter reads the caller from the session `laravel-authentication` wrote, never from
   a stub: the principal and the tenant are chosen through the `SignInContext`, so the session records the tenant MFA's
   active tenant resolver reads, and the test then acts in it so `Auth::tenant()` answers it too. How the person signs in
-  is one `Testing\CallerSession` value: `started()` through `start()`, whose first proof names no channel, so MFA judges
+  is one `Testing\CallerSession` value: `started()` through `start()` on the `unknown` channel, so MFA judges
   no first factor and no level can follow (refused before anything is written); `signedIn()` through `signIn()` with the
   credentials, which must sign in the identity given; or `throughSso()` with SSO's own `Sessions\Provenance`, signed in
   as `Iam::signIns()` signs in an admitted redemption (`AdmittedRedemptions` recorded for the call and forgotten after
@@ -384,10 +385,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   to the pending session for sign-in and flagged multifactor as MFA's acceptance would flag it from the pending first
   factor and the proof alone, and hands it to `PendingCompletionAdapter::complete()` inside the same transaction, as
   MFA's verification would. A sign-in still pending after that (on a choice of principal) is refused, naming what it
-  waits on. A `started()` session is never completed: its first factor names no channel, so MFA accepts no further proof
-  after it, and the refusal says to sign in with `signedIn()` or `throughSso()`. That `start()` records no first factor
-  MFA can judge is a member gap in `laravel-authentication`: an optional first factor on `start()` would let a session
-  the application started itself be completed and stepped up.
+  waits on. A `started()` session is never completed: its first factor is on the `unknown` channel, so MFA accepts no
+  further proof after it, and the refusal says to sign in with `signedIn()` or `throughSso()`.
 - A minimum assurance level in MFA's freshness configuration (for an operation the freshness gate is asked about, or
   for `mfa.add_factor`, `mfa.remove_factor` or `mfa.generate_recovery_codes`) throws an `InvalidArgumentException`
   whenever it is asked, as no stored proof records a level. Configure the operation without one, or bind a gate of your
@@ -651,5 +650,6 @@ Update this note when:
   `ContributionSubject::proofs()` and `firstFactor()` read, their read mode or their limit (`MfaContextContributor`
   follows), or stops keeping the context a guard built or changes what forgets it (the read mode the guide states
   follows);
-- `laravel-authentication`'s `start()` gains a first factor, or its sign-in starts completing a pending session for a
-  test (`actingAsCaller()` could then verify a started session, or complete a pending one, rather than refuse it).
+- `laravel-authentication`'s sign-in starts completing a pending session for a test (`actingAsCaller()` could then
+  complete a pending one rather than refuse it), or `CallerSession::started()` comes to name a channel MFA can judge (it
+  could then verify a started session).

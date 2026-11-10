@@ -49,23 +49,12 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * binding of the member's own default class, which by its class alone could not
  * be told from the member's.
  *
- * A member that binds its defaults unconditionally, as `laravel-authorization`
- * does, replaces the adapter if it registers after this package; the seams it
- * replaced are bound again once every provider has registered (`reclaim()`),
- * from the same booting callback, where each still holds that member's default.
- * Its binding resolves a key of its own holding the class its configuration
- * names, so the seam is the member's only while that key holds the member's
- * default class too (`SeamBinding::$defaultKey`): a class the application names
- * there is its binding, and kept. An application's binding of such a seam the
- * rule kept as it ran is overwritten the same way, so the rule records what
- * binds it again (`BindingOutcome::$restorers`), and `reclaim()` binds it again
- * where that member's default holds the seam once more. `reclaim()` runs once
- * more when the application has booted, for such a member registered from
- * another provider's `boot()`. Such a member listens for some of its seams
- * being bound again only where the seam is unbound as it registers, so where
- * the rule binds first it registers the member's listener before the adapter
- * (`SeamBinding::$rebinding`), and the seam is listened for once, in every
- * provider order.
+ * A member that binds the seam to the class its configuration names
+ * (`laravel-authorization`) keeps a class the application names there
+ * (`SeamBinding::namesApplicationClass()`): the rule reads the configuration,
+ * as the member will, and keeps the seam rather than bind the adapter, so the
+ * member, binding its defaults only where nothing is bound, binds the
+ * application's class whichever registers first.
  *
  * A scoped adapter is never scoped under the member's seam itself: Laravel
  * keeps a scoped abstract on its list of scoped instances for good, and forgets
@@ -134,11 +123,10 @@ final readonly class BindingRule
     {
         $switches    = self::switches($app);
         $bindings    = self::bindingsOf($switches, $capabilities);
-        $replaceable = fn (SeamBinding $binding): bool => $this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->defaultKey);
-        $outcome     = $this->applied($app, $switches, $bindings, new BindingOutcome([], []), $replaceable);
-        $restorers   = $this->restorers($app, $bindings, $outcome);
+        $replaceable = fn (SeamBinding $binding): bool => !$binding->namesApplicationClass($switches)
+            && $this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults);
 
-        return $restorers === [] ? $outcome : new BindingOutcome($outcome->bound, $outcome->kept, $outcome->reserved, $restorers);
+        return $this->applied($app, $switches, $bindings, new BindingOutcome([], []), $replaceable);
     }
 
     /**
@@ -174,7 +162,7 @@ final readonly class BindingRule
             $reserved[$binding->abstract] = $held;
         }
 
-        return $reserved === $outcome->reserved ? $outcome : new BindingOutcome($outcome->bound, $outcome->kept, $reserved, $outcome->restorers);
+        return $reserved === $outcome->reserved ? $outcome : new BindingOutcome($outcome->bound, $outcome->kept, $reserved);
     }
 
     /**
@@ -205,87 +193,6 @@ final readonly class BindingRule
     }
 
     /**
-     * Bind the adapter again over each seam the outcome lists as bound that a
-     * member has bound its own default over since, and the application's
-     * binding again over each seam the outcome kept with it that the member has
-     * bound its default over since, once every provider has registered, and
-     * once more when the application has booted: a member that binds its
-     * defaults unconditionally (`laravel-authorization`, with a plain `bind()`
-     * over a scoped key of its own) and registers after this package replaces
-     * the adapter, or the application's binding made before this package
-     * registered, as it registers, whether with the other providers or from
-     * another provider's `boot()`. A seam that holds the adapter or the
-     * application's binding still, or anything but the member's default (the
-     * application's binding, made since), is left as it is, so the
-     * application's binding still wins. Only the bindings the rule decided as
-     * it first ran are looked at, so each follows its switch as it read then,
-     * and a kept seam is bound again only with the binding recorded as the rule
-     * ran (`BindingOutcome::$restorers`). The outcome is not changed: every
-     * seam bound again was bound or kept before. Answer the seams bound again.
-     *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
-     * @param  \SineMacula\Laravel\Iam\Bindings\BindingOutcome  $outcome
-     * @param  \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams  ...$capabilities
-     * @return list<string>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function reclaim(Application $app, BindingOutcome $outcome, ProvidesSeams ...$capabilities): array
-    {
-        $reclaimed = [];
-
-        foreach (self::bindingsOf(self::switches($app), $capabilities) as $binding) {
-
-            $restore = in_array($binding->abstract, $outcome->bound, true)
-                ? fn (Application $app) => $this->bind($app, $binding)
-                : $outcome->restorers[$binding->abstract] ?? null;
-
-            if ($restore === null || !$this->defaults->holdsDefault($app, $binding->abstract, $binding->memberDefaults, $binding->defaultKey)) {
-                continue;
-            }
-
-            $restore($app);
-
-            $reclaimed[] = $binding->abstract;
-        }
-
-        return $reclaimed;
-    }
-
-    /**
-     * What binds the application's binding again over each seam the outcome
-     * kept with it whose member binds its defaults unconditionally (a binding
-     * naming the key its default is held under, `SeamBinding::$defaultKey`), by
-     * seam: that member, registering after this package, binds its default over
-     * the application's binding.
-     *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
-     * @param  list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>  $bindings
-     * @param  \SineMacula\Laravel\Iam\Bindings\BindingOutcome  $outcome
-     * @return array<class-string, \Closure(\Illuminate\Contracts\Container\Container): void>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function restorers(Application $app, array $bindings, BindingOutcome $outcome): array
-    {
-        $restorers = [];
-
-        foreach ($bindings as $binding) {
-
-            $restorer = $binding->defaultKey !== null && in_array($binding->abstract, $outcome->kept, true) ? $this->defaults->restorerOf($app, $binding->abstract) : null;
-
-            if ($restorer === null) {
-                continue;
-            }
-
-            $restorers[$binding->abstract] = $restorer;
-        }
-
-        return $restorers;
-    }
-
-    /**
      * The exact binding of the member's default the seam holds, once the
      * member's first default is bound there, shared, where it is unbound; or
      * `null` when the seam holds anything else, the binding has no member
@@ -299,7 +206,7 @@ final readonly class BindingRule
     {
         $default = $binding->memberDefaults[0] ?? null;
 
-        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->defaultKey)) {
+        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults)) {
             return null;
         }
 
@@ -386,7 +293,7 @@ final readonly class BindingRule
             $bound[] = $binding->abstract;
         }
 
-        return $bound === $outcome->bound && $kept === $outcome->kept ? $outcome : new BindingOutcome($bound, $kept, $outcome->reserved, $outcome->restorers);
+        return $bound === $outcome->bound && $kept === $outcome->kept ? $outcome : new BindingOutcome($bound, $kept, $outcome->reserved);
     }
 
     /**
@@ -470,8 +377,7 @@ final readonly class BindingRule
 
     /**
      * Bind the adapter over the seam with the binding's lifetime, once the seam
-     * is off the container's scoped instances and, where it is still unbound,
-     * once the member's listener for its being bound again is registered.
+     * is off the container's scoped instances.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
@@ -480,11 +386,6 @@ final readonly class BindingRule
     private function bind(Application $app, SeamBinding $binding): void
     {
         self::unscope($app, $binding->abstract);
-
-        if ($binding->rebinding !== null && !$app->bound($binding->abstract)) {
-            // @phpstan-ignore staticMethod.dynamicCall
-            $app->rebinding($binding->abstract, $binding->rebinding);
-        }
 
         match ($binding->lifetime) {
             Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->factory ?? $binding->adapter),

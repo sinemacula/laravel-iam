@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Bindings;
 
+use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 
 /**
@@ -24,26 +25,17 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * the configuration is cached or not. A value a provider sets after this
  * package registers, or in a `boot()`, is read too late.
  *
- * A member that binds the seam to a closure resolving a key of its own, which
- * holds the default its configuration names (`laravel-authorization`'s
- * `authorization.default:*` keys), names that key (`$defaultKey`): the seam is
- * then the member's only while the closure is one a class in `$memberDefaults`
- * declares and the key still holds one of them, so a class the application
- * names in the member's configuration is its binding, and kept, though the
- * member made the binding.
+ * A member that binds the seam to the class its configuration names
+ * (`laravel-authorization`'s `authorization.subject_resolver`, say) names that
+ * key (`$configurationKey`): a class the application names there other than the
+ * member's defaults is its binding, and kept, though the member makes the
+ * binding, in whatever order the providers register.
  *
  * An adapter that must give way to the member's own default while what it
  * answers from is missing names how the container builds it (`$factory`): the
  * closure is bound in the adapter's place, with the row's lifetime, and handed
  * the container, so it answers the adapter or the member's default as the
  * application stands when it is built.
- *
- * A member that listens for its seam being bound again, but only where the seam
- * is still unbound as it registers (`laravel-authorization` forgets the
- * resolutions read through its subject resolver or tenant tree), names that
- * listener (`$rebinding`): binding the adapter over a seam that is still
- * unbound, before the member registers, registers it first, as the member would
- * have, so the seam is listened for in every provider order.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,9 +54,8 @@ final readonly class SeamBinding
      * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  bool|\Closure(): bool  $mandatory
      * @param  list<class-string>  $accepted
-     * @param  ?string  $defaultKey
+     * @param  ?string  $configurationKey
      * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
-     * @param  ?\Closure(): void  $rebinding
      */
     public function __construct(
 
@@ -89,14 +80,11 @@ final readonly class SeamBinding
         /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
         public array $accepted = [],
 
-        /** The key the member holds its default under when its binding of the seam only resolves that key, which must still hold one of the member's defaults for the seam to be the member's; `null` for a seam bound to its default directly. */
-        public ?string $defaultKey = null,
+        /** The key of the member's configuration that names the class the member binds the seam to; `null` for a seam no configuration names a class for. */
+        public ?string $configurationKey = null,
 
         /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
         public ?\Closure $factory = null,
-
-        /** What the member does when the seam is bound again, registered only where the seam is still unbound as the adapter is bound over it; `null` for none. */
-        public ?\Closure $rebinding = null,
     ) {}
 
     /**
@@ -111,5 +99,34 @@ final readonly class SeamBinding
     public function isMandatory(): bool
     {
         return $this->mandatory instanceof \Closure ? ($this->mandatory)() : $this->mandatory;
+    }
+
+    /**
+     * The class the member's configuration names for the seam, read from the
+     * configuration given; `null` when the row names no configuration key or
+     * the key names no class.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @return ?string
+     */
+    public function configuredClass(Repository $config): ?string
+    {
+        $class = $this->configurationKey === null ? null : $config->get($this->configurationKey);
+
+        return is_string($class) ? $class : null;
+    }
+
+    /**
+     * Whether the member's configuration names a class for the seam other than
+     * the member's defaults: the application's, which the binding rule keeps.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @return bool
+     */
+    public function namesApplicationClass(Repository $config): bool
+    {
+        $class = $this->configuredClass($config);
+
+        return $class !== null && !in_array($class, $this->memberDefaults, true);
     }
 }

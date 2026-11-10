@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamManager;
-use SineMacula\Laravel\Iam\Sso\CallerScope;
+use SineMacula\Laravel\Iam\Sso\Callers;
 use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
@@ -53,7 +53,7 @@ final class IamTest extends TestCase
 
     /**
      * The facade answers each redemption service of SSO's handoff codes, and
-     * the caller scope SSO's freshness is handed a caller through.
+     * the service that names a caller as SSO takes it.
      *
      * @return void
      */
@@ -62,7 +62,7 @@ final class IamTest extends TestCase
         self::assertInstanceOf(SignInRedemption::class, Iam::signIns());
         self::assertInstanceOf(ReauthenticationRedemption::class, Iam::reauthentications());
         self::assertInstanceOf(LinkRedemption::class, Iam::links());
-        self::assertInstanceOf(CallerScope::class, Iam::callers());
+        self::assertInstanceOf(Callers::class, Iam::callers());
     }
 
     /**

@@ -7,6 +7,7 @@ namespace Tests\Fixtures\Sso;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOutcome;
+use SineMacula\Laravel\Sso\Identities\Caller;
 
 /**
  * SSO's freshness, failing the first checks it is asked for with the failure
@@ -52,12 +53,13 @@ final class FailingFreshness implements Freshness
      *
      * @param  \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation  $operation
      * @param  int  $maxAgeSeconds
+     * @param  ?\SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOutcome
      *
      * @throws \Throwable
      */
     #[\Override]
-    public function check(FreshnessOperation $operation, int $maxAgeSeconds): FreshnessOutcome
+    public function check(FreshnessOperation $operation, int $maxAgeSeconds, ?Caller $caller): FreshnessOutcome
     {
         $this->calls++;
 
@@ -68,6 +70,6 @@ final class FailingFreshness implements Freshness
             throw ($this->failure)();
         }
 
-        return $this->freshness->check($operation, $maxAgeSeconds);
+        return $this->freshness->check($operation, $maxAgeSeconds, $caller);
     }
 }

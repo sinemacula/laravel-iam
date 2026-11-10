@@ -7,7 +7,9 @@ namespace SineMacula\Laravel\Iam\Mfa;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\HasSessions;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
@@ -53,7 +55,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * goes through, which names no guard (`identitySessions()`), and every guard
  * that holds sessions, for a session named with no guard (`sessionGuards()`),
  * so every adapter refuses the same misconfiguration the same way; SSO's
- * adapters find them here too. No adapter acts for the identity the guard
+ * adapters find them here too, with the session SSO's caller names by its key,
+ * of whichever guard (`owned()`). No adapter acts for the identity the guard
  * serves, since MFA hands each its caller as plain values; only the testing
  * helper that verifies the acting session, which is handed none, asks for it
  * (`caller()`). It also tells every adapter that asks
@@ -143,17 +146,36 @@ final readonly class CurrentSession
     {
         $this->guard($application);
 
-        $owner = $this->identity($identity);
+        $found = $this->owned($this->identity($identity), $session);
 
-        if (!$owner instanceof HasSessions) {
-            throw UnresolvedReferenceException::forSignIn($application);
+        return $found !== null && $found->getGuard() === $application ? $found : throw UnresolvedReferenceException::forSignIn($application);
+    }
+
+    /**
+     * The identity's session with the key, of whichever guard, or `null` when
+     * the identity holds no sessions, the key cannot be one of the session
+     * model's (no query is made), or the identity has no such session.
+     *
+     * It is read through the identity's own `sessions()` relation on the write
+     * connection, so another identity's session is never found, plainly and
+     * locking nothing. Whether the session is still live and active is
+     * `laravel-authentication`'s to judge, in the call it is handed to.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  string  $session
+     * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
+     */
+    public function owned(Identity $identity, string $session): (EloquentSession&Model)|null
+    {
+        if (!$identity instanceof HasSessions) {
+            return null;
         }
 
-        $query = $owner->sessions();
+        $query = $identity->sessions();
         $model = $query->getModel();
-        $found = SessionKeyShape::matches($model, $session) ? WriteConnection::during($owner, static fn (): mixed => WriteConnection::query($query)->find($session)) : null;
+        $found = SessionKeyShape::matches($model, $session) ? WriteConnection::during($identity, static fn (): mixed => WriteConnection::query($query)->find($session)) : null;
 
-        return $found instanceof Session && $found->getGuard() === $application ? $found : throw UnresolvedReferenceException::forSignIn($application);
+        return $found instanceof EloquentSession ? $found : null;
     }
 
     /**

@@ -165,8 +165,8 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   open.
 - The query answers `within` only for a complete list of the identity's principals, which `laravel-authorization`
   learns from its identity directory. Its default is complete only under its own subject resolver, never under this
-  package's, so the package binds `Authorization\IdentityDirectoryAdapter` (an `authorization.default:` row of
-  `AuthorizationSeams`): the principals the identity's `laravel-authentication` `principals()` relation lists, read on
+  package's, so the package binds `Authorization\IdentityDirectoryAdapter` (a row of `AuthorizationSeams`, kept off
+  while the application names its own directory in `authorization.identity_directory`): the principals the identity's `laravel-authentication` `principals()` relation lists, read on
   the write connection without the principal model's global scopes, complete. A principal a global scope hides (one
   soft-deleted, say) still holds its grants, and restoring it would widen the scope with no grant written and no grant
   hook run, so it is listed too; a relation that is no Eloquent query, whose scopes cannot be set aside, is answered
@@ -225,8 +225,8 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   `laravel-authorization` (`Authorization::treeChanged()`, AUTHZ-12.8), the moved tenant named through the resolver
   (`TenantTranslator`): one report covers the subtree, since `laravel-authorization`'s entries pin the tenant chain.
   Without a tree `laravel-authorization` keeps its own flat tree, which no move changes, and nothing is reported.
-- `laravel-authorization`'s tree is the application's one tree (IAM-7.5): `Authorization\TenantTreeAdapter`, an
-  `authorization.default:` row of `AuthorizationSeams`, scoped, one for a request or job (`authorization.md`), answers
+- `laravel-authorization`'s tree is the application's one tree (IAM-7.5): `Authorization\TenantTreeAdapter`, a row of
+  `AuthorizationSeams`, scoped, one for a request or job (`authorization.md`), answers
   the ancestors, containment and subtree from `TenancyContracts::tree()` on every call. Each tenant asked about must
   resolve back through the tenant resolver to a tenant of its type and key (`TenantTranslator::idOf()`,
   `UnresolvedReferenceException` otherwise), each ancestor is named as the resolver names its id, and the subtree is

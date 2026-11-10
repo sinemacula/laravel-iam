@@ -91,11 +91,6 @@ mandatory, and when). The check reads the live binding without building anything
   undone. Turn the switch on, or bind your own implementation.
 - *... is bound through a closure, whose implementation cannot be read without building it; ...*: bind the seam by
   class name or as an instance, so the check can tell what it is.
-- *... holds its member's own default again, bound over what the binding rule decided once it had run ...*: one of
-  `laravel-authorization`'s seams this package bound, or kept with your binding, holds `laravel-authorization`'s own
-  default again, whatever its mandate, because its provider registered once nothing could bind the seam back (from a
-  provider's `boot()` once the application had booted, say). Register `laravel-authorization` with the other
-  providers, or bind the adapter or your own implementation once it has registered.
 - Note: *... keeps the application's binding, not this package's adapter.*: a binding of yours was in place before
   this package registered, so the adapter was never bound. Make sure your implementation keeps the adapter's duties
   ([Bindings](bindings.md#replacing-a-binding)).
