@@ -419,10 +419,17 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   tenant to decide in sees nothing, and the whole trail, the entries with no tenant among it, is read only through a
   policy the application binds in place of this one.
 - The viewer is a model or an audit-log reference, read through the morph map (one naming nobody is refused,
-  `UnresolvedReferenceException`, a failed read). `AuditAccessPolicy::scope()` hands no session, so the subject is
-  built with none: a principal as itself, for its identity, in its own tenant. An action the application puts an
-  authentication requirement on is then not listed for it, and the read sees nothing that action would have shown,
-  never more. The adapter keeps nothing and resolves `laravel-authorization`'s manager, the memberships and the
+  `UnresolvedReferenceException`, a failed read): a principal as itself, for its identity, in its own tenant.
+- Audit-log tells the policy who reads and why, never how they signed in: a requirement on the authentication itself,
+  such as fresh MFA, belongs on the route that reads the trail, and a policy that cannot tell whether one is met treats
+  the permission as not held. So a permission an authentication requirement guards, on its allow or on a deny, is not
+  held in the tenant where it guards it, and the read sees nothing it would have shown, never more. The subject is
+  decided on a session key that names no session (`AuditAccessPolicyAdapter::UNJUDGED_SESSION`, which holds a colon,
+  so no session key equals it), and this package's requirement checker refuses a subject naming no guard by throwing,
+  so `laravel-authorization` reads each requirement as undecidable: an allow it guards does not apply, and a deny it
+  guards does. A subject with no session would be judged unmet without the checker being asked, and a deny the
+  requirement guards would not apply to it, listing an action the reader's own session could be refused.
+- The adapter keeps nothing and resolves `laravel-authorization`'s manager, the memberships and the
   tenants from the application current on every call, so the singleton audit-log expects holds no request state.
 - Administrative operations (IAM-6.9). The catalogue also declares SSO's and MFA's administrative operations
   (`Authorization\Enums\AdministrativeOperation`), reusing SSO's own names where it has them
@@ -588,6 +595,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   - `laravel-authorization` offers no query for the tenants where a subject holds an action, so the audit access
     policy lists the viewer's actions in each tenant its memberships name, one listing each; a grant in a tenant the
     viewer is no member of, or reached only through a subtree grant, is not seen.
+  - `laravel-authorization`'s `permissionsFor()` lists names alone, never whether an action's decision read an
+    authentication requirement (`Decision::$freshness` says so, but only a recorded check hands a decision back), so
+    the audit access policy makes every requirement undecidable through a session key no session has, which only this
+    package's requirement checker is known to refuse: a checker the application binds in its place that finds that key
+    unmet lets a deny the requirement guards not apply. A listing that can leave out the actions whose decision read a
+    requirement would close it.
 
 ## Implementation Anchors
 
@@ -746,7 +759,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testTenantGrantsSeeTheirTenantsAlone`, `testTheScopeIsNeverWiderThanAnyTenantsGrant`,
   `testAnOwnActivityGrantSeesOnlyTheViewersOwnActivity`, `testAPrincipalIsDecidedInItsOwnTenant`,
   `testAPrincipalSeesNoMembershipTenantItCannotActIn`, `testAPrincipalSeesAMembershipTenantItMayActIn`,
-  `testGrantsBeyondTheLimitAreRefused`, `testAViewerNamedByAReferenceIsTheModelItNames`
+  `testGrantsBeyondTheLimitAreRefused`, `testAViewerNamedByAReferenceIsTheModelItNames`,
+  `testAPermissionARequirementGuardsIsNotHeldThere`
 - `tests/Feature/Authorization/AuditAccessSeamTest.php`
   `testThePolicyIsBoundOverAuditLogsDefaultInEveryProviderOrder`, `testTheApplicationsPolicyBoundFirstIsKept`,
   `testTheApplicationsPolicyBoundLastWins`, `testTheSwitchOffKeepsDenyAll`

@@ -79,10 +79,18 @@ use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
  * names it by, read through the morph map; one that names nobody is refused
  * (`UnresolvedReferenceException`). A principal of `laravel-authentication` is
  * decided as itself, for its identity, in its tenant; any other model as
- * itself. The contract hands over no session, so the subject carries none: an
- * action the application puts an authentication requirement on is not listed
- * for it, and the read sees nothing that action would have shown. Enforce
- * freshness on the route that reads instead.
+ * itself.
+ *
+ * The policy is told who reads and why, never how they signed in, so it cannot
+ * tell whether an authentication requirement is met, and treats a permission a
+ * requirement guards as not held in that tenant. The subject carries a session
+ * key that names no session (`UNJUDGED_SESSION`), which this package's
+ * requirement checker refuses by throwing, so `laravel-authorization` reads
+ * every requirement as undecidable: an allow it guards does not apply, and a
+ * deny it guards does. With no session at all, a requirement would be unmet
+ * without asking, and a deny it guards would not apply, listing an action the
+ * reader's own session might be refused. Freshness for reading the trail
+ * belongs on the route that reads it, enforced before audit-log is asked.
  *
  * It never reads the entries table, keeps nothing between calls and is bound as
  * a singleton (IAM-8.1): `laravel-authorization`'s manager, the memberships and
@@ -95,6 +103,9 @@ use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
  */
 final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
 {
+    /** @var string The session key the viewer is decided on: it holds a colon, so no session key equals it, and no requirement can be judged for it. */
+    private const string UNJUDGED_SESSION = 'iam:audit-access';
+
     /**
      * The scope of the trail the viewer may read for the purpose.
      *
@@ -259,7 +270,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
 
         $mayAct = $tenant instanceof Tenant && $container->make(TenantAccess::class)->mayActIn($principal, $tenant);
 
-        return $mayAct ? $subject : new Subject($principal->getIdentity(), $principal->getIdentity(), $tenant);
+        return $mayAct ? $subject : new Subject($principal->getIdentity(), $principal->getIdentity(), $tenant, session: $subject->session);
     }
 
     /**
@@ -310,7 +321,8 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
 
     /**
      * The subject the viewer is decided as: a principal as itself, for its
-     * identity, in its tenant; any other model as itself; with no session.
+     * identity, in its tenant; any other model as itself; on a session no
+     * requirement can be judged for.
      *
      * @param  object  $viewer
      * @return \SineMacula\Laravel\Authorization\Subject
@@ -318,8 +330,8 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     private static function subjectOf(object $viewer): Subject
     {
         return $viewer instanceof Principal
-            ? new Subject($viewer, $viewer->getIdentity(), $viewer->getTenant())
-            : new Subject($viewer, $viewer);
+            ? new Subject($viewer, $viewer->getIdentity(), $viewer->getTenant(), session: self::UNJUDGED_SESSION)
+            : new Subject($viewer, $viewer, session: self::UNJUDGED_SESSION);
     }
 
     /**

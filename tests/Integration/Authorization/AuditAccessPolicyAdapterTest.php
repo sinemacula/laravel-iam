@@ -47,8 +47,9 @@ use Tests\TestCase;
  * only the viewer's own activity; a scope is never wider than a grant, so
  * tenants
  * whose grants share no category see nothing; an empty list sees nothing;
- * grants beyond audit-log's limits are refused rather than truncated; and a
- * viewer named by a reference that names nobody is refused.
+ * a permission an authentication requirement guards is not held; grants beyond
+ * audit-log's limits are refused rather than truncated; and a viewer named by a
+ * reference that names nobody is refused.
  *
  * The grants are read on the storage connection, so each answer runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
@@ -193,6 +194,41 @@ final class AuditAccessPolicyAdapterTest extends TestCase
 
         self::assertTrue(self::policy()->scope($alone, ReadPurpose::READ)->isDenied());
         self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope($denied, ReadPurpose::READ)));
+    }
+
+    /**
+     * A permission an authentication requirement guards is not held where it
+     * guards it, whether the requirement guards a deny or the allow: the policy
+     * cannot tell whether the reader's session meets it. A principal decided as
+     * its identity in a membership tenant is held to it as well.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPermissionARequirementGuardsIsNotHeldThere(): void
+    {
+        $denied  = $this->viewer('audit-log.read');
+        $allowed = $this->viewer();
+
+        $denied->attachPolicy(self::guarded('deny-trail', 'deny'), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
+        $allowed->attachPolicy(self::guarded('allow-trail', 'allow'));
+
+        $this->member($denied, self::FIRST, self::SECOND);
+        $this->member($allowed, self::FIRST);
+
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope($denied, ReadPurpose::READ)));
+        self::assertTrue(self::policy()->scope($allowed, ReadPurpose::READ)->isDenied());
+
+        $person = $this->viewer();
+        $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
+
+        $this->member($person, self::SECOND);
+        $this->grant($person, 'audit-log.read', self::SECOND);
+
+        $person->attachPolicy(self::guarded('deny-seat-trail', 'deny'), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
+
+        self::assertTrue(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)->isDenied());
     }
 
     /**
@@ -525,6 +561,31 @@ final class AuditAccessPolicyAdapterTest extends TestCase
         foreach ($tenantIds as $tenantId) {
             $this->memberships->grant($viewer, Membership::of($tenantId));
         }
+    }
+
+    /**
+     * A policy whose one statement, of the effect, names reading the trail
+     * under a multifactor requirement.
+     *
+     * @param  string  $name
+     * @param  string  $effect
+     * @return \SineMacula\Laravel\Authorization\Models\Policy
+     */
+    private static function guarded(string $name, string $effect): Policy
+    {
+        return Policy::query()->create([
+            'name'     => $name,
+            'document' => [
+                'statements' => [
+                    [
+                        'sid'        => 'guarded-trail',
+                        'effect'     => $effect,
+                        'actions'    => ['audit-log.read'],
+                        'conditions' => ['authentication_requirement' => ['authentication' => ['multifactor' => []]]],
+                    ],
+                ],
+            ],
+        ]);
     }
 
     /**
