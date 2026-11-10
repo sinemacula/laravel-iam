@@ -94,8 +94,13 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
  * permission or policy, the grantee of a grant or boundary, the guardrail's
  * policy, the resource policy, the overridden record), and its tenant the one
  * the change holds in, explicitly none for a platform-wide one. A deletion that
- * took grants from grantees carries their manifest, as audit-log's bulk record
- * does (`GranteeManifests`).
+ * took grants from grantees covers them, as audit-log's bulk record covers a
+ * bulk operation's subjects (`PendingRecord::covering()`): each grantee once,
+ * read through the morph map, under audit-log's configured bounds, refused
+ * rather than truncated beyond them and refused where the bound store keeps no
+ * attachment, a refusal audit-log's capture contains (`AuditCaptureFailed`), so
+ * it never reaches the change's caller. A deletion that took no grant covers
+ * nothing, since audit-log refuses an empty bulk operation.
  *
  * References are read through the morph map (`Audit\References`). A tenant is
  * named by its identifier, as every other member's records name it and the
@@ -157,16 +162,12 @@ final readonly class AuthorizationEventMapper implements EventMapper
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Audit\DeferredRefusals  $refusals
-     * @param  \SineMacula\Laravel\Iam\Audit\Mappers\GranteeManifests  $manifests
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      */
     public function __construct(
 
         /** Holds a decision reported inside a transaction until the outermost one has ended. */
         private DeferredRefusals $refusals,
-
-        /** Carries a deletion's grantees as the record's manifest. */
-        private GranteeManifests $manifests,
 
         /** Names each tenant by the identifier the access policy reads it by. */
         private TenantTranslator $tenants,
@@ -181,7 +182,6 @@ final readonly class AuthorizationEventMapper implements EventMapper
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
-     * @throws \JsonException
      * @throws \LogicException
      */
     #[\Override]
@@ -287,16 +287,14 @@ final readonly class AuthorizationEventMapper implements EventMapper
 
     /**
      * Describe a change: its code, what it keeps, the call that made it, what
-     * changed and where, and a deletion's grantees.
+     * changed and where, and the grantees a deletion covers.
      *
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationChange  $change
      * @param  \SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity  $code
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @return \SineMacula\Laravel\AuditLog\Records\PendingRecord
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
-     * @throws \JsonException
      * @throws \LogicException
      */
     private function change(AuthorizationChange $change, AuthorizationActivity $code, PendingRecord $record): PendingRecord
@@ -319,7 +317,28 @@ final readonly class AuthorizationEventMapper implements EventMapper
 
         $record->forTenant($this->tenantOf($change->tenant));
 
-        return $this->manifests->carry($record, $change->grantees);
+        return self::cover($record, $change->grantees);
+    }
+
+    /**
+     * Make the record a bulk operation's over the grantees, each read through
+     * the morph map, when there is any; a grantee that names nothing is left
+     * out.
+     *
+     * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
+     * @param  list<\SineMacula\Laravel\Authorization\Support\Reference>  $grantees
+     * @return \SineMacula\Laravel\AuditLog\Records\PendingRecord
+     *
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     */
+    private static function cover(PendingRecord $record, #[\SensitiveParameter] array $grantees): PendingRecord
+    {
+        if ($grantees === []) {
+            return $record;
+        }
+
+        return $record->covering(array_filter(array_map(self::reference(...), $grantees)));
     }
 
     /**

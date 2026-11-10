@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\AuditLog\Capture\BulkManifests;
 use SineMacula\Laravel\AuditLog\Capture\CaptureSettings;
 use SineMacula\Laravel\AuditLog\Contracts\AuditStore;
 use SineMacula\Laravel\AuditLog\Delivery\StoreCapabilities;
@@ -65,7 +66,6 @@ use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationChange;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
-use SineMacula\Laravel\Iam\Audit\Mappers\GranteeManifests;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
@@ -80,8 +80,8 @@ use Tests\Fixtures\Models\Person;
  * keeping only what its code keeps, by the call's actor, about what changed, in
  * the tenant it holds in and correlated by its operation; of the decisions only
  * a denial, a break-glass grant used and a preview are recorded, each once, a
- * request for more proof and `AuthorizationFailed` never; and a deletion
- * carries its grantees as its manifest.
+ * request for more proof and `AuthorizationFailed` never; and a deletion covers
+ * its grantees as a bulk operation's subjects.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -90,7 +90,6 @@ use Tests\Fixtures\Models\Person;
  */
 #[CoversClass(AuthorizationEventMapper::class)]
 #[CoversClass(AuthorizationChange::class)]
-#[CoversClass(GranteeManifests::class)]
 #[CoversClass(TenantTranslator::class)]
 #[CoversClass(TenantReferences::class)]
 final class AuthorizationEventMapperTest extends TestCase
@@ -696,8 +695,9 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A deletion carries the manifest of every grantee it took a grant from,
-     * each once, and none it cannot name.
+     * A deletion covers every grantee it took a grant from, each once, and none
+     * it cannot name, as the manifest of the builder audit-log's capture hands
+     * it.
      *
      * @param  object  $event
      * @return void
@@ -709,7 +709,7 @@ final class AuthorizationEventMapperTest extends TestCase
 
         $container->instance(AuditStore::class, new NullAuditStore);
 
-        $snapshot = self::mapper($container)->map($event, new PendingRecord)?->snapshot();
+        $snapshot = self::mapper($container)->map($event, self::captured($container))?->snapshot();
 
         self::assertSame(2, $snapshot?->manifest?->count);
         self::assertSame(json_encode([[Person::class, '8'], [Person::class, '9']]), $snapshot->manifest->canonical);
@@ -731,13 +731,27 @@ final class AuthorizationEventMapperTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('does not keep attachments');
 
-        self::mapper($container)->map(iterator_to_array(self::provideDeletions())['a role'][0], new PendingRecord);
+        self::mapper($container)->map(iterator_to_array(self::provideDeletions())['a role'][0], self::captured($container));
     }
 
     /**
-     * The mapper, with a container of its own for the store, the bounds and the
-     * tenant resolver, which resolves every organisation unless another is
-     * given.
+     * A builder as audit-log's capture hands a mapper one: able to cover a bulk
+     * operation's subjects, under the default bounds, for the store the
+     * container binds.
+     *
+     * @param  \Illuminate\Container\Container  $container
+     * @return \SineMacula\Laravel\AuditLog\Records\PendingRecord
+     */
+    private static function captured(Container $container): PendingRecord
+    {
+        $manifests = new BulkManifests(new StoreCapabilities($container), new CaptureSettings(new Repository([])));
+
+        return new PendingRecord(manifests: $manifests->of(...));
+    }
+
+    /**
+     * The mapper, with a container of its own for the tenant resolver, which
+     * resolves every organisation unless another is given.
      *
      * @param  ?\Illuminate\Container\Container  $container
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\TenantResolver  $tenancy
@@ -749,9 +763,7 @@ final class AuthorizationEventMapperTest extends TestCase
 
         $container->instance(TenantResolver::class, $tenancy ?? new OrganisationTenancy);
 
-        $manifests = new GranteeManifests(new StoreCapabilities($container), new CaptureSettings(new Repository([])));
-
-        return new AuthorizationEventMapper(new DeferredRefusals, $manifests, new TenantTranslator(new TenantReferences($container)));
+        return new AuthorizationEventMapper(new DeferredRefusals, new TenantTranslator(new TenantReferences($container)));
     }
 
     /**
