@@ -84,6 +84,9 @@ final class FactorCodeCountersAdapterTest extends TestCase
     /** @var ?\Tests\Fixtures\Models\Person The person whose challenges are counted. */
     private ?Person $person = null;
 
+    /** @var ?\Tests\Fixtures\Models\Person The other person, made once. */
+    private ?Person $otherPerson = null;
+
     /** @var ?(\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession) The session the challenges are bound to. */
     private (EloquentSession&Model)|null $session = null;
 
@@ -651,20 +654,32 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
     /**
      * Report a challenge's outcome through this package's counters, under the
-     * factor code binding `laravel-authentication` reports under.
+     * factor code binding `laravel-authentication` reports under, and answer
+     * whether they took it: a refused admission is their refusal.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  bool  $passed
-     * @return void
+     * @return bool
      *
      * @throws \Throwable
      */
     #[\Override]
-    protected function reportChallenge(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding, bool $passed): void
+    protected function isChallengeReported(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding, bool $passed): bool
     {
-        $this->adapter()->report($this->codeBindingOf($identity, $factor, $binding), 'challenge-1', $passed);
+        return $this->adapter()->report($this->codeBindingOf($identity, $factor, $binding), 'challenge-1', $passed)->refusal === null;
+    }
+
+    /**
+     * Another stored person, who holds no factor.
+     *
+     * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
+     */
+    #[\Override]
+    protected function otherCountedIdentity(): MultiFactorAuthenticatable
+    {
+        return $this->otherPerson();
     }
 
     /**
@@ -744,19 +759,13 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A stored person of the same type under the key given, held as a string so
-     * a key no integer can hold (the kit's other identity) is kept as it is.
+     * Another stored person, made once.
      *
-     * @param  string  $key
      * @return \Tests\Fixtures\Models\Person
      */
-    private static function personKeyed(string $key): Person
+    private function otherPerson(): Person
     {
-        $person = (new Person)->setKeyType('string')->setIncrementing(false);
-
-        $person->forceFill([$person->getKeyName() => $key])->exists = true;
-
-        return $person;
+        return $this->otherPerson ??= $this->createPerson();
     }
 
     /**
@@ -786,7 +795,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     {
         self::assertInstanceOf(Person::class, $identity);
 
-        $named = IdentityReference::of($identity)->key === $binding->identityKey ? $identity : self::personKeyed($binding->identityKey);
+        $named = IdentityReference::of($identity)->key === $binding->identityKey ? $identity : $this->otherPerson();
 
         return $this->app?->make(CodeTranslator::class)->toAuthentication($named, $factor, MfaChannelKind::SMS, $binding) ?? self::fail('The application has not booted.');
     }
