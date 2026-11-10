@@ -8,6 +8,7 @@ use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Log\Context\Repository as ContextRepository;
 use Illuminate\Session\ArraySessionHandler;
@@ -69,8 +70,9 @@ final class WorkerResetTest extends TestCase
     use MockeryPHPUnitIntegration;
 
     /**
-     * Clear the facades' resolved roots and the application they resolve from,
-     * so no test's container reaches another.
+     * Clear the facades' resolved roots, the application they resolve from and
+     * the global container an application sets itself as, so no test's
+     * container reaches another.
      *
      * @return void
      */
@@ -79,6 +81,7 @@ final class WorkerResetTest extends TestCase
     {
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication(null);
+        Container::setInstance();
 
         parent::tearDown();
     }
@@ -316,11 +319,10 @@ final class WorkerResetTest extends TestCase
      */
     public function testResetClearsTheRootAFacadeResolvedFromAMembersScopedState(): void
     {
-        $container = new Container;
+        $container = new Application;
 
         $container->scoped('authorization', static fn (): \stdClass => new \stdClass);
 
-        // @phpstan-ignore argument.type (a bare container is all a facade resolves its root from)
         Facade::setFacadeApplication($container);
 
         $before = Authorization::getFacadeRoot();
@@ -339,11 +341,9 @@ final class WorkerResetTest extends TestCase
      */
     public function testAFacadeOverAKeptScopedInstanceReturnsTheSameInstance(): void
     {
-        $container = new Container;
+        // The application scopes Laravel's context repository itself
+        $container = new Application;
 
-        $container->scoped(ContextRepository::class, static fn (): \stdClass => new \stdClass);
-
-        // @phpstan-ignore argument.type (a bare container is all a facade resolves its root from)
         Facade::setFacadeApplication($container);
 
         $before = Context::getFacadeRoot();
@@ -562,7 +562,6 @@ final class WorkerResetTest extends TestCase
         $container = new Container;
         $request   = Request::create('/');
 
-        // @phpstan-ignore argument.type (an integer key, which the reset must leave, is among those handed over)
         $request->attributes->add([
             'authentication.caller.access.api.'        => new \stdClass,
             'authentication.caller.pending.api.select' => false,
@@ -570,8 +569,11 @@ final class WorkerResetTest extends TestCase
             'authenticationXcaller.access.api.'        => 'kept',
             'an.authentication.caller.access.api.'     => 'kept',
             'route'                                    => 'kept',
-            7                                          => 'kept',
         ]);
+
+        // A numeric name is held under an integer key, which the reset must
+        // leave
+        $request->attributes->set('7', 'kept');
 
         $container->instance('request', $request);
 

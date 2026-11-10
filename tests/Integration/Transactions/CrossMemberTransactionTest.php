@@ -188,8 +188,7 @@ final class CrossMemberTransactionTest extends TestCase
 
         $attempts = 0;
 
-        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
-        $result = $this->transaction()->run(static function () use (&$attempts, $failure): string {
+        $work = static function () use (&$attempts, $failure): string {
 
             $attempts++;
 
@@ -200,7 +199,9 @@ final class CrossMemberTransactionTest extends TestCase
             }
 
             return 'attempt ' . $attempts;
-        });
+        };
+
+        $result = $this->transaction()->run($work);
 
         self::assertSame('attempt 3', $result);
         self::assertSame(3, $attempts);
@@ -583,8 +584,7 @@ final class CrossMemberTransactionTest extends TestCase
         $reader   = $this->useLockingConnection();
         $attempts = 0;
 
-        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
-        $result = $this->transaction()->run(static function () use (&$attempts, $reader): int {
+        $work = static function () use (&$attempts, $reader): int {
 
             $attempts++;
 
@@ -595,7 +595,9 @@ final class CrossMemberTransactionTest extends TestCase
             DB::connection(self::LOCKING)->table(self::TABLE)->where('id', 1)->update(['value' => $attempts]);
 
             return $attempts;
-        }, 3);
+        };
+
+        $result = $this->transaction()->run($work, 3);
 
         self::assertSame(2, $result);
         self::assertFalse(DB::connection(self::LOCKING)->getPdo()->inTransaction());
@@ -787,15 +789,16 @@ final class CrossMemberTransactionTest extends TestCase
 
         $runs = 0;
 
-        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
-        $result = $this->transaction()->run(static function () use (&$runs): int {
+        $work = static function () use (&$runs): int {
 
             $runs++;
 
             DB::table(self::TABLE)->insert(['id' => $runs, 'value' => $runs]);
 
             return $runs;
-        }, 3);
+        };
+
+        $result = $this->transaction()->run($work, 3);
 
         self::assertTrue($failed);
         self::assertSame(2, $result);
@@ -901,8 +904,7 @@ final class CrossMemberTransactionTest extends TestCase
         $transaction = $this->transaction();
         $attempts    = 0;
 
-        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
-        $result = DB::transaction(static function () use (&$attempts, $failure, $transaction): int {
+        $work = static function () use (&$attempts, $failure, $transaction): int {
 
             $attempts++;
 
@@ -916,7 +918,9 @@ final class CrossMemberTransactionTest extends TestCase
             });
 
             return $attempts;
-        }, 3);
+        };
+
+        $result = DB::transaction($work, 3);
 
         self::assertSame(2, $result);
         self::assertSame([2], DB::table(self::TABLE)->pluck('id')->all());

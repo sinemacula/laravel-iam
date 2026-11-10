@@ -22,6 +22,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
+use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
@@ -600,7 +601,7 @@ final class FactorChangeGateAdapterTest extends TestCase
             self::GUARD,
             $this->signInReference($session),
             FactorChange::REMOVE_FACTOR,
-            $this->factorsOf($person), // @phpstan-ignore argument.type (MFA's own factors, which its request names by contract)
+            $this->factorsOf($person),
             $removed->id,
             self::configuredRequirement(),
         );
@@ -668,7 +669,6 @@ final class FactorChangeGateAdapterTest extends TestCase
     {
         $factorId = $change->namesFactor() ? self::REMOVED : null;
 
-        // @phpstan-ignore argument.type (MFA's own factors, which its request names by contract)
         return new FactorChangeRequest($person, self::GUARD, $this->signInReference($session), $change, $this->factorsOf($person), $factorId, $requirement);
     }
 
@@ -676,11 +676,23 @@ final class FactorChangeGateAdapterTest extends TestCase
      * The person's factors, as MFA hands them to the gate.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
-     * @return \Illuminate\Database\Eloquent\Collection<int, \SineMacula\Laravel\Mfa\Models\Factor>
+     * @return \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor>
      */
     private function factorsOf(Person $person): Collection
     {
-        return Factor::query()->where('authenticatable_id', (string) $person->id)->get();
+        return self::asStoredFactors(...Factor::query()->where('authenticatable_id', (string) $person->id)->get()->all());
+    }
+
+    /**
+     * The factors given, as the collection of MFA's stored factors its request
+     * names.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  ...$factors
+     * @return \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor>
+     */
+    private static function asStoredFactors(EloquentFactor&Model ...$factors): Collection
+    {
+        return new Collection(array_values($factors));
     }
 
     /**

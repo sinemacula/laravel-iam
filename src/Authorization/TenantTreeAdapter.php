@@ -207,12 +207,12 @@ final readonly class TenantTreeAdapter implements TenantTree
         $cast    = sprintf('CAST(%s AS %s) as %s', $column, self::textType($grammar), $grammar->wrap(ApplicationTree::ID_COLUMN));
 
         // The cast is built from this class's constants, quoted by the grammar,
-        // so it holds nothing a caller handed in, though it is not a literal
-        // string
+        // so it holds nothing a caller handed in, though the grammar's quoting
+        // leaves it no literal string
         return $subtree->newQuery()
             ->fromSub($subtree, self::SUBTREE)
             ->selectRaw('? as tenant_type', [$tenant->type])
-            ->selectRaw($cast); // @phpstan-ignore argument.type
+            ->selectRaw($cast); // @phpstan-ignore argument.type (quoted by the connection's grammar, so no literal string)
     }
 
     /**
