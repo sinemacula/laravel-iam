@@ -780,6 +780,26 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
+        yield 'iam:check fails on authorization:check\'s refusal and on its incomplete report' => [
+            'docs/guides/checks.md',
+            [
+                '`authorization:check` reports `laravel-authorization`\'s settings, seams, grant hooks and connection',
+                'and exits `1` when it refuses a setting and `3` when it could not complete its report: either fails the run.',
+                'so its seam reads `declared by laravel-iam` while the adapter is still what the contract resolves to',
+            ],
+            ['always exits `0`'],
+        ];
+
+        yield 'the authorization guide says how the report reads the adapters declared' => [
+            'docs/guides/authorization.md',
+            [
+                'fails the run when it refuses a setting (exit `1`) or could not complete its report (exit `3`)',
+                'once you bind over a contract the seam is shown as your binding, with `declared by laravel-iam as ..., but overridden later`',
+                'A contract this package left to your binding, or whose switch is off, carries no declaration',
+            ],
+            ['always exits `0`'],
+        ];
+
         yield 'a tenant named for the caller needs a resolver, even the principal\'s own' => [
             'docs/guides/testing.md',
             [

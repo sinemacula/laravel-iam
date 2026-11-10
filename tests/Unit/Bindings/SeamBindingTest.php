@@ -42,11 +42,13 @@ final class SeamBindingTest extends TestCase
         self::assertFalse($binding->mandatory);
         self::assertFalse($binding->isMandatory());
         self::assertNull($binding->holdsDefault);
+        self::assertNull($binding->factory);
+        self::assertNull($binding->declare);
     }
 
     /**
-     * A binding keeps the lifetime, switch, mandatory flag and member's answer
-     * it is declared with.
+     * A binding keeps the lifetime, switch, mandatory flag, member's answer and
+     * declaration it is declared with.
      *
      * @return void
      */
@@ -54,7 +56,8 @@ final class SeamBindingTest extends TestCase
     {
         $switch       = static fn (Repository $config): bool => $config->has('iam');
         $holdsDefault = static fn (): bool => true;
-        $binding      = new SeamBinding(PlainSeam::class, Adapter::class, [], Lifetime::SCOPED, $switch, true, holdsDefault: $holdsDefault);
+        $declare      = static function (): void {};
+        $binding      = new SeamBinding(PlainSeam::class, Adapter::class, [], Lifetime::SCOPED, $switch, true, holdsDefault: $holdsDefault, declare: $declare);
 
         self::assertSame([], $binding->memberDefaults);
         self::assertSame(Lifetime::SCOPED, $binding->lifetime);
@@ -62,6 +65,7 @@ final class SeamBindingTest extends TestCase
         self::assertTrue($binding->mandatory);
         self::assertTrue($binding->isMandatory());
         self::assertSame($holdsDefault, $binding->holdsDefault);
+        self::assertSame($declare, $binding->declare);
     }
 
     /**

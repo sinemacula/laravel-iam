@@ -50,8 +50,11 @@ Fix what each section below says, then run `iam:check` again.
 
 `iam:check` first runs each member's own check command through the console, in this order: `authentication:check`,
 `authorization:check`, `mfa:check`, `sso:check` and `audit-log:check`. Each reports in its own words, as it does when
-you run it yourself, and one that exits non-zero fails the run. `authorization:check` reports whether
-`laravel-authorization` answers Laravel's Gate, and always exits `0`. One that is not registered is reported as
+you run it yourself, and one that exits non-zero fails the run. `authorization:check` reports `laravel-authorization`'s
+settings, seams, grant hooks and connection, and exits `1` when it refuses a setting and `3` when it could not complete
+its report: either fails the run. Each adapter this package binds over one of `laravel-authorization`'s contracts is
+declared to that report, so its seam reads `declared by laravel-iam` while the adapter is still what the contract
+resolves to (see [Authorization](authorization.md#pruning-and-checks)). One that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 

@@ -812,6 +812,54 @@ final class BindingRuleTest extends TestCase
     }
 
     /**
+     * A binding that declares itself to its member is handed, once bound, the
+     * container and the very closure the container holds for the seam, whatever
+     * its lifetime: the closure wrapping the adapter's class, or the one
+     * forwarding to this package's key for a scoped adapter. One kept over the
+     * application's binding, or whose switch is off, declares nothing.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testABindingIsDeclaredWithTheClosureItWasBoundWith(): void
+    {
+        $app      = $this->application();
+        $declared = new class {
+            /** @var array<string, array{\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null}> Each seam declared, with the container and the closure it was declared with. */
+            public array $seams = [];
+        };
+        $declare = static fn (string $seam): \Closure => static function (ContainerContract $container, ?\Closure $bound) use ($declared, $seam): void {
+            $declared->seams[$seam] = [$container, $bound];
+        };
+
+        $app->bind(PlainSeam::class, ApplicationImplementation::class);
+
+        $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(
+            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], declare: $declare(TransientSeam::class)),
+            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, declare: $declare(SharedSeam::class)),
+            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, declare: $declare(ScopedSeam::class)),
+            new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], declare: $declare(PlainSeam::class)),
+            new SeamBinding(FeatureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: static fn (): bool => false, declare: $declare(FeatureSeam::class)),
+        ));
+
+        self::assertSame([TransientSeam::class, SharedSeam::class, ScopedSeam::class], $outcome->bound);
+        self::assertSame([PlainSeam::class], $outcome->kept);
+        self::assertSame([TransientSeam::class, SharedSeam::class, ScopedSeam::class], array_keys($declared->seams));
+
+        foreach ($declared->seams as $seam => [$container, $bound]) {
+            self::assertSame($app, $container, $seam);
+            self::assertInstanceOf(\Closure::class, $bound, $seam);
+            self::assertSame($app->getBindings()[$seam]['concrete'], $bound, $seam);
+        }
+
+        $forwarding = $declared->seams[ScopedSeam::class][1] ?? self::fail('The scoped seam was declared with no closure.');
+
+        self::assertSame($app->make(BindingRule::SCOPED_PREFIX . ScopedSeam::class), $forwarding($app));
+    }
+
+    /**
      * A container that is not Laravel's keeps no scoped instances to take the
      * seam off, and has the adapter bound all the same.
      *

@@ -390,9 +390,19 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - `Iam::schedule()` registers `authorization:prune` daily, which removes expired grants and those of grantees and
   records that are gone (see [Operations](operations.md#the-schedule)). An expired grant stops counting at its expiry
   either way.
-- `iam:check` runs `authorization:check`, which reports whether `laravel-authorization` answers Laravel's Gate and
-  always exits `0`, and the worker reset forgets its request state between units of work (see
+- `iam:check` runs `authorization:check`, which reports `laravel-authorization`'s settings, seams, grant hooks and
+  connection, and fails the run when it refuses a setting (exit `1`) or could not complete its report (exit `3`) (see
+  [Checks](checks.md#the-members-checks)). The worker reset forgets its request state between units of work (see
   [Operations](operations.md#workers-and-octane)).
+- Each adapter in [What is bound](#what-is-bound) that this package binds over one of `laravel-authorization`'s
+  contracts is declared to that report, so `authorization:check` names it rather than code whose class is decided at
+  first use, as `[seam SubjectResolver] declared by laravel-iam; ...\SubjectResolverAdapter; scoped`. The tenant tree
+  is declared as `one of ...\TenantTreeAdapter, ...\FlatTenantTree, decided at first resolution`, since which it builds
+  depends on whether you name or bind a tree. The declaration names the very binding this package made, so once you
+  bind over a contract the seam is shown as your binding, with `declared by laravel-iam as ..., but overridden later`,
+  or `but an instance is bound over it` for an instance. A contract this package left to your binding, or whose switch
+  is off, carries no declaration; one holding a class you name in `laravel-authorization`'s configuration reads
+  `configured in` that key, with this package's declaration shown overridden where this package registered first.
 
 ## Further reading
 

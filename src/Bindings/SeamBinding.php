@@ -34,6 +34,13 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * the container, so it answers the adapter or the member's default as the
  * application stands when it is built.
  *
+ * A binding over a member's seam that the member reports on can declare the
+ * adapter to that member once bound (`$declare`): the rule hands it the closure
+ * the container now holds for the seam, the very one it registered, so the
+ * member's report can tell the adapter, still bound, from a binding made over
+ * it later. A binding the rule keeps, or whose switch is off, binds nothing and
+ * declares nothing.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -53,6 +60,7 @@ final readonly class SeamBinding
      * @param  list<class-string>  $accepted
      * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
+     * @param  ?\Closure(\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null): void  $declare
      */
     public function __construct(
 
@@ -82,6 +90,9 @@ final readonly class SeamBinding
 
         /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
         public ?\Closure $factory = null,
+
+        /** Declares the adapter to the member's own report once the rule has bound it, handed the container and the closure bound over the seam; `null` declares nothing. */
+        public ?\Closure $declare = null,
     ) {}
 
     /**

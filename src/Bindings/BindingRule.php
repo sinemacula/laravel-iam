@@ -71,6 +71,13 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * shared adapter would be built again for every request and job, and an
  * instance the application bound later would be dropped.
  *
+ * A binding that says how its adapter is declared to its member
+ * (`SeamBinding::$declare`, `laravel-authorization`'s configuration report
+ * among them) is declared at once after it is bound, with the closure the
+ * container now holds for the seam, the very one bound, so the member can tell
+ * the adapter, still bound, from a binding made over it later. One kept, or
+ * whose switch is off, is never declared.
+ *
  * The bindings and their switches are read from the configuration every member
  * will hold once it has registered, whatever order the providers register in: a
  * member that registers after this package merges its packaged configuration
@@ -379,7 +386,11 @@ final readonly class BindingRule
 
     /**
      * Bind the adapter over the seam with the binding's lifetime, once the seam
-     * is off the container's scoped instances.
+     * is off the container's scoped instances, then declare it to the member,
+     * where the binding says how, with the closure the container now holds for
+     * the seam: the one it was bound with, whether the container wrapped the
+     * adapter's class in it or it forwards to this package's key for a scoped
+     * adapter, never another made to stand for it.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
@@ -394,6 +405,12 @@ final readonly class BindingRule
             Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->factory ?? $binding->adapter),
             Lifetime::SCOPED    => self::bindScoped($app, $binding),
         };
+
+        if ($binding->declare === null) {
+            return;
+        }
+
+        ($binding->declare)($app, $this->defaults->bindingOf($app, $binding->abstract));
     }
 
     /**
