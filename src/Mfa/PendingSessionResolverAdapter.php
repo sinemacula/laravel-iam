@@ -222,9 +222,17 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
         $application = $pending->guard;
         $signIn      = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($pending->session, $application), VerificationGeneration::current($identity));
 
-        $trust    = ProviderTrust::accepted($pending->session->getTenantId());
-        $counting = $pending->proofs(null, null, RequirementSubject::MAX_LIMIT);
-        $further  = array_reverse(array_values(array_filter($counting, static fn (RecordedProof $proof): bool => $proof->kind !== ProofKind::FIRST_FACTOR)));
+        $trust   = ProviderTrust::accepted($pending->session->getTenantId());
+        $further = [];
+
+        foreach ($pending->proofs(null, null, RequirementSubject::MAX_LIMIT) as $proof) {
+
+            if ($proof->kind === ProofKind::FIRST_FACTOR) {
+                continue;
+            }
+
+            $further[] = $proof;
+        }
 
         return new PendingContext(
             $identity,
@@ -234,7 +242,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
             $this->requirements->toMfa($pending->requirement),
             $this->changes->pendingActions($pending->actions()),
             $pending->expiresAt,
-            array_map(fn (RecordedProof $proof) => $this->proofs->toMfa($proof, $signIn, $trust), $further),
+            array_map(fn (RecordedProof $proof) => $this->proofs->toMfa($proof, $signIn, $trust), array_reverse($further)),
             $credential,
         );
     }

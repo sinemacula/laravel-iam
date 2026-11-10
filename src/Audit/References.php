@@ -89,6 +89,10 @@ final readonly class References
      */
     public static function type(string $type): string
     {
-        return is_a($type, Model::class, true) ? (string) Relation::getMorphAlias($type) : $type;
+        if (!is_a($type, Model::class, true)) {
+            return $type;
+        }
+
+        return (string) Relation::getMorphAlias($type);
     }
 }
