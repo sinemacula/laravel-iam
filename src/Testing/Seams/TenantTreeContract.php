@@ -138,15 +138,16 @@ abstract class TenantTreeContract
     }
 
     /**
-     * The identifier a subtree selected, as text; anything but an identifier
-     * fails the test case.
+     * The identifier a subtree selected, as text: a number, a string, or a
+     * value an Eloquent cast made stringable; anything else fails the test
+     * case.
      *
      * @param  mixed  $id
      * @return string
      */
     private static function selectedIdentifier(mixed $id): string
     {
-        if (!is_int($id) && !is_string($id)) {
+        if (!is_int($id) && !is_string($id) && !$id instanceof \Stringable) {
             Assert::fail('The tenant tree\'s subtree selected a tenant by no identifier.');
         }
 
