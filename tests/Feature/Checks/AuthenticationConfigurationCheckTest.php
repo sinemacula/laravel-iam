@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Console\ConfigurationChecks;
 use SineMacula\Laravel\Authentication\Console\ConfigurationFinding;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Iam\Checks\AuthenticationConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\Checker;
 use SineMacula\Laravel\Iam\Checks\ContextNamespacesCheck;
@@ -19,6 +20,7 @@ use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Fixtures\Checks\ScriptedCheck;
+use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
@@ -206,12 +208,17 @@ final class AuthenticationConfigurationCheckTest extends TestCase
 
     /**
      * Declare MFA's freshness operations under `laravel-authentication`'s
-     * freshness, so every MFA application's guard passes.
+     * freshness, so every MFA application's guard passes, and bind a tenant
+     * resolver that resolves, so the tenant resolver passes.
      *
      * @return void
      */
     private function declareMfaOperations(): void
     {
+        // With the authorization and SSO adapters both on, a widening grant
+        // resolves its tenant, so the tenant resolver must resolve
+        $this->app?->instance(TenantResolver::class, new OpenTenancy);
+
         $config = $this->app?->make('config');
 
         /** @var array<string, mixed> $freshness */

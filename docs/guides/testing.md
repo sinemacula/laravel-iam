@@ -282,14 +282,29 @@ $provisioner = FakeProvisioner::fake(fn (VerifiedResult $result): User => User::
 ]));
 ```
 
+### The group mapping
+
+`FakeGroupMapping::fake()` binds a mapping that maps each group to what you tell it, and any other group to nothing:
+a role's name, granted in the connection's tenant alone, or a `GrantInstruction`. `refuse()` makes every question
+throw, and `asked()` answers each connection, tenant and list of groups it was asked about.
+
+```php
+use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
+use SineMacula\Laravel\Iam\Testing\FakeGroupMapping;
+
+FakeGroupMapping::fake()
+    ->map('finance', 'invoices.viewer')
+    ->map('finance-admins', GrantInstruction::roleWithSubtree('invoices.approver'));
+```
+
 ## Contract kits
 
 Each kit is a trait of PHPUnit tests that proves an implementation of one of this package's contracts keeps its
 promises. Use it in a test case of your own and implement its hooks against your implementation. The fakes above pass
 their kits. Each kit's checks are static assertions on the `Seams\*Contract` class beside its trait
 (`Seams\MembershipsContract`, `Seams\TenantTreeContract`, `Seams\TenantMfaRequirementContract`,
-`Seams\ProvisionerContract`, and `Seams\EmailGatewayContract` and `Seams\SmsGatewayContract`, which share
-`Seams\GatewayContract`'s), so a test can call one directly, such as
+`Seams\ProvisionerContract`, `Seams\GroupMappingContract`, and `Seams\EmailGatewayContract` and
+`Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can call one directly, such as
 `Seams\MembershipsContract::assertNeverCompleteWhenUnreadable()`.
 
 | Kit                                        | Proves                      | Hooks                                                                                                                                                                                                                                     |
@@ -300,6 +315,7 @@ their kits. Each kit's checks are static assertions on the `Seams\*Contract` cla
 | `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                                                                                                                            |
 | `Seams\Concerns\TenantMfaRequirementTests` | Your `TenantMfaRequirement` | `tenantMfaRequirement()`, `tenantMfaTenant()`, `tenantMfaApplication()`, `changeTenantMfaRequirement()`, `unanswerableTenant()`                                                                                                           |
 | `Seams\Concerns\ProvisionerTests`          | Your `Provisioner`          | `provisioner()`, `provisionedResult()`, `existingIdentity()`, `resultMatching()`, `declinedResult()`, `isMemberOf()`                                                                                                                      |
+| `Seams\Concerns\GroupMappingTests`         | Your `GroupMapping`         | `groupMapping()`, `connectionId()`, `tenantId()`, `mappedGroups()`, `unmappedGroups()`, `expectedGrants()`, `declinedQuestion()`                                                                                                          |
 
 ```php
 use App\Tenancy\DatabaseTenantTree;

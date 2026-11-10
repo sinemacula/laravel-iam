@@ -21,6 +21,7 @@ use SineMacula\Laravel\Mfa\Events\EnrollmentExpired;
 use SineMacula\Laravel\Mfa\Events\EnrollmentStarted;
 use SineMacula\Laravel\Mfa\Events\FactorConfirmed;
 use SineMacula\Laravel\Mfa\Events\FactorDisabled;
+use SineMacula\Laravel\Mfa\Events\FactorEnabled;
 use SineMacula\Laravel\Mfa\Events\FactorRemoved;
 use SineMacula\Laravel\Mfa\Events\FactorRenamed;
 use SineMacula\Laravel\Mfa\Events\FactorsReset;
@@ -42,23 +43,24 @@ use SineMacula\Laravel\Mfa\Factors\FactorSummary;
  *
  * A failed verification's reason is the record's (MFA conceals none from the
  * client), and a lockout is recorded as denied. The record's actor is the
- * operator the event names (a reset, a lifted lockout, a removal, recovery
- * codes made or removed for someone else), else the identity for its own
- * action, explicitly no one for a failed verification, whose author was never
- * proven, and for what MFA did by itself (an enrolment expired, a factor
- * disabled or a lockout applied after too many failures), and the caller for an
- * enrolment abandoned. A lockout lifted, factor removed or recovery codes made
- * or removed with no operator named is the identity's own, as MFA documents a
- * lift with no actor as the identity's. MFA abandons an enrolment for the
- * identity replacing or cancelling it, for an operator resetting its factors
- * and by itself once its confirmation attempts run out, and names neither cause
- * nor operator, so the record leaves its actor to the contributors (the person
- * or the operator serving the call) rather than name the identity as having
- * acted. Its subject is the identity, and its principal, tenant, session and
- * client MFA's context's; the MFA application stands for the guard, which is
- * the same name in this package. A code sent and a verification are correlated
- * by their challenge (`mfa:{challenge}`), which `laravel-authentication`'s
- * refusal of a factor's code names too, and every other event by its session.
+ * operator the event names (a reset, a lifted lockout, a factor its failures
+ * disabled enabled again, a removal, recovery codes made or removed for someone
+ * else), else the identity for its own action, explicitly no one for a failed
+ * verification, whose author was never proven, and for what MFA did by itself
+ * (an enrolment expired, a factor disabled or a lockout applied after too many
+ * failures), and the caller for an enrolment abandoned. A lockout lifted,
+ * factor removed or recovery codes made or removed with no operator named is
+ * the identity's own, as MFA documents a lift with no actor as the identity's.
+ * MFA abandons an enrolment for the identity replacing or cancelling it, for an
+ * operator resetting its factors and by itself once its confirmation attempts
+ * run out, and names neither cause nor operator, so the record leaves its actor
+ * to the contributors (the person or the operator serving the call) rather than
+ * name the identity as having acted. Its subject is the identity, and its
+ * principal, tenant, session and client MFA's context's; the MFA application
+ * stands for the guard, which is the same name in this package. A code sent and
+ * a verification are correlated by their challenge (`mfa:{challenge}`), which
+ * `laravel-authentication`'s refusal of a factor's code names too, and every
+ * other event by its session.
  *
  * Both events of one confirmation (`VerificationPassed`, `FactorConfirmed`) and
  * of one recovery code's use (`RecoveryCodeUsed`, `RecoveryCodesLow`) are two
@@ -84,6 +86,7 @@ final readonly class MfaEventMapper implements EventMapper
         BootstrapEnrollmentCompleted::class => MfaActivity::BOOTSTRAP_ENROLLMENT_COMPLETED,
         PasskeyAssociated::class            => MfaActivity::PASSKEY_ASSOCIATED,
         FactorDisabled::class               => MfaActivity::FACTOR_DISABLED,
+        FactorEnabled::class                => MfaActivity::FACTOR_ENABLED,
         FactorRemoved::class                => MfaActivity::FACTOR_REMOVED,
         FactorRenamed::class                => MfaActivity::FACTOR_RENAMED,
         FactorsReset::class                 => MfaActivity::FACTORS_RESET,
@@ -181,6 +184,7 @@ final readonly class MfaEventMapper implements EventMapper
     {
         $actor = match (true) {
             $event instanceof FactorsReset,
+            $event instanceof FactorEnabled,
             $event instanceof FactorRemoved,
             $event instanceof LockoutLifted,
             $event instanceof RecoveryCodesGenerated,
@@ -203,6 +207,7 @@ final readonly class MfaEventMapper implements EventMapper
             $event instanceof CodeSent,
             $event instanceof EnrollmentEvent,
             $event instanceof FactorDisabled,
+            $event instanceof FactorEnabled,
             $event instanceof FactorRemoved,
             $event instanceof FactorRenamed,
             $event instanceof LockoutApplied,

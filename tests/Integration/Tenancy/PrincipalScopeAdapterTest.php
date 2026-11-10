@@ -6,9 +6,11 @@ namespace Tests\Integration\Tenancy;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
@@ -27,13 +29,13 @@ use Tests\TestCase;
  * Integration tests for SSO's principal scope, composed of the application's
  * memberships and the grant half (IAM-6.8): `within_tenant` only when both
  * halves are, `outside_tenant` when either is, `unknown` otherwise; an
- * incomplete set of memberships is never `outside_tenant` on its own; the
- * shipped grant half, `UnknownGrantScope`, leaves nobody `within_tenant`; the
- * grant half is not asked once the memberships are `outside_tenant`; and an
+ * incomplete set of memberships is never `outside_tenant` on its own; with the
+ * authorization switch off, `UnknownGrantScope` leaves nobody `within_tenant`;
+ * the grant half is not asked once the memberships are `outside_tenant`; and an
  * identity that cannot be resolved, or either half failing, throws.
  *
  * The truth table runs at the connection's own level on every engine; the
- * shipped default also at READ COMMITTED and REPEATABLE READ on MySQL and
+ * switched-off default also at READ COMMITTED and REPEATABLE READ on MySQL and
  * PostgreSQL, inside a transaction, as SSO asks it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -114,9 +116,10 @@ final class PrincipalScopeAdapterTest extends TestCase
     }
 
     /**
-     * With the shipped grant half, a member of the tenant alone is `unknown`,
-     * never `within_tenant`, and one reaching beyond it is `outside_tenant`,
-     * inside SSO's transaction.
+     * With the authorization capability off, the grant half is
+     * `UnknownGrantScope`: a member of the tenant alone is `unknown`, never
+     * `within_tenant`, and one reaching beyond it is `outside_tenant`, inside
+     * SSO's transaction.
      *
      * @param  ?string  $level
      * @return void
@@ -124,7 +127,8 @@ final class PrincipalScopeAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testTheShippedGrantHalfLeavesNobodyWithin(?string $level): void
+    #[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
+    public function testWithTheAuthorizationSwitchOffTheGrantHalfLeavesNobodyWithin(?string $level): void
     {
         self::runAtIsolationLevel($level);
 

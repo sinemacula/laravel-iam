@@ -78,6 +78,15 @@ final class BindingsGuideTest extends TestCase
     /** @var int The columns a binding table holds. */
     private const int COLUMNS = 5;
 
+    /** @var list<string> The keys of `laravel-authorization`'s configuration that name a class its rows keep, as the authorization guide lists them. */
+    private const array AUTHORIZATION_KEYS = [
+        '`authorization.subject_resolver`',
+        '`authorization.requirement_checker`',
+        '`authorization.session.source`',
+        '`authorization.identity_directory`',
+        '`authorization.tenant_tree`',
+    ];
+
     /** @var string The heading of the first column of the table of the package's other bindings. */
     private const string BINDING_COLUMN = 'Binding';
 
@@ -265,6 +274,30 @@ final class BindingsGuideTest extends TestCase
     }
 
     /**
+     * The authorization section's introduction names every key of
+     * `laravel-authorization`'s configuration a row keeps a class in, as the
+     * authorization guide does, and says the grant hooks are listed, not named
+     * as a class.
+     *
+     * @return void
+     */
+    public function testTheAuthorizationIntroductionNamesEveryKeptKey(): void
+    {
+        $guide         = self::guide();
+        $start         = strpos($guide, "\n## Authorization\n");
+        $introduction  = $start === false ? '' : substr($guide, $start, (int) strpos($guide, "\n| ", $start) - $start);
+        $flat          = (string) preg_replace('/\s+/', ' ', $introduction);
+        $authorization = (string) preg_replace('/\s+/', ' ', (string) file_get_contents(dirname(__DIR__, 3) . '/docs/guides/authorization.md'));
+
+        foreach (self::AUTHORIZATION_KEYS as $key) {
+            self::assertStringContainsString($key, $flat);
+            self::assertStringContainsString($key, $authorization);
+        }
+
+        self::assertStringContainsString('listed in `authorization.grant_hooks`, not named as a class', $flat);
+    }
+
+    /**
      * A row of the other bindings that says nothing of replacing it, a kept
      * binding that only says it is not to be replaced, and a table with no
      * column for it are reported.
@@ -435,6 +468,7 @@ final class BindingsGuideTest extends TestCase
 
         $config->set('sso.features.enforcement', true);
         $config->set('sso.features.saml2', true);
+        $config->set('sso.features.domain_linking', true);
         $config->set('iam.tenancy.tree', FakeTenantTree::class);
         $config->set('iam.tenancy.mfa_requirement', FakeTenantMfaRequirement::class);
         $config->set('auth.guards.keys', ['driver' => 'api_key', 'application' => ['methods' => ['api_key']]]);

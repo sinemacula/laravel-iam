@@ -32,6 +32,7 @@ and run Laravel's scheduler. It registers:
 | Task                                                                                                       | When                                                        |
 |------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
 | `mfa:prune`                                                                                                | daily                                                       |
+| `authorization:prune`                                                                                      | daily                                                       |
 | SSO's operations schedule: `sso:prune`, `sso:domains:recheck`, `sso:metadata:refresh`, `sso:keys:expiring` | at `sso.operations.cadence.*`, and only while SSO is in use |
 | `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`   |
 
@@ -46,9 +47,11 @@ and run Laravel's scheduler. It registers:
   cache][sso-several-servers]).
 - A malformed SSO cadence is SSO's own `InvalidArgumentException`, thrown as the schedule is built, so the scheduler
   never starts with it.
+- `authorization:prune` removes `laravel-authorization`'s expired grants and those of grantees and records that are
+  gone. An expired grant stops counting at its expiry whether or not the prune has run, so it keeps the grant tables
+  small rather than making a check correct. It is registered whatever `iam.adapters.authorization` says.
 - `laravel-authentication`'s expired rows are pruned by Laravel's `model:prune`, which you schedule with its models
-  named, as its [operations guide][auth-pruning] shows. `laravel-authorization`'s `authorization:prune` is not
-  registered yet (see [Authorization](authorization.md)).
+  named, as its [operations guide][auth-pruning] shows.
 
 ### Queues
 
@@ -227,7 +230,8 @@ the package resets every member's request state at each boundary:
 
 Octane and the queue worker forget the container's scoped instances themselves at each boundary. The full reset, as a
 worker starts and whenever `Iam::resetWorkerState()` is called, also forgets the members' scoped request state
-(`laravel-authentication`'s, SSO's and `laravel-authorization`'s), this package's own scoped adapters and records (those
+(`laravel-authentication`'s, SSO's and `laravel-authorization`'s: its resolved tenant, its resolution cache's memo and
+its last decision among them), this package's own scoped adapters and records (those
 scoped under the `iam.scoped:` prefix), and the facade roots that would keep them, so a long-running command that
 resets between tenants keeps none of the suite's decisions about the first tenant. It forgets only the suite's scoped
 state: a scoped binding your application made, over a seam or of its own, is kept, so a loop of your own forgets those

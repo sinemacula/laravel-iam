@@ -4,13 +4,15 @@ Who your people are, which tenants they belong to and how your tenants nest are 
 members need answers from that data in several places, and must never disagree about a person or a tenant, so the
 package asks you for each answer once, through a contract of its own, and routes it to every member that needs it.
 
-| Contract                                                     | Configuration key              | Answers                                                                                                                                  |
-|--------------------------------------------------------------|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
-| `SineMacula\Laravel\Iam\Contracts\Provisioner`               | `iam.provisioning.provisioner` | what a person signing in through SSO for the first time is made into                                                                     |
-| `SineMacula\Laravel\Iam\Contracts\Memberships`               | `iam.tenancy.memberships`      | SSO's tenant membership, link eligibility and the membership half of principal scope                                                     |
-| `SineMacula\Laravel\Iam\Contracts\TenantTree`                | `iam.tenancy.tree`             | SSO's enforcement inheritance, and which sessions a change reaches                                                                       |
-| `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement`      | `iam.tenancy.mfa_requirement`  | MFA's tenant requirement and the tenant's part of the tenant policy                                                                      |
-| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                  | every tenant id to its tenant, owed with a tenant MFA requirement or SSO's enforcement (see [The tenant resolver](#the-tenant-resolver)) |
+| Contract                                                     | Configuration key                 | Answers                                                                                                                                                                   |
+|--------------------------------------------------------------|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SineMacula\Laravel\Iam\Contracts\Provisioner`               | `iam.provisioning.provisioner`    | what a person signing in through SSO for the first time is made into                                                                                                      |
+| `SineMacula\Laravel\Iam\Contracts\GroupMapping`              | `iam.provisioning.groups.mapping` | the roles a provider's groups give a person provisioned through it, in the connection's tenant (see [Group mapping](#group-mapping))                                      |
+| `SineMacula\Laravel\Iam\Contracts\GroupResync`               | `iam.provisioning.groups.resync`  | whether, and how, a later sign-in brings a person's roles into line with the groups it reports                                                                            |
+| `SineMacula\Laravel\Iam\Contracts\Memberships`               | `iam.tenancy.memberships`         | SSO's tenant membership, link eligibility and the membership half of principal scope                                                                                      |
+| `SineMacula\Laravel\Iam\Contracts\TenantTree`                | `iam.tenancy.tree`                | SSO's enforcement inheritance, `laravel-authorization`'s tree, and which sessions a change reaches                                                                        |
+| `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement`      | `iam.tenancy.mfa_requirement`     | MFA's tenant requirement and the tenant's part of the tenant policy                                                                                                       |
+| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                     | every tenant id to its tenant, owed with a tenant MFA requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
 
 Name each by its class in `config/iam.php`, or bind it in the container in a service provider's `register()`.
 Memberships or a tree bound only from a `boot()` are still the ones asked, but bind no adapter, so SSO's own defaults
@@ -24,22 +26,38 @@ Every one of them is asked inside the members' transactions on the storage conne
 - write only on the storage connection: a write elsewhere is not atomic with the members' and survives a rollback;
 - refuse by throwing. A read that fails throws; it never answers "nothing" because it could not tell.
 
-The testing fakes and contract kits for this package's four are in [Testing](testing.md).
+The testing fakes and contract kits for this package's own contracts are in [Testing](testing.md).
 
 ## The tenant resolver
 
 `laravel-authentication`'s `SineMacula\Laravel\Authentication\Contracts\TenantResolver` is not this package's contract,
-but the package depends on it: naming a tenant MFA requirement, or turning SSO's enforcement on (with or without a
-tenant tree), requires binding a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is
-exactly that id. MFA's tenant requirement (`Iam\Mfa\TenantRequirementAdapter`), `Iam::treeChanges()->changed()` and
-SSO's revocation all resolve a session's tenant id through it. This applies even when your principals only ever act in
-their own tenant: `laravel-authentication` admits a principal's own tenant without asking a resolver, so an application
-that never needed one before needs one now. Under `laravel-authentication`'s default,
-`SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant`, each of them throws
-`SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every MFA-gated request from a session in a tenant
-answers a server error. Bind yours in a service provider's `register()`; `iam:check` refuses `ResolveNoTenant` while a
-tenant MFA requirement is named or SSO's enforcement is on (see [Checks](checks.md#configuration)), and
-`laravel-authentication`'s [extending guide][auth-extending] describes the contract.
+but the package depends on it: granting anything in a tenant through `laravel-authorization` while the authorization
+and SSO adapters are on (`iam.adapters.authorization` and `iam.adapters.sso`, both on by default), naming a tenant MFA
+requirement, or turning SSO's enforcement on (with or without a tenant tree), requires binding a resolver that resolves
+every tenant id to the tenant whose `getTenantIdentifier()` is exactly that id. MFA's tenant requirement
+(`Iam\Mfa\TenantRequirementAdapter`), `Iam::treeChanges()->changed()` and SSO's revocation all resolve a session's
+tenant id through it, and the [grant hook](authorization.md#grants-the-tree-and-sso) the tenant of every grant that
+widens an identity's scope: a grant to the identity always widens, and so does a principal's first grant in a tenant,
+so an ordinary role assignment in a tenant needs it even with linking by a verified domain off. This applies even when
+your principals only ever act in their own tenant: `laravel-authentication` admits a principal's own tenant without
+asking a resolver, so an application that never needed one before needs one now. Under `laravel-authentication`'s
+default, `SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant`, each of them throws
+`SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every MFA-gated request from a session in a tenant,
+and every such grant, answers a server error. Bind yours in a service provider's `register()`; `iam:check` refuses
+`ResolveNoTenant` while the authorization and SSO adapters are both on, a tenant MFA requirement is named or SSO's
+enforcement is on (see [Checks](checks.md#configuration)), and `laravel-authentication`'s
+[extending guide][auth-extending] describes the contract.
+
+While `iam.adapters.authorization` is on, the resolver names your tenants to `laravel-authorization` too: the grant
+hook, the grant half of the [principal scope](#principal-scope), `AdministrativeCheck` for an object in a tenant (see
+[Authorization](authorization.md#administrative-operations-and-the-trail)), the roles your
+[group mapping](#group-mapping) grants and every [tree change](#the-tenant-tree) you report resolve the tenant id
+through it, and hand `laravel-authorization` the tenant it answers. That tenant must be an Eloquent model or
+`laravel-authorization`'s `AuthorizableTenant`, and its key must be its `getTenantIdentifier()`, byte for byte, since
+`laravel-authentication` records a session's tenant by the one and `laravel-authorization` keys a grant by the other;
+any other answer throws `UnresolvedReferenceException`, and the change being made rolls back. The
+[audit trail](audit-trail.md#authorization-decisions) names the tenant of each `authorization.*` record the same way,
+and records one that does not resolve back with no tenant.
 
 ## Provisioning
 
@@ -92,12 +110,87 @@ identity, its membership and its link stay made, and the person's next sign-in r
 - **Register no provisioning listener of your own beside it.** Every listener shares SSO's one grant.
 - **Whether the membership counts as accepted** by the person is yours to record (see [Memberships](#memberships)).
 - **Groups and custom attributes.** `$result->attributes` holds what the connection's mapping carries: SSO's standard
-  targets, `groups` among them, and the custom keys you declare in `sso.mapping.custom_attributes`. Mapping a
-  provider's groups to grants waits for `laravel-authorization`'s glue (see [Authorization](authorization.md)); until
-  then your provisioner writes any grant itself.
+  targets, `groups` among them, and the custom keys you declare in `sso.mapping.custom_attributes`. Leave the groups to
+  the [group mapping](#group-mapping), which grants their roles once the link is made; your provisioner writes no grant
+  of its own from them.
 
 With no provisioner, a `sign_in` that resolves to no identity ends as SSO's `unlinked`. SSO's side of this is in its
 [provisioning guide][sso-provisioning].
+
+## Group mapping
+
+SSO reports the groups a connection maps (its `groups` attribute) on every verified result, and changes nothing with
+them. Map them to `laravel-authorization`'s roles, and the person a first sign-in provisions holds those roles from the
+start:
+
+```php
+// config/iam.php
+'provisioning' => [
+    'provisioner' => App\Identity\ProvisionPeople::class,
+    'groups'      => [
+        'map' => [
+            'finance'     => 'invoices.viewer',
+            'finance-ops' => ['invoices.viewer', 'invoices.approver'],
+        ],
+    ],
+],
+```
+
+Each role is granted to the new identity itself, which holds across every principal of it, in the tenant of the
+connection the groups came through, reaching that tenant alone, in every application and never expiring. The grants
+are made through `laravel-authorization`'s grant service, as trusted system work, in the provisioning's one
+transaction, once SSO's helper has made the link: a role that does not exist, a mapping that throws, or a grant hook
+that refuses rolls the identity, its membership and its link back with it, and the completion ends as a server error.
+Groups are compared byte for byte, a group the map does not name grants nothing, and a connection that reports no
+groups grants nothing.
+
+A mapping that tells one connection's groups from another's, or grants a role across the tenant's subtree, is a class of
+yours, named in `iam.provisioning.groups.mapping` or bound in the container (which wins over the map):
+
+```php
+use SineMacula\Laravel\Iam\Contracts\GroupMapping;
+use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
+
+final readonly class ConnectionGroups implements GroupMapping
+{
+    public function grantsFor(string $connectionId, string $tenantId, array $groups): array
+    {
+        return in_array('admins', $groups, true) ? [GrantInstruction::roleWithSubtree('tenant.admin')] : [];
+    }
+}
+```
+
+Answer from the values given alone, the same for the same values, and write nothing: it is asked after SSO's locks.
+A `GrantInstruction` names a role and whether it reaches the tenants below the connection's, never a tenant of its own:
+a connection's groups never grant beyond its tenant and its subtree, and never platform-wide. Provider groups are only
+as trustworthy as the connection, whose tenant's administrator may control what it reports.
+
+### Re-syncing at later sign-ins
+
+What provisioning granted stays until you change it: SSO's later sign-ins report the groups again but change nothing.
+To bring a person's roles into line with their groups at every sign-in, opt in:
+
+```php
+'groups' => [
+    'map'    => [/* ... */],
+    'resync' => SineMacula\Laravel\Iam\Provisioning\MappedGroupResync::class,
+],
+```
+
+`Iam::signIns()->redeem()` then calls it for every `sign_in` that links an identity and signs it in, once the
+redemption's transaction has committed, in a transaction of its own, and before the credential is handed back to you.
+`MappedGroupResync` makes the identity's own roles in the connection's
+tenant exactly those the mapping now answers: a group added grants its roles, a group removed revokes them, and a role
+the mapping does not answer is never granted. It also revokes a role an administrator granted the identity itself in
+that tenant, so grant those to the person's principal instead, or implement `Contracts\GroupResync` yourself (named in
+`iam.provisioning.groups.resync`, or bound); roles of the identity's principals, of another tenant, or platform-wide
+are never touched. A grant that widens the person's scope reports it to SSO first, which takes SSO's identity guard
+before any of SSO's other locks, so the re-sync never runs under the redemption's locks, which would deadlock with a
+grant or a link of the same person made meanwhile. A re-sync that throws grants and revokes nothing, and reaches you
+from `redeem()` once the sign-in has committed: the code is spent, and the session written is never handed out, so
+nobody can use it; the person signs in again. Grants are read on every check, so nothing in the session depends on the
+re-sync. Call `redeem()` with no transaction of your own open on the storage connection: inside one, the re-sync runs
+under the redemption's locks after all.
 
 ## Scope widening
 
@@ -166,11 +259,27 @@ stay: no membership, no `link`, and no linking by a domain.
 
 ## Principal scope
 
-SSO's principal scope says whether everything a person holds stays within one tenant, which linking by a verified
-domain requires. Its membership half is answered from your memberships; its grant half needs `laravel-authorization`'s
-grant scope query, which is not bound yet (see [Authorization](authorization.md)). Until it is, the principal scope is
-never `within_tenant`, so SSO links nobody by a verified domain, and a complete set of memberships reaching beyond the
-tenant is `outside_tenant`, which suspends a verified domain link for good.
+SSO's principal scope says whether everything a person holds stays within one tenant, which linking by a verified domain
+requires. Its membership half is answered from your memberships, and its grant half from `laravel-authorization`'s grant
+scope query: `within_tenant` only when both are, and `outside_tenant` when either is, which suspends a verified domain
+link for good. The query counts the live grants of the identity and of every principal it owns, as its `principals()`
+relation lists them, your principal model's global scopes set aside, so a soft-deleted principal still counts until its
+grants are revoked. An identity that is itself a principal and owns none acts as itself alone. An identity that is
+neither a principal nor owns principals (`HasPrincipals`), whose principals only a principal resolver you bind to
+`laravel-authentication` knows, leaves the grant half `unknown`, as does a `principals()` that is no Eloquent relation
+or query: give such an identity a `principals()` relation to have it linked by a verified domain. The query places a
+grant in the tenant or below it in your [tree](#the-tenant-tree) within it, and one anywhere else (another tenant, an
+ancestor, the platform) outside it. Keep the tree's subtree query on the storage connection: the query nests it there,
+and a tree it cannot read answers `unknown`. It names the tenant through your [tenant resolver](#the-tenant-resolver).
+
+With `iam.adapters.authorization` off, the grant half is `Iam\Tenancy\UnknownGrantScope`, which answers `unknown`, so
+the principal scope is never `within_tenant` and SSO links nobody by a verified domain, unless you bind a grant half
+of your own (`Iam\Tenancy\Contracts\GrantScope`).
+
+A grant that takes a person beyond a tenant reports it to SSO first, in the grant's own transaction, through
+`laravel-authorization`'s grant hook (see [Authorization](authorization.md)): SSO suspends the person's links by every
+other tenant's verified domain and revokes the sessions established through them, as a membership's
+[scope widening](#scope-widening) does. A grant made inside your own transaction rolls the suspension back with it.
 
 ## The tenant tree
 
@@ -208,9 +317,36 @@ Iam::transaction(function () use ($organisation, $parentId): void {
 ```
 
 While SSO's enforcement is on or a tenant MFA requirement is named, it judges the sessions of the moved tenant and its
-whole subtree, once in the transaction and once more after it commits; otherwise nothing can have changed, and it
-reads nothing. A report made before the write would judge the tree as it was. It resolves each tenant through your
+whole subtree, once in the transaction and once more after it commits; otherwise no session can have changed, and it
+judges none. A report made before the write would judge the tree as it was. It resolves each tenant through your
 [tenant resolver](#the-tenant-resolver), and throws `UnresolvedReferenceException` under `ResolveNoTenant`.
+
+The same tree is `laravel-authorization`'s, while `iam.adapters.authorization` is on: a grant made in a tenant reaches
+the tenants below it as your tree places them, each named as your tenant resolver names it. A tenant's key must be its
+identifier: a tenant `laravel-authorization` names whose key does not resolve back, through your resolver, to that same
+tenant is refused (`UnresolvedReferenceException`), and so is a grant in it, so bind a resolver: `iam:check` refuses
+`ResolveNoTenant` while the authorization adapters are on beside a tree. Your `subtree()` may select its ids as integers
+(`Organisation::query()->select('id as tenant_id')`): this package selects them as text, as `laravel-authorization`
+compares them. Every tenant of your tree must be of one type, one model: your `subtree()` selects ids alone, so
+`laravel-authorization` reads every tenant of a subtree as the type of the tenant at its top. A tree that places a
+tenant below one of another type (an account below an organisation, say) is refused with
+`TenancyMisconfiguredException`: a check in the tenant below, a principal scope that would place a person outside a
+tenant above it, and a move of a subtree holding one all throw, rather than read a grant below the tenant as one beyond
+it. Keep the tree to one tenant model, or bind a tree of your own to `laravel-authorization` with the authorization
+adapters off. Without a tree, `laravel-authorization` keeps its own flat tree, and nothing is reported to it.
+
+Each report passes the move on to `laravel-authorization` first, whatever SSO's enforcement says. A grant rooted below
+a tenant counts within it for SSO's principal scope, so a move that takes a subtree out from under a tenant takes the
+grants in that subtree beyond it with no grant written, and no grant hook runs. So, while the SSO adapters are on too,
+the report names everyone holding a live role, permission or policy grant in the moved tenant or below it (a
+principal's grant naming the person who owns it) to SSO's [scope widening](#scope-widening) in the moved tenant, in
+your transaction: SSO suspends each one's links by a verified domain in every other tenant's connections and revokes
+the sessions established through them, and all of it rolls back with the move. This package sees only where the tenant
+ends up, so it reports every move this way, a move within the linked tenant included: such a link is suspended too,
+and the person links again. Then `Authorization::treeChanged()` drops every resolution `laravel-authorization` built in
+the moved tenant or below it, in every worker, at once and again once your transaction commits; so a report is owed
+whenever the tree moves, even with no enforcement and no tenant requirement, and it resolves the moved tenant through
+your resolver then too. Do not call `Authorization::treeChanged()` yourself beside it.
 
 ## The tenant MFA requirement
 

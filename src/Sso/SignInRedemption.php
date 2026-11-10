@@ -10,11 +10,15 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\ExternalSignInRefusedException;
 use SineMacula\Laravel\Iam\Exceptions\UnlinkedSignInException;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
+use SineMacula\Laravel\Iam\Provisioning\GroupGrants;
+use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\HandoffRedemption;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
+use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
  * Redeems a `sign_in` handoff code SSO issued, and signs the person it links in
@@ -49,6 +53,27 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *    stays unspent and nothing reports a sign-in that did not happen. A pending
  *    session is a success, and commits.
  *
+ * Once it has committed, while the application opts into re-syncing its
+ * provider groups (`Provisioning\GroupSettings`, IAM-7.2), the identity the
+ * result links, resolved through the morph map (`IdentityReferences`), is
+ * re-synced with the groups the result reports through the connection, in the
+ * connection's tenant (`Contracts\GroupResync`), in a transaction of its own,
+ * through the retry helper, before anything is answered. It never runs under
+ * the redemption's locks: a re-synced grant that widens the identity's scope
+ * reports it to SSO's scope widening, which takes the identity's guard and then
+ * the connections of its links, and SSO's lock order puts the guard before
+ * every connection, so taken after the redemption had locked its connection,
+ * its code and its link, it would wait on a change that holds the guard and
+ * waits on that connection. Nothing the session holds depends on the grants,
+ * which every check reads afresh, and the credential leaves only once the
+ * re-sync has committed, so no request acts on the session before its grants
+ * are re-synced. A re-sync that throws propagates once the sign-in has
+ * committed: the code is spent, and the session written is never handed out, so
+ * it is never used and ends as it expires; the person signs in again. Redeem
+ * with no transaction open on the storage connection: inside the caller's,
+ * neither commits until the caller's does, and the re-sync runs under the
+ * redemption's locks after all.
+ *
  * `laravel-authentication` reports its refusal (`AuthenticationFailed`) at
  * once, inside the transaction; the audit trail holds that report while the
  * transaction is open and records it once the transaction has rolled back
@@ -57,9 +82,9 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *
  * The admitted redemption is forgotten as each attempt starts and ends, so a
  * retried attempt never answers from one rolled back. What it answers leaves
- * only once the transaction has committed, so a credential is never handed out
- * for a session that rolled back; the application sends it with
- * `Cache-Control: no-store`.
+ * only once the transaction, and the re-sync's, have committed, so a credential
+ * is never handed out for a session that rolled back; the application sends it
+ * with `Cache-Control: no-store`.
  *
  * It is handed plain values alone: the code, the verifier, the application, the
  * connection and the context of the client the redemption is made for, which
@@ -87,6 +112,8 @@ final readonly class SignInRedemption
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
+     * @param  \SineMacula\Laravel\Iam\Provisioning\GroupSettings  $groups
+     * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      */
     public function __construct(
 
@@ -98,6 +125,12 @@ final readonly class SignInRedemption
 
         /** Finds the session service of the guard the application is. */
         private CurrentSession $sessions,
+
+        /** Finds the application's group re-sync, if it opts into one. */
+        private GroupSettings $groups,
+
+        /** Resolves the identity the result links, for its re-sync. */
+        private IdentityReferences $identities,
     ) {}
 
     /**
@@ -126,7 +159,7 @@ final readonly class SignInRedemption
     ): RedemptionResult|SignInResult {
         $secrets = new \SensitiveParameterValue([$code, $verifier]);
 
-        return $this->transaction->run(function () use ($application, $connectionId, $secrets, $context): RedemptionResult|SignInResult {
+        [$result, $resynced] = $this->transaction->run(function () use ($application, $connectionId, $secrets, $context): array {
 
             $admitted = $this->container->make(AdmittedRedemptions::class);
 
@@ -140,11 +173,18 @@ final readonly class SignInRedemption
                 $admitted->forget();
             }
         });
+
+        if ($resynced !== null) {
+            $this->resync($resynced);
+        }
+
+        return $result;
     }
 
     /**
      * Admit the code, then sign the person it links in, inside the redemption's
-     * transaction.
+     * transaction; answer SSO's refusal or the sign-in, with the redemption to
+     * re-sync the identity it links from once it commits, `null` for a refusal.
      *
      * @param  \SineMacula\Laravel\Iam\Sso\AdmittedRedemptions  $admitted
      * @param  string  $application
@@ -152,7 +192,7 @@ final readonly class SignInRedemption
      * @param  string  $code
      * @param  string  $verifier
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInContext  $context
-     * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
+     * @return array{\SineMacula\Laravel\Authentication\Sessions\SignInResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult, ?\SineMacula\Laravel\Sso\Handoffs\RedemptionResult}
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnlinkedSignInException
      * @throws \SineMacula\Laravel\Iam\Exceptions\ExternalSignInRefusedException
@@ -164,14 +204,14 @@ final readonly class SignInRedemption
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $verifier,
         SignInContext $context,
-    ): RedemptionResult|SignInResult {
+    ): array {
         $sessions   = $this->sessions->sessions($application);
         $ssoClient  = ClientTranslator::toSso($context->client);
         $redemption = $this->container->make(HandoffRedemption::class)
             ->admit(Purpose::SIGN_IN, $application, $connectionId, $code, $verifier, $ssoClient);
 
         if (!$redemption->isRedeemed()) {
-            return $redemption;
+            return [$redemption, null];
         }
 
         if ($redemption->linkedIdentity === null) {
@@ -182,6 +222,61 @@ final readonly class SignInRedemption
 
         $signIn = $sessions->signInExternally(ExternalResults::from($redemption), $context);
 
-        return $signIn->isFailed() ? throw ExternalSignInRefusedException::for($signIn) : $signIn;
+        return $signIn->isFailed() ? throw ExternalSignInRefusedException::for($signIn) : [$signIn, $redemption];
+    }
+
+    /**
+     * Re-sync the identity the committed redemption links with the groups its
+     * result reports, in a transaction of its own, while the application opts
+     * into a re-sync; otherwise do nothing.
+     *
+     * @param  \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \LogicException
+     * @throws \Throwable
+     */
+    private function resync(RedemptionResult $redemption): void
+    {
+        $resync = $this->groups->resync();
+
+        if ($resync === null) {
+            return;
+        }
+
+        $result = self::verified($redemption);
+        $linked = self::linked($redemption);
+
+        $this->transaction->run(fn () => $resync->resync($this->identities->identity($linked), $result->connectionId, $result->tenantId, GroupGrants::groupsOf($result)));
+    }
+
+    /**
+     * The identity the redemption links, which a redemption signed in always
+     * names.
+     *
+     * @param  \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
+     * @return \SineMacula\Laravel\Sso\Identities\IdentityReference
+     *
+     * @throws \LogicException
+     */
+    private static function linked(RedemptionResult $redemption): IdentityReference
+    {
+        return $redemption->linkedIdentity ?? throw new \LogicException('A redemption signed in links the identity it signs in.');
+    }
+
+    /**
+     * The verified result the redemption carries, which a redeemed one always
+     * does.
+     *
+     * @param  \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
+     * @return \SineMacula\Laravel\Sso\Results\VerifiedResult
+     *
+     * @throws \LogicException
+     */
+    private static function verified(RedemptionResult $redemption): VerifiedResult
+    {
+        return $redemption->result ?? throw new \LogicException('A redeemed sign-in carries the result it redeemed.');
     }
 }

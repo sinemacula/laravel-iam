@@ -9,6 +9,13 @@ use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\Models\Role;
+use SineMacula\Laravel\Authorization\Services\GrantService;
+use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
+use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\LinkEligibilityAdapter;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\PrincipalScopeAdapter;
@@ -25,10 +32,12 @@ use SineMacula\Laravel\Sso\Protocols\CompletionRequest;
 use SineMacula\Laravel\Sso\Responses\CompletionResponses;
 use SineMacula\Laravel\Sso\Testing\HandoffRedirect;
 use Tests\Concerns\LinksByVerifiedDomain;
-use Tests\Concerns\MigratesSso;
+use Tests\Concerns\MigratesAuthorization;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Authorization\Organisation;
+use Tests\Fixtures\Authorization\OrganisationTenancy;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
@@ -41,30 +50,37 @@ use Tests\TestCase;
  * `link_ineligible`; and a first sign-in by a verified email of the tenant's
  * verified domain reserves a link that the sign-in's redemption activates, for
  * a member who accepted before the domain's verification, once the grant half
- * of the principal scope answers `within_tenant` too, while the shipped grant
- * half, a membership accepted since or never, and a person reaching beyond the
- * tenant reserve nothing, the sign-in going on as `unlinked`; and a verified
- * domain link whose person comes to hold another tenant's membership is latched
- * suspended at its next sign-in, its session revoked.
+ * of the principal scope answers `within_tenant` too, while the grant half with
+ * the authorization switch off (`UnknownGrantScope`), a membership accepted
+ * since or never, and a person reaching beyond the tenant reserve nothing, the
+ * sign-in going on as `unlinked`; and a verified domain link whose person comes
+ * to hold another tenant's membership is latched suspended at its next sign-in,
+ * its session revoked.
  *
- * `laravel-authorization`'s grant scope query has not shipped, so the grant
- * half answering `within_tenant` is a test binding of this package's own port
- * (`GrantScope`); the application cannot bind one yet. The flows that commit
- * run at the connection's own level on every engine, then at READ COMMITTED and
- * REPEATABLE READ on MySQL and PostgreSQL.
+ * The grant half is `laravel-authorization`'s grant scope query as this package
+ * binds it (`GrantScopeAdapter`): a member who holds no grant beyond the tenant
+ * is linked by its verified domain, and one granted a role in another tenant is
+ * not. Where only the memberships are under test, the grant half is a test
+ * binding of this package's own port (`GrantScope`) answering `within_tenant`.
+ * The flows that commit run at the connection's own level on every engine, then
+ * at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
+#[CoversClass(GrantScopeAdapter::class)]
 #[CoversClass(LinkEligibilityAdapter::class)]
 #[CoversClass(PrincipalScopeAdapter::class)]
 #[CoversClass(TenantMembershipAdapter::class)]
 #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
 final class TenancyThroughSsoTest extends TestCase
 {
-    use LinksByVerifiedDomain, MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use LinksByVerifiedDomain, MigratesAuthorization, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+
+    /** @var string The role an administrator grants. */
+    private const string ROLE = 'editor';
 
     /** @var ?\SineMacula\Laravel\Iam\Testing\FakeMemberships The application's memberships. */
     private ?FakeMemberships $memberships = null;
@@ -88,6 +104,8 @@ final class TenancyThroughSsoTest extends TestCase
         $this->app?->bind(LinkEligibility::class, LinkEligibilityAdapter::class);
 
         $this->memberships = FakeMemberships::fake($this->app);
+
+        $this->app?->instance(TenantResolver::class, new OrganisationTenancy);
     }
 
     /**
@@ -190,16 +208,62 @@ final class TenancyThroughSsoTest extends TestCase
     }
 
     /**
-     * With the shipped grant half, which answers `unknown`, the same member's
-     * first sign-in reserves nothing and links nobody.
+     * With the authorization capability off, the grant half answers `unknown`
+     * (`UnknownGrantScope`), so the same member's first sign-in reserves
+     * nothing and links nobody.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testTheShippedGrantHalfReservesNothing(): void
+    #[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
+    public function testWithTheAuthorizationSwitchOffTheGrantHalfReservesNothing(): void
     {
         $this->domainMember();
+
+        self::assertSame(FailureReason::UNLINKED->value, $this->refusal(Purpose::SIGN_IN, null, self::byDomain()));
+        self::assertSame(0, DB::table('sso_links')->count());
+    }
+
+    /**
+     * With the grant half `laravel-authorization`'s grant scope query, a member
+     * who holds no grant beyond the tenant, or grants in it alone, is linked by
+     * the tenant's verified domain end to end.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testTheShippedGrantHalfLinksAMemberWithinTheTenant(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $person = $this->domainMember();
+
+        $this->grantRole($person, self::TENANT);
+
+        $signedIn = $this->signInByDomain();
+
+        self::assertTrue($signedIn->isSignedIn(), (string) $signedIn->reason?->value);
+        self::assertSame(LinkOrigin::VERIFIED_DOMAIN->value, DB::table('sso_links')->where('identity_id', self::keyOf($person))->value('provenance'));
+    }
+
+    /**
+     * With the grant half `laravel-authorization`'s grant scope query, a member
+     * granted a role in another tenant reaches beyond the tenant, and is not
+     * linked by its verified domain.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheShippedGrantHalfLinksNobodyGrantedBeyondTheTenant(): void
+    {
+        $person = $this->domainMember();
+
+        $this->grantRole($person, 'tenant-2');
 
         self::assertSame(FailureReason::UNLINKED->value, $this->refusal(Purpose::SIGN_IN, null, self::byDomain()));
         self::assertSame(0, DB::table('sso_links')->count());
@@ -310,6 +374,25 @@ final class TenancyThroughSsoTest extends TestCase
         $result   = $app->make(CompletionService::class)->complete(CompletionEndpoint::CALLBACK, $this->connectionId, $request, self::ssoClient());
 
         return HandoffRedirect::from($app->make(CompletionResponses::class)->from($result, 'GET'))->error;
+    }
+
+    /**
+     * Grant the person a role in the tenant given, through
+     * `laravel-authorization`, as an administrator would.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  string  $tenantId
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    private function grantRole(Person $person, string $tenantId): void
+    {
+        $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
+
+        Role::query()->firstOrCreate(['name' => self::ROLE]);
+
+        Iam::transaction(static fn () => $service->grantRole($person, self::ROLE, tenant: new Reference(Organisation::TYPE, $tenantId), includeSubtree: false));
     }
 
     /**

@@ -484,9 +484,9 @@ final class InstallCommandTest extends TestCase
         $owed = substr($output, (int) strpos($output, 'Still to do:'));
 
         self::assertStringContainsString(
-            ' - Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s tables are created on'
-                . ' `iam.storage.connection`, laravel-audit-log\'s on `audit-log.storage.connection` and laravel-authorization\'s'
-                . ' on `authorization.connection`, each the default connection when unset.',
+            ' - Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s, laravel-sso\'s and laravel-authorization\'s'
+                . ' tables are created on `iam.storage.connection`, and laravel-audit-log\'s on `audit-log.storage.connection`,'
+                . ' each the default connection when unset.',
             $owed,
         );
         self::assertStringNotContainsString('every member\'s tables', $owed);

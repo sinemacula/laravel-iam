@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\AuditLog\Access\DenyAllPolicy;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
+use SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy;
 use SineMacula\Laravel\AuditLog\Facades\AuditLog;
 use SineMacula\Laravel\AuditLog\Querying\AuditReadRefusedException;
 use SineMacula\Laravel\AuditLog\Querying\Enums\ReadRefusal;
@@ -51,6 +53,22 @@ final class TrailReadsTest extends TestCase
 
     /** @var string The connection audit-log stores on when the trail is kept apart. */
     private const string AUDIT_CONNECTION = 'audit';
+
+    /**
+     * Answer every read with audit-log's own policy, which shows nobody
+     * anything: what is read is not in question here, only whether a read is
+     * let in, so the test needs none of `laravel-authorization`'s tables the
+     * package's policy reads its grants from.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app?->singleton(AuditAccessPolicy::class, DenyAllPolicy::class);
+    }
 
     /**
      * A read of the trail inside a cross-member transaction is refused before

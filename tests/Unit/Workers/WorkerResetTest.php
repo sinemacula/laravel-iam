@@ -70,8 +70,9 @@ final class WorkerResetTest extends TestCase
     use MockeryPHPUnitIntegration;
 
     /**
-     * Clear the facades' resolved roots and the application they resolve from,
-     * so no test's container reaches another.
+     * Clear the facades' resolved roots, the application they resolve from and
+     * the global container an application sets itself as, so no test's
+     * container reaches another.
      *
      * @return void
      */
@@ -80,6 +81,7 @@ final class WorkerResetTest extends TestCase
     {
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication(null);
+        Container::setInstance();
 
         parent::tearDown();
     }

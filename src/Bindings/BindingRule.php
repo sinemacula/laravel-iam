@@ -390,8 +390,8 @@ final readonly class BindingRule
         self::unscope($app, $binding->abstract);
 
         match ($binding->lifetime) {
-            Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->adapter),
-            Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->adapter),
+            Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->factory ?? $binding->adapter),
+            Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->factory ?? $binding->adapter),
             Lifetime::SCOPED    => self::bindScoped($app, $binding),
         };
     }
@@ -437,7 +437,7 @@ final readonly class BindingRule
     {
         $key = self::SCOPED_PREFIX . $binding->abstract;
 
-        $app->scoped($key, $binding->adapter);
+        $app->scoped($key, $binding->factory ?? $binding->adapter);
         $app->bind($binding->abstract, static fn (Container $container): mixed => $container->make($key));
     }
 }

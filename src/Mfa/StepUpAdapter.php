@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
@@ -37,7 +38,11 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * sessions of a person, owned by the identity, records the proof and issues the
  * session a new access token, handed the caller's client (`ClientTranslator`)
  * as the client it was served to. The access token result is MFA's completion,
- * so it reaches the caller as `VerificationResult::$completion`.
+ * so it reaches the caller as `VerificationResult::$completion`. Once the token
+ * is issued, the decision `laravel-authorization` keeps that read an
+ * authentication requirement in the session stepped up or about the caller is
+ * forgotten (`DecisionCacheInvalidation`, IAM-6.11): the verification passed
+ * changed the proofs it read.
  *
  * MFA hands over only a proof it accepted after the session's first factor, so
  * nothing here judges the proof again. A failed result, a caller that is
@@ -66,6 +71,7 @@ final readonly class StepUpAdapter implements StepUp
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $current
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
+     * @param  \SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation  $decisions
      */
     public function __construct(
 
@@ -74,10 +80,14 @@ final readonly class StepUpAdapter implements StepUp
 
         /** Translates the verified proof into `laravel-authentication`'s proof result. */
         private ProofTranslator $proofs,
+
+        /** Forgets the decision that read the caller's authentication. */
+        private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
-     * Step the caller's session up with the verified proof, returning
+     * Step the caller's session up with the verified proof, then forget the
+     * decision that read its authentication, returning
      * `laravel-authentication`'s access token result as MFA's completion.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
@@ -109,7 +119,13 @@ final readonly class StepUpAdapter implements StepUp
         $proven = $this->proofs->toResult($result, $this->current->identity($identity));
         $token  = $sessions->stepUp($proven, ClientTranslator::toAuthentication($caller->client));
 
-        return $token->isIssued() ? $token : throw self::refused(sprintf('laravel-authentication refused the step-up: [%s].', $token->reason->value ?? ''));
+        if (!$token->isIssued()) {
+            throw self::refused(sprintf('laravel-authentication refused the step-up: [%s].', $token->reason->value ?? ''));
+        }
+
+        $this->decisions->authenticationChanged($identity, $proof->binding->sessionId);
+
+        return $token;
     }
 
     /**

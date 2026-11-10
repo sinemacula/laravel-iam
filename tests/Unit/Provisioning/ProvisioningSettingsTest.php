@@ -68,7 +68,7 @@ final class ProvisioningSettingsTest extends TestCase
 
         self::assertIsArray($shipped);
         self::assertSame('iam.provisioning.provisioner', ProvisioningSettings::KEY);
-        self::assertSame(['provisioner' => null], $shipped['provisioning']);
+        self::assertSame(['provisioner' => null, 'groups' => ['mapping' => null, 'map' => [], 'resync' => null]], $shipped['provisioning']);
     }
 
     /**

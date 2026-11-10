@@ -155,6 +155,25 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
+     * The exception for a grant's tenant names its id and the widening that
+     * cannot be reported, never the sessions acting in it.
+     *
+     * @return void
+     */
+    public function testItNamesAGrantsTenantThatCannotBeResolved(): void
+    {
+        $exception = UnresolvedReferenceException::forGrantTenant('tenant-9');
+
+        self::assertSame(
+            'The tenant [tenant-9] a grant holds in cannot be resolved: laravel-authentication\'s tenant resolver must resolve it to the tenant of its type'
+            . ' whose identifier it is, so the widening of the identity\'s scope can be reported to laravel-sso; the grant is refused rather than written unreported.',
+            $exception->getMessage(),
+        );
+        self::assertSame(ReferenceKind::TENANT, $exception->kind);
+        self::assertNull($exception->application);
+    }
+
+    /**
      * A tenant whose identifier cannot name it names neither the tenant nor its
      * identifier, of which nothing printable may be known.
      *

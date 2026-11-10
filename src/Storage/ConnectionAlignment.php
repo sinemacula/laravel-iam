@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Storage;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
@@ -23,14 +24,22 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * a member whose service provider has not registered once the application has
  * booted, since its key could never be aligned.
  *
+ * `laravel-authorization`'s key is `authorization.connection`, which it reads
+ * on every query, migration and transaction of its own
+ * (`AuthorizationConnection`), so its grants commit or roll back with a change
+ * that spans members (a provisioned membership, a grant that widens a person's
+ * scope through SSO's scope widening) and its grant scope query reads the
+ * tenant tree on the connection the tree is on.
+ *
  * A key is written only once its member has merged its configuration, and, when
  * the application is given, only once its member's provider has registered: an
  * application's published member configuration can be present before then, and
- * a key written into it would replace the member's whole `storage` block, the
- * member's own value from its environment included, when the member merges its
- * configuration. A key a previous call wrote, and that still holds what it
- * wrote, is the package's rather than the application's, so it follows the
- * shared connection if that has changed since.
+ * a key written into it would replace the member's whole `storage` block, or
+ * mask `laravel-authorization`'s own key, the member's own value from its
+ * environment included, when the member merges its configuration. A key a
+ * previous call wrote, and that still holds what it wrote, is the package's
+ * rather than the application's, so it follows the shared connection if that
+ * has changed since.
  *
  * With `iam.storage.connection` unset, the shared connection is the default
  * one, and so is every member's whose key is unset: nothing is written, and a
@@ -53,6 +62,7 @@ final readonly class ConnectionAlignment
         'authentication.storage.connection' => AuthenticationServiceProvider::class,
         'mfa.storage.connection'            => MfaServiceProvider::class,
         'sso.storage.connection'            => SsoServiceProvider::class,
+        'authorization.connection'          => AuthorizationServiceProvider::class,
     ];
 
     /**

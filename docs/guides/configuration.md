@@ -24,11 +24,12 @@ next boot: a deploy, or a restart of every worker (see [Operations](operations.m
 |--------------------------|---------|--------------------------|-------------------------------------------------------------------------------------|
 | `iam.storage.connection` | `null`  | `IAM_STORAGE_CONNECTION` | The one connection every member's tables live on; `null` is the default connection. |
 
-The connection is written into `authentication.storage.connection`, `mfa.storage.connection` and
-`sso.storage.connection` wherever a member leaves its own key unset, so a change that spans members runs in one
-transaction. A member key that names another connection refuses boot with `StorageConnectionMismatchException`: unset
-the member's key, or set it to the same connection. `laravel-audit-log` may keep its own connection; `iam:check` notes
-it.
+The connection is written into `authentication.storage.connection`, `mfa.storage.connection`,
+`sso.storage.connection` and `laravel-authorization`'s `authorization.connection` (`AUTHORIZATION_DB_CONNECTION`)
+wherever a member leaves its own key unset, so a change that spans members, a grant made with a provisioned membership
+among them, runs in one transaction. A member key that names another connection refuses boot with
+`StorageConnectionMismatchException`: unset the member's key, or set it to the same connection. `laravel-audit-log` may
+keep its own connection; `iam:check` notes it.
 
 Your identity models, and every principal model your guards resolve, must live on this connection too, or a sign-in
 and the session it writes cannot commit together. `iam:check` checks the identity models of every guard; it cannot
@@ -39,11 +40,11 @@ worker.
 
 ## Adapters
 
-| Key                          | Default | Environment                  | What it does                                                                                                                                         |
-|------------------------------|---------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `iam.adapters.mfa`           | `true`  | `IAM_ADAPTERS_MFA`           | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.                                                       |
-| `iam.adapters.sso`           | `true`  | `IAM_ADAPTERS_SSO`           | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams.                                         |
-| `iam.adapters.authorization` | `true`  | `IAM_ADAPTERS_AUTHORIZATION` | Binds `laravel-authorization` to the other members: its subject, context, requirement checker and session policy, its step-up, and the access seams. |
+| Key                          | Default | Environment                  | What it does                                                                                                                                                                                                                 |
+|------------------------------|---------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.adapters.mfa`           | `true`  | `IAM_ADAPTERS_MFA`           | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.                                                                                                                               |
+| `iam.adapters.sso`           | `true`  | `IAM_ADAPTERS_SSO`           | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams.                                                                                                                 |
+| `iam.adapters.authorization` | `true`  | `IAM_ADAPTERS_AUTHORIZATION` | Binds `laravel-authorization` to the other members: its subject, context, requirement checker and session policy, its step-up, the access seams, its identity directory, tree and grant hook, and audit-log's access policy. |
 
 Each is read leniently, as the members read a switch an environment variable fills: `false`, `0`, `off` and `no`
 turn one off, and anything else, an empty value included, leaves it on. Every seam each one binds, and what turning it
@@ -86,8 +87,10 @@ every service provider has registered counts as named. Any value that is no clas
   down a tree. Name none and no tenant requires a further factor; SSO's enforcement still applies.
 - The memberships answer SSO's tenant membership, link eligibility and the membership half of its principal scope.
   Name none and SSO's defaults stay: no membership, no `link`, no linking by a verified domain.
-- The tree lets a tenant inherit SSO's enforcement from the nearest tenant above it that has a rule. Name none and every
-  tenant stands alone.
+- The tree lets a tenant inherit SSO's enforcement from the nearest tenant above it that has a rule, and is
+  `laravel-authorization`'s tree, so a grant with its subtree reaches the tenants below. Name none and every tenant
+  stands alone, `laravel-authorization` keeping its own flat tree. With the authorization adapters on, a tree needs a
+  tenant resolver, which `iam:check` requires.
 
 Report every change to a tenant's answer ([Provisioning and
 tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), every move in the tree ([Provisioning and
@@ -97,13 +100,22 @@ answer keep acting in the tenant.
 
 ## Provisioning
 
-| Key                            | Default | Environment | What it does                                                        |
-|--------------------------------|---------|-------------|---------------------------------------------------------------------|
-| `iam.provisioning.provisioner` | `null`  | None        | Your provisioner, a class implementing `Iam\Contracts\Provisioner`. |
+| Key                               | Default | Environment | What it does                                                                                                                                                          |
+|-----------------------------------|---------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.provisioning.provisioner`    | `null`  | None        | Your provisioner, a class implementing `Iam\Contracts\Provisioner`.                                                                                                   |
+| `iam.provisioning.groups.mapping` | `null`  | None        | Your group mapping, a class implementing `Iam\Contracts\GroupMapping`: the roles a provider's groups give a person in the connection's tenant.                        |
+| `iam.provisioning.groups.map`     | `[]`    | None        | While no mapping is named or bound, each group name mapped to a role's name or a list of them, granted in the connection's tenant alone.                              |
+| `iam.provisioning.groups.resync`  | `null`  | None        | Your re-sync of the groups at a later sign-in, a class implementing `Iam\Contracts\GroupResync`, such as `Iam\Provisioning\MappedGroupResync`; none re-syncs nothing. |
 
 A provisioner bound in the container counts as named, whenever it is bound. Name none and provisioning is off: a
 sign-in through SSO that resolves to no identity ends as SSO's `unlinked`. What the provisioner is asked, and in which
 transaction, is in [Provisioning and tenancy](provisioning-and-tenancy.md).
+
+A group mapping or re-sync bound in the container counts as named too. The roles the groups map to are granted to the
+new identity in the provisioning's transaction, never beyond the connection's tenant; a role that does not exist, or a
+mapping that throws, rolls the provisioning back. A value that is no class name, or a map that is no map of group names
+to role names, fails closed. Mapping and re-syncing groups is in
+[Provisioning and tenancy](provisioning-and-tenancy.md#group-mapping).
 
 ## Delivery
 

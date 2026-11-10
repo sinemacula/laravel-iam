@@ -28,6 +28,12 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * the configuration is cached or not. A value a provider sets after this
  * package registers, or in a `boot()`, is read too late.
  *
+ * An adapter that must give way to the member's own default while what it
+ * answers from is missing names how the container builds it (`$factory`): the
+ * closure is bound in the adapter's place, with the row's lifetime, and handed
+ * the container, so it answers the adapter or the member's default as the
+ * application stands when it is built.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -46,6 +52,7 @@ final readonly class SeamBinding
      * @param  bool|\Closure(): bool  $mandatory
      * @param  list<class-string>  $accepted
      * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
+     * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
      */
     public function __construct(
 
@@ -72,6 +79,9 @@ final readonly class SeamBinding
 
         /** The member's own answer to whether the seam holds its default, asked in place of reading the class that declares the binding's closure; `null` for a member that gives none. */
         public ?\Closure $holdsDefault = null,
+
+        /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
+        public ?\Closure $factory = null,
     ) {}
 
     /**

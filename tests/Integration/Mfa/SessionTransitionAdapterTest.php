@@ -30,6 +30,7 @@ use SineMacula\Laravel\Mfa\Requirements\SessionChange;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\SessionTransitionTests;
 use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
@@ -58,7 +59,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class SessionTransitionAdapterTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesMembers, RunsAtIsolationLevels, SessionTransitionTests, SignsInPeople;
+    use ArrangesFactorChanges, MigratesMembers, RecordsRequirementDecisions, RunsAtIsolationLevels, SessionTransitionTests, SignsInPeople;
 
     /**
      * Each change MFA made is judged by `laravel-authentication`, whose result
@@ -77,6 +78,26 @@ final class SessionTransitionAdapterTest extends TestCase
 
             self::assertTrue($result->isActive(), sprintf('The session was not kept active after [%s].', $made->value));
         }
+    }
+
+    /**
+     * The decision `laravel-authorization` keeps that read an authentication
+     * requirement in the sign-in the change was made on is forgotten once the
+     * session is judged again (IAM-6.11).
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheDecisionThatReadTheSessionsAuthenticationIsForgotten(): void
+    {
+        $change = $this->sessionChange(FactorChangeMade::CONFIRMED);
+
+        $this->recordRequirementDecision($change->session);
+
+        $this->transition()->factorChanged($change);
+
+        self::assertNull($this->lastDecision());
     }
 
     /**

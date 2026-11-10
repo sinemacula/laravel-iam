@@ -13,7 +13,11 @@ use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
 /**
  * The members' scheduled work they leave to the application, registered on its
  * schedule in one call (IAM-2.6): `mfa:prune` daily, as MFA's lifecycle guide
- * schedules it; SSO's operations schedule (`sso:prune`, the domain rechecks,
+ * schedules it; `authorization:prune` daily, as `laravel-authorization`'s
+ * README schedules it, removing the grants that have expired and those of
+ * grantees and records that are gone (an expired grant already stops counting
+ * at its expiry, so the prune keeps the grant tables small rather than making a
+ * check correct); SSO's operations schedule (`sso:prune`, the domain rechecks,
  * the metadata refresh, whose jobs run on `sso.metadata.queue`, and the key
  * expiry report, at `sso.operations.cadence.*`), which registers nothing while
  * SSO is not in use; and, while `audit-log.delivery.mode` is `outbox`,
@@ -22,8 +26,7 @@ use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
  *
  * Audit-log schedules its own seal, sweep, verify and prune as the console
  * resolves the schedule, so none of them is registered again here; `iam:check`
- * reports one switched off with nothing else running it. `authorization:prune`
- * is registered with the rest of `laravel-authorization`'s glue (M11).
+ * reports one switched off with nothing else running it.
  *
  * No task is given a cache mutex (`withoutOverlapping()`, `onOneServer()`):
  * each command is safe to run on several servers at once, by what it does in
@@ -48,6 +51,9 @@ final readonly class IamSchedule
 {
     /** @var string MFA's pruning of the records that stopped being usable. */
     public const string MFA_PRUNE = PruneCommand::NAME;
+
+    /** @var string `laravel-authorization`'s pruning of the grants that no longer count, which names no constant of its own. */
+    public const string AUTHORIZATION_PRUNE = 'authorization:prune';
 
     /** @var string Audit-log's delivery of its outbox, batch after batch until none is left. */
     public const string AUDIT_DRAIN = 'audit-log:drain --until-empty';
@@ -82,6 +88,7 @@ final readonly class IamSchedule
     public function register(Schedule $schedule): void
     {
         $schedule->command(self::MFA_PRUNE)->daily();
+        $schedule->command(self::AUTHORIZATION_PRUNE)->daily();
 
         $this->operations->register($schedule);
 

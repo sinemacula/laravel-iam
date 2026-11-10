@@ -26,10 +26,14 @@ use SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent;
 use SineMacula\Laravel\Authentication\Events\EventContext as AuthenticationContext;
 use SineMacula\Laravel\Authentication\Events\SessionCreated;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
+use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
+use SineMacula\Laravel\Authorization\Events\Identity\RoleAssigned;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CallerContextContributor;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
+use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\SsoEventMapper;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
@@ -97,6 +101,7 @@ final class AuditRegistrationsTest extends TestCase
             AuthenticationEvent::class => AuthenticationEventMapper::class,
             MfaEvent::class            => MfaEventMapper::class,
             SsoEvent::class            => SsoEventMapper::class,
+            AuthorizationEvent::class  => AuthorizationEventMapper::class,
         ], AuditRegistrations::MAPPERS);
 
         $registry = $this->registry();
@@ -104,6 +109,8 @@ final class AuditRegistrationsTest extends TestCase
         self::assertSame(AuthenticationEventMapper::class, $registry->mapperFor(SessionCreated::class));
         self::assertSame(MfaEventMapper::class, $registry->mapperFor(RecoveryCodesRemoved::class));
         self::assertSame(SsoEventMapper::class, $registry->mapperFor(ConnectionCreated::class));
+        self::assertSame(AuthorizationEventMapper::class, $registry->mapperFor(DecisionEvaluated::class));
+        self::assertSame(AuthorizationEventMapper::class, $registry->mapperFor(RoleAssigned::class));
     }
 
     /**

@@ -35,18 +35,22 @@ final class SchedulesCheckTest extends TestCase
     /** @var string The note for MFA's prune left off the schedule. */
     private const string MFA_PRUNE = '`mfa:prune` is not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
+    /** @var string The note for `laravel-authorization`'s prune left off the schedule. */
+    private const string AUTHORIZATION_PRUNE = '`authorization:prune` is not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
+
     /**
-     * Audit-log's own runs are on the schedule as it ships; MFA's prune is
-     * noted until `Iam::schedule()` registers it. Nothing fails.
+     * Audit-log's own runs are on the schedule as it ships; MFA's prune and
+     * `laravel-authorization`'s are noted until `Iam::schedule()` registers
+     * them. Nothing fails.
      *
      * @return void
      */
-    public function testMfasPruneIsNotedUntilThePackageSchedulesIt(): void
+    public function testThePrunesAreNotedUntilThePackageSchedulesThem(): void
     {
         $checks = $this->check()->checks();
 
         self::assertSame([], self::problems($checks));
-        self::assertSame([self::MFA_PRUNE], self::notes($checks));
+        self::assertSame([self::MFA_PRUNE, self::AUTHORIZATION_PRUNE], self::notes($checks));
         self::assertTrue($this->check()->applies());
         self::assertSame('schedule', $this->check()->subject());
 
@@ -264,7 +268,7 @@ final class SchedulesCheckTest extends TestCase
 
         $note = '`sso:prune` is not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
-        self::assertSame([self::MFA_PRUNE, $note], self::notes($this->check()->checks()));
+        self::assertSame([self::MFA_PRUNE, self::AUTHORIZATION_PRUNE, $note], self::notes($this->check()->checks()));
 
         $this->schedulePackage();
 
@@ -325,7 +329,7 @@ final class SchedulesCheckTest extends TestCase
 
         $note = '`audit-log:drain --until-empty` is not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
-        self::assertSame([self::MFA_PRUNE, $note], self::notes($this->check()->checks()));
+        self::assertSame([self::MFA_PRUNE, self::AUTHORIZATION_PRUNE, $note], self::notes($this->check()->checks()));
 
         $this->schedulePackage();
 

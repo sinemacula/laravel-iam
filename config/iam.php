@@ -167,12 +167,14 @@ return [
     | incomplete when it cannot all be read. While `adapters.sso` is on, the
     | package answers SSO's tenant membership, its link eligibility (a `link`
     | only by an accepted membership of the connection's tenant) and the
-    | membership half of its principal scope from it. The grant half waits for
-    | `laravel-authorization`'s grant scope query, so until then the principal
-    | scope is never `within_tenant` and SSO links nobody by a verified
-    | domain; a complete set reaching beyond the tenant is `outside_tenant`,
-    | which suspends a verified domain link for good. Name none and SSO's
-    | defaults stay: no membership, no `link`, no linking by a domain.
+    | membership half of its principal scope from it. The grant half is
+    | `laravel-authorization`'s grant scope query while `adapters.authorization`
+    | is on, so the principal scope is `within_tenant` only for a person whose
+    | memberships and grants both stay within the tenant, and `unknown` with it
+    | off, so SSO links nobody by a verified domain; a complete set reaching
+    | beyond the tenant is `outside_tenant`, which suspends a verified domain
+    | link for good. Name none and SSO's defaults stay: no membership, no
+    | `link`, no linking by a domain.
     |
     | `tree` names the application's tenant tree, a class implementing
     | `SineMacula\Laravel\Iam\Contracts\TenantTree`. While `adapters.sso` is
@@ -181,12 +183,16 @@ return [
     | rule turned off keeps its tenant, and every tenant inheriting from it,
     | out of an ancestor's rule, so turning one off only loosens, and an
     | enforcement change judges the sessions of the enforcing tenant and
-    | every tenant below it. Report every move of a tenant inside the transaction that
+    | every tenant below it. While `adapters.authorization` is on, it is
+    | `laravel-authorization`'s tree too, so a grant in a tenant reaches the
+    | tenants below it. Report every move of a tenant inside the transaction that
     | writes it, after the write, and a removal as the move of each child moved
     | out from under the removed tenant:
-    | `Iam::treeChanges()->changed($tenantId)` judges the sessions of that
-    | tenant and every tenant below it while SSO's enforcement or a tenant MFA
-    | requirement is on. Name none and every tenant stands alone.
+    | `Iam::treeChanges()->changed($tenantId)` passes the move on to
+    | `laravel-authorization` while `adapters.authorization` is on, and judges
+    | the sessions of that tenant and every tenant below it while SSO's
+    | enforcement or a tenant MFA requirement is on. Name none and every tenant
+    | stands alone.
     |
     | Either bound in the container counts as named when it is bound by the
     | time every service provider has registered (in a provider's
@@ -235,10 +241,32 @@ return [
     | principal: `Iam::scopeWidenings()->widen($identity, $tenantId, $client)`,
     | with `null` for a platform principal.
     |
+    | `groups` maps the groups a provider reports (SSO's `groups` attribute) to
+    | roles of `laravel-authorization`'s, each granted to the new identity in
+    | the connection's tenant, never beyond it, in the same transaction, once
+    | the link is made: a refusal, or a role that does not exist, rolls the
+    | provisioning back. `mapping` names a class implementing
+    | `SineMacula\Laravel\Iam\Contracts\GroupMapping`; with none named or
+    | bound, `map` maps each group name to a role's name or a list of them;
+    | with both empty, groups grant nothing. `resync` names a class
+    | implementing `SineMacula\Laravel\Iam\Contracts\GroupResync`, which
+    | every later sign-in through a connection calls with the groups then
+    | reported, once the sign-in has committed, in a transaction of its own:
+    | `SineMacula\Laravel\Iam\Provisioning\MappedGroupResync` makes the
+    | identity's own roles in the connection's tenant exactly those the
+    | mapping answers. Leave it null and nothing is re-synced: a person keeps
+    | what provisioning granted until the application changes it. Provider
+    | groups are only as trustworthy as the connection.
+    |
     */
 
     'provisioning' => [
         'provisioner' => null,
+        'groups'      => [
+            'mapping' => null,
+            'map'     => [],
+            'resync'  => null,
+        ],
     ],
 
     /*

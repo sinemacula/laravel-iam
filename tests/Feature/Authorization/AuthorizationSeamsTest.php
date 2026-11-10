@@ -5,24 +5,34 @@ declare(strict_types = 1);
 namespace Tests\Feature\Authorization;
 
 use Illuminate\Config\Repository;
+use Illuminate\Container\Container;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
+use SineMacula\Laravel\Authorization\Cache\Resolution;
+use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\GuardAuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
 use SineMacula\Laravel\Authorization\Contracts\ContextKeyCatalogue;
+use SineMacula\Laravel\Authorization\Contracts\GrantHook;
+use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
 use SineMacula\Laravel\Authorization\Resolvers\AuthGuardSubjectResolver;
+use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\RefusingRequirementChecker;
+use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\GrantHookAdapter;
+use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
 use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\SessionPolicySourceAdapter;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
@@ -127,6 +137,55 @@ final class AuthorizationSeamsTest extends TestCase
 
         $this->assertResolvesTo(self::ADAPTERS);
         $this->assertOutcome(array_keys(self::ADAPTERS), []);
+    }
+
+    /**
+     * Binding the subject resolver or the tenant tree again, once either has
+     * been resolved, forgets the resolutions read through it in every provider
+     * order, once: `laravel-authorization` listens for the rebinding of a seam
+     * this package bound first from its first resolution.
+     *
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     */
+    #[DataProvider('provideProviderOrders')]
+    public function testRebindingTheResolverOrTheTreeForgetsResolutionsInEveryProviderOrder(array $providers): void
+    {
+        $this->bootInOrder($providers);
+
+        $app = $this->app ?? self::fail('The application has not booted.');
+
+        $app->make(SubjectResolver::class);
+        $app->make(TenantTree::class);
+
+        $callbacks = \Closure::bind(static fn (Container $container): array => $container->reboundCallbacks, null, Container::class)($app);
+
+        self::assertCount(1, $callbacks[SubjectResolver::class] ?? []);
+        self::assertCount(1, $callbacks[TenantTree::class] ?? []);
+
+        $cache    = ResolutionCache::instance();
+        $resolved = 0;
+        $resolve  = static function () use (&$resolved): Resolution {
+            $resolved++;
+
+            return new Resolution(['billing']);
+        };
+
+        self::assertInstanceOf(ResolutionCache::class, $cache);
+
+        $cache->rememberRoles(new Reference('person', '1'), $resolve);
+        $cache->rememberRoles(new Reference('person', '1'), $resolve);
+        $app->instance(TenantTree::class, new FlatTenantTree);
+        $cache->rememberRoles(new Reference('person', '1'), $resolve);
+        $app->instance(SubjectResolver::class, $app->make(AuthGuardSubjectResolver::class));
+        $cache->rememberRoles(new Reference('person', '1'), $resolve);
+
+        self::assertSame(3, $resolved);
+
+        $app->offsetUnset(ResolutionCache::class);
+        $app->instance(TenantTree::class, new FlatTenantTree);
+
+        self::assertNull(ResolutionCache::instance());
     }
 
     /**
@@ -292,7 +351,12 @@ final class AuthorizationSeamsTest extends TestCase
     {
         $this->app?->register(AuthorizationServiceProvider::class, force: true);
 
-        $this->assertResolvesTo([...self::ADAPTERS, SessionPolicySource::class => SessionPolicySourceAdapter::class]);
+        $this->assertResolvesTo([
+            ...self::ADAPTERS,
+            SessionPolicySource::class => SessionPolicySourceAdapter::class,
+            IdentityDirectory::class   => IdentityDirectoryAdapter::class,
+            GrantHook::class           => GrantHookAdapter::class,
+        ]);
         self::assertSame([], self::problems($this->check()->checks()));
     }
 

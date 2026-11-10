@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
+use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
@@ -31,7 +32,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
-use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
@@ -65,7 +65,8 @@ use Tests\TestCase;
  * and SSO's enforcement inheritance while it names or binds a tenant tree;
  * otherwise, or once they are bound only from a `boot()`, SSO's defaults stay,
  * and the application's own bindings are kept. The grant half of the principal
- * scope is `UnknownGrantScope` until something else is bound.
+ * scope is `GrantScopeAdapter` while `iam.adapters.authorization` is on, and
+ * `UnknownGrantScope` while it is off, until something else is bound.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -694,20 +695,20 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * The grant half of SSO's principal scope is `UnknownGrantScope`, shared,
-     * until something else is bound to it, before or after the providers
-     * register, which is kept.
+     * The grant half of SSO's principal scope is `laravel-authorization`'s
+     * grant scope query (`GrantScopeAdapter`), transient, until something else
+     * is bound to it, before or after the providers register, which is kept.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheGrantScopeIsUnknownUntilTheApplicationBindsOne(): void
+    public function testTheGrantScopeIsAuthorizationsQueryUntilTheApplicationBindsOne(): void
     {
         $default = $this->resolved(GrantScope::class);
 
-        self::assertInstanceOf(UnknownGrantScope::class, $default);
-        self::assertSame($default, $this->resolved(GrantScope::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $default);
+        self::assertNotSame($default, $this->resolved(GrantScope::class));
 
         $before = \Mockery::mock(GrantScope::class);
         $after  = \Mockery::mock(GrantScope::class);
