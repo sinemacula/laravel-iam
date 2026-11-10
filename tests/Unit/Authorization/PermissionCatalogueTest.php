@@ -78,8 +78,7 @@ final class PermissionCatalogueTest extends TestCase
 
     /**
      * MFA's administrative operations are each declared, re-enabling a factor
-     * disabled at the failure ceiling (`AttemptService::enableFactor()`) among
-     * them.
+     * disabled at the failure ceiling (`Mfa::enableFactor()`) among them.
      *
      * @return void
      */

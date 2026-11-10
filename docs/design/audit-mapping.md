@@ -434,9 +434,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   alone (`AuthorizationScope::within()`), since `laravel-authorization` otherwise decides in the request's scope
   whatever subject is named: a subject built for a job is decided where it acts, and the request's own where the
   request is. Removing another identity's link is its own permission (`sso.link.remove_others`, AUTHZ-14.5).
-  Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s `AttemptService::enableFactor()`, IAM-6.9's
-  re-enable) is `mfa.factor.enable`; requirement management is the application's own over its requirement contracts,
-  declared as `mfa.requirements.manage` so it can be granted with the rest.
+  Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s `Mfa::enableFactor()`, IAM-6.9's re-enable, recorded
+  as `mfa.factor_enabled`) is `mfa.factor.enable`; requirement management is the application's own over its
+  requirement contracts, declared as `mfa.requirements.manage` so it can be granted with the rest.
 
 ### Trail reads (IAM-9.9)
 

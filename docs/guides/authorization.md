@@ -324,8 +324,8 @@ is cached across checks.
 ## Administrative operations and the trail
 
 - **Administrative operations.** The members authorise none of their administrative operations themselves: SSO's
-  connection, key, domain, enforcement and link management, MFA's resets, unlocks and erasure, and reads of the audit
-  trail. This package ships a catalogue of their permissions,
+  connection, key, domain, enforcement and link management, MFA's resets, unlocks, re-enabling and erasure, and reads
+  of the audit trail. This package ships a catalogue of their permissions,
   `SineMacula\Laravel\Iam\Authorization\PermissionCatalogue`, which you opt into by naming it in
   `authorization.permission_providers` and running `authorization:sync`. Its names are
   `SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation`'s cases: SSO's own operation names where SSO
@@ -333,8 +333,8 @@ is cached across checks.
   where neither member names one (`sso.connection.create`, `sso.keys.trust_certificate`, `sso.link.remove_others`,
   `mfa.identity.reset`, `mfa.factor.unlock`, `mfa.factor.enable`, `mfa.identity.erase`, and `mfa.requirements.manage`
   for your own screens over your requirement contracts). Removing someone else's link is a permission of its own.
-  Re-enabling a factor disabled at its ceiling (`SineMacula\Laravel\Mfa\Attempts\AttemptService::enableFactor()`) is
-  `mfa.factor.enable`.
+  Re-enabling a factor disabled at its ceiling (`SineMacula\Laravel\Mfa\Facades\Mfa::enableFactor()`, which names
+  its actor) is `mfa.factor.enable`.
 - **Checking one.** Before the call, check it with
   `SineMacula\Laravel\Iam\Authorization\AdministrativeCheck::authorize()`, handing it the subject, the operation and
   the member's object: its type, its id (`null` for an operation on the type, such as creating a connection) and its

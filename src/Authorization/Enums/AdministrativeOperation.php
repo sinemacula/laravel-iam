@@ -19,7 +19,7 @@ namespace SineMacula\Laravel\Iam\Authorization\Enums;
  * so it has its own case.
  *
  * MFA's re-enabling of a factor disabled at the failure ceiling
- * (`Attempts\AttemptService::enableFactor()`) is `mfa.factor.enable`; its
+ * (`Mfa::enableFactor()`, which names its actor) is `mfa.factor.enable`; its
  * requirements are the application's own contracts, so managing them is the
  * application's operation, declared here so it can be granted with the rest.
  *
