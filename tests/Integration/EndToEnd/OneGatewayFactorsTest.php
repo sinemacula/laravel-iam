@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -139,12 +138,7 @@ final class OneGatewayFactorsTest extends TestCase
         self::assertSame(Source::MFA, $enrolment->source);
         self::assertSame(Purpose::ENROLLMENT, $enrolment->purpose);
         self::assertSame($destination, $enrolment->destination());
-
-        $found = $enrolment->recipient();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
-
+        self::assertIsThePerson($person, $enrolment->recipient());
         self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
         $factor = Factor::query()->where('destination', $destination)->sole();
@@ -165,15 +159,13 @@ final class OneGatewayFactorsTest extends TestCase
      * Require no factor of anyone, so the session stays active once a factor is
      * enrolled and is stepped up with it.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(IdentityRequirement::class, RequiresNothing::class);
         $app->make('config')->set('mfa.applications.' . self::GUARD . '.requirement', 'never');
@@ -183,15 +175,13 @@ final class OneGatewayFactorsTest extends TestCase
      * Name the row's gateway alone, with the shipped routes, and offer its
      * channel as the one delivered factor type, before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $channel = $this->providedData()[1] ?? null;
 

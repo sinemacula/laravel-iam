@@ -99,7 +99,7 @@ final class SsoBridgeFallbackCheckTest extends TestCase
 
         $this->app?->bind(LinkStorage::class, NoLinks::class);
 
-        $takeOut($this->app ?? self::fail('The application has not booted.'));
+        $takeOut($this->application());
 
         $problems = self::problems($this->check()->checks());
 

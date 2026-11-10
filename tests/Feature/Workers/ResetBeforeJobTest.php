@@ -17,6 +17,7 @@ use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
+use Tests\Concerns\ReadsRawListeners;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,8 @@ use Tests\TestCase;
 #[CoversClass(ResetBeforeJob::class)]
 final class ResetBeforeJobTest extends TestCase
 {
+    use ReadsRawListeners;
+
     /** @var string The session key the tests keep a proof record under. */
     private const string PROOFS = 'mfa-proofs';
 
@@ -41,7 +44,7 @@ final class ResetBeforeJobTest extends TestCase
      */
     public function testTheListenerIsRegisteredForEachJob(): void
     {
-        self::assertContains(ResetBeforeJob::class, (array) (Event::getRawListeners()[JobProcessing::class] ?? []));
+        self::assertContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
     /**
@@ -179,7 +182,7 @@ final class ResetBeforeJobTest extends TestCase
     #[DefineEnvironment('turnTheResetOff')]
     public function testTurningTheResetOffRegistersNoListener(): void
     {
-        self::assertNotContains(ResetBeforeJob::class, (array) (Event::getRawListeners()[JobProcessing::class] ?? []));
+        self::assertNotContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
     /**

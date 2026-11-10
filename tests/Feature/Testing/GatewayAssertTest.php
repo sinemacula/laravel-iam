@@ -7,7 +7,6 @@ namespace Tests\Feature\Testing;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Auth\GenericUser;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -537,15 +536,13 @@ final class GatewayAssertTest extends TestCase
     /**
      * Send the log nowhere: what the gateways log is read from its event.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('logging.default', 'null');
     }

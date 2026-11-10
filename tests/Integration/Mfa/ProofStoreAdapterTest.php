@@ -1073,7 +1073,7 @@ final class ProofStoreAdapterTest extends TestCase
     {
         $model = config('mfa.factor.model');
 
-        self::assertTrue(is_a($model, Factor::class, true));
+        self::assertTrue(is_string($model) && is_a($model, Factor::class, true));
 
         return $model::query()->create([
             ...AuthenticatorApp::FACTOR,

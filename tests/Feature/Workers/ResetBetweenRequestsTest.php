@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
+use Tests\Concerns\ReadsRawListeners;
 use Tests\Fixtures\Workers\RequestReceivedStandIn;
 use Tests\TestCase;
 
@@ -30,6 +31,8 @@ use Tests\TestCase;
 #[CoversClass(ResetBetweenRequests::class)]
 final class ResetBetweenRequestsTest extends TestCase
 {
+    use ReadsRawListeners;
+
     /**
      * The listener is registered for Octane's event by its name, with Octane
      * not installed.
@@ -39,7 +42,7 @@ final class ResetBetweenRequestsTest extends TestCase
     public function testTheListenerIsRegisteredByTheEventsName(): void
     {
         self::assertFalse(class_exists(ResetBetweenRequests::EVENT));
-        self::assertContains(ResetBetweenRequests::class, (array) (Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []));
+        self::assertContains(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT));
     }
 
     /**

@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Mfa;
 
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -329,15 +328,13 @@ final class ChallengeGatewayRoutingTest extends TestCase
      * Name both gateways before any provider registers, as a published
      * configuration file holds them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $this->nameTheGateways($app);
     }

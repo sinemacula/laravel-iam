@@ -248,21 +248,17 @@ final readonly class BindingRule
     }
 
     /**
-     * Every binding the capabilities declare, in order.
+     * Every binding the capabilities declare, in order. The capabilities may
+     * arrive keyed by name, from named arguments, and are re-indexed so they
+     * spread into `array_merge()` positionally.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $switches
-     * @param  array<array-key, \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>  $capabilities
+     * @param  array<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>  $capabilities
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
      */
     private static function bindingsOf(Repository $switches, array $capabilities): array
     {
-        $bindings = [];
-
-        foreach ($capabilities as $capability) {
-            $bindings = [...$bindings, ...$capability->seams($switches)];
-        }
-
-        return $bindings;
+        return array_merge(...array_map(static fn (ProvidesSeams $capability): array => $capability->seams($switches), array_values($capabilities)));
     }
 
     /**

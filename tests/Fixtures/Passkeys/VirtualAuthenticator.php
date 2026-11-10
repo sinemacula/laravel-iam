@@ -89,7 +89,7 @@ final class VirtualAuthenticator
     /** @var string Key id (COSE label 2) a created credential's public key carries; empty for none. */
     public string $keyId = '';
 
-    /** @var array<string, array{key: \OpenSSLAsymmetricKey|string, alg: int, rp: string, user: string, counter: int}> Credentials created, keyed by their raw id. */
+    /** @var array<string, array{key: non-empty-string|\OpenSSLAsymmetricKey, alg: int, rp: string, user: string, counter: int}> Credentials created, keyed by their raw id. */
     private array $credentials = [];
 
     /**
@@ -341,7 +341,7 @@ final class VirtualAuthenticator
         $credential = $this->credentials[$id];
 
         if ($credential['alg'] === self::EDDSA) {
-            assert(is_string($credential['key']) && $credential['key'] !== '');
+            assert(is_string($credential['key']));
 
             return sodium_crypto_sign_detached($data, $credential['key']);
         }
@@ -357,7 +357,7 @@ final class VirtualAuthenticator
      * A new key pair of the algorithm: the private key and the COSE public key.
      *
      * @param  int  $algorithm
-     * @return array{0: \OpenSSLAsymmetricKey|string, 1: string}
+     * @return array{0: non-empty-string|\OpenSSLAsymmetricKey, 1: string}
      *
      * @throws \SodiumException
      */

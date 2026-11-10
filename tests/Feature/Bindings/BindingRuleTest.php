@@ -942,6 +942,28 @@ final class BindingRuleTest extends TestCase
     }
 
     /**
+     * Capabilities given by name are applied as those given in order are.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testCapabilitiesGivenByNameAreApplied(): void
+    {
+        $app = $this->application();
+
+        $outcome = $app->make(BindingRule::class)->apply(
+            $app,
+            transient: new DeclaredSeams(new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class])),
+            shared: new DeclaredSeams(new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED)),
+        );
+
+        self::assertSame([TransientSeam::class, SharedSeam::class], $outcome->bound);
+        $this->assertResolvesTo(Adapter::class, SharedSeam::class);
+    }
+
+    /**
      * Rows of `[providers, cached]`: every provider order, with the
      * configuration loaded and merged as each provider registers, and cached.
      *
@@ -1114,7 +1136,7 @@ final class BindingRuleTest extends TestCase
      * Load the application's configuration, then, when the test boots it as if
      * cached, the cached configuration over it, before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
@@ -1125,8 +1147,6 @@ final class BindingRuleTest extends TestCase
         if ($this->cachedConfiguration === null) {
             return;
         }
-
-        assert($app instanceof Application);
 
         $app->make(Repository::class)->set($this->cachedConfiguration);
     }

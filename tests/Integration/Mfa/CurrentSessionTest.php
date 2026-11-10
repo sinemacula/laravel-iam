@@ -426,12 +426,7 @@ final class CurrentSessionTest extends TestCase
         $this->declareGuards(['admin' => $this->sessionGuard(), ...$this->guards()]);
 
         self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-
-        $found = Auth::guard(self::GUARD)->user();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
-
+        self::assertIsThePerson($person, Auth::guard(self::GUARD)->user());
         self::assertNull(Auth::guard('admin')->user());
     }
 
@@ -460,12 +455,7 @@ final class CurrentSessionTest extends TestCase
         ]);
 
         self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-
-        $found = Auth::guard('admin')->user();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
-
+        self::assertIsThePerson($person, Auth::guard('admin')->user());
         self::assertNull(Auth::guard(self::GUARD)->user());
     }
 
@@ -515,11 +505,7 @@ final class CurrentSessionTest extends TestCase
         $this->declareGuards(['web' => $guards['web'], '7' => $this->sessionGuard()]);
 
         self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-
-        $found = Auth::guard('7')->user();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
+        self::assertIsThePerson($person, Auth::guard('7')->user());
     }
 
     /**

@@ -341,7 +341,6 @@ final class WorkerResetTest extends TestCase
      */
     public function testAFacadeOverAKeptScopedInstanceReturnsTheSameInstance(): void
     {
-        // The application scopes Laravel's context repository itself
         $container = new Application;
 
         Facade::setFacadeApplication($container);
@@ -571,8 +570,6 @@ final class WorkerResetTest extends TestCase
             'route'                                    => 'kept',
         ]);
 
-        // A numeric name is held under an integer key, which the reset must
-        // leave
         $request->attributes->set('7', 'kept');
 
         $container->instance('request', $request);

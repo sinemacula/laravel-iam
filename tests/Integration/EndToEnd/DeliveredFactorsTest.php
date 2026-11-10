@@ -178,7 +178,7 @@ final class DeliveredFactorsTest extends TestCase
         $stepUp = $gateway->sent()[1];
 
         $this->assertMessage($stepUp, $person, $channel, $type, $destination, CodePurpose::MFA, Purpose::ADDITIONAL_FACTOR);
-        self::assertTrue($stepUp->expiresAt->equalTo($sent->expiresAt ?? self::fail('No time was answered.')));
+        self::assertEquals($stepUp->expiresAt, $sent->expiresAt);
 
         $verified = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $stepUp->code->reveal()), MfaPurpose::STEP_UP);
 
@@ -363,11 +363,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertSame($destination, $enrolment->destination());
         self::assertNotNull($enrolment->factor);
         self::assertNotSame($destination, $enrolment->factor->maskedDestination);
-
-        $found = $enrolment->recipient();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
+        self::assertIsThePerson($person, $enrolment->recipient());
 
         self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
@@ -401,15 +397,13 @@ final class DeliveredFactorsTest extends TestCase
      * anyone, so the session stays active once a factor is enrolled and is
      * stepped up with it.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(TenantResolver::class, OpenTenancy::class);
         $app->singleton(TenantAccess::class, OpenTenancy::class);
@@ -431,15 +425,13 @@ final class DeliveredFactorsTest extends TestCase
     /**
      * Name both gateways before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $this->nameTheGateways($app);
     }
@@ -467,12 +459,7 @@ final class DeliveredFactorsTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame(self::GUARD, $message->application);
-
-        $found = $message->recipient();
-
-        self::assertInstanceOf(Person::class, $found);
-        self::assertTrue($person->is($found));
-
+        self::assertIsThePerson($person, $message->recipient());
         self::assertNull($message->factor);
         self::assertTrue($message->expiresAt->isFuture());
     }

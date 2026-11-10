@@ -821,6 +821,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         $lastLock = array_key_last($locks);
 
         self::assertNotNull($passkey);
+        self::assertNotSame([], $locks);
         self::assertNotSame([], $members);
         self::assertNotNull($lastLock);
         self::assertLessThan($passkey, $lastLock);

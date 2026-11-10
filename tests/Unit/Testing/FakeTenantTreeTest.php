@@ -6,6 +6,8 @@ namespace Tests\Unit\Testing;
 
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Database\Query\Builder;
+use Illuminate\Database\Eloquent\Casts\AsStringable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -53,7 +55,7 @@ final class FakeTenantTreeTest extends TestCase
         self::assertSame([], $fake->descendants('stray'));
         self::assertTrue($fake->isWithin('stray', 'stray'));
         self::assertFalse($fake->isWithin('stray', 'root'));
-        self::assertSame(['stray'], array_map(strval(...), $fake->subtree('stray')->pluck(TenantTree::ID_COLUMN)->all()));
+        self::assertSame(['stray'], $fake->subtree('stray')->pluck(TenantTree::ID_COLUMN)->all());
         self::assertSame(
             [
                 ['question' => 'ancestors', 'tenant' => 'stray'],
@@ -165,7 +167,7 @@ final class FakeTenantTreeTest extends TestCase
         $fake      = FakeTenantTree::fake($container, self::CONNECTION);
 
         self::assertSame($fake, $container->make(TenantTree::class));
-        self::assertSame(['solo'], array_map(strval(...), $fake->subtree('solo')->pluck(TenantTree::ID_COLUMN)->all()));
+        self::assertSame(['solo'], $fake->subtree('solo')->pluck(TenantTree::ID_COLUMN)->all());
 
         $other = FakeTenantTree::fake();
 
@@ -392,6 +394,51 @@ final class FakeTenantTreeTest extends TestCase
     }
 
     /**
+     * The kit accepts a subtree selecting ids a model casts to stringable
+     * values.
+     *
+     * @return void
+     */
+    public function testTheKitAcceptsASubtreeOfStringableIds(): void
+    {
+        $model = new class extends Model {
+            /**
+             * The tenant id, cast to a stringable value.
+             *
+             * @return array<string, string>
+             */
+            #[\Override]
+            protected function casts(): array
+            {
+                return [TenantTree::ID_COLUMN => AsStringable::class];
+            }
+        };
+
+        $database = DB::connection();
+        $tenants  = $database->query()->selectRaw('\'root\' as ' . TenantTree::ID_COLUMN)->unionAll($database->query()->selectRaw('\'team\' as ' . TenantTree::ID_COLUMN));
+        $subtree  = $model->newQuery()->fromSub($tenants, 'subtree')->select(TenantTree::ID_COLUMN);
+
+        self::assertContainsOnlyInstancesOf(\Stringable::class, $subtree->pluck(TenantTree::ID_COLUMN)->all());
+
+        TenantTreeContract::assertSubtreeIsTheTenantAndItsDescendants(self::selecting($subtree), 'root', ['team']);
+    }
+
+    /**
+     * The kit fails a tree whose subtree selects a tenant by no identifier.
+     *
+     * @return void
+     */
+    public function testTheKitFailsASubtreeSelectingNoIdentifier(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('selected a tenant by no identifier');
+
+        $subtree = DB::connection()->query()->selectRaw('null as ' . TenantTree::ID_COLUMN);
+
+        TenantTreeContract::assertSubtreeIsTheTenantAndItsDescendants(self::selecting($subtree), 'root', []);
+    }
+
+    /**
      * The fake under test.
      *
      * @return \SineMacula\Laravel\Iam\Contracts\TenantTree
@@ -570,6 +617,77 @@ final class FakeTenantTreeTest extends TestCase
                 }
 
                 return $tree->subtree($this->subtree[0] ?? $tenantId);
+            }
+        };
+    }
+
+    /**
+     * A tree whose subtree is the query given; it answers nothing else.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder  $subtree
+     * @return \SineMacula\Laravel\Iam\Contracts\TenantTree
+     */
+    private static function selecting(Builder $subtree): TenantTree
+    {
+        return new readonly class ($subtree) implements TenantTree {
+            /**
+             * Constructor.
+             *
+             * @param  \Illuminate\Contracts\Database\Query\Builder  $subtree
+             */
+            public function __construct(
+
+                /** The query the subtree is. */
+                private Builder $subtree,
+            ) {}
+
+            /**
+             * None.
+             *
+             * @param  string  $tenantId
+             * @return list<string>
+             */
+            #[\Override]
+            public function ancestors(string $tenantId): array
+            {
+                return [];
+            }
+
+            /**
+             * None.
+             *
+             * @param  string  $tenantId
+             * @return list<string>
+             */
+            #[\Override]
+            public function descendants(string $tenantId): array
+            {
+                return [];
+            }
+
+            /**
+             * Only the tenant itself.
+             *
+             * @param  string  $tenantId
+             * @param  string  $ancestorId
+             * @return bool
+             */
+            #[\Override]
+            public function isWithin(string $tenantId, string $ancestorId): bool
+            {
+                return $tenantId === $ancestorId;
+            }
+
+            /**
+             * The query given.
+             *
+             * @param  string  $tenantId
+             * @return \Illuminate\Contracts\Database\Query\Builder
+             */
+            #[\Override]
+            public function subtree(string $tenantId): Builder
+            {
+                return $this->subtree;
             }
         };
     }

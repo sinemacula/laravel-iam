@@ -28,11 +28,12 @@ trait LeavesTheSavepointAfterAConcurrencyFailure
      * savepoint in place after a concurrency failure.
      *
      * @param  \Throwable  $e
-     * @param  mixed  $currentAttempt
-     * @param  mixed  $maxAttempts
+     * @param  int  $currentAttempt
+     * @param  int  $maxAttempts
      * @return void
      *
      * @throws \Illuminate\Database\DeadlockException
+     * @throws \LogicException
      */
     #[\Override]
     protected function handleTransactionException(\Throwable $e, mixed $currentAttempt, mixed $maxAttempts): void
@@ -40,7 +41,9 @@ trait LeavesTheSavepointAfterAConcurrencyFailure
         if ($this->causedByConcurrencyError($e) && $this->transactions > 1) {
             $this->transactions--;
 
-            $this->transactionsManager?->rollback((string) $this->getName(), $this->transactions);
+            $name = $this->getName() ?? throw new \LogicException('The connection has no name to roll its transactions back under.');
+
+            $this->transactionsManager?->rollback($name, $this->transactions);
 
             throw new DeadlockException($e->getMessage(), is_int($e->getCode()) ? $e->getCode() : 0, $e);
         }

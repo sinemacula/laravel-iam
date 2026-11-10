@@ -186,9 +186,6 @@ final class InsertionWitnessTest extends TestCase
 
         try {
             [, $inserted] = InsertionWitness::witness(static function () use ($kept): AnnouncedPerson {
-
-                // Eloquent dispatches through the witness, which takes any
-                // event, as Laravel's own dispatcher does
                 $witness = Model::getEventDispatcher();
 
                 self::assertInstanceOf(InsertionWitness::class, $witness);

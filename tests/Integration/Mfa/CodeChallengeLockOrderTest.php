@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Mfa;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -145,15 +144,13 @@ final class CodeChallengeLockOrderTest extends TestCase
     /**
      * Bind the application's gateways before the application boots.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $this->defineFactorCodes($app);
     }

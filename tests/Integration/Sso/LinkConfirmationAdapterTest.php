@@ -353,11 +353,7 @@ final class LinkConfirmationAdapterTest extends TestCase
         $session = $this->signIn($this->member())->record;
         $caller  = $this->callerHolding($session);
 
-        $revoke = fn (): bool => $this->sessions()->revokeSession(
-            Person::query()->whereKey($this->member()->getKey())->firstOrFail(),
-            $session->getKey(),
-            RevocationReason::REVOKED,
-        );
+        $revoke = fn (): bool => $this->sessions()->revokeSession(Person::query()->whereKey($this->member()->getKey())->sole(), $session->getKey(), RevocationReason::REVOKED);
         $answer = $this->askedAfter($level, fn () => $this->elsewhere($revoke), fn (): LinkConfirmationVerdict => $this->judgeAs($caller));
 
         self::assertSame(LinkConfirmationVerdict::DEPENDENT, $answer);

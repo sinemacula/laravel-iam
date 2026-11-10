@@ -41,13 +41,7 @@ final readonly class GuardedMemberships implements Memberships
             ->sharedLock()
             ->get();
 
-        $memberships = [];
-
-        foreach ($rows as $row) {
-            $memberships[] = self::membershipOf($row);
-        }
-
-        return new MembershipSet($memberships, true);
+        return new MembershipSet(array_values($rows->map(static fn (StoredMembership $row): Membership => self::membershipOf($row))->all()), true);
     }
 
     /**
