@@ -21,7 +21,10 @@ use Symfony\Component\Console\Output\OutputInterface;
  * command that exits non-zero fails the run. One that throws is a defect of its
  * member's, and stops the run with that exception, which fails closed. One that
  * is not registered is reported as such and fails the run too, every member
- * being required (IAM-1.3).
+ * being required (IAM-1.3). While they run, `RUNNING` is `true`, so this
+ * package's checks reported in `authentication:check` too
+ * (`AuthenticationConfigurationCheck`) are left to the report below, and each
+ * problem is reported once.
  *
  * This package's checks (`Check`) follow, each resolved afresh, reported under
  * its subject: `OK`, `not applied`, each problem one of its closures threw, and
@@ -37,6 +40,9 @@ final readonly class Checker
 {
     /** @var list<string> The members' check commands, in the order they run. */
     public const array MEMBER_COMMANDS = ['authentication:check', 'authorization:check', 'mfa:check', 'sso:check', 'audit-log:check'];
+
+    /** @var string The key bound in the container to `true` while the members' check commands run, and to `false` once they have. */
+    public const string RUNNING = 'iam.check.running';
 
     /** @var list<class-string<\SineMacula\Laravel\Iam\Checks\Contracts\Check>> This package's checks, in the order they run. */
     public const array CHECKS = [
@@ -75,6 +81,34 @@ final readonly class Checker
      */
     public function run(OutputInterface $output): bool
     {
+        $this->container->instance(self::RUNNING, true);
+
+        try {
+            $passed = $this->runCommands($output);
+        } finally {
+            $this->container->instance(self::RUNNING, false);
+        }
+
+        $output->writeln('<comment>iam</comment>');
+
+        foreach (self::CHECKS as $check) {
+            $passed = $this->runCheck($check, $output) && $passed;
+        }
+
+        $output->writeln($passed ? '<info>Every check passed.</info>' : '<error>A check failed.</error>');
+
+        return $passed;
+    }
+
+    /**
+     * Run every member's check command, reporting one that is not registered,
+     * and answer whether every one passed.
+     *
+     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @return bool
+     */
+    private function runCommands(OutputInterface $output): bool
+    {
         $passed   = true;
         $commands = $this->console->all();
 
@@ -90,14 +124,6 @@ final readonly class Checker
 
             $passed = $this->runCommand($command, $output) && $passed;
         }
-
-        $output->writeln('<comment>iam</comment>');
-
-        foreach (self::CHECKS as $check) {
-            $passed = $this->runCheck($check, $output) && $passed;
-        }
-
-        $output->writeln($passed ? '<info>Every check passed.</info>' : '<error>A check failed.</error>');
 
         return $passed;
     }

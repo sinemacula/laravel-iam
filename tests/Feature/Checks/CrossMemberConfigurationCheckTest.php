@@ -417,6 +417,35 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
+     * `laravel-authentication`'s side is the tenant resolver, about no one
+     * guard, and the MFA and SSO applications named after a guard, about that
+     * guard, the SSO application's only while SSO is in use.
+     *
+     * @return void
+     */
+    public function testLaravelAuthenticationsSideIsTheTenantResolverAndEachGuardsApplications(): void
+    {
+        $config = $this->app?->make('config');
+
+        $config?->set('sso.applications', ['api' => [], 'portal' => []]);
+
+        self::assertSame([], $this->check()->authenticationChecks());
+        $undeclared = 'mfa.add_factor, mfa.replace_factor, mfa.remove_factor, mfa.generate_recovery_codes';
+
+        self::assertSame([sprintf(self::UNDECLARED, $undeclared)], self::problems($this->check()->guardChecks('api')));
+        self::assertCount(2, $this->check()->guardChecks('api'));
+        self::assertSame([], $this->check()->guardChecks('portal'));
+
+        $config?->set('sso.features.saml2', true);
+        $this->app?->bind(TenantMfaRequirement::class, FakeTenantMfaRequirement::class);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->authenticationChecks()));
+        self::assertCount(3, $this->check()->guardChecks('api'));
+        self::assertCount(1, $this->check()->guardChecks('portal'));
+        self::assertSame([], $this->check()->guardChecks('other'));
+    }
+
+    /**
      * SSO's bullets are each held once: every application SSO serves allowing
      * `external_provider` and none handing off an unlinked result by the check
      * SSO's own runs; the base URL set by SSO's own endpoints check, which

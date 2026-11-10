@@ -175,6 +175,31 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
+     * `laravel-authentication`'s side is the identity model of each guard, read
+     * for that guard alone: none for a guard of another driver, one whose
+     * provider names no model, or one not configured.
+     *
+     * @return void
+     */
+    public function testLaravelAuthenticationsSideIsEachGuardsIdentityModel(): void
+    {
+        $config = $this->config();
+
+        $config->set('auth.providers.elsewhere', ['driver' => 'model', 'model' => IdentityElsewhere::class]);
+        $config->set('auth.guards.elsewhere', ['driver' => 'jwt', 'provider' => 'elsewhere']);
+        $config->set('auth.guards.web', ['driver' => 'session', 'provider' => 'elsewhere']);
+
+        self::assertSame([], $this->check()->authenticationChecks());
+        self::assertCount(1, $this->check()->guardChecks('api'));
+        self::assertSame([], self::problems($this->check()->guardChecks('api')));
+        self::assertSame([
+            'The identity model ' . IdentityElsewhere::class . ' lives on another connection than `iam.storage.connection` names.',
+        ], self::problems($this->check()->guardChecks('elsewhere')));
+        self::assertSame([], $this->check()->guardChecks('web'));
+        self::assertSame([], $this->check()->guardChecks('unknown'));
+    }
+
+    /**
      * With no guards configured, no identity model is read.
      *
      * @return void

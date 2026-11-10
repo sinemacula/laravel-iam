@@ -8,7 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Checks\Contracts\Check;
+use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
@@ -38,12 +38,16 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
  * refusal of a read of the trail inside a change (IAM-9.9) then does not cover
  * it.
  *
+ * The identity model of a guard is `laravel-authentication`'s side, about that
+ * guard, so `authentication:check` reports it too; the members' keys and the
+ * shared connection are this package's, and stay with `iam:check`.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class StorageCheck implements Check
+final readonly class StorageCheck implements AuthenticationCheck
 {
     /** @var string The key naming the default connection. */
     private const string DEFAULT_KEY = 'database.default';
@@ -124,6 +128,33 @@ final readonly class StorageCheck implements Check
     }
 
     /**
+     * None: the members' keys and the shared connection are this package's.
+     *
+     * @return list<\Closure(): mixed>
+     */
+    #[\Override]
+    public function authenticationChecks(): array
+    {
+        return [];
+    }
+
+    /**
+     * The identity model the guard signs people in through is on the shared
+     * connection; none when it is no `jwt` or `api_key` guard, or names no
+     * model.
+     *
+     * @param  string  $guard
+     * @return list<\Closure(): mixed>
+     */
+    #[\Override]
+    public function guardChecks(string $guard): array
+    {
+        $model = $this->modelOfGuard($this->config->get(self::GUARDS_KEY . '.' . $guard));
+
+        return $model === null ? [] : [fn () => $this->assertOnStorage($model)];
+    }
+
+    /**
      * Refuse a shared connection `database.connections` does not configure;
      * the default connection, named by leaving the key unset, always is.
      *
@@ -195,14 +226,12 @@ final readonly class StorageCheck implements Check
      */
     private function identityModels(): array
     {
-        $guards    = $this->config->get(self::GUARDS_KEY);
-        $providers = $this->config->get(self::PROVIDERS_KEY);
-        $default   = $this->config->get(self::DEFAULT_PROVIDER_KEY);
-        $models    = [];
+        $guards = $this->config->get(self::GUARDS_KEY);
+        $models = [];
 
         foreach (is_array($guards) ? $guards : [] as $guard) {
 
-            $model = self::modelOf($guard, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
+            $model = $this->modelOfGuard($guard);
 
             if ($model === null) {
                 continue;
@@ -212,6 +241,21 @@ final readonly class StorageCheck implements Check
         }
 
         return array_unique($models);
+    }
+
+    /**
+     * The model of the user provider the guard's configuration signs people in
+     * through, read from the configured providers.
+     *
+     * @param  mixed  $guard
+     * @return ?string
+     */
+    private function modelOfGuard(mixed $guard): ?string
+    {
+        $providers = $this->config->get(self::PROVIDERS_KEY);
+        $default   = $this->config->get(self::DEFAULT_PROVIDER_KEY);
+
+        return self::modelOf($guard, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
     }
 
     /**
