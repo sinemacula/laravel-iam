@@ -37,6 +37,7 @@ use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Contracts\SubjectTypeResolver;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
@@ -82,6 +83,7 @@ final class AdaptersDocumentationTest extends TestCase
         SessionTransition::class              => 'the return to pending',
         ProofStore::class                     => 'the proof store',
         FirstFactorResolver::class            => 'the first factor',
+        VerifiedSignInRecorder::class         => 'the recorder of MFA\'s verified test sign-ins',
         ChallengeGateway::class               => 'code challenges',
         FactorCodeCounters::class             => 'code challenges and their counters',
         TenantRequirement::class              => 'MFA\'s tenant requirement',

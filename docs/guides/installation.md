@@ -272,7 +272,7 @@ publishing anything twice.
    - your own senders of MFA's and `laravel-authentication`'s codes: name your gateways instead;
    - any check you registered with SSO under the subject `iam`: the package keeps yours there, and its own check of
      SSO's side then runs only from `iam:check`, never at SSO's boot or in `sso:check`.
-7. In your tests, replace MFA's `actingAsVerified()`, which this package's proof store refuses, with this package's
+7. In your tests, keep MFA's `actingAsVerified()` where the guard allows the `password` method, or use this package's
    helpers (see [Testing](testing.md)).
 8. Run `php artisan iam:check`.
 
