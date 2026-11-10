@@ -45,8 +45,7 @@ use Tests\TestCase;
  * policy, answered from SSO's enforcement, SSO's exemption gate and the
  * application's tenant MFA requirement (IAM-4.5): an enforced tenant requires
  * its satisfying connections, of a session and of a sign-in alike, judged by
- * the connection `laravel-authentication` names, asked for only when the rule
- * requires one; the gate is asked only for a session the rule would refuse, and
+ * the connection the context names, asked for only when the rule requires one; the gate is asked only for a session the rule would refuse, and
  * an exempt identity then needs no connection and its exemption is reported
  * once; the application's requirement is the further factor; the version
  * changes when the enforcement, the exemption or the requirement does, and
@@ -234,8 +233,9 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
 
     /**
      * A sign-in, whose session is not written yet, is established through the
-     * connection `laravel-authentication` names from its evidence, so the gate
-     * is not asked for one through a satisfying connection.
+     * connection the context names, as `laravel-authentication` names it from
+     * the sign-in's evidence, so the gate is not asked for one through a
+     * satisfying connection.
      *
      * @return void
      */
@@ -243,7 +243,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     {
         $this->enforcement()->requireThrough([self::SSO_CONNECTION]);
 
-        $requirement = $this->askAboutSignIn($this->createPerson(), self::SSO_CONNECTION);
+        $requirement = $this->askThrough($this->createPerson(), null, self::SSO_CONNECTION);
 
         self::assertSame([self::SSO_CONNECTION], $requirement->connections);
         self::assertSame([], $this->exemptions()->asked());
@@ -264,8 +264,8 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
 
         $this->exemptions()->exempt(self::referenceOf($ada));
 
-        self::assertNull($this->askAboutSignIn($ada, null)->connections);
-        self::assertSame([self::SSO_CONNECTION], $this->askAboutSignIn($grace, self::OTHER_CONNECTION)->connections);
+        self::assertNull($this->askThrough($ada, null, null)->connections);
+        self::assertSame([self::SSO_CONNECTION], $this->askThrough($grace, null, self::OTHER_CONNECTION)->connections);
         self::assertCount(2, $this->exemptions()->asked());
         Event::assertDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId === null);
     }
@@ -441,12 +441,11 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     /**
      * Asked while the transaction holds the session's row locked, as a refresh,
      * a switch and an external re-authentication ask it, the adapter judges by
-     * the connection `laravel-authentication` reads current there, and takes no
-     * lock of its own: none but the shared lock of the session's provenance
-     * that read takes on MySQL, at either isolation level; SSO's own
-     * enforcement, with a rule stored, is asked in
+     * the connection the context names and takes no lock of its own, at either
+     * isolation level; SSO's own enforcement, with a rule stored, is asked in
      * `EnforcementThroughTenantPolicyTest`, and a session committed after the
-     * transaction's snapshot in `CompliantSessionUnderAnOlderSnapshotTest`.
+     * transaction's snapshot, judged through `laravel-authentication`'s own
+     * lookup, in `CompliantSessionUnderAnOlderSnapshotTest`.
      *
      * @param  string  $level
      * @return void
@@ -454,7 +453,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testItReadsTheConnectionCurrentUnderTheSessionsLock(string $level): void
+    public function testItTakesNoLockUnderTheSessionsLock(string $level): void
     {
         self::runAtIsolationLevel($level);
 
@@ -463,17 +462,17 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
         $person  = $this->createPerson();
         $session = $this->signInThrough($person);
 
-        [$requirement, $locks] = $this->askedUnderTheSessionsLock($session, fn (): TenantRequirement => $this->ask($person, $session, current: true));
+        [$requirement, $locks] = $this->askedUnderTheSessionsLock($session, fn (): TenantRequirement => $this->askThrough($person, $session, self::SSO_CONNECTION));
 
         self::assertSame([self::SSO_CONNECTION], $requirement->connections);
         self::assertSame([], $this->exemptions()->asked());
-        self::assertSame(self::provenanceLocks(), $locks, 'The adapter took a lock other than its current read of the session\'s provenance.');
+        self::assertSame([], $locks, 'The adapter took a lock of its own.');
     }
 
     /**
      * Asked outside any transaction, where nothing acts on the answer
-     * atomically, the adapter judges by the session's connection read plainly
-     * and takes no lock, at either isolation level.
+     * atomically, the adapter judges by the session's recorded connection and
+     * takes no lock, at either isolation level.
      *
      * @param  string  $level
      * @return void
@@ -543,36 +542,38 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
 
     /**
      * What the policy bound answers for the person's session in the tenant, on
-     * the guard, asked with the context `laravel-authentication` builds,
-     * reading the session's connection current when asked to.
+     * the guard, established through the connection its recorded provenance
+     * names, read only once the policy asks.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
-     * @param  bool  $current
      * @return \SineMacula\Laravel\Authentication\Tenancy\TenantRequirement
      */
-    private function ask(Person $person, Session $session, ?Tenant $tenant = null, bool $current = false): TenantRequirement
+    private function ask(Person $person, Session $session, ?Tenant $tenant = null): TenantRequirement
     {
         $policy = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
 
-        return $policy->requirementFor(self::tenantPolicyContext($person, $person, $tenant ?? new ClaimedTenant(self::SSO_TENANT), $session, $current));
+        $context = self::tenantPolicyContext($person, $person, $tenant ?? new ClaimedTenant(self::SSO_TENANT), $session, fn (): ?string => $this->recordedConnectionOf($session));
+
+        return $policy->requirementFor($context);
     }
 
     /**
-     * What the policy bound answers for the person's sign-in in the tenant, on
-     * the guard, whose session is not written yet, established through the
-     * connection given, or through none.
+     * What the policy bound answers for the person's session in the tenant, or
+     * their sign-in whose session is not written yet (no session), on the
+     * guard, established through the connection given, or through none.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
+     * @param  ?\SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  ?string  $connectionId
      * @return \SineMacula\Laravel\Authentication\Tenancy\TenantRequirement
      */
-    private function askAboutSignIn(Person $person, ?string $connectionId): TenantRequirement
+    private function askThrough(Person $person, ?Session $session, ?string $connectionId): TenantRequirement
     {
         $policy = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
 
-        return $policy->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), null, static fn (): ?string => $connectionId));
+        return $policy->requirementFor(self::tenantPolicyContext($person, $person, new ClaimedTenant(self::SSO_TENANT), $session, static fn (): ?string => $connectionId));
     }
 
     /**

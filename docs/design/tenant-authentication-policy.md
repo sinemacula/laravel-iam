@@ -231,7 +231,7 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   `testTheConnectionIsAskedForOnlyWhenTheRuleRequiresOne`,
   `testARuleWithNoConnectionLeftIsSatisfiedByNone`, `testTheApplicationsRequirementIsTheFurtherFactor`,
   `testTheVersionChangesWhenAnyInputChanges`, `testAnUnversionedRequirementIsAnsweredAtNoVersion`,
-  `testTheApplicationsRequirementIsReadOnTheWriteConnection`, `testItReadsTheConnectionCurrentUnderTheSessionsLock`,
+  `testTheApplicationsRequirementIsReadOnTheWriteConnection`, `testItTakesNoLockUnderTheSessionsLock`,
   `testItTakesNoLockOutsideATransaction`, `testATenantThatCannotBeNamedThrows`,
   `testARequirementThatCannotBeBuiltThrows`; the locks are counted from the moment the session's own lock is taken, or
   the question asked outside a transaction (`Tests\Concerns\CountsLockingReads`)
@@ -242,7 +242,7 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   `testAWithdrawnExemptionReportedAsAPolicyChangeRevokesTheExemptSession`, `testAnotherTenantsSessionsAreNotJudged`,
   `testATenantRequirementRevokesTheSessionsWithoutItsFactor`, `testAnUnchangedPolicyIsRecordedAsTheVersionAnswered`,
   `testASecondPassThatThrowsLeavesTheChangeDurableAndReported`,
-  `testThePolicyTakesNoLockButTheProvenancesUnderTheSessionsLock` (MySQL and PostgreSQL at READ COMMITTED and
+  `testThePolicyTakesNoLockUnderTheSessionsLock` (MySQL and PostgreSQL at READ COMMITTED and
   REPEATABLE READ, SSO's own enforcement reading its stored rule and connections under the session's lock)
 - `tests/Integration/Tenancy/CompliantSessionUnderAnOlderSnapshotTest.php` (MySQL and PostgreSQL at READ COMMITTED and
   REPEATABLE READ, an exempt person's sign-in through the rule's connection committed on another connection after the

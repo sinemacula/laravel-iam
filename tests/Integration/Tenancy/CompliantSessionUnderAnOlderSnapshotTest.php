@@ -161,9 +161,10 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
 
         self::assertInstanceOf(EloquentSession::class, $stored);
 
-        $app    = $this->app ?? self::fail('The application has not booted.');
-        $policy = $app->make(Enforcement::class)->policy(self::TENANT, self::GUARD);
-        $answer = $app->make(TenantAuthenticationPolicy::class)->requirementFor(self::tenantPolicyContext($person, $person, new ClaimedTenant(self::TENANT), $stored));
+        $app     = $this->app ?? self::fail('The application has not booted.');
+        $policy  = $app->make(Enforcement::class)->policy(self::TENANT, self::GUARD);
+        $context = self::tenantPolicyContext($person, $person, new ClaimedTenant(self::TENANT), $stored, fn (): ?string => $this->recordedConnectionOf($stored));
+        $answer  = $app->make(TenantAuthenticationPolicy::class)->requirementFor($context);
 
         self::assertSame([], $this->exemptions()->asked(), 'The gate was asked for a session through a satisfying connection.');
         Event::assertNotDispatched(ExemptionUsed::class);

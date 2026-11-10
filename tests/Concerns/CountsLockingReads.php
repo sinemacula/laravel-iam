@@ -20,12 +20,6 @@ use SineMacula\Laravel\Authentication\Database\StorageConnection;
  * question returned that reads `for update`, `for share`, `for no key update`,
  * `for key share` or `lock in share mode`.
  *
- * The one lock `laravel-authentication`'s order admits under the session's is a
- * shared lock of its proofs or provenance, which its own current reads take on
- * MySQL and MariaDB only (`SessionProofs`): `provenanceLocks()` answers the
- * locking reads such a current read of the session's provenance makes on the
- * engine the test runs on.
- *
  * Only MySQL and PostgreSQL write a lock into the statement, so a test using it
  * runs with `RunsAtIsolationLevels` and is skipped on SQLite.
  *
@@ -85,24 +79,6 @@ trait CountsLockingReads
         $answer  = $question();
 
         return [$answer, array_values($locking->getArrayCopy())];
-    }
-
-    /**
-     * The locking reads a current read of the session's provenance makes on the
-     * engine the test runs on: a shared lock of its row on MySQL and MariaDB,
-     * and none on PostgreSQL, whose statements read what is committed.
-     *
-     * @return list<string>
-     */
-    protected static function provenanceLocks(): array
-    {
-        $connection = DB::connection(StorageConnection::name());
-
-        if (!in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
-            return [];
-        }
-
-        return [$connection->table('authentication_provenance')->where('authentication_provenance.session_id', '?')->limit(1)->sharedLock()->select('connection_id')->toSql()];
     }
 
     /**
