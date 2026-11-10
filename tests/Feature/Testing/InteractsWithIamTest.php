@@ -55,6 +55,7 @@ use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Testing\Concerns\InteractsWithMfa;
+use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 use Tests\Concerns\MigratesMembers;
@@ -79,8 +80,8 @@ use Tests\TestCase;
  * context namespace included. A machine identity is acted as without a session.
  *
  * Acting on a session verified at a given level: MFA's proof store is this
- * package's, so MFA's own `actingAsVerified()` is refused, and
- * `actingOnVerifiedSession()` arranges the same through
+ * package's, so MFA's own `actingAsVerified()` is refused without this
+ * package's recorder, and `actingOnVerifiedSession()` arranges the same through
  * `laravel-authentication`'s step-up instead, with a factor the person holds,
  * so the proof counts and MFA's route gate lets the session through.
  *
@@ -136,18 +137,20 @@ final class InteractsWithIamTest extends TestCase
         . ' or, in a test, through InteractsWithIam::actingOnVerifiedSession().';
 
     /**
-     * MFA's `actingAsVerified()` records synthetic proofs through the proof
-     * store, which only `laravel-authentication` writes to here, so it is
-     * refused, and the refusal names the helper that arranges it instead.
+     * Without this package's recorder, MFA's `actingAsVerified()` records
+     * synthetic proofs through the proof store, which only
+     * `laravel-authentication` writes to here, so it is refused, and the
+     * refusal names the helper that arranges it instead.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testMfasActingAsVerifiedIsRefusedByThisPackagesStore(): void
+    public function testMfasActingAsVerifiedIsRefusedByThisPackagesStoreWithoutItsRecorder(): void
     {
         $person = $this->createPerson();
 
+        $this->app?->offsetUnset(VerifiedSignInRecorder::class);
         $this->signInAndActOnSession($person);
 
         $this->expectException(ProofRefusedException::class);

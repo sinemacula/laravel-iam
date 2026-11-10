@@ -16,7 +16,9 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 
 /**
  * The evidence a further proof of a level is made of, for
- * `Concerns\InteractsWithIam`: the type of the factor it is made with, which is
+ * `Concerns\InteractsWithIam` and MFA's `actingAsVerified()`
+ * (`VerifiedSignInRecorderAdapter`, which finds the evidence of the proof MFA
+ * hands it with `matching()`): the type of the factor it is made with, which is
  * also its method, the kind of channel it travels on (to the synthetic address
  * for an email code, and to the factor itself otherwise), what was observed,
  * and the `amr` values MFA reports for a proof of that kind on its own (its
@@ -77,15 +79,38 @@ final readonly class LevelEvidence
     }
 
     /**
-     * A further proof of this evidence, made now with the factor, bound as
-     * given, of the identity's verification generation.
+     * The evidence a further proof is made of, when it is exactly one level's:
+     * an additional factor made with the level's type as its method, on the
+     * level's kind of channel, observing what the level's evidence observes;
+     * `null` otherwise.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
+     * @return ?self
+     */
+    public static function matching(Proof $proof): ?self
+    {
+        foreach ([AssuranceLevel::AAL1, AssuranceLevel::AAL2, AssuranceLevel::AAL3] as $level) {
+            $evidence = self::of($level);
+
+            if ($evidence->describes($proof)) {
+                return $evidence;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A further proof of this evidence, made at the time given with the factor,
+     * bound as given, of the identity's verification generation.
      *
      * @param  string  $factor
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  int  $generation
+     * @param  \Carbon\CarbonImmutable  $provedAt
      * @return \SineMacula\Laravel\Mfa\Proofs\Proof
      */
-    public function proof(string $factor, ProofBinding $binding, int $generation): Proof
+    public function proof(string $factor, ProofBinding $binding, int $generation, CarbonImmutable $provedAt): Proof
     {
         return new Proof(
             kind: ProofKind::ADDITIONAL_FACTOR,
@@ -93,10 +118,24 @@ final readonly class LevelEvidence
             channel: new Channel($this->kind, $this->kind === ChannelKind::EMAIL ? self::EMAIL_ADDRESS : $factor),
             reference: $factor,
             properties: $this->properties,
-            provedAt: CarbonImmutable::now(),
+            provedAt: $provedAt,
             binding: $binding,
             generation: $generation,
         );
+    }
+
+    /**
+     * Whether the proof is a further proof of this evidence.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
+     * @return bool
+     */
+    private function describes(Proof $proof): bool
+    {
+        return $proof->kind                  === ProofKind::ADDITIONAL_FACTOR
+            && $proof->method                === $this->type
+            && $proof->channel?->kind        === $this->kind
+            && $proof->properties->toArray() === $this->properties->toArray();
     }
 
     /**

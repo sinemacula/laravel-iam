@@ -199,13 +199,28 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The client every caller signs in from.
+     * The client every caller signs in from, `VerifiedSignInRecorderAdapter`'s
+     * included.
      *
      * @return \SineMacula\Laravel\Authentication\Http\ClientContext
      */
-    private static function client(): ClientContext
+    public static function client(): ClientContext
     {
         return new ClientContext(self::CLIENT_IP, self::CLIENT_AGENT);
+    }
+
+    /**
+     * Why the sign-in did not sign in: the reason it failed, or, left pending,
+     * what it still waits on.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
+     * @return string
+     */
+    public static function reason(SignInResult $result): string
+    {
+        $waits = array_map(static fn (PendingRequirement $requirement): string => $requirement->value, $result->pending->requires ?? []);
+
+        return $result->reason->value ?? sprintf('%s: %s', $result->status->value, implode(', ', $waits));
     }
 
     /**
@@ -272,20 +287,6 @@ final readonly class CallerSignIn
             ? ' A started session holds no first factor MFA can judge, so the further factor the application requires of a person who holds one cannot complete it:'
                 . ' sign the caller in with CallerSession::signedIn() or throughSso().'
             : '';
-    }
-
-    /**
-     * Why the sign-in did not sign in: the reason it failed, or, left pending,
-     * what it still waits on.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
-     * @return string
-     */
-    private static function reason(SignInResult $result): string
-    {
-        $waits = array_map(static fn (PendingRequirement $requirement): string => $requirement->value, $result->pending->requires ?? []);
-
-        return $result->reason->value ?? sprintf('%s: %s', $result->status->value, implode(', ', $waits));
     }
 
     /**

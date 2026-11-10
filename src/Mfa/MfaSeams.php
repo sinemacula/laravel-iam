@@ -14,6 +14,7 @@ use SineMacula\Laravel\Authentication\Requirements\MeetNoRequirement;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
+use SineMacula\Laravel\Iam\Testing\VerifiedSignInRecorderAdapter;
 use SineMacula\Laravel\Mfa\Applications\DeclaredFirstFactorResolver;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Context\NoPendingSessionResolver;
@@ -37,6 +38,7 @@ use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
 use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
+use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 
 /**
  * The seams `laravel-authentication` and MFA join through (IAM-3.1 to IAM-3.9,
@@ -52,16 +54,23 @@ use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
  * (`MfaContextContributor`, registered by the service provider, as a
  * contributor is, rather than bound). The proof store and the first-factor
  * resolver are not mandatory: MFA states no mandate for them, and its own
- * defaults keep working behind a guard that keeps a Laravel session.
+ * defaults keep working behind a guard that keeps a Laravel session. Beside the
+ * store, the recorder MFA's `actingAsVerified()` test helper begins its sign-in
+ * and records its proofs through, for which MFA binds no default, is bound to
+ * `Testing\VerifiedSignInRecorderAdapter`, which does both through
+ * `laravel-authentication`, since the store refuses the helper's own proofs. It
+ * is bound with every other seam rather than only in tests, as MFA reads it
+ * only from its helper and resolving it costs nothing until then.
  *
  * Each adapter replaces the member's own default only; an application's binding
  * is kept (IAM-8.4). MFA's proof store default is bound with a closure its
  * proof bindings declare, so that class names it. Every adapter is transient:
- * none keeps state, and each reads the request's (the guard's current session)
- * afresh on every call, so nothing reaches another request or job (IAM-8.1).
- * Revocation on factor removal and reset is mandatory (IAM-3.7): left on MFA's
- * default, a removed factor would leave every other session of the identity
- * standing.
+ * none keeps state (the recorder keeps only the pending credential of the
+ * sign-in it began, for the one sign-in MFA's helper resolved it for), and each
+ * reads the request's (the guard's current session) afresh on every call, so
+ * nothing reaches another request or job (IAM-8.1). Revocation on factor
+ * removal and reset is mandatory (IAM-3.7): left on MFA's default, a removed
+ * factor would leave every other session of the identity standing.
  *
  * MFA's challenge gateway is pointed at `laravel-authentication`'s factor codes
  * while that path can deliver them (`DeliverySeams::routesFactorCodes()`:
@@ -124,6 +133,7 @@ final readonly class MfaSeams implements ProvidesSeams
             new SeamBinding(SessionTransition::class, SessionTransitionAdapter::class, [MiddlewareSessionTransition::class], appliesWhen: $on),
             new SeamBinding(ProofStore::class, ProofStoreAdapter::class, [ProofBindings::class], appliesWhen: $on),
             new SeamBinding(FirstFactorResolver::class, FirstFactorResolverAdapter::class, [DeclaredFirstFactorResolver::class], appliesWhen: $on),
+            new SeamBinding(VerifiedSignInRecorder::class, VerifiedSignInRecorderAdapter::class, [], appliesWhen: $on),
             new SeamBinding(ChallengeGateway::class, ChallengeGatewayAdapter::class, [PackageChallengeGateway::class], appliesWhen: $routed),
             new SeamBinding(FactorCodeCounters::class, FactorCodeCountersAdapter::class, [RefuseFactorCodes::class], appliesWhen: $on),
             new SeamBinding(TenantRequirement::class, TenantRequirementAdapter::class, [NoTenantRequirement::class], appliesWhen: $on),

@@ -34,8 +34,9 @@ return [
     | additional-factor requirement and the requirement check, pending sessions,
     | step-up, reauthentication and freshness, factor changes, revocation on
     | factor removal and reset, the return to pending, the proof store, the
-    | first factor, code challenges and their counters, the event context, the
-    | active tenant, the subject type, the active state and the application,
+    | first factor, the recorder of MFA's verified test sign-ins, code
+    | challenges and their counters, the event context, the active tenant, the
+    | subject type, the active state and the application,
     | MFA's tenant requirement, answered from `tenancy.mfa_requirement`, the
     | passkey factor gate, while any MFA application offers the `passkey`
     | factor type, MFA's passkey ceremonies, and the `mfa` namespace of the
