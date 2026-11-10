@@ -626,6 +626,48 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
+     * Ask this package's gate to let a passkey with the credential id be
+     * registered for an MFA enrolment on the gated identity's session, as
+     * `laravel-authentication`'s passkey service asks it.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $credentialId
+     * @return mixed
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function gateRegistering(MultiFactorAuthenticatable $identity, string $application, #[\SensitiveParameter] string $credentialId): mixed
+    {
+        self::assertInstanceOf(Person::class, $identity);
+        self::assertNotNull($this->gatedSession);
+
+        $binding = $this->bindingOf($identity, $this->gatedSession, Purpose::ENROLLMENT);
+
+        return $this->gate()->registering($identity, $application, self::registeredPasskey($credentialId), $binding, 'Laptop', self::client(), null);
+    }
+
+    /**
+     * Ask this package's gate to let the passkey with the credential id be
+     * removed, as `laravel-authentication`'s passkey service asks it.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $credentialId
+     * @return mixed
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function gateRemoving(MultiFactorAuthenticatable $identity, string $application, #[\SensitiveParameter] string $credentialId): mixed
+    {
+        self::assertInstanceOf(Person::class, $identity);
+
+        return $this->gate()->removing($identity, $application, 'passkey', $credentialId, self::client());
+    }
+
+    /**
      * Whether `laravel-authentication` kept the credential.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -797,11 +839,12 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     /**
      * A passkey as a registration shows it to the gate.
      *
+     * @param  string  $credentialId
      * @return \SineMacula\Laravel\Authentication\Passkeys\RegisteredPasskey
      */
-    private static function registeredPasskey(): RegisteredPasskey
+    private static function registeredPasskey(#[\SensitiveParameter] string $credentialId = self::CREDENTIAL): RegisteredPasskey
     {
-        return new RegisteredPasskey('passkey', self::CREDENTIAL, self::RELYING_PARTY, new ObservedProperties(userPresence: true, userVerification: true), CarbonImmutable::now());
+        return new RegisteredPasskey('passkey', $credentialId, self::RELYING_PARTY, new ObservedProperties(userPresence: true, userVerification: true), CarbonImmutable::now());
     }
 
     /**
