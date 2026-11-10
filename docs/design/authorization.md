@@ -190,9 +190,10 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   factors MFA offers the caller and whether its identity holds a confirmed factor (`Mfa::factors()`), and the handler
   renders MFA's exception as the application renders it. A refusal none of whose candidates MFA can express stays
   Laravel's 403. It is registered while both the authorization and MFA switches are on, on Laravel's own handler only.
-- The session policy (`SessionPolicySourceAdapter`). `laravel-authentication` keeps a credential's scopes on the guard
-  that admitted it alone (`ContextualGuard::scopes()`), and neither its caller nor `laravel-authorization`'s subject
-  carries them, so this one read is ambient, and its docblock says why. It reads only the guard the subject names, never
+- The session policy (`SessionPolicySourceAdapter`). `laravel-authentication` hands a credential's scopes to the guard
+  that admitted it (`ContextualGuard::scopes()`) and to the request's caller (`Caller::$scopes`), but
+  `laravel-authorization`'s subject, all the source is handed, carries none, so this one read is ambient, and its
+  docblock says why. It reads only the guard the subject names, never
   the default one, afresh on every call, and only while that guard holds the subject now: its current principal is the
   subject, the same object or the same model, and, where the subject carries a session, its current session is that
   session, compared by key as text. Any other subject, a principal the caller names (`Authorization::for()`) or another
@@ -493,9 +494,11 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     reset between queued jobs (`ForgetGuardStateBeforeJob`) resets the guards but not that memo, so a worker's later
     jobs would read the first job's caller. The worker reset drops it; a reset of its own memo beside the guards' would
     close it.
-  - `laravel-authentication`'s caller carries no credential scopes (they live on `ContextualGuard::scopes()` alone), which
-    forces the session policy source's ambient read. Scopes on `Caller`, filled as the access credential is admitted,
-    would let the subject carry them and the source take them as a plain value.
+  - `laravel-authorization`'s `Subject`, all its session policy source is handed, carries no credential scopes, so the
+    source reads them from the guard the subject names, an ambient read. `laravel-authentication`'s caller now carries
+    them (`Caller::$scopes`, `null` where no credential limits the caller), which the subject resolver reads, but a
+    `Subject` has nowhere to put them; scopes on `Subject`, filled by the resolver and kept distinct from `null`, would
+    let the source take them as a plain value.
   - `laravel-mfa` builds its step-up exception only in its middleware, and the confirmed-factor read it uses
     (`ConfirmedFactors`) is `@internal`, so the mapping derives whether a confirmed factor is held from `Mfa::factors()`.
     A public factory for the step-up exception from a caller and a requirement would close it.
@@ -875,7 +878,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `laravel-authorization` adds a query for the tenants where a subject holds an action, or decides a `Subject` naming no
   tenant on the platform: the audit access policy and `AdministrativeCheck` use it.
 - SSO's `widened()` takes a client the widening can carry, or stops requiring a transaction on its storage connection.
-- `laravel-authentication` adds a namespace of its own to the context, or carries a credential's scopes on its caller.
+- `laravel-authentication` adds a namespace of its own to the context, or `laravel-authorization`'s `Subject` carries a
+  credential's scopes: the session policy source takes them from the subject.
 - MFA adds an assurance level, or a requirement part.
 - Laravel stops turning an authorization exception into an HTTP exception before its render callbacks, or stops keeping
   it as the previous exception.
