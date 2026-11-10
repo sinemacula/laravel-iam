@@ -49,6 +49,21 @@ final class ContextNamespacesCheckTest extends TestCase
     }
 
     /**
+     * Every namespace is `laravel-authentication`'s side, about no one guard.
+     *
+     * @return void
+     */
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    public function testEveryNamespaceIsLaravelAuthenticationsSide(): void
+    {
+        $this->app?->make('config')->set('sso.features.saml2', true);
+
+        self::assertCount(2, $this->check()->authenticationChecks());
+        self::assertStringContainsString('`mfa` namespace', self::problems($this->check()->authenticationChecks())[0]);
+        self::assertSame([], $this->check()->guardChecks('api'));
+    }
+
+    /**
      * The contributors this package registers while its MFA and SSO
      * capabilities are on pass.
      *

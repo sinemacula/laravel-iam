@@ -10,7 +10,7 @@ use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
-use SineMacula\Laravel\Iam\Checks\Contracts\Check;
+use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
@@ -59,12 +59,15 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * the application registered, is reported as a note for every seam it kept with
  * the application's binding, so the application sees which of its bindings won.
  *
+ * The seams that are `laravel-authentication`'s own contracts, and their notes,
+ * are about no one guard, and `authentication:check` reports them too.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class MandatorySeamsCheck implements Check
+final readonly class MandatorySeamsCheck implements AuthenticationCheck
 {
     /** @var string Why an unbound mandatory seam is refused. */
     private const string UNBOUND = '%s is unbound; bind %s, or an implementation of your own, to it.';
@@ -79,6 +82,9 @@ final readonly class MandatorySeamsCheck implements Check
 
     /** @var string The note of a seam the binding rule kept with the application's binding. */
     private const string KEPT = '%s keeps the application\'s binding, not this package\'s adapter.';
+
+    /** @var string The namespace of `laravel-authentication`'s own seams. */
+    private const string AUTHENTICATION_NAMESPACE = 'SineMacula\Laravel\Authentication\\';
 
     /**
      * Constructor.
@@ -138,10 +144,37 @@ final readonly class MandatorySeamsCheck implements Check
     #[\Override]
     public function checks(): array
     {
-        $providers    = array_diff(IamServiceProvider::seamProviders(), $this->heldBySso());
-        $capabilities = array_map(fn (string $provider): ProvidesSeams => $this->container->make($provider), $providers);
+        return [...$this->checksFor(...$this->capabilities()), ...$this->keptNotes($this->kept())];
+    }
 
-        return [...$this->checksFor(...$capabilities), ...$this->keptNotes()];
+    /**
+     * The checks of the mandatory seams that are `laravel-authentication`'s
+     * own, then the notes of its seams the binding rule kept with the
+     * application's binding.
+     *
+     * @return list<\Closure(): mixed>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[\Override]
+    public function authenticationChecks(): array
+    {
+        $bindings = array_filter($this->mandatory(...$this->capabilities()), static fn (SeamBinding $binding): bool => self::isAuthentications($binding->abstract));
+        $kept     = array_filter($this->kept(), self::isAuthentications(...));
+
+        return [...$this->assertions($bindings), ...$this->keptNotes($kept)];
+    }
+
+    /**
+     * None: no seam is about one guard.
+     *
+     * @param  string  $guard
+     * @return list<\Closure(): mixed>
+     */
+    #[\Override]
+    public function guardChecks(string $guard): array
+    {
+        return [];
     }
 
     /**
@@ -153,23 +186,53 @@ final readonly class MandatorySeamsCheck implements Check
      */
     public function checksFor(ProvidesSeams ...$capabilities): array
     {
-        $checks = [];
+        return $this->assertions($this->mandatory(...$capabilities));
+    }
+
+    /**
+     * The capabilities whose mandatory seams this check reports: every one but
+     * those the check of SSO's side holds.
+     *
+     * @return list<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function capabilities(): array
+    {
+        $providers = array_diff(IamServiceProvider::seamProviders(), $this->heldBySso());
+
+        return array_values(array_map(fn (string $provider): ProvidesSeams => $this->container->make($provider), $providers));
+    }
+
+    /**
+     * The mandatory seams the capabilities declare now.
+     *
+     * @param  \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams  ...$capabilities
+     * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
+     */
+    private function mandatory(ProvidesSeams ...$capabilities): array
+    {
+        $bindings = [];
 
         foreach ($capabilities as $capability) {
-
-            foreach ($capability->seams($this->config) as $binding) {
-
-                if (!$binding->isMandatory()) {
-                    continue;
-                }
-
-                $checks[] = function () use ($binding): void {
-                    $this->assertBound($binding);
-                };
-            }
+            $bindings = [...$bindings, ...array_filter($capability->seams($this->config), static fn (SeamBinding $binding): bool => $binding->isMandatory())];
         }
 
-        return $checks;
+        return $bindings;
+    }
+
+    /**
+     * One check for each seam, refusing it left unbound or on a member's
+     * default.
+     *
+     * @param  array<array-key, \SineMacula\Laravel\Iam\Bindings\SeamBinding>  $bindings
+     * @return list<\Closure(): mixed>
+     */
+    private function assertions(array $bindings): array
+    {
+        return array_values(array_map(fn (SeamBinding $binding): \Closure => function () use ($binding): void {
+            $this->assertBound($binding);
+        }, $bindings));
     }
 
     /**
@@ -246,20 +309,38 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * A note for every seam the binding rule kept with the application's
-     * binding.
+     * The seams the binding rule kept with the application's binding; none when
+     * no outcome is bound.
      *
+     * @return list<class-string>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function kept(): array
+    {
+        return $this->outcome()->kept ?? [];
+    }
+
+    /**
+     * A note for every seam given, each kept with the application's binding.
+     *
+     * @param  array<array-key, string>  $kept
      * @return list<\Closure(): mixed>
      */
-    private function keptNotes(): array
+    private function keptNotes(array $kept): array
     {
-        $outcome = $this->outcome();
+        return array_values(array_map(static fn (string $abstract): \Closure => static fn (): string => sprintf(self::KEPT, $abstract), $kept));
+    }
 
-        if ($outcome === null) {
-            return [];
-        }
-
-        return array_map(static fn (string $abstract): \Closure => static fn (): string => sprintf(self::KEPT, $abstract), $outcome->kept);
+    /**
+     * Whether the seam is one of `laravel-authentication`'s own contracts.
+     *
+     * @param  string  $abstract
+     * @return bool
+     */
+    private static function isAuthentications(string $abstract): bool
+    {
+        return str_starts_with($abstract, self::AUTHENTICATION_NAMESPACE);
     }
 
     /**

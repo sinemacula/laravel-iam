@@ -12,6 +12,7 @@ connection's or a model's name may appear in it.
 
 - [Reading the output](#reading-the-output)
 - [The members' checks](#the-members-checks)
+- [In authentication:check](#in-authenticationcheck)
 - [storage](#storage)
 - [seams](#seams)
 - [sso](#sso)
@@ -53,6 +54,32 @@ Fix what each section below says, then run `iam:check` again.
 you run it yourself, and one that exits non-zero fails the run. One that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
+
+## In authentication:check
+
+This package adds its checks of `laravel-authentication`'s side to `authentication:check`, so running that command on
+its own reports them too, after `laravel-authentication`'s own:
+
+- from [storage](#storage), the identity model of each guard;
+- from [seams](#seams), the mandatory seams that are `laravel-authentication`'s contracts (its scope registry,
+  application access, passkey factor gate and the like), and the note of each one the rule kept with your binding;
+- from [context](#context), every namespace;
+- from [configuration](#configuration), the tenant resolver, and the MFA and SSO applications named after each guard.
+
+Each is reported with its subject, as `[iam:<subject>]`, and, when it is about one guard, after that guard's name:
+
+```text
+[api] [iam:configuration] MFA's freshness operations [mfa.add_factor] are not declared for guard [api] under ...
+```
+
+A problem fails `authentication:check`, as it fails `iam:check`, and a note is shown as a warning. `--guard` limits
+what is about a guard to the guards it names; the rest is reported whatever `--guard` says. Fix each as its section
+below says. A check of this package's that cannot run is reported as *The check [...] failed: ...*, naming the check
+and the class of what went wrong; `iam:check` reports the cause.
+
+`iam:check` runs `authentication:check` too, but reports these under `iam` alone, so each problem appears once. The
+members' storage keys, the shared connection, and an MFA or SSO application that names no guard
+`authentication:check` checks are left to `iam:check`.
 
 ## storage
 

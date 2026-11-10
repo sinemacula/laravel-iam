@@ -8,7 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
-use SineMacula\Laravel\Iam\Checks\Contracts\Check;
+use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Mfa\Enums\Operation;
@@ -56,12 +56,18 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  * each connection's mapping, which is a database row, so it is left to the
  * guide, as SSO's routes are.
  *
+ * Every part of it is `laravel-authentication`'s side too, so
+ * `authentication:check` reports it as well: the tenant resolver about no one
+ * guard, and each MFA or SSO application's checks about the guard of the same
+ * name, so an application naming no guard `authentication:check` checks is left
+ * to `iam:check`.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class CrossMemberConfigurationCheck implements Check
+final readonly class CrossMemberConfigurationCheck implements AuthenticationCheck
 {
     /** @var string The key of the application's guards. */
     private const string GUARDS = 'auth.guards';
@@ -143,24 +149,82 @@ final readonly class CrossMemberConfigurationCheck implements Check
     #[\Override]
     public function checks(): array
     {
-        $checks = TenancySeams::isEnforcedOrRequired($this->config, $this->container)
-            ? [fn () => $this->assertTenantsResolve()]
-            : [];
+        $checks = $this->authenticationChecks();
 
         foreach (self::names($this->config->get(self::MFA_APPLICATIONS)) as $application) {
-            $checks[] = fn () => $this->assertGuard($application);
-            $checks[] = fn () => $this->assertDeclared($application, array_column(Operation::cases(), 'value'), 'MFA');
+            $checks = [...$checks, ...$this->mfaChecks($application)];
         }
 
-        if (!SsoSeams::isInUse($this->config)) {
-            return $checks;
-        }
-
-        foreach (self::names($this->config->get(self::SSO_APPLICATIONS)) as $application) {
-            $checks[] = fn () => $this->assertDeclared($application, array_column(FreshnessOperation::cases(), 'value'), 'SSO');
+        foreach ($this->ssoApplications() as $application) {
+            $checks[] = $this->ssoCheck($application);
         }
 
         return $checks;
+    }
+
+    /**
+     * The tenant resolver while a tenant's rule reaches a session.
+     *
+     * @return list<\Closure(): mixed>
+     */
+    #[\Override]
+    public function authenticationChecks(): array
+    {
+        return TenancySeams::isEnforcedOrRequired($this->config, $this->container)
+            ? [fn () => $this->assertTenantsResolve()]
+            : [];
+    }
+
+    /**
+     * The checks of the MFA application named after the guard, then of the SSO
+     * application named after it while SSO is in use.
+     *
+     * @param  string  $guard
+     * @return list<\Closure(): mixed>
+     */
+    #[\Override]
+    public function guardChecks(string $guard): array
+    {
+        $mfa = in_array($guard, self::names($this->config->get(self::MFA_APPLICATIONS)), true) ? $this->mfaChecks($guard) : [];
+        $sso = in_array($guard, $this->ssoApplications(), true) ? [$this->ssoCheck($guard)] : [];
+
+        return [...$mfa, ...$sso];
+    }
+
+    /**
+     * The MFA application names a guard that holds sessions, and that guard
+     * declares MFA's freshness operations.
+     *
+     * @param  string  $application
+     * @return list<\Closure(): mixed>
+     */
+    private function mfaChecks(string $application): array
+    {
+        return [
+            fn () => $this->assertGuard($application),
+            fn () => $this->assertDeclared($application, array_column(Operation::cases(), 'value'), 'MFA'),
+        ];
+    }
+
+    /**
+     * The SSO application's guard declares SSO's freshness operations.
+     *
+     * @param  string  $application
+     * @return \Closure(): mixed
+     */
+    private function ssoCheck(string $application): \Closure
+    {
+        return fn () => $this->assertDeclared($application, array_column(FreshnessOperation::cases(), 'value'), 'SSO');
+    }
+
+    /**
+     * SSO's applications while SSO is in use; none while it is not.
+     *
+     * @return list<string>
+     */
+    private function ssoApplications(): array
+    {
+        return SsoSeams::isInUse($this->config) ? self::names($this->config->get(self::SSO_APPLICATIONS)) : [];
     }
 
     /**

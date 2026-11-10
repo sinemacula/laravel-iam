@@ -475,6 +475,29 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
+     * `laravel-authentication`'s side is its own seams alone, and the notes of
+     * those the rule kept, about no one guard.
+     *
+     * @return void
+     */
+    public function testLaravelAuthenticationsSideIsItsOwnSeams(): void
+    {
+        $this->app?->bind(PasskeyFactorGate::class, NoPasskeyFactors::class);
+        $this->app?->bind(SessionRevoker::class, GenerationSessionRevoker::class);
+        $this->app?->instance(BindingOutcome::class, new BindingOutcome([], [SessionRevocation::class, PasskeyFactorGate::class]));
+
+        self::assertCount(2, self::problems($this->check()->checks()));
+        self::assertCount(2, self::notes($this->check()->checks()));
+
+        $problems = self::problems($this->check()->authenticationChecks());
+
+        self::assertCount(1, $problems);
+        self::assertStringStartsWith(PasskeyFactorGate::class . ' is still bound to ' . NoPasskeyFactors::class, $problems[0]);
+        self::assertSame([PasskeyFactorGate::class . ' keeps the application\'s binding, not this package\'s adapter.'], self::notes($this->check()->authenticationChecks()));
+        self::assertSame([], $this->check()->guardChecks('api'));
+    }
+
+    /**
      * The check always applies, under the subject `seams`.
      *
      * @return void

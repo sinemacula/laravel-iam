@@ -274,6 +274,27 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   (`SsoBridgeCheck::CAPABILITIES`). The base URL is SSO's own `EndpointsCheck`'s and the storage connection the storage
   alignment's, which refuses boot on a mismatch already, so the bridge repeats neither. SSO's freshness operations are
   left to `iam:check`, so an application that has not declared them yet is told at deploy rather than refused at boot.
+- `Checks\AuthenticationConfigurationCheck` reports this package's checks of `laravel-authentication`'s side in
+  `authentication:check` too (IAM-10.3), through `laravel-authentication`'s registration point
+  (`Console\ConfigurationChecks::register()`), so the command run at deploy on its own reports them. It copies no
+  check: each check with a side of `laravel-authentication`'s implements `Checks\Contracts\AuthenticationCheck`, which
+  hands over the closures of its own `checks()` that concern it, about no one guard (`authenticationChecks()`) and about
+  a guard by name (`guardChecks()`). They are `StorageCheck`'s identity model of each guard; `MandatorySeamsCheck`'s
+  seams that are `laravel-authentication`'s own contracts, and the notes of those the binding rule kept, the seams the
+  SSO bridge holds left to it while SSO is in use; every namespace `ContextNamespacesCheck` requires; and
+  `CrossMemberConfigurationCheck`'s tenant resolver, and the MFA and SSO applications named after each guard. The
+  members' storage keys and the shared connection stay `iam:check`'s alone, as does an MFA or SSO application naming no
+  guard `authentication:check` checks (a `session` guard, or none). The adapter asks for the guards
+  `authentication:check` checks (those named with `--guard`, otherwise every `jwt` and `api_key` guard), so `--guard`
+  limits it, and grades each closure as `Checker` does: one that throws is an error, its message prefixed
+  `[iam:<subject>]`, and a note a warning. A check that cannot be resolved, or whose closures cannot be built, is an
+  error naming its class and the exception's class, never its message (which `laravel-authentication` asks of a
+  registered check), and the checks after it still run. It is registered from `IamServiceProvider::boot()` through
+  `callAfterResolving()` on `laravel-authentication`'s checks, which registers it on every instance built and never
+  where `laravel-authentication` offers no registration point; `register()` keeps one of each, so it is registered
+  once. `Checker::run()` binds `Checker::RUNNING` to `true` while it runs the members' commands, and to `false` once
+  they have, thrown or not, and the adapter answers nothing while it is `true`, so `iam:check` reports each problem
+  once, under `iam` (decision recorded here).
 
 ### What M11 adds
 
@@ -356,9 +377,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     before it reports; standing aside for a composing package's check command too would let `iam:check` report it.
   - `authorization:check` always exits `0`, so `iam:check` cannot fail on what it finds; exiting non-zero on a problem
     would let it.
-  - `authentication:check` is final, with a fixed list of checks and no way to add one (IAM-13.8), so this package's
-    checks of `laravel-authentication`'s side are reported under `iam`, not under `authentication:check`; a
-    registration point like SSO's `ConfigurationChecks::add()` would let them.
   - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
     (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
     public constant would let it read them.
@@ -394,6 +412,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `src/Checks/SchedulesCheck.php`.
 - `src/Checks/SsoCheckRegistration.php`: `register()`, `isInForce()`; `src/Checks/Sso/SsoBridgeCheck.php`:
   `CAPABILITIES`.
+- `src/Checks/AuthenticationConfigurationCheck.php`: `findings()`, `CHECKS`;
+  `src/Checks/Contracts/AuthenticationCheck.php`; `src/Checks/Checker.php`: `RUNNING`; `src/IamServiceProvider.php`:
+  `boot()`.
 - The mandates: `src/Sso/SsoSeams.php` (`isInUse()`), `src/Mfa/ContextSeams.php`, `src/Tenancy/TenancySeams.php`
   (`isEnforcedOrRequired()`); `src/IamServiceProvider.php`: `seamProviders()`, `UNCHECKED_COMMANDS`,
   `registerConsole()`.
@@ -440,7 +461,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`, `testSsosSideIsCheckedWhenSsosCheckDoesNotRunIt`
 - `tests/Unit/Checks/CheckerTest.php` `testEveryCheckRunsAndTheRunPasses`, `testAMemberCommandFailingFailsTheRun`,
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
-  `testEachCheckIsReported`
+  `testEachCheckIsReported`, `testTheMembersCommandsRunMarked`
+- `tests/Feature/Checks/AuthenticationConfigurationCheckTest.php` `testAnErrorFailsAuthenticationCheck`,
+  `testTheGuardOptionLimitsIt`, `testEachClosureIsGradedAsIamCheckGradesIt`, `testAThrowingCheckIsContained`,
+  `testNothingIsRegisteredTwice`, `testIamCheckReportsEachProblemOnce`
 - `tests/Feature/Authorization/AuthorizationSeamsTest.php`
   `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
 - `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testASeamLeftOnItsMembersDefaultFails`,
@@ -502,7 +526,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   follows, and so does `iam:check`'s report of schedules switched off.
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.
 - A member adding a check command, a check of its own that covers one of this package's (glue, not policy), or a
-  public way to add a check (IAM-13.8 for `laravel-authentication`): `Checker` and the checks follow.
+  public way to add a check: `Checker` and the checks follow.
+- `laravel-authentication` changing `ConfigurationChecks`, `ConfigurationCheck` or `ConfigurationFinding`, or a check
+  gaining or losing a part of `laravel-authentication`'s side: `AuthenticationConfigurationCheck` and the
+  `AuthenticationCheck` methods follow.
 - A member renaming a mandatory seam's default, a mandate changing (`AccessMandates`' application access and scope
   registry among them), or
   MFA or `laravel-authorization` standing their boot validation aside for `iam:check`: `MandatorySeamsCheck`,
