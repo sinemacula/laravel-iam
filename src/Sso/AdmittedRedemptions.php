@@ -98,22 +98,6 @@ final class AdmittedRedemptions
     }
 
     /**
-     * The connection of the redemption admitted in this request when it links
-     * exactly the identity given, or `null` otherwise: the connection a sign-in
-     * of that identity is being established through, before
-     * `laravel-authentication` has written its session.
-     *
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
-     * @return ?string
-     */
-    public function connectionFor(IdentityReference $identity): ?string
-    {
-        $admitted = $this->admitted;
-
-        return $admitted?->linkedIdentity !== null && $admitted->linkedIdentity->is($identity) ? $admitted->result?->connectionId : null;
-    }
-
-    /**
      * The client the redemption admitted in this request is made for when it
      * links exactly the identity given and names exactly the session given, or
      * none for a sign-in, whose session is not written yet; `null` otherwise:

@@ -22,7 +22,6 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
-use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
@@ -470,7 +469,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         $session = $this->signedIn($this->redeemInTenant($this->handoff()));
         $tenant  = new ClaimedTenant(self::TENANT);
         $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $answer  = $policy->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, $tenant, $this->stored($session)));
+        $answer  = $policy->requirementFor(self::tenantPolicyContext($person, $person, $tenant, $this->stored($session)));
 
         self::assertNotNull($answer->version);
         self::assertSame($answer->version, $this->stored($session)->getTenantPolicyVersion());
@@ -504,7 +503,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
 
         $session = $this->signedIn($this->redeemInTenant($this->handoff()));
         $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::TENANT), $this->stored($session));
+        $context = self::tenantPolicyContext($person, $person, new ClaimedTenant(self::TENANT), $this->stored($session), current: true);
 
         [$requirement, $locks] = $this->askedUnderTheSessionsLock($session, static fn (): TenantRequirement => $policy->requirementFor($context));
 

@@ -254,10 +254,8 @@ publishing anything twice.
 5. Replace your own redemption of SSO's handoff codes. A direct install redeems a code through SSO's
    `SineMacula\Laravel\Sso\Handoffs\HandoffRedemption` (`admit()` or `redeem()`) and then hands the result to
    `laravel-authentication`'s `signInExternally()` or `reauthenticateExternally()`. Under this package, its
-   `ExternalIdentityLinks` adapter finds a link, and the tenant authentication policy a sign-in's connection, only
-   from a redemption the package's own core methods recorded, so that route stops finding links once the package binds
-   its adapter, and with SSO's enforcement on its sessions are refused as `sso_required`. `iam:check` cannot see a
-   route.
+   `ExternalIdentityLinks` adapter finds a link only from a redemption the package's own core methods recorded, so
+   that route stops finding links once the package binds its adapter. `iam:check` cannot see a route.
    Replace every such controller with `Iam::signIns()->redeem()`, `Iam::reauthentications()->redeem()` and
    `Iam::links()->redeem()`, as [Signing in through SSO](example-application.md#signing-in-through-sso) shows.
 6. Remove the glue you wrote. Your own binding of a member's contract always wins over this package's adapter, so an

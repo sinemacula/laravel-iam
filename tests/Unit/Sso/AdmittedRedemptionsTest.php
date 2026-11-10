@@ -47,30 +47,6 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * The redemption recorded names its connection for exactly the identity it
-     * links, as a sign-in of that identity is established through it, and for
-     * no other identity; with none recorded, or once forgotten, it names none.
-     *
-     * @return void
-     */
-    public function testTheConnectionIsNamedForTheIdentityLinkedAlone(): void
-    {
-        $admitted = new AdmittedRedemptions;
-
-        self::assertNull($admitted->connectionFor(Redemptions::identity()));
-
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
-
-        self::assertSame(Redemptions::CONNECTION, $admitted->connectionFor(Redemptions::identity()));
-        self::assertNull($admitted->connectionFor(new IdentityReference(Redemptions::identity()->type, Redemptions::identity()->id . '0')));
-        self::assertNull($admitted->connectionFor(new IdentityReference('machine', Redemptions::identity()->id)));
-
-        $admitted->forget();
-
-        self::assertNull($admitted->connectionFor(Redemptions::identity()));
-    }
-
-    /**
      * The client a sign-in recorded is made for is answered for exactly the
      * identity it links and no session, as `laravel-authentication` judges that
      * sign-in before its session is written, and for no other identity or any

@@ -12,14 +12,19 @@ use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Authentication\Requirements\ProofSource;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyCheck;
+use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
@@ -233,6 +238,32 @@ trait SignsInPeople
     protected function signInReference(Session $session, string $guard = self::GUARD): string
     {
         return SignIn::reference($session, $guard);
+    }
+
+    /**
+     * The context `laravel-authentication` asks a tenant authentication policy
+     * about the stored session acting in the tenant with, on the guard: the
+     * connection the session was established through is found from its recorded
+     * provenance once the policy asks, read current, as it is while
+     * `laravel-authentication` holds the session's row locked, when asked to.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
+     * @param  bool  $current
+     * @param  string  $guard
+     * @return \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext
+     */
+    protected static function tenantPolicyContext(
+        Identity $identity,
+        Principal $principal,
+        Tenant $tenant,
+        Session $session,
+        bool $current = false,
+        string $guard = self::GUARD,
+    ): TenantPolicyContext {
+        return TenantPolicyCheck::contextFor($guard, $identity, $principal, $tenant, $session, new ProofSource(current: $current));
     }
 
     /**

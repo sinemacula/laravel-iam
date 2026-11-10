@@ -16,7 +16,6 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
-use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
@@ -164,7 +163,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
 
         $app    = $this->app ?? self::fail('The application has not booted.');
         $policy = $app->make(Enforcement::class)->policy(self::TENANT, self::GUARD);
-        $answer = $app->make(TenantAuthenticationPolicy::class)->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::TENANT), $stored));
+        $answer = $app->make(TenantAuthenticationPolicy::class)->requirementFor(self::tenantPolicyContext($person, $person, new ClaimedTenant(self::TENANT), $stored));
 
         self::assertSame([], $this->exemptions()->asked(), 'The gate was asked for a session through a satisfying connection.');
         Event::assertNotDispatched(ExemptionUsed::class);
