@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration\Delivery;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
@@ -299,14 +300,19 @@ final class AuthenticationCodeDeliveryTest extends TestCase
      * Send the response, so the delivery job runs, failing unless the job fails
      * with an exception of the class given.
      *
+     * On the `sync` connection the job runs after the response. Laravel 13.41
+     * and later report its exception there rather than rethrowing it, and
+     * earlier releases rethrow it, so the failure is read from either.
+     *
      * @param  class-string<\Throwable>  $class
      * @return void
      */
     private function assertDeliveryJobFails(string $class): void
     {
-        $thrown = rescue(fn () => $this->app?->terminate(), static fn (\Throwable $exception): \Throwable => $exception, false);
+        $handler = Exceptions::fake();
+        $thrown  = rescue(fn () => $this->app?->terminate(), static fn (\Throwable $exception): \Throwable => $exception, false);
 
-        self::assertInstanceOf($class, $thrown, 'The delivery job must fail.');
+        self::assertInstanceOf($class, $thrown ?? $handler->reported()[0] ?? null, 'The delivery job must fail.');
     }
 
     /**
