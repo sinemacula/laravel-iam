@@ -130,8 +130,8 @@ trait ChangesSessionsElsewhere
     {
         $this->elsewhere(function () use ($person, $session, $factor): void {
 
-            $identity = Person::query()->findOrFail($person->getKey());
-            $current  = Session::query()->findOrFail($session->getKey());
+            $identity = Person::query()->whereKey($person->getKey())->firstOrFail();
+            $current  = Session::query()->whereKey($session->getKey())->firstOrFail();
 
             $this->sessions()->factorRemoved($identity, $factor, $current);
         });
@@ -152,7 +152,7 @@ trait ChangesSessionsElsewhere
     {
         $this->elsewhere(function () use ($person, $session): void {
 
-            $stored = Session::query()->findOrFail($session->getKey());
+            $stored = Session::query()->whereKey($session->getKey())->firstOrFail();
             $result = $this->sessions()->reauthenticate($stored, 'password', ['email' => $person->email, 'password' => self::PASSWORD], self::client());
 
             self::assertTrue($result->isIssued(), sprintf('The person did not reauthenticate: [%s].', $result->reason?->value));

@@ -43,7 +43,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     public function testTheListenerIsRegisteredByTheEventsName(): void
     {
         self::assertFalse(class_exists(ResetWhenWorkerStarts::EVENT));
-        self::assertContains(ResetWhenWorkerStarts::class, Event::getRawListeners()[ResetWhenWorkerStarts::EVENT] ?? []);
+        self::assertContains(ResetWhenWorkerStarts::class, (array) (Event::getRawListeners()[ResetWhenWorkerStarts::EVENT] ?? []));
     }
 
     /**

@@ -39,7 +39,7 @@ final class ResetBetweenRequestsTest extends TestCase
     public function testTheListenerIsRegisteredByTheEventsName(): void
     {
         self::assertFalse(class_exists(ResetBetweenRequests::EVENT));
-        self::assertContains(ResetBetweenRequests::class, Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []);
+        self::assertContains(ResetBetweenRequests::class, (array) (Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []));
     }
 
     /**

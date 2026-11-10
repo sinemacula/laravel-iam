@@ -326,7 +326,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $config?->set('iam.tenancy.tree', StoredTenantTree::class);
         $config?->set(TenancySeams::ENFORCEMENT, false);
 
-        self::assertSame(ResolveNoTenant::class, $this->app?->make(SeamHolders::class)->of($this->app, TenantResolver::class));
+        self::assertSame(ResolveNoTenant::class, $this->app?->make(SeamHolders::class)->of($this->app ?? self::fail('The application has not booted.'), TenantResolver::class));
         self::assertSame([], self::problems($this->check()->checks()));
     }
 

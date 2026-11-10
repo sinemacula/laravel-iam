@@ -40,7 +40,7 @@ trait LeavesTheSavepointAfterAConcurrencyFailure
         if ($this->causedByConcurrencyError($e) && $this->transactions > 1) {
             $this->transactions--;
 
-            $this->transactionsManager?->rollback($this->getName(), $this->transactions);
+            $this->transactionsManager?->rollback((string) $this->getName(), $this->transactions);
 
             throw new DeadlockException($e->getMessage(), is_int($e->getCode()) ? $e->getCode() : 0, $e);
         }

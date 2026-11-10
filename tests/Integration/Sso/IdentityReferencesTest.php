@@ -73,6 +73,7 @@ final class IdentityReferencesTest extends TestCase
             Schema::dropIfExists($name);
             Schema::create($name, static function (Blueprint $table) use ($key, $collation): void {
 
+                // @phpstan-ignore argument.type (a null collation leaves the engine's own, as every engine but SQLite keeps)
                 $key($table)->primary()->collation($collation);
 
                 $table->timestamps();

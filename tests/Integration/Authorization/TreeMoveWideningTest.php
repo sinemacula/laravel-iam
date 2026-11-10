@@ -130,14 +130,15 @@ final class TreeMoveWideningTest extends TestCase
 
         Role::query()->create(['name' => self::ROLE]);
 
-        $this->person = $this->createPerson();
+        $person       = $this->createPerson();
+        $this->person = $person;
 
-        $this->grant($this->person, self::GRANTED);
+        $this->grant($person, self::GRANTED);
 
         $this->linkedConnectionId = $this->makeConnection(self::LINKED);
         $tenantConnection         = $this->connectionId;
         $this->connectionId       = $this->linkedConnectionId;
-        $this->linkId             = (string) $this->linkThroughFlow($this->person)->linkId;
+        $this->linkId             = (string) $this->linkThroughFlow($person)->linkId;
         $this->connectionId       = $tenantConnection;
 
         Link::query()->whereKey($this->linkId)->update(['provenance' => LinkOrigin::VERIFIED_DOMAIN->value]);

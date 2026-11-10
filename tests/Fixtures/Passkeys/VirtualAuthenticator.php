@@ -112,7 +112,7 @@ final class VirtualAuthenticator
      * random one of the length) and return the browser's registration response.
      *
      * @param  array<string, mixed>  $options
-     * @param  int  $idLength
+     * @param  positive-int  $idLength
      * @param  ?string  $id
      * @return array<string, mixed>
      *
@@ -341,7 +341,7 @@ final class VirtualAuthenticator
         $credential = $this->credentials[$id];
 
         if ($credential['alg'] === self::EDDSA) {
-            assert(is_string($credential['key']));
+            assert(is_string($credential['key']) && $credential['key'] !== '');
 
             return sodium_crypto_sign_detached($data, $credential['key']);
         }

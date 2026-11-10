@@ -600,7 +600,7 @@ final class FactorChangeGateAdapterTest extends TestCase
             self::GUARD,
             $this->signInReference($session),
             FactorChange::REMOVE_FACTOR,
-            $this->factorsOf($person),
+            $this->factorsOf($person), // @phpstan-ignore argument.type (MFA's own factors, which its request names by contract)
             $removed->id,
             self::configuredRequirement(),
         );
@@ -668,6 +668,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     {
         $factorId = $change->namesFactor() ? self::REMOVED : null;
 
+        // @phpstan-ignore argument.type (MFA's own factors, which its request names by contract)
         return new FactorChangeRequest($person, self::GUARD, $this->signInReference($session), $change, $this->factorsOf($person), $factorId, $requirement);
     }
 

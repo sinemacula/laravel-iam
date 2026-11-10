@@ -41,7 +41,7 @@ final class ResetBeforeJobTest extends TestCase
      */
     public function testTheListenerIsRegisteredForEachJob(): void
     {
-        self::assertContains(ResetBeforeJob::class, Event::getRawListeners()[JobProcessing::class] ?? []);
+        self::assertContains(ResetBeforeJob::class, (array) (Event::getRawListeners()[JobProcessing::class] ?? []));
     }
 
     /**
@@ -179,7 +179,7 @@ final class ResetBeforeJobTest extends TestCase
     #[DefineEnvironment('turnTheResetOff')]
     public function testTurningTheResetOffRegistersNoListener(): void
     {
-        self::assertNotContains(ResetBeforeJob::class, Event::getRawListeners()[JobProcessing::class] ?? []);
+        self::assertNotContains(ResetBeforeJob::class, (array) (Event::getRawListeners()[JobProcessing::class] ?? []));
     }
 
     /**

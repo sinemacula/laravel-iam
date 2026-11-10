@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authentication\External\NoExternalLinks;
 use SineMacula\Laravel\Authentication\Passkeys\NoPasskeyFactors;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
+use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
@@ -420,7 +421,7 @@ final class MandatorySeamsCheckTest extends TestCase
 
         self::assertSame([], self::problems($this->check()->checks()));
 
-        $turnOn($this->app);
+        $turnOn($this->app ?? self::fail('The application has not booted.'));
 
         $problems = self::problems($this->check()->checks());
 
@@ -503,7 +504,8 @@ final class MandatorySeamsCheckTest extends TestCase
      */
     private function mandates(): array
     {
-        $capabilities = array_map(fn (string $provider): object => $this->app?->make($provider), IamServiceProvider::seamProviders());
+        $app          = $this->app ?? self::fail('The application has not booted.');
+        $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), IamServiceProvider::seamProviders());
 
         return $this->check()->checksFor(...$capabilities);
     }

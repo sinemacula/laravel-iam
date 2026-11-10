@@ -154,10 +154,12 @@ final class AuthorizationSeamsTest extends TestCase
     {
         $this->bootInOrder($providers);
 
-        $this->app?->make(SubjectResolver::class);
-        $this->app?->make(TenantTree::class);
+        $app = $this->app ?? self::fail('The application has not booted.');
 
-        $callbacks = \Closure::bind(static fn (Container $container): array => $container->reboundCallbacks, null, Container::class)($this->app);
+        $app->make(SubjectResolver::class);
+        $app->make(TenantTree::class);
+
+        $callbacks = \Closure::bind(static fn (Container $container): array => $container->reboundCallbacks, null, Container::class)($app);
 
         self::assertCount(1, $callbacks[SubjectResolver::class] ?? []);
         self::assertCount(1, $callbacks[TenantTree::class] ?? []);
@@ -174,15 +176,15 @@ final class AuthorizationSeamsTest extends TestCase
 
         $cache->rememberRoles(new Reference('person', '1'), $resolve);
         $cache->rememberRoles(new Reference('person', '1'), $resolve);
-        $this->app?->instance(TenantTree::class, new FlatTenantTree);
+        $app->instance(TenantTree::class, new FlatTenantTree);
         $cache->rememberRoles(new Reference('person', '1'), $resolve);
-        $this->app?->instance(SubjectResolver::class, $this->app->make(AuthGuardSubjectResolver::class));
+        $app->instance(SubjectResolver::class, $app->make(AuthGuardSubjectResolver::class));
         $cache->rememberRoles(new Reference('person', '1'), $resolve);
 
         self::assertSame(3, $resolved);
 
-        $this->app?->offsetUnset(ResolutionCache::class);
-        $this->app?->instance(TenantTree::class, new FlatTenantTree);
+        $app->offsetUnset(ResolutionCache::class);
+        $app->instance(TenantTree::class, new FlatTenantTree);
 
         self::assertNull(ResolutionCache::instance());
     }

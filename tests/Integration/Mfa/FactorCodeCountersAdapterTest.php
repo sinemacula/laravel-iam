@@ -219,7 +219,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
         $request = $this->codes()->sendFactorCode($this->factorCodeBinding(), self::client());
 
         self::assertSame(CodeRequestStatus::LOCKED, $request->status);
-        self::assertTrue($until->equalTo($request->lockedUntil));
+        self::assertTrue($until->equalTo($request->lockedUntil ?? self::fail('No time was answered.')));
     }
 
     /**

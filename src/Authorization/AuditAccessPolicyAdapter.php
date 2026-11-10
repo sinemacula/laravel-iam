@@ -113,7 +113,10 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
         $container = Container::getInstance();
         $subject   = self::subjectOf($viewer instanceof Reference ? self::model($viewer) : $viewer);
         $manager   = $container->make(AuthorizationManager::class);
-        $holds     = static fn (Subject $decided, object $tenant): array => self::held($manager->permissionsFor($decided, AuthorizationScope::tenant($tenant)), $purpose);
+        $holds     = static fn (Subject $decided, AuthorizableTenant|Model $tenant): array => self::held(
+            $manager->permissionsFor($decided, AuthorizationScope::tenant($tenant)),
+            $purpose,
+        );
 
         $reached = [];
         $own     = [];

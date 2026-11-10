@@ -115,7 +115,7 @@ final class FreshnessGateAdapterTest extends TestCase
         $this->stepSessionUp($person, $session);
 
         self::assertTrue($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
-        self::assertTrue($steppedUp->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked)));
+        self::assertTrue($steppedUp->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked) ?? self::fail('No time was answered.')));
 
         $this->travel(300)->seconds();
 
@@ -176,7 +176,7 @@ final class FreshnessGateAdapterTest extends TestCase
         $this->travel(100)->seconds();
         $this->stepSessionUp($person, $session, multifactor: false);
 
-        self::assertTrue($first->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked)));
+        self::assertTrue($first->addSeconds(300)->equalTo($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked) ?? self::fail('No time was answered.')));
 
         $this->travel(200)->seconds();
 

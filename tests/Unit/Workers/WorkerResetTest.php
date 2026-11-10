@@ -320,6 +320,7 @@ final class WorkerResetTest extends TestCase
 
         $container->scoped('authorization', static fn (): \stdClass => new \stdClass);
 
+        // @phpstan-ignore argument.type (a bare container is all a facade resolves its root from)
         Facade::setFacadeApplication($container);
 
         $before = Authorization::getFacadeRoot();
@@ -342,6 +343,7 @@ final class WorkerResetTest extends TestCase
 
         $container->scoped(ContextRepository::class, static fn (): \stdClass => new \stdClass);
 
+        // @phpstan-ignore argument.type (a bare container is all a facade resolves its root from)
         Facade::setFacadeApplication($container);
 
         $before = Context::getFacadeRoot();
@@ -560,6 +562,7 @@ final class WorkerResetTest extends TestCase
         $container = new Container;
         $request   = Request::create('/');
 
+        // @phpstan-ignore argument.type (an integer key, which the reset must leave, is among those handed over)
         $request->attributes->add([
             'authentication.caller.access.api.'        => new \stdClass,
             'authentication.caller.pending.api.select' => false,

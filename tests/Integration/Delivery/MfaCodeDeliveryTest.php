@@ -34,6 +34,7 @@ use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Delivery\ScriptedGateway;
 use Tests\Fixtures\Mfa\Codes\Concerns\ArrangesDeliveredFactors;
+use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
@@ -129,7 +130,12 @@ final class MfaCodeDeliveryTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame($sent->expiresAt?->getTimestamp(), $message->expiresAt->getTimestamp());
-        self::assertTrue($person->is($message->recipient()));
+
+        $found = $message->recipient();
+
+        self::assertInstanceOf(Person::class, $found);
+        self::assertTrue($person->is($found));
+
         self::assertSame($factor->id, $message->factor?->id);
         self::assertNotSame($destination, $message->factor->maskedDestination);
 

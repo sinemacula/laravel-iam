@@ -102,8 +102,13 @@ final readonly class IdentityDirectoryAdapter implements IdentityDirectory
         }
 
         $principals = WriteConnection::during($found, static fn (): array => WriteConnection::query($query)->get()->all());
+        $references = [];
 
-        return IdentityPrincipals::complete(array_map(Reference::of(...), $principals));
+        foreach ($principals as $principal) {
+            $references[] = Reference::of($principal);
+        }
+
+        return IdentityPrincipals::complete($references);
     }
 
     /**

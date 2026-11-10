@@ -923,9 +923,9 @@ final class IamServiceProviderTest extends TestCase
     {
         $listeners = Event::getRawListeners();
 
-        self::assertContains(ResetWhenWorkerStarts::class, $listeners[ResetWhenWorkerStarts::EVENT] ?? []);
-        self::assertContains(ResetBetweenRequests::class, $listeners[ResetBetweenRequests::EVENT] ?? []);
-        self::assertContains(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? []);
+        self::assertContains(ResetWhenWorkerStarts::class, (array) ($listeners[ResetWhenWorkerStarts::EVENT] ?? []));
+        self::assertContains(ResetBetweenRequests::class, (array) ($listeners[ResetBetweenRequests::EVENT] ?? []));
+        self::assertContains(ResetBeforeJob::class, (array) ($listeners[JobProcessing::class] ?? []));
     }
 
     /**
@@ -1096,7 +1096,7 @@ final class IamServiceProviderTest extends TestCase
     public function testTheWorkerResetIsOnWhenTheSwitchIsMissing(): void
     {
         self::assertFalse($this->config()->has('iam.workers.reset'));
-        self::assertContains(ResetBetweenRequests::class, Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []);
+        self::assertContains(ResetBetweenRequests::class, (array) (Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []));
     }
 
     /**
@@ -1111,7 +1111,7 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertArrayNotHasKey(ResetWhenWorkerStarts::EVENT, $listeners);
         self::assertArrayNotHasKey(ResetBetweenRequests::EVENT, $listeners);
-        self::assertNotContains(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? []);
+        self::assertNotContains(ResetBeforeJob::class, (array) ($listeners[JobProcessing::class] ?? []));
     }
 
     /**
@@ -1161,9 +1161,9 @@ final class IamServiceProviderTest extends TestCase
 
         $listeners = Event::getRawListeners();
 
-        self::assertSame($on, in_array(ResetWhenWorkerStarts::class, $listeners[ResetWhenWorkerStarts::EVENT] ?? [], true));
-        self::assertSame($on, in_array(ResetBetweenRequests::class, $listeners[ResetBetweenRequests::EVENT] ?? [], true));
-        self::assertSame($on, in_array(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? [], true));
+        self::assertSame($on, in_array(ResetWhenWorkerStarts::class, (array) ($listeners[ResetWhenWorkerStarts::EVENT] ?? []), true));
+        self::assertSame($on, in_array(ResetBetweenRequests::class, (array) ($listeners[ResetBetweenRequests::EVENT] ?? []), true));
+        self::assertSame($on, in_array(ResetBeforeJob::class, (array) ($listeners[JobProcessing::class] ?? []), true));
     }
 
     /**

@@ -139,7 +139,12 @@ final class OneGatewayFactorsTest extends TestCase
         self::assertSame(Source::MFA, $enrolment->source);
         self::assertSame(Purpose::ENROLLMENT, $enrolment->purpose);
         self::assertSame($destination, $enrolment->destination());
-        self::assertTrue($person->is($enrolment->recipient()));
+
+        $found = $enrolment->recipient();
+
+        self::assertInstanceOf(Person::class, $found);
+        self::assertTrue($person->is($found));
+
         self::assertTrue(Mfa::confirmEnrollment(self::servedCaller(), $start->grant, $enrolment->code->reveal())->isConfirmed());
 
         $factor = Factor::query()->where('destination', $destination)->sole();

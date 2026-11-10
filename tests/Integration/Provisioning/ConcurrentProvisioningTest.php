@@ -278,14 +278,17 @@ final class ConcurrentProvisioningTest extends TestCase
      */
     private function awaitTheWorker(string $backend): void
     {
+        $channel  = $this->channel;
         $observer = DB::connection(self::OBSERVER);
         $query    = $observer->getDriverName() === 'pgsql'
             ? 'select count(*) from pg_stat_activity where pid = ? and wait_event_type = \'Lock\''
             : 'select count(*) from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = \'LOCK WAIT\'';
 
+        self::assertIsResource($channel, 'No worker was forked.');
+
         for ($poll = 0; $poll < self::POLLS; $poll++) {
 
-            $read   = [$this->channel];
+            $read   = [$channel];
             $write  = null;
             $except = null;
 

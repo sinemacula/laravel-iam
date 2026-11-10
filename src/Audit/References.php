@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Audit;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Laravel\AuditLog\Records\Reference;
 
@@ -80,14 +81,14 @@ final readonly class References
     }
 
     /**
-     * The type as the morph map names it: the alias of a mapped class, and any
-     * other type as it is.
+     * The type as the morph map names it: the alias of a mapped model class,
+     * and any other type as it is.
      *
      * @param  string  $type
      * @return string
      */
     public static function type(string $type): string
     {
-        return (string) Relation::getMorphAlias($type);
+        return is_a($type, Model::class, true) ? (string) Relation::getMorphAlias($type) : $type;
     }
 }

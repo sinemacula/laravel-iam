@@ -188,6 +188,7 @@ final class CrossMemberTransactionTest extends TestCase
 
         $attempts = 0;
 
+        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
         $result = $this->transaction()->run(static function () use (&$attempts, $failure): string {
 
             $attempts++;
@@ -582,6 +583,7 @@ final class CrossMemberTransactionTest extends TestCase
         $reader   = $this->useLockingConnection();
         $attempts = 0;
 
+        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
         $result = $this->transaction()->run(static function () use (&$attempts, $reader): int {
 
             $attempts++;
@@ -785,6 +787,7 @@ final class CrossMemberTransactionTest extends TestCase
 
         $runs = 0;
 
+        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
         $result = $this->transaction()->run(static function () use (&$runs): int {
 
             $runs++;
@@ -898,6 +901,7 @@ final class CrossMemberTransactionTest extends TestCase
         $transaction = $this->transaction();
         $attempts    = 0;
 
+        // @phpstan-ignore argument.type (PHPStan reads the counter the closure returns as positive, which its declared type does not narrow to)
         $result = DB::transaction(static function () use (&$attempts, $failure, $transaction): int {
 
             $attempts++;

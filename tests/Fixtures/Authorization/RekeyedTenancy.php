@@ -24,7 +24,7 @@ final readonly class RekeyedTenancy implements TenantResolver
     /**
      * Constructor.
      *
-     * @param  array<string, string>  $keys
+     * @param  array<array-key, string>  $keys
      */
     public function __construct(
 
