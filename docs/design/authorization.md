@@ -731,7 +731,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testWhatIsResolvedWhileBootingIsBuiltWithTheAdapters`,
   `testAnApplicationBindingMadeBeforeAuthorizationRegistersAfterThisPackageIsKept`,
   `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
-- `tests/Feature/Authorization/DeclaredAdaptersTest.php` `testEveryAdapterIsDeclaredAndStandsInEveryProviderOrder`,
+- `tests/Feature/Authorization/DeclaredAuthorizationSeamsTest.php` `testEveryAdapterIsDeclaredAndStandsInEveryProviderOrder`,
   `testTheTextReportNamesLaravelIam`, `testABindingMadeOverAnAdapterShowsItOverriddenInEveryProviderOrder`,
   `testAnInstanceBoundOverAnAdapterIsShown`, `testNothingIsDeclaredOverAnApplicationBindingInEveryProviderOrder`,
   `testAConfiguredClassIsReportedAsConfiguredInEveryProviderOrder`, `testWithTheSwitchOffNothingIsDeclared`,

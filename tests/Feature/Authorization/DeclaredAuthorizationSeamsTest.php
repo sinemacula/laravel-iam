@@ -59,7 +59,7 @@ use Tests\TestCase;
 #[CoversClass(BindingRule::class)]
 #[CoversClass(SeamBinding::class)]
 #[CoversClass(Lifetime::class)]
-final class DeclaredAdaptersTest extends TestCase
+final class DeclaredAuthorizationSeamsTest extends TestCase
 {
     use PermutesProviderOrder;
 
