@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix;
+use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 
 /**
@@ -24,21 +25,7 @@ use Tests\Concerns\UsesScratchDirectory;
 #[CoversClass(AuthorizationTablePrefix::class)]
 final class AuthorizationTablePrefixTest extends TestCase
 {
-    use UsesScratchDirectory;
-
-    /** @var array<string, string> `laravel-authorization`'s own table names, by their key under `authorization.tables`. */
-    private const array TABLES = [
-        'roles'                    => 'roles',
-        'permissions'              => 'permissions',
-        'policies'                 => 'policies',
-        'role_permissions'         => 'role_permissions',
-        'authorizable_roles'       => 'authorizable_roles',
-        'authorizable_permissions' => 'authorizable_permissions',
-        'authorizable_policies'    => 'authorizable_policies',
-        'resource_policies'        => 'resource_policies',
-        'authorizable_boundaries'  => 'authorizable_boundaries',
-        'guardrails'               => 'guardrails',
-    ];
+    use NamesAuthorizationTables, UsesScratchDirectory;
 
     /**
      * Delete the test's directory and forget the variables a test set.
@@ -69,14 +56,15 @@ final class AuthorizationTablePrefixTest extends TestCase
         $before  = (string) file_get_contents($file);
         $written = (new AuthorizationTablePrefix(new Filesystem))->apply($file, 'authz_');
 
-        $expected = array_map(static fn (string $table): string => 'authz_' . $table, self::TABLES);
+        $shipped  = self::prefixedAuthorizationTables('');
+        $expected = self::prefixedAuthorizationTables('authz_');
 
         self::assertSame($expected, $written);
         self::assertSame($expected, self::configuration($file)['tables']);
 
-        foreach (self::TABLES as $key => $table) {
+        foreach ($shipped as $key => $table) {
             $variable = 'AUTHORIZATION_TABLE_' . strtoupper($key);
-            $before   = str_replace("env('{$variable}', '{$table}')", "env('{$variable}', 'authz_{$table}')", $before);
+            $before   = str_replace("env('{$variable}', '{$table}')", "env('{$variable}', '{$expected[$key]}')", $before);
         }
 
         self::assertSame($before, file_get_contents($file));
@@ -235,6 +223,29 @@ final class AuthorizationTablePrefixTest extends TestCase
         self::assertFalse($prefixer->carries($this->writeScratch('config/empty.php', "<?php\n\nreturn ['tables' => ['roles' => 'authz_roles']];\n"), 'authz_'));
         self::assertFalse($prefixer->carries($this->scratch('config/missing.php'), 'authz_'));
         self::assertFalse($prefixer->carries($this->scratch('config'), 'authz_'));
+    }
+
+    /**
+     * A table `laravel-authorization` already ships under a name starting with
+     * the prefix keeps that name, rather than carrying the prefix twice, and
+     * the configuration then carries the prefix.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testANameThatAlreadyStartsWithThePrefixKeepsIt(): void
+    {
+        $prefixer = new AuthorizationTablePrefix(new Filesystem);
+        $file     = $this->writeScratch('config/authorization.php', "<?php\n\nreturn ['tables' => [\n"
+            . "    'roles' => env('AUTHORIZATION_TABLE_ROLES', 'roles'),\n"
+            . "    'grant_usage' => env('AUTHORIZATION_TABLE_GRANT_USAGE', 'authorization_grant_usage'),\n]];\n");
+
+        $written = $prefixer->apply($file, 'authorization_');
+
+        self::assertSame(['roles' => 'authorization_roles', 'grant_usage' => 'authorization_grant_usage'], $written);
+        self::assertSame($written, self::configuration($file)['tables']);
+        self::assertTrue($prefixer->carries($file, 'authorization_'));
     }
 
     /**
