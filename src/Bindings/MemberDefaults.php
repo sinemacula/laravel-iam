@@ -11,10 +11,14 @@ use Illuminate\Contracts\Container\Container;
  * Tells a member's own default binding of a seam from the application's, by
  * reading the container's binding table.
  *
- * No member exposes its defaults as data, so the container's table is the only
- * public source. A class-string binding is held as the closure Laravel builds
- * for it, which carries the concrete class it was given as a used variable; a
- * closure binding carries the class that lexically declared it as its scope.
+ * Most members expose no test of their defaults, so the container's table is
+ * the only public source for them. A class-string binding is held as the
+ * closure Laravel builds for it, which carries the concrete class it was given
+ * as a used variable; a closure binding carries the class that lexically
+ * declared it as its scope. A member that answers itself whether a seam holds
+ * its default (`laravel-authorization`'s `isPackageDefault()`) is asked
+ * instead, since it binds a class the application names in its configuration
+ * through a closure of its own too.
  *
  * An instance or an alias the container holds is kept, whatever the table says:
  * Laravel's `instance()` and `alias()` leave the binding beneath them in place,
@@ -31,19 +35,26 @@ final readonly class MemberDefaults
 {
     /**
      * Whether the seam may be bound over: it is unbound, or bound to one of the
-     * member's defaults, by a class-string binding to one of them or by a
-     * closure one of them declares. An instance, a resolved shared default, an
-     * alias, or any other binding is kept.
+     * member's defaults. A member that answers whether the seam holds its
+     * default is asked (`holdsDefault()`); for any other, the default is a
+     * class-string binding to one of the defaults given, or a closure one of
+     * them declares. An instance, a resolved shared default, an alias, or any
+     * other binding is kept.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
      * @param  list<class-string>  $defaults
+     * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      * @return bool
      */
-    public function isReplaceable(Container $container, string $abstract, array $defaults): bool
+    public function isReplaceable(Container $container, string $abstract, array $defaults, ?\Closure $holdsDefault = null): bool
     {
         if (!$container->bound($abstract)) {
             return true;
+        }
+
+        if ($holdsDefault !== null) {
+            return $this->holdsDefault($container, $abstract, $holdsDefault);
         }
 
         $closure = $this->bindingOf($container, $abstract);
@@ -52,23 +63,21 @@ final readonly class MemberDefaults
     }
 
     /**
-     * Whether the seam holds the member's own binding now: a closure one of the
-     * member's defaults declares, never a binding of a default class by its
-     * name. A member that binds through a closure never binds the seam to a
-     * class name, so a binding of its default class by name is the
-     * application's.
+     * Whether the seam holds its member's own default now, as the member's own
+     * answer given says (`laravel-authorization`'s `isPackageDefault()`). The
+     * member is asked only while the binding table has a binding of the seam to
+     * read: an instance, a resolved shared binding or an alias held over the
+     * member's default leaves that default in the table, so is never taken for
+     * it.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
-     * @param  list<class-string>  $defaults
+     * @param  \Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      * @return bool
      */
-    public function holdsDefault(Container $container, string $abstract, array $defaults): bool
+    public function holdsDefault(Container $container, string $abstract, \Closure $holdsDefault): bool
     {
-        $closure = $this->bindingOf($container, $abstract);
-        $scope   = $closure === null ? null : (new \ReflectionFunction($closure))->getClosureScopeClass()?->getName();
-
-        return $scope !== null && $scope !== IlluminateContainer::class && in_array($scope, $defaults, true);
+        return $container instanceof IlluminateContainer && $this->bindingOf($container, $abstract) !== null && $holdsDefault($container, $abstract);
     }
 
     /**

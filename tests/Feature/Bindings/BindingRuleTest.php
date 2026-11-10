@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Feature\Bindings;
 
 use Illuminate\Config\Repository as ConfigRepository;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application as ApplicationContract;
 use Illuminate\Foundation\Application;
@@ -479,28 +480,28 @@ final class BindingRuleTest extends TestCase
     }
 
     /**
-     * A row naming the key of its member's configuration that names the seam's
-     * class is kept, unbound, while that key names a class other than the
-     * member's defaults, so the member binds the application's class when it
-     * registers; while the key names a default, or nothing, the rule binds the
-     * adapter as it would without one.
+     * A row whose member answers whether the seam holds its default is bound
+     * where the seam is unbound or the member says it holds the default, and
+     * kept where the member says otherwise, whatever class declares or is bound
+     * by the binding; reserving the rows reserves only the seams the member
+     * says hold its default.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    public function testARowWhoseConfigurationNamesAnotherClassIsKept(): void
+    public function testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault(): void
     {
         $app = $this->application();
 
-        $app->make('config')->set('member', ['plain' => ApplicationImplementation::class, 'transient' => MemberDefault::class]);
+        $app->bind(PlainSeam::class, static fn (): MemberDefault => new MemberDefault);
+        $app->bind(TransientSeam::class, ApplicationImplementation::class);
 
         $capability = new readonly class implements ProvidesSeams {
             /**
-             * Three seams over a member that binds the class its configuration
-             * names: one the application names its own class for, one naming
-             * the member's default, and one naming nothing.
+             * Three seams over a member that answers whether each holds its
+             * default: it says the plain seam never does.
              *
              * @param  \Illuminate\Contracts\Config\Repository  $config
              * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -508,20 +509,24 @@ final class BindingRuleTest extends TestCase
             #[\Override]
             public function seams(Repository $config): array
             {
+                $holdsDefault = static fn (Container $container, string $abstract): bool => $abstract !== PlainSeam::class;
+
                 return [
-                    new SeamBinding(PlainSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class], configurationKey: 'member.plain'),
-                    new SeamBinding(TransientSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class], configurationKey: 'member.transient'),
-                    new SeamBinding(SharedSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class], configurationKey: 'member.shared'),
+                    new SeamBinding(PlainSeam::class, Adapter::class, [BindingRuleTest::class, MemberDefault::class], holdsDefault: $holdsDefault),
+                    new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: $holdsDefault),
+                    new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: $holdsDefault),
                 ];
             }
         };
 
-        $outcome = $app->make(BindingRule::class)->apply($app, $capability);
+        $rule    = $app->make(BindingRule::class);
+        $outcome = $rule->apply($app, $capability);
 
         self::assertSame([TransientSeam::class, SharedSeam::class], $outcome->bound);
         self::assertSame([PlainSeam::class], $outcome->kept);
-        self::assertFalse($app->bound(PlainSeam::class));
+        self::assertInstanceOf(MemberDefault::class, $app->make(PlainSeam::class));
         $this->assertResolvesTo(Adapter::class, TransientSeam::class, SharedSeam::class);
+        self::assertSame([TransientSeam::class, SharedSeam::class], array_keys($rule->reserve($app, new BindingOutcome([], []), $capability)->reserved));
     }
 
     /**

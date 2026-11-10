@@ -38,16 +38,17 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
  * authentication context are declared on its key catalogue with their types
  * (`AuthenticationContextKeys`).
  *
- * `laravel-authorization` binds each of its seams only where nothing is bound
- * yet, with a closure resolving a scoped key of its own, which holds the class
- * its configuration names. So a row over one of its contracts names the
- * provider that declares that closure and the default class, and the
- * configuration key naming the class, if any (`authorizationRow()`): the seam
- * is replaced only while it is unbound or holds that closure, never where the
- * application names its own class in `laravel-authorization`'s configuration
- * (`authorization.subject_resolver`, `authorization.requirement_checker`,
- * `authorization.session.source`), whichever registers first, or binds the
- * contract itself.
+ * `laravel-authorization` binds each of its defaults only where nothing is
+ * bound yet, and says itself whether a contract still holds its default
+ * (`AuthorizationServiceProvider::isPackageDefault()`). So a row over one of
+ * its contracts asks it (`authorizationRow()`): the seam is replaced only while
+ * it is unbound or holds that default, never where the application binds the
+ * contract itself. A class the application names in `laravel-authorization`'s
+ * configuration (`authorization.subject_resolver`,
+ * `authorization.requirement_checker`, `authorization.session.source`) is no
+ * default, so is kept, and `laravel-authorization`, registering after this
+ * package, binds it over the adapter itself, so it stands whichever registers
+ * first; this package reads none of those keys.
  *
  * The requirement checker is bound only while the MFA capability's switch is on
  * too, since it is MFA's requirement check that judges, as the mapping of the
@@ -79,7 +80,8 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
  * (`SessionPolicySourceAdapter`); `iam:check` refuses that default whatever the
  * switch says (`MandatorySeamsCheck`), the application's own binding of it by
  * its class name included, and passes a source the application names in
- * `laravel-authorization`'s configuration.
+ * `laravel-authorization`'s configuration, which `isPackageDefault()` says is
+ * no default.
  *
  * The whole capability is switched by `iam.adapters.authorization`: off,
  * nothing here binds, and each member keeps its own default.
@@ -93,15 +95,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 {
     /** @var string The switch that turns every binding here on or off. */
     public const string SWITCH = 'iam.adapters.authorization';
-
-    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its subject resolver to. */
-    private const string SUBJECT_RESOLVER = 'authorization.subject_resolver';
-
-    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its requirement checker to. */
-    private const string REQUIREMENT_CHECKER = 'authorization.requirement_checker';
-
-    /** @var string The key of `laravel-authorization`'s configuration naming the class it binds its session policy source to. */
-    private const string SESSION_SOURCE = 'authorization.session.source';
 
     /**
      * Constructor.
@@ -132,10 +125,10 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         $access   = AccessMandates::namesApplicationAccess($config);
 
         return [
-            self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, AuthGuardSubjectResolver::class, $on, self::SUBJECT_RESOLVER, Lifetime::SCOPED),
+            self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, AuthGuardSubjectResolver::class, $on, Lifetime::SCOPED),
             self::authorizationRow(AuthenticationContext::class, AuthenticationContextAdapter::class, GuardAuthenticationContext::class, $on),
-            self::authorizationRow(AuthenticationRequirementChecker::class, RequirementCheckerAdapter::class, RefusingRequirementChecker::class, $mfa, self::REQUIREMENT_CHECKER),
-            self::authorizationRow(SessionPolicySource::class, SessionPolicySourceAdapter::class, NoSessionPolicy::class, $on, self::SESSION_SOURCE, mandatory: $machines),
+            self::authorizationRow(AuthenticationRequirementChecker::class, RequirementCheckerAdapter::class, RefusingRequirementChecker::class, $mfa),
+            self::authorizationRow(SessionPolicySource::class, SessionPolicySourceAdapter::class, NoSessionPolicy::class, $on, mandatory: $machines),
             new SeamBinding(ScopeRegistry::class, ScopeRegistryAdapter::class, [AcceptAnyScope::class], appliesWhen: $on, mandatory: $machines),
             new SeamBinding(ApplicationAccess::class, ApplicationAccessAdapter::class, [AdmitAnyPrincipal::class], Lifetime::SCOPED, appliesWhen: $on, mandatory: $access),
         ];
@@ -160,15 +153,16 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 
     /**
      * The binding of the adapter over one of `laravel-authorization`'s
-     * contracts: replaced only while the contract is unbound or bound to the
-     * closure its service provider declares, and the configuration key given,
-     * if any, names the default class, with the lifetime and the mandate given.
+     * contracts: replaced only while the contract is unbound or holds
+     * `laravel-authorization`'s own default, as
+     * `AuthorizationServiceProvider::isPackageDefault()` says, with the
+     * lifetime and the mandate given. The default class is named so the checks
+     * name the default they refuse, and refuse it bound by its class name.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter
      * @param  class-string  $default
      * @param  \Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
-     * @param  ?string  $configurationKey
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  bool|\Closure(): bool  $mandatory
      * @return \SineMacula\Laravel\Iam\Bindings\SeamBinding
@@ -178,18 +172,17 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         string $adapter,
         string $default,
         \Closure $appliesWhen,
-        ?string $configurationKey = null,
         Lifetime $lifetime = Lifetime::TRANSIENT,
         bool|\Closure $mandatory = false,
     ): SeamBinding {
         return new SeamBinding(
             $contract,
             $adapter,
-            [AuthorizationServiceProvider::class, $default],
+            [$default],
             $lifetime,
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
-            configurationKey: $configurationKey,
+            holdsDefault: AuthorizationServiceProvider::isPackageDefault(...),
         );
     }
 }
