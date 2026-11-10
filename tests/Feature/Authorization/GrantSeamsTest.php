@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Authorization;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -384,15 +383,13 @@ final class GrantSeamsTest extends TestCase
      * Load the application's configuration, then set what the test names in
      * `laravel-authorization`'s configuration before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         foreach ($this->authorization as $key => $value) {
             $app->make('config')->set('authorization.' . $key, $value);

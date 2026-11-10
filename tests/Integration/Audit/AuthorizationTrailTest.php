@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Audit;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -192,15 +191,13 @@ final class AuthorizationTrailTest extends TestCase
      * Name the catalogue and declare the invoice permissions, set before any
      * provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('authorization.permission_providers', [PermissionCatalogue::class]);
         $app->make('config')->set('authorization.permission_enums', [InvoicePermission::class]);

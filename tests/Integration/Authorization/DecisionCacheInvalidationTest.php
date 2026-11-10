@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Authorization;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
@@ -152,15 +151,13 @@ final class DecisionCacheInvalidationTest extends TestCase
      * people sign in on, and declare the invoice permissions, set before any
      * provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make('config');
 
