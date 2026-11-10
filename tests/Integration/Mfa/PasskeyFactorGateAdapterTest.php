@@ -643,7 +643,9 @@ final class PasskeyFactorGateAdapterTest extends TestCase
         self::assertInstanceOf(Person::class, $identity);
         self::assertNotNull($this->gatedSession);
 
-        return $this->gate()->registering($identity, $application, self::registeredPasskey($credentialId), $this->bindingOf($identity, $this->gatedSession, Purpose::ENROLLMENT), 'Laptop', self::client(), null);
+        $binding = $this->bindingOf($identity, $this->gatedSession, Purpose::ENROLLMENT);
+
+        return $this->gate()->registering($identity, $application, self::registeredPasskey($credentialId), $binding, 'Laptop', self::client(), null);
     }
 
     /**

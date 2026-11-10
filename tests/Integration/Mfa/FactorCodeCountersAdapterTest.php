@@ -744,8 +744,8 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A stored person of the same type under the key given, held as a string
-     * so a key no integer can hold (the kit's other identity) is kept as it is.
+     * A stored person of the same type under the key given, held as a string so
+     * a key no integer can hold (the kit's other identity) is kept as it is.
      *
      * @param  string  $key
      * @return \Tests\Fixtures\Models\Person
@@ -770,10 +770,10 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The factor code binding `laravel-authentication` asks the counters
-     * under for MFA's binding: the identity the binding names (the person, or
-     * another identity of the same type and the key the binding gives), and
-     * the factor's SMS channel.
+     * The factor code binding `laravel-authentication` asks the counters under
+     * for MFA's binding: the identity the binding names (the person, or another
+     * identity of the same type and the key the binding gives), and the
+     * factor's SMS channel.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
