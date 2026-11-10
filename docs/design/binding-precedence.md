@@ -73,6 +73,14 @@ before that member has merged it, and why the storage connection alone still wai
     closure itself, which `array_diff()` cannot convert to a string, and any provider that registers before this
     package can make one. Such an entry is kept on the list
     (`testAScopedBindingKeyedByItsClosureStaysScoped`).
+- A row may say how its adapter is declared to its member once bound (`SeamBinding::$declare`). The rule calls it in
+  one place, at once after binding (`BindingRule::bind()`), with the container and the closure the container now holds
+  for the seam (`MemberDefaults::bindingOf()`): the closure `getClosure()` wrapped the adapter's class in, the row's
+  factory, or, for a scoped adapter, the transient closure forwarding to its `iam.scoped:` key. It is the very closure
+  bound, never another made to stand for it, so a member comparing bindings by identity tells the adapter, still bound,
+  from a binding made over it later. A row the rule keeps, or whose switch is off, declares nothing
+  (`testABindingIsDeclaredWithTheClosureItWasBoundWith`). Only the rows over `laravel-authorization`'s contracts
+  declare, to its configuration report (`authorization.md`).
 - A row whose switch (`appliesWhen`, a closure over the configuration repository) answers `false` binds nothing and
   checks nothing (IAM-1.3), and the outcome lists it neither as bound nor as kept. The switch is read once, as the rule
   runs in `register()`, and so is each capability's `seams()`, both from the configuration every member will hold once
@@ -195,10 +203,10 @@ before that member has merged it, and why the storage connection alone still wai
   `settle()` (which also applies the tenancy rows again, with the SSO switch as it read in `registerSeams()`),
   `checkStorage()` and `boot()` for the storage step that waits for the booting phase and runs again once the
   application has booted.
-- `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `switches()`, `MEMBER_CONFIGURATION`;
-  `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`;
+- `src/Bindings/BindingRule.php`: `apply()`, `reserve()`, `applyAgain()`, `switches()`, `bind()`, `bindScoped()`,
+  `MEMBER_CONFIGURATION`; `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`;
   `src/Tenancy/TenancySeams.php` for the rows applied again, `src/Authorization/AuthorizationSeams.php` for the rows
-  that ask their member whether a seam holds its default.
+  that ask their member whether a seam holds its default and declare their adapters to its report.
 - `src/Bindings/SeamBinding.php`, `src/Bindings/Enums/Lifetime.php`, `src/Bindings/BindingOutcome.php`,
   `src/Bindings/Contracts/ProvidesSeams.php`.
 - `benchmarks/Bindings/BindingRuleBench.php`: the rule over a 40-seam table on the members' real binding table, binding
@@ -234,7 +242,7 @@ before that member has merged it, and why the storage connection alone still wai
   `testAnApplicationThatCannotCacheItsConfigurationHasTheMembersPackagedConfigurationRead`,
   `testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen`, `testReservingRecordsTheMembersDefaultEachSeamHolds`,
   `testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault`,
-  `testABindingMadeOverAReservedSeamIsKept`
+  `testABindingMadeOverAReservedSeamIsKept`, `testABindingIsDeclaredWithTheClosureItWasBoundWith`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` (the rows applied again from the booting phase, by register order)
   `testMembershipsAndATreeBoundAfterRegisteringBindTheAdapters`,
   `testAnApplicationProviderBindingTenancyWhileRegisteringBindsTheAdapters`,

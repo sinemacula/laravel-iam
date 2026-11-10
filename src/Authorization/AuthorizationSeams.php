@@ -21,6 +21,7 @@ use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Resolvers\AuthGuardSubjectResolver;
 use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
@@ -133,8 +134,19 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * and keeps nothing. It is not mandatory: left on `DenyAllPolicy`, every read
  * is empty and recorded as denied, which shows nobody anything.
  *
+ * Each adapter bound over one of `laravel-authorization`'s contracts is
+ * declared to its configuration report (`Diagnostics\Declarations`), owned by
+ * `laravel-iam`, with its class, its lifetime and the very closure the binding
+ * rule bound over the contract, so `authorization:check` names the adapter
+ * while that closure still supplies the contract, and says it was overridden,
+ * or that an instance is bound over it, once it does not. The tree, which
+ * `TenantTreeAdapter::forApplication()` decides, is declared as a factory of
+ * the adapter or `FlatTenantTree`, decided at first resolution. A contract the
+ * rule keeps the application's binding on, or a configured class on, is not
+ * declared, as nothing of this package's is bound there.
+ *
  * The whole capability is switched by `iam.adapters.authorization`: off,
- * nothing here binds, and each member keeps its own default.
+ * nothing here binds or is declared, and each member keeps its own default.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -148,6 +160,12 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 
     /** @var string SSO's switch for linking by a verified domain, which the grant hook's binding is mandatory while on. */
     public const string DOMAIN_LINKING = 'sso.features.domain_linking';
+
+    /** @var string The owner `laravel-authorization`'s configuration report names each adapter declared to it by. */
+    public const string OWNER = 'laravel-iam';
+
+    /** @var string When a factory bound over a contract decides which class it builds, as the report says it. */
+    public const string DECIDES = 'at first resolution';
 
     /**
      * Constructor.
@@ -230,9 +248,10 @@ final readonly class AuthorizationSeams implements ProvidesSeams
      * contracts: replaced only while the contract is unbound or holds
      * `laravel-authorization`'s own default, as
      * `AuthorizationServiceProvider::isPackageDefault()` says, with the
-     * lifetime and the mandate given, built by the factory given, if any. The
-     * default class is named so the checks name the default they refuse, and
-     * refuse it bound by its class name.
+     * lifetime and the mandate given, built by the factory given, if any, and
+     * declared to `laravel-authorization`'s configuration report once bound.
+     * The default class is named so the checks name the default they refuse,
+     * and refuse it bound by its class name.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter
@@ -261,6 +280,34 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             mandatory: $mandatory,
             holdsDefault: AuthorizationServiceProvider::isPackageDefault(...),
             factory: $factory,
+            declare: self::declaration($contract, $adapter, $default, $lifetime, $factory !== null),
         );
+    }
+
+    /**
+     * How the adapter bound over one of `laravel-authorization`'s contracts is
+     * declared to its configuration report, handed the container and the
+     * closure the binding rule bound over the contract: as the adapter, or, for
+     * a row built by a factory, as a factory of the adapter or the member's
+     * default, decided at first resolution; with the row's lifetime.
+     *
+     * @param  class-string  $contract
+     * @param  class-string  $adapter
+     * @param  class-string  $default
+     * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
+     * @param  bool  $isFactory
+     * @return \Closure(\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null): void
+     */
+    private static function declaration(string $contract, string $adapter, string $default, Lifetime $lifetime, bool $isFactory): \Closure
+    {
+        if ($isFactory) {
+            return static function (Container $container, ?\Closure $bound) use ($contract, $adapter, $default, $lifetime): void {
+                Declarations::of($container)->factory($contract, self::OWNER, [$adapter, $default], self::DECIDES, $lifetime->reported(), $bound);
+            };
+        }
+
+        return static function (Container $container, ?\Closure $bound) use ($contract, $adapter, $lifetime): void {
+            Declarations::of($container)->adapter($contract, self::OWNER, $adapter, $lifetime->reported(), $bound);
+        };
     }
 }

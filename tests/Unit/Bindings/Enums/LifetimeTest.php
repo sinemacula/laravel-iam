@@ -6,10 +6,12 @@ namespace Tests\Unit\Bindings\Enums;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authorization\Diagnostics\Enums\Lifetime as ReportedLifetime;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 
 /**
- * Unit tests for the lifetimes an adapter can be bound with.
+ * Unit tests for the lifetimes an adapter can be bound with, and the lifetime
+ * `laravel-authorization`'s configuration report names each by.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -28,5 +30,18 @@ final class LifetimeTest extends TestCase
     public function testTheLifetimesAreTransientSharedAndScoped(): void
     {
         self::assertSame(['transient', 'shared', 'scoped'], array_column(Lifetime::cases(), 'value'));
+    }
+
+    /**
+     * Each lifetime is named in `laravel-authorization`'s configuration report
+     * by its own, a shared adapter as a singleton.
+     *
+     * @return void
+     */
+    public function testEachLifetimeIsReportedByItsOwn(): void
+    {
+        self::assertSame(ReportedLifetime::TRANSIENT, Lifetime::TRANSIENT->reported());
+        self::assertSame(ReportedLifetime::SINGLETON, Lifetime::SHARED->reported());
+        self::assertSame(ReportedLifetime::SCOPED, Lifetime::SCOPED->reported());
     }
 }

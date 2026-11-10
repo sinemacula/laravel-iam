@@ -122,9 +122,11 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 
 - `Console\CheckCommand` (`iam:check`) is thin: it hands its output to `Checks\Checker::run()`, the one core method, and
   exits `0` only when that answers that everything passed. The checker runs the members' own check commands through the
-  console, in the publications' working order: `authentication:check`, `authorization:check` (it exists already and only
-  reports state, and is required like the rest), `mfa:check`, `sso:check` and `audit-log:check`. Glue, not policy: their
-  checks stay theirs, each prints in its own words, and one that exits non-zero fails the run. One that throws is its
+  console, in the publications' working order: `authentication:check`, `authorization:check` (which reports
+  `laravel-authorization`'s settings, seams, grant hooks and connection, and exits `1` on a refused setting and `3` on a
+  report it could not complete, and is required like the rest), `mfa:check`, `sso:check` and `audit-log:check`. Glue,
+  not policy: their checks stay theirs, each prints in its own words, and one that exits non-zero fails the run, so a
+  refusal and an incomplete report alike fail it closed. One that throws is its
   member's defect and stops the run with that exception, which fails closed. Every one is required (IAM-1.3): one that
   is not registered fails the run.
 - This package's own checks follow, each behind the internal `Checks\Contracts\Check` contract, which mirrors SSO's
@@ -327,7 +329,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   a widening grant or a tree read never resolves its tenant through `ResolveNoTenant`. No resource tenant resolver is
   named by `iam:install`: a record's tenant is the application's to say, which this package cannot read from its models
   (`authorization.md`). `iam:install` still writes none of `laravel-authorization`'s resolver keys, and
-  `authorization:check` already ran inside `iam:check`; it always exits `0`, so it fails no run.
+  `authorization:check` already ran inside `iam:check`, where its refusal (exit `1`) and its incomplete report (exit
+  `3`) fail the run as any member's non-zero exit does. Its report names each adapter the binding rule bound over one of
+  `laravel-authorization`'s contracts as declared by `laravel-iam` (`authorization.md`).
 
 ## Success Path
 
@@ -395,8 +399,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   - MFA's boot check stands aside for `mfa:check` and the configuration commands only, and `laravel-authorization`
     validates its configuration in `boot()` for every command, so a configuration either refuses stops `iam:check`
     before it reports; standing aside for a composing package's check command too would let `iam:check` report it.
-  - `authorization:check` always exits `0`, so `iam:check` cannot fail on what it finds; exiting non-zero on a problem
-    would let it.
   - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
     (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
     public constant would let it read them.
@@ -561,6 +563,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `SsoCheckRegistration`, `SsoBridgeFallbackCheck`, `SsoSeams::isInUse()` and `CrossMemberConfigurationCheck` follow.
 - SSO binding a link storage default of its own, or its guide binding the link storage to another class: the link
   storage row's `accepted` list follows.
-- `laravel-authorization` binding its resource tenant resolver so the configured class can be read from its binding,
-  or `authorization:check` failing on what it reports: `CrossMemberConfigurationCheck` and `Checker` follow.
+- `laravel-authorization` binding its resource tenant resolver so the configured class can be read from its binding:
+  `CrossMemberConfigurationCheck` follows. `authorization:check` exiting `0` on a refusal or an incomplete report, or
+  throwing out of the console kernel's `call()` rather than ending with its exit code: `Checker` follows.
 - A member closes one of the gaps listed above: the workaround it names goes.

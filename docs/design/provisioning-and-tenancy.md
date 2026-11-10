@@ -216,17 +216,17 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   `laravel-authorization`, whatever enforcement says. While the SSO adapters are on too
   (`AuthorizationSeams::reportsWidenings()`), every identity holding a live grant rooted at the moved tenant or below
   it (`Authorization\SubtreeGrantees`: `laravel-authorization`'s role, permission and policy grants, read on its
-  connection, a principal's grant answering its identity, a subtree holding a tenant of another type refused so the
-  move rolls back) is reported to SSO's scope widening in the moved tenant
-  (`ScopeWidenings::widen()`), in the move's transaction, every one's identity guard taken first, in SSO's order
-  (`Sso\IdentityGuards`), so the move never takes a guard after a connection: the grant half counts a grant below a
-  tenant within it, so a move out from under a linked tenant widens the person's scope with no grant written, and no
-  grant hook runs. The package cannot tell such a move from one within the tenant, so this is broader than needed,
-  never narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again.
-  Then the move is reported to
-  `laravel-authorization` (`Authorization::treeChanged()`, AUTHZ-12.8), the moved tenant named through the resolver
-  (`TenantTranslator`): one report covers the subtree, since `laravel-authorization`'s entries pin the tenant chain.
-  Without a tree `laravel-authorization` keeps its own flat tree, which no move changes, and nothing is reported.
+  connection under the names its own `Config\TableNames` gives the tables, a principal's grant answering its identity,
+  a subtree holding a tenant of another type refused so the move rolls back) is reported to SSO's scope widening in the
+  moved tenant (`ScopeWidenings::widen()`), in the move's transaction, every one's identity guard taken first, in SSO's
+  order (`Sso\IdentityGuards`), so the move never takes a guard after a connection: the grant half counts a grant below
+  a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant written, and no
+  grant hook runs. The package cannot tell such a move from one within the tenant, so this is broader than needed, never
+  narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again. Then the
+  move is reported to `laravel-authorization` (`Authorization::treeChanged()`, AUTHZ-12.8), the moved tenant named
+  through the resolver (`TenantTranslator`): one report covers the subtree, since `laravel-authorization`'s entries pin
+  the tenant chain. Without a tree `laravel-authorization` keeps its own flat tree, which no move changes, and nothing
+  is reported.
 - `laravel-authorization`'s tree is the application's one tree (IAM-7.5): `Authorization\TenantTreeAdapter`, a row of
   `AuthorizationSeams`, scoped, one for a request or job (`authorization.md`), answers
   the ancestors, containment and subtree from `TenancyContracts::tree()` on every call. Each tenant asked about must
@@ -637,7 +637,8 @@ storage connection and the retry helper in `storage-and-transactions.md`.
 - `tests/Integration/Authorization/TreeMoveWideningTest.php`
   `testAMoveOutFromUnderTheLinkedTenantSuspendsTheLinkInTheMovesTransaction`, `testAMoveThatRollsBackSuspendsNothing`
   (every level), `testWithTheSsoSwitchOffNobodyIsReported`, `testThePeopleGrantedAreReadFromEveryGrantTableEachOnce`,
-  `testTheGrantTablesAreReadUnderTheirConfiguredNames`, `testAGranteeNamedByItsMorphAliasIsRead`,
+  `testTheGrantTablesAreReadUnderTheirConfiguredNames`, `testAGrantTableNamedByWhatIsNoNameIsRefused`,
+  `testAGranteeNamedByItsMorphAliasIsRead`,
   `testAMoveOfASubtreeHoldingAnotherTenantTypeIsRefused` (every level)
 - `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php`, at the connection's own level on every engine, then at
   READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL, `testAFirstSignInIsGrantedWhatItsGroupsMapTo`,

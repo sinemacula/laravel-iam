@@ -17,6 +17,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\Exceptions\InvalidAuthorizationConfigException;
 use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
@@ -56,11 +57,13 @@ use Tests\TestCase;
  * the link and revokes the session established through it in the move's own
  * transaction, and rolls back with it; nothing is reported while the SSO
  * capability's switch is off; and the people granted are read from every grant
- * table as `laravel-authorization` holds them, each once, a principal's
- * identity for a principal, a grantee named by its morph alias as the model it
- * maps to, never a grant that has expired, one outside the subtree, one of
- * another tenant type, one to a role, or one to what is no model; and a move of
- * a subtree holding a tenant of another type is refused, and rolls back.
+ * table as `laravel-authorization` holds them, under the names it reads them by
+ * (a table named by no name refused, as it refuses it), each once, a
+ * principal's identity for a principal, a grantee named by its morph alias as
+ * the model it maps to, never a grant that has expired, one outside the
+ * subtree, one of another tenant type, one to a role, or one to what is no
+ * model; and a move of a subtree holding a tenant of another type is refused,
+ * and rolls back.
  *
  * The move's report takes SSO's identity guard and locks the connections
  * holding the person's links inside the move's transaction, so each scenario
@@ -363,6 +366,31 @@ final class TreeMoveWideningTest extends TestCase
             self::fail('A grant table was read under its default name.');
         } catch (QueryException $exception) {
             self::assertStringContainsString('renamed_roles', $exception->getSql());
+        } finally {
+            // The migrations roll back under the name the table was created
+            // with
+            Config::set('authorization.tables.authorizable_roles', 'authorizable_roles');
+        }
+    }
+
+    /**
+     * A grant table named by what is no name is refused, naming its setting, as
+     * `laravel-authorization` refuses it, never read under its default name.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAGrantTableNamedByWhatIsNoNameIsRefused(): void
+    {
+        Config::set('authorization.tables.authorizable_roles', '');
+
+        try {
+            $this->grantees()->of(self::GRANTED);
+
+            self::fail('A grant table named by no name was read.');
+        } catch (InvalidAuthorizationConfigException $exception) {
+            self::assertStringContainsString('authorization.tables.authorizable_roles', $exception->getMessage());
         } finally {
             // The migrations roll back under the name the table was created
             // with
