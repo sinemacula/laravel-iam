@@ -166,8 +166,9 @@ storage connection and the retry helper in `storage-and-transactions.md`.
 - The query answers `within` only for a complete list of the identity's principals, which `laravel-authorization`
   learns from its identity directory. Its default is complete only under its own subject resolver, never under this
   package's, so the package binds `Authorization\IdentityDirectoryAdapter` (a row of `AuthorizationSeams`, kept off
-  while the application names its own directory in `authorization.identity_directory`): the principals the identity's `laravel-authentication` `principals()` relation lists, read on
-  the write connection without the principal model's global scopes, complete. A principal a global scope hides (one
+  while the application names its own directory in `authorization.identity_directory`): the principals the identity's
+  `laravel-authentication` `principals()` relation lists, read on the write connection without the principal model's
+  global scopes, complete. A principal a global scope hides (one
   soft-deleted, say) still holds its grants, and restoring it would widen the scope with no grant written and no grant
   hook run, so it is listed too; a relation that is no Eloquent query, whose scopes cannot be set aside, is answered
   incomplete. An identity that is itself a principal (`Principal`) and owns none acts as itself alone, complete and

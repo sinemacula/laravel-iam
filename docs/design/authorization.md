@@ -464,9 +464,10 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
 - An application that binds its own authentication context declares its own keys; none of this package's is declared.
 - An application whose exception handler is not Laravel's maps `laravel-authorization`'s exception itself; a render
   callback the application registers first for the same HTTP exception answers before this one.
-- A machine principal is refused on an application `authorization.application_access` maps, since an admission holds
-  no credential whose scopes could cap it: `laravel-authorization`'s rule. An API key cannot be issued to it for such
-  an application. An application the map leaves out is open to every principal, a person with no grant included.
+- A machine principal is admitted on an application `authorization.application_access` maps on its grants, as a
+  person is: an admission holds no credential whose scopes could cap it, so neither a credential's scopes nor a
+  machine's missing ones refuse it, while a deny, a boundary or a guardrail still does. An application the map leaves
+  out is open to every principal, a person with no grant included.
 - A subject that is not a principal, paired with another identity's session, and a session acting in a tenant other
   than the subject's, are refused by throwing, so another identity's proofs never meet a requirement for the subject.
 - A refusal about a subject the caller names, decided on no session, or one decided on another session, or carrying no
