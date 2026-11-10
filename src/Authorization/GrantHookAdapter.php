@@ -88,12 +88,12 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * never links, so SSO holds nothing of it to suspend, and its widening is not
  * reported to SSO at all, nor its tenants resolved, as `SubtreeGrantees` passes
  * such a grantee over on a move; the hooks the application lists still run for
- * it. `laravel-authorization`'s widening carries no client, so the suspensions
- * are reported for a client of which nothing is known
- * (`new ClientContext(null, null)`), as a job's are; the contract leaves no
- * other way, and nothing of the request is read in its place. It reads no
- * request, nor the current user, and keeps nothing between calls (IAM-8.1), so
- * it is transient.
+ * it. The suspensions are reported for the client the widening carries, the
+ * operation's IP address and user agent: the routed request's for a delegated
+ * call made in one, or what the caller passed when it built the operation, and
+ * none for trusted, console and queued work otherwise, as a job's are. Nothing
+ * of the request is read in its place. It reads no request, nor the current
+ * user, and keeps nothing between calls (IAM-8.1), so it is transient.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -146,7 +146,8 @@ final readonly class GrantHookAdapter implements GrantHook
 
     /**
      * Report the widening to SSO for each tenant the widening grants hold in,
-     * for the `laravel-authentication` identity it names.
+     * for the `laravel-authentication` identity it names and the client it
+     * carries.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
      * @return void
@@ -156,7 +157,7 @@ final readonly class GrantHookAdapter implements GrantHook
     private function reportToSso(GrantWidening $widening): void
     {
         $identity = $this->identities->identity(new IdentityReference($widening->identity->type, $widening->identity->id));
-        $client   = new ClientContext(null, null);
+        $client   = new ClientContext($widening->ip, $widening->userAgent);
 
         foreach ($this->tenantsOf($widening) as $tenantId) {
             $this->widen($identity, $tenantId, $client);

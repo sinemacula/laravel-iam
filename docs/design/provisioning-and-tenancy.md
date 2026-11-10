@@ -179,10 +179,10 @@ storage connection and the retry helper in `storage-and-transactions.md`.
 - A grant that widens an identity's scope reports it to SSO first (IAM-6.7) through `laravel-authorization`'s grant
   hook (`Authorization\GrantHookAdapter`, `AuthorizationSeams`, on while `iam.adapters.sso` is on too): inside the
   grant call's transaction, before `laravel-authorization` takes any lock, `ScopeWidenings::widen()` once for each
-  distinct tenant the widening grants hold in (`null` for a platform-wide grant), with a client of which nothing is
-  known (the widening carries none), after the hooks `authorization.grant_hooks` lists, which `laravel-authorization`
-  runs first. The design of the hook, its
-  lock order and its retries are in `authorization.md`.
+  distinct tenant the widening grants hold in (`null` for a platform-wide grant), with the client the widening carries
+  (its operation's, none for trusted, console and queued work), after the hooks `authorization.grant_hooks` lists,
+  which `laravel-authorization` runs first. The design of the hook, its lock order and its retries are in
+  `authorization.md`.
 - `EnforcementInheritanceAdapter` answers the nearest tenant, from the one asked up through the tree's ancestors, that
   has a rule, on or off, as IAM-7.5 words it (a stored version, `EnforcementService::get()->version`, SSO's own reader
   of what is stored, on the write connection, never `Enforcement::policy()`, which asks this contract), and the tenant
@@ -448,12 +448,6 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   in `register()`, or name it. An application that binds an enforcement inheritance of its own with no tree configured
   leaves the tenants that inherit unjudged by an enforcement change.
 - Gaps in the members that the adapters work around:
-  - `laravel-authorization`'s default identity directory (`GuardUserIdentityDirectory`) is complete only under its own
-    subject resolver, so under this package's its grant scope query would never answer `within`: the package binds its
-    own directory from `laravel-authentication`'s `principals()` (`IdentityDirectoryAdapter`).
-  - `laravel-authorization`'s grant hook carries no client (`GrantWidening`), so a suspension a grant causes is
-    reported with neither an IP address nor a user agent; adding the operation's client to the widening would carry
-    it.
   - `laravel-authorization`'s `Reference` names a tenant by a morph type and a key, while the tree, SSO and
     `laravel-authentication` name it by an opaque id; the package takes the key for the id (`TenantTranslator`) only
     once it resolves back to the same tenant, so a tenant whose key is not its identifier is refused wherever it is
@@ -621,7 +615,8 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
   `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testARefusalFromAListedHookRefusesTheGrant`,
   `testTheHooksTheApplicationListsRunOnceBeforeTheAdapter`, `testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant`,
-  `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`; and `testTheAdapterIsTheBoundGrantHook`,
+  `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`, `testASuspensionIsReportedForTheWideningsClient`; and
+  `testTheAdapterIsTheBoundGrantHook`,
   `testAHookTheApplicationListsStillRunsBesideTheWidening`
 - `tests/Integration/Authorization/GrantScopeAdapterTest.php` `testAPersonIsPlacedByTheirGrants`,
   `testTheJudgementReadsInsideTheCallersTransaction` (every level), `testAPersonIsPlacedByTheirPrincipalsGrants`,

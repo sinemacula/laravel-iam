@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Scheduling;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\AuditLog\Delivery\Enums\DeliveryMode;
+use SineMacula\Laravel\Authorization\Console\PruneGrantsCommand;
 use SineMacula\Laravel\Mfa\Console\PruneCommand;
 use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
 
@@ -52,8 +53,8 @@ final readonly class IamSchedule
     /** @var string MFA's pruning of the records that stopped being usable. */
     public const string MFA_PRUNE = PruneCommand::NAME;
 
-    /** @var string `laravel-authorization`'s pruning of the grants that no longer count, which names no constant of its own. */
-    public const string AUTHORIZATION_PRUNE = 'authorization:prune';
+    /** @var string `laravel-authorization`'s pruning of the grants that no longer count. */
+    public const string AUTHORIZATION_PRUNE = PruneGrantsCommand::NAME;
 
     /** @var string Audit-log's delivery of its outbox, batch after batch until none is left. */
     public const string AUDIT_DRAIN = 'audit-log:drain --until-empty';
