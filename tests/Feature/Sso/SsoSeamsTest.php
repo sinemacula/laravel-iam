@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Feature\Sso;
 
 use Illuminate\Config\Repository;
-use Illuminate\Contracts\Foundation\Application;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -506,15 +505,13 @@ final class SsoSeamsTest extends TestCase
      * Load the application's configuration, then the switches the test sets,
      * before any provider registers, so the binding rule reads them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         foreach ($this->switches as $key => $value) {
             $app->make('config')->set($key, $value);

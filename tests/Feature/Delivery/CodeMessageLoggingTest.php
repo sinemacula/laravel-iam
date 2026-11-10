@@ -6,7 +6,6 @@ namespace Tests\Feature\Delivery;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Log;
 use Monolog\Handler\TestHandler;
@@ -94,15 +93,13 @@ final class CodeMessageLoggingTest extends TestCase
      * Record a log channel the test writes to, configured before MFA boots so
      * its log redaction is tapped onto it, as onto every configured channel.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('logging.channels.' . self::CHANNEL, ['driver' => 'monolog', 'handler' => TestHandler::class]);
     }

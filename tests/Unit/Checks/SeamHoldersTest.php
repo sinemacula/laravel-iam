@@ -357,9 +357,9 @@ final class SeamHoldersTest extends TestCase
      * The closure given, declared by the class given, as a closure of that
      * class's own is.
      *
-     * @param  \Closure(mixed): mixed  $closure
+     * @param  \Closure(\Illuminate\Container\Container): mixed  $closure
      * @param  class-string  $class
-     * @return \Closure(mixed): mixed
+     * @return \Closure(\Illuminate\Container\Container): mixed
      */
     private static function declaredBy(\Closure $closure, string $class): \Closure
     {

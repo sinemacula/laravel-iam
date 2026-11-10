@@ -416,7 +416,7 @@ final class AfterConnectionCommitsTest extends TestCase
     /**
      * Declare the other connection, on an in-memory SQLite database of its own.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]

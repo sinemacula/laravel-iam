@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Audit;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Laravel\AuditLog\Records\Reference;
 
@@ -88,6 +89,10 @@ final readonly class References
      */
     public static function type(string $type): string
     {
+        if (!is_a($type, Model::class, true)) {
+            return $type;
+        }
+
         return (string) Relation::getMorphAlias($type);
     }
 }

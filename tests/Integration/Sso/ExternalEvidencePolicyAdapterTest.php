@@ -186,8 +186,11 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
 
         $context = $this->contextOn($session);
 
+        $methods = $context->get('authentication.amr');
+
         self::assertFalse($context->get('authentication.mfa'));
-        self::assertNotContains('mfa', $context->get('authentication.amr'));
+        self::assertIsArray($methods);
+        self::assertNotContains('mfa', $methods);
     }
 
     /**

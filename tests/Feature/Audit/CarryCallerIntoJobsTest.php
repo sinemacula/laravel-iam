@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Audit;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
@@ -189,7 +188,7 @@ final class CarryCallerIntoJobsTest extends TestCase
      */
     public function testACallerLeftInContextIsNotSentOn(): void
     {
-        (new CallerSnapshot(self::GUARD, 'person', '7'))->carryInto(Context::getFacadeRoot());
+        (new CallerSnapshot(self::GUARD, 'person', '7'))->carryInto(app(Repository::class));
 
         RecordsInAJob::dispatch(self::CODE);
 
@@ -217,7 +216,7 @@ final class CarryCallerIntoJobsTest extends TestCase
         $id      = self::keyOf($person);
 
         self::assertEquals(new CallerSnapshot(self::GUARD, $type, $id, $type, $id, null, self::keyOf($session)), self::carriedBy($payload));
-        self::assertArrayNotHasKey('audit-log.actor_id', $payload['illuminate:log:context']['hidden'] ?? []);
+        self::assertFalse(self::contextOf($payload)->hasHidden('audit-log.actor_id'));
     }
 
     /**
@@ -233,7 +232,7 @@ final class CarryCallerIntoJobsTest extends TestCase
     {
         $this->signInAndActOnSession($this->createPerson());
 
-        (new CallerSnapshot(self::GUARD, 'person', '7'))->carryInto(Context::getFacadeRoot());
+        (new CallerSnapshot(self::GUARD, 'person', '7'))->carryInto(app(Repository::class));
 
         $config = $this->app?->make('config');
 
@@ -412,7 +411,7 @@ final class CarryCallerIntoJobsTest extends TestCase
      * Register every member's provider and this package's, then an
      * application's provider recording each job's end, booted after them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return list<class-string<\Illuminate\Support\ServiceProvider>>
      */
     #[\Override]
@@ -438,15 +437,13 @@ final class CarryCallerIntoJobsTest extends TestCase
      * Queue the jobs on a `database` connection of their own, so each is
      * serialised with Context and run from its payload.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make('config');
 
@@ -515,11 +512,22 @@ final class CarryCallerIntoJobsTest extends TestCase
      */
     private static function carriedBy(array $payload): ?CallerSnapshot
     {
+        return CallerSnapshot::carriedIn(self::contextOf($payload));
+    }
+
+    /**
+     * The Context a job's payload carries, read back as the job reads it.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return \Illuminate\Log\Context\Repository
+     */
+    private static function contextOf(array $payload): Repository
+    {
         $context = new Repository(new Dispatcher);
 
         $context->hydrate(is_array($payload['illuminate:log:context'] ?? null) ? $payload['illuminate:log:context'] : null);
 
-        return CallerSnapshot::carriedIn($context);
+        return $context;
     }
 
     /**

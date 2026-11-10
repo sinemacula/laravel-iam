@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Authorization;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Gate;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -96,15 +95,13 @@ final class IdentityGranteeTest extends TestCase
     /**
      * Declare the invoice permissions, set before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('authorization.permission_enums', [InvoicePermission::class]);
     }

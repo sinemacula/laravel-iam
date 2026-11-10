@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -130,15 +129,13 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
      * Require no factor of anyone, so the session stays active once it signs
      * in.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(IdentityRequirement::class, RequiresNothing::class);
         $app->make('config')->set('mfa.applications.' . self::GUARD . '.requirement', 'never');

@@ -76,15 +76,13 @@ trait DeliversFactorCodes
      * before any provider registers, as a published configuration file holds
      * them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make(ConfigRepository::class)->set('iam.delivery', [
             'email' => FakeEmailGateway::class,

@@ -478,15 +478,13 @@ final class DeliverySeamsTest extends TestCase
      * test holds, set as a whole over the shipped one, as a published
      * configuration file holds it, before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('iam.delivery', [...self::DEFAULT_DELIVERY, ...$this->delivery]);
     }

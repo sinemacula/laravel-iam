@@ -6,7 +6,6 @@ namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Debug\ExceptionHandler;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -316,15 +315,13 @@ final class StepUpAuthorizationTest extends TestCase
      * people sign in on, and declare the invoice permissions, set before any
      * provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make('config');
 

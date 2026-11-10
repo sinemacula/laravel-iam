@@ -108,15 +108,13 @@ trait PermutesProviderOrder
      * come first: Testbench prepares the core before it loads the configuration
      * and registers any provider.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationCore(mixed $app): void
     {
         parent::resolveApplicationCore($app);
-
-        assert($app instanceof Application);
 
         self::bindForApplication($app, $this->bindingsBefore);
     }
@@ -127,15 +125,13 @@ trait PermutesProviderOrder
      * registered and before any boots, where an application provider's
      * `register()` would bind.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         self::bindForApplication($app, $this->bindingsAfter);
     }

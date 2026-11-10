@@ -405,7 +405,7 @@ final class EventContextResolverAdapterTest extends TestCase
     /**
      * Declare another session guard beside the one people sign in on.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]

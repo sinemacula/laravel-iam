@@ -675,11 +675,13 @@ final class FactorChangeGateAdapterTest extends TestCase
      * The person's factors, as MFA hands them to the gate.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
-     * @return \Illuminate\Database\Eloquent\Collection<int, \SineMacula\Laravel\Mfa\Models\Factor>
+     * @return \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor>
      */
     private function factorsOf(Person $person): Collection
     {
-        return Factor::query()->where('authenticatable_id', (string) $person->id)->get();
+        $model = Mfa::factorModel();
+
+        return $model::query()->where('authenticatable_id', (string) $person->id)->get();
     }
 
     /**

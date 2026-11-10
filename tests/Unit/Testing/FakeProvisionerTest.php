@@ -473,7 +473,7 @@ final class FakeProvisionerTest extends TestCase
     {
         self::assertInstanceOf(Person::class, $existing);
 
-        return self::verifiedResult(['email' => $existing->getRawOriginal('email')]);
+        return self::verifiedResult(['email' => $existing->email]);
     }
 
     /**
@@ -564,7 +564,7 @@ final class FakeProvisionerTest extends TestCase
      * A `sign_in` result verified through a connection of the tenant, with the
      * attributes given.
      *
-     * @param  array<string, mixed>  $attributes
+     * @param  array<string, list<string>|string>  $attributes
      * @return \SineMacula\Laravel\Sso\Results\VerifiedResult
      */
     private static function verifiedResult(array $attributes = []): VerifiedResult

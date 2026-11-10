@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\EndToEnd;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -216,15 +215,13 @@ final class MachineScopesTest extends TestCase
      * and the scope map before any provider registers, the session block set as
      * a whole, as a published file holds it.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make('config');
 

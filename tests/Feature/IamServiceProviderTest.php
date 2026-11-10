@@ -73,6 +73,7 @@ use SineMacula\Laravel\Sso\Contracts\TenantMembership;
 use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
+use Tests\Concerns\ReadsRawListeners;
 use Tests\Concerns\RunsInOctaneSandboxes;
 use Tests\Fixtures\Providers\RecordsAuthorizationContextWhileBooting;
 use Tests\Fixtures\Providers\RecordsBindingOutcome;
@@ -105,7 +106,7 @@ use Tests\TestCase;
 #[CoversClass(IamServiceProvider::class)]
 final class IamServiceProviderTest extends TestCase
 {
-    use PermutesProviderOrder, RunsInOctaneSandboxes;
+    use PermutesProviderOrder, ReadsRawListeners, RunsInOctaneSandboxes;
 
     /** @var string A connection no key in these tests is aligned to. */
     private const string ELSEWHERE = 'elsewhere';
@@ -900,11 +901,9 @@ final class IamServiceProviderTest extends TestCase
      */
     public function testTheWorkerResetListenersAreRegistered(): void
     {
-        $listeners = Event::getRawListeners();
-
-        self::assertContains(ResetWhenWorkerStarts::class, $listeners[ResetWhenWorkerStarts::EVENT] ?? []);
-        self::assertContains(ResetBetweenRequests::class, $listeners[ResetBetweenRequests::EVENT] ?? []);
-        self::assertContains(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? []);
+        self::assertContains(ResetWhenWorkerStarts::class, self::rawListenersOf(ResetWhenWorkerStarts::EVENT));
+        self::assertContains(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT));
+        self::assertContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
     /**
@@ -1075,7 +1074,7 @@ final class IamServiceProviderTest extends TestCase
     public function testTheWorkerResetIsOnWhenTheSwitchIsMissing(): void
     {
         self::assertFalse($this->config()->has('iam.workers.reset'));
-        self::assertContains(ResetBetweenRequests::class, Event::getRawListeners()[ResetBetweenRequests::EVENT] ?? []);
+        self::assertContains(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT));
     }
 
     /**
@@ -1090,7 +1089,7 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertArrayNotHasKey(ResetWhenWorkerStarts::EVENT, $listeners);
         self::assertArrayNotHasKey(ResetBetweenRequests::EVENT, $listeners);
-        self::assertNotContains(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? []);
+        self::assertNotContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
     /**
@@ -1138,11 +1137,9 @@ final class IamServiceProviderTest extends TestCase
         $this->withEnvironment(['IAM_WORKERS_RESET' => $value]);
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class]);
 
-        $listeners = Event::getRawListeners();
-
-        self::assertSame($on, in_array(ResetWhenWorkerStarts::class, $listeners[ResetWhenWorkerStarts::EVENT] ?? [], true));
-        self::assertSame($on, in_array(ResetBetweenRequests::class, $listeners[ResetBetweenRequests::EVENT] ?? [], true));
-        self::assertSame($on, in_array(ResetBeforeJob::class, $listeners[JobProcessing::class] ?? [], true));
+        self::assertSame($on, in_array(ResetWhenWorkerStarts::class, self::rawListenersOf(ResetWhenWorkerStarts::EVENT), true));
+        self::assertSame($on, in_array(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT), true));
+        self::assertSame($on, in_array(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class), true));
     }
 
     /**

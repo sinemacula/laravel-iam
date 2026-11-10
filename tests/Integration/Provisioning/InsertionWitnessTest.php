@@ -186,7 +186,11 @@ final class InsertionWitnessTest extends TestCase
 
         try {
             [, $inserted] = InsertionWitness::witness(static function () use ($kept): AnnouncedPerson {
-                Model::getEventDispatcher()?->dispatch([$kept]);
+                $witness = Model::getEventDispatcher();
+
+                self::assertInstanceOf(InsertionWitness::class, $witness);
+
+                $witness->dispatch([$kept]);
 
                 return $kept;
             });

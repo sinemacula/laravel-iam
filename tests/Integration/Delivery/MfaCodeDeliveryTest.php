@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Delivery;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -129,7 +128,7 @@ final class MfaCodeDeliveryTest extends TestCase
         self::assertSame($type, $message->type);
         self::assertSame($destination, $message->destination());
         self::assertSame($sent->expiresAt?->getTimestamp(), $message->expiresAt->getTimestamp());
-        self::assertTrue($person->is($message->recipient()));
+        self::assertIsThePerson($person, $message->recipient());
         self::assertSame($factor->id, $message->factor?->id);
         self::assertNotSame($destination, $message->factor->maskedDestination);
 
@@ -261,15 +260,13 @@ final class MfaCodeDeliveryTest extends TestCase
      * configuration file holds them, so MFA's senders are pointed at the
      * gateways and MFA boots while it offers `sms` and `email` factors.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('iam.delivery', [
             'email' => FakeEmailGateway::class,
@@ -282,15 +279,13 @@ final class MfaCodeDeliveryTest extends TestCase
      * Bind MFA's own challenge gateway as the application's, so MFA draws,
      * keeps and sends its codes itself, through its senders.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->bind(ChallengeGateway::class, PackageChallengeGateway::class);
     }

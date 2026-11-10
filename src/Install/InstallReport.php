@@ -20,7 +20,7 @@ final readonly class InstallReport
      * @param  list<string>  $published
      * @param  list<string>  $kept
      * @param  array<string, string>  $recognised
-     * @param  list<string>  $written
+     * @param  array<string, string>  $written
      * @param  list<string>  $conflicts
      * @param  list<string>  $missing
      * @param  list<string>  $owed
@@ -37,7 +37,7 @@ final readonly class InstallReport
         /** Every member migration already published under its base name, by where it would have been published, with the copy found. */
         public array $recognised,
 
-        /** Every configuration key written into a file published in this run. */
+        /** Every configuration key written into a file published in this run, with the value written. */
         public array $written,
 
         /** Every migration whose identity is in doubt, which the application settles before it migrates. */

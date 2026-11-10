@@ -8,6 +8,7 @@ use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Log\Context\Repository as ContextRepository;
 use Illuminate\Session\ArraySessionHandler;
@@ -316,7 +317,7 @@ final class WorkerResetTest extends TestCase
      */
     public function testResetClearsTheRootAFacadeResolvedFromAMembersScopedState(): void
     {
-        $container = new Container;
+        $container = new Application;
 
         $container->scoped('authorization', static fn (): \stdClass => new \stdClass);
 
@@ -338,9 +339,7 @@ final class WorkerResetTest extends TestCase
      */
     public function testAFacadeOverAKeptScopedInstanceReturnsTheSameInstance(): void
     {
-        $container = new Container;
-
-        $container->scoped(ContextRepository::class, static fn (): \stdClass => new \stdClass);
+        $container = new Application;
 
         Facade::setFacadeApplication($container);
 
@@ -567,8 +566,9 @@ final class WorkerResetTest extends TestCase
             'authenticationXcaller.access.api.'        => 'kept',
             'an.authentication.caller.access.api.'     => 'kept',
             'route'                                    => 'kept',
-            7                                          => 'kept',
         ]);
+
+        $request->attributes->set('7', 'kept');
 
         $container->instance('request', $request);
 
