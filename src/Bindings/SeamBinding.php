@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Bindings;
 
-use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 
 /**
@@ -15,8 +14,12 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * one of the member's own defaults, so an application's binding is never
  * replaced. A member default is named by the concrete class a class-string
  * binding was given or, for a binding the member made with a closure, by the
- * member class that declares the closure. A binding whose switch is off binds
- * nothing, so a feature the application leaves off changes nothing.
+ * member class that declares the closure. A member that says itself whether the
+ * seam holds its default (`laravel-authorization`'s `isPackageDefault()`) is
+ * asked instead (`$holdsDefault`), so a class the application names in its
+ * configuration, which it binds through a closure of its own too, is never
+ * taken for its default. A binding whose switch is off binds nothing, so a
+ * feature the application leaves off changes nothing.
  *
  * The switch reads the configuration as every member will hold it once
  * registered: the application's, with each member's packaged configuration
@@ -24,12 +27,6 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * types) reads the same whatever order the providers register in, and whether
  * the configuration is cached or not. A value a provider sets after this
  * package registers, or in a `boot()`, is read too late.
- *
- * A member that binds the seam to the class its configuration names
- * (`laravel-authorization`'s `authorization.subject_resolver`, say) names that
- * key (`$configurationKey`): a class the application names there other than the
- * member's defaults is its binding, and kept, though the member makes the
- * binding, in whatever order the providers register.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,7 +45,7 @@ final readonly class SeamBinding
      * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  bool|\Closure(): bool  $mandatory
      * @param  list<class-string>  $accepted
-     * @param  ?string  $configurationKey
+     * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      */
     public function __construct(
 
@@ -73,8 +70,8 @@ final readonly class SeamBinding
         /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
         public array $accepted = [],
 
-        /** The key of the member's configuration that names the class the member binds the seam to; `null` for a seam no configuration names a class for. */
-        public ?string $configurationKey = null,
+        /** The member's own answer to whether the seam holds its default, asked in place of reading the class that declares the binding's closure; `null` for a member that gives none. */
+        public ?\Closure $holdsDefault = null,
     ) {}
 
     /**
@@ -89,34 +86,5 @@ final readonly class SeamBinding
     public function isMandatory(): bool
     {
         return $this->mandatory instanceof \Closure ? ($this->mandatory)() : $this->mandatory;
-    }
-
-    /**
-     * The class the member's configuration names for the seam, read from the
-     * configuration given; `null` when the row names no configuration key or
-     * the key names no class.
-     *
-     * @param  \Illuminate\Contracts\Config\Repository  $config
-     * @return ?string
-     */
-    public function configuredClass(Repository $config): ?string
-    {
-        $class = $this->configurationKey === null ? null : $config->get($this->configurationKey);
-
-        return is_string($class) ? $class : null;
-    }
-
-    /**
-     * Whether the member's configuration names a class for the seam other than
-     * the member's defaults: the application's, which the binding rule keeps.
-     *
-     * @param  \Illuminate\Contracts\Config\Repository  $config
-     * @return bool
-     */
-    public function namesApplicationClass(Repository $config): bool
-    {
-        $class = $this->configuredClass($config);
-
-        return $class !== null && !in_array($class, $this->memberDefaults, true);
     }
 }

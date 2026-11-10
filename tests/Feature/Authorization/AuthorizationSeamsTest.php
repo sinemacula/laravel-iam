@@ -132,9 +132,11 @@ final class AuthorizationSeamsTest extends TestCase
 
     /**
      * A subject resolver and a requirement checker the application names in
-     * `laravel-authorization`'s configuration are kept in every provider order,
-     * though `laravel-authorization` binds them with the very closure it binds
-     * its defaults with, and are noted as kept.
+     * `laravel-authorization`'s configuration stand in every provider order,
+     * and `laravel-authorization` says neither is its default. Registered
+     * before this package, it has bound them already, and they are kept and
+     * noted as kept; registered after, it binds them over the adapters this
+     * package bound to the unbound seams.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -151,7 +153,19 @@ final class AuthorizationSeamsTest extends TestCase
         self::assertInstanceOf(NamedSubjectResolver::class, $this->resolved(SubjectResolver::class));
         self::assertInstanceOf(NamedRequirementChecker::class, $this->resolved(AuthenticationRequirementChecker::class));
         self::assertInstanceOf(AuthenticationContextAdapter::class, $this->resolved(AuthenticationContext::class));
-        $this->assertOutcome([AuthenticationContext::class], [SubjectResolver::class, AuthenticationRequirementChecker::class]);
+
+        $app = $this->app ?? self::fail('The application has not booted.');
+
+        self::assertFalse(AuthorizationServiceProvider::isPackageDefault($app, SubjectResolver::class));
+        self::assertFalse(AuthorizationServiceProvider::isPackageDefault($app, AuthenticationRequirementChecker::class));
+
+        $named = [SubjectResolver::class, AuthenticationRequirementChecker::class];
+
+        if (array_search(AuthorizationServiceProvider::class, $providers, true) < array_search(IamServiceProvider::class, $providers, true)) {
+            $this->assertOutcome([AuthenticationContext::class], $named);
+        } else {
+            $this->assertOutcome(array_keys(self::ADAPTERS), []);
+        }
     }
 
     /**
@@ -319,21 +333,16 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Each row replaces `laravel-authorization`'s default only while the key of
-     * its configuration naming the seam's class, if any, names the default, and
-     * is no mandatory seam; the subject resolver is scoped, as
+     * Each row names `laravel-authorization`'s default class, asks
+     * `AuthorizationServiceProvider::isPackageDefault()` whether the seam holds
+     * it, and is no mandatory seam; the subject resolver is scoped, as
      * `laravel-authorization`'s own default is, and the others transient.
      *
      * @return void
      */
-    public function testEachRowReadsLaravelAuthorizationsConfigurationKeyAndOnlyTheResolverIsScoped(): void
+    public function testEachRowAsksLaravelAuthorizationForItsDefaultAndOnlyTheResolverIsScoped(): void
     {
         $rows = [];
-        $keys = [
-            SubjectResolver::class                  => 'authorization.subject_resolver',
-            AuthenticationContext::class            => null,
-            AuthenticationRequirementChecker::class => 'authorization.requirement_checker',
-        ];
 
         foreach ((new AuthorizationSeams)->seams(new Repository) as $binding) {
             $rows[$binding->abstract] = $binding;
@@ -342,8 +351,12 @@ final class AuthorizationSeamsTest extends TestCase
         foreach (self::ADAPTERS as $abstract => $adapter) {
             self::assertSame($adapter, $rows[$abstract]->adapter);
             self::assertSame($abstract === SubjectResolver::class ? Lifetime::SCOPED : Lifetime::TRANSIENT, $rows[$abstract]->lifetime);
-            self::assertSame([AuthorizationServiceProvider::class, self::MEMBER_DEFAULTS[$abstract]], $rows[$abstract]->memberDefaults);
-            self::assertSame($keys[$abstract], $rows[$abstract]->configurationKey);
+            self::assertSame([self::MEMBER_DEFAULTS[$abstract]], $rows[$abstract]->memberDefaults);
+
+            $holdsDefault = new \ReflectionFunction($rows[$abstract]->holdsDefault ?? self::fail($abstract));
+
+            self::assertSame('isPackageDefault', $holdsDefault->getName());
+            self::assertSame(AuthorizationServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
             self::assertFalse($rows[$abstract]->mandatory);
         }
     }
