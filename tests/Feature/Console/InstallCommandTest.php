@@ -119,7 +119,7 @@ final class InstallCommandTest extends TestCase
 
         self::assertFileEquals(dirname(__DIR__, 3) . '/config/iam.php', $this->scratch('config/iam.php'));
         self::assertDirectoryDoesNotExist($this->scratch('lang/vendor/authentication'));
-        self::assertCount(50, glob($this->scratch('database/migrations/*.php')) ?: []);
+        self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
 
         preg_match_all('/^\[published\] .*?(config\/[\w-]+\.php|lang\/vendor\/[\w-]+|database\/migrations)/m', $output, $matches);
 
@@ -160,7 +160,7 @@ final class InstallCommandTest extends TestCase
         self::assertSame($before, $this->snapshot());
         self::assertStringNotContainsString('[published]', $output);
         self::assertStringNotContainsString('[written]', $output);
-        self::assertSame(50, substr_count($output, '[recognised]'));
+        self::assertSame(self::migrationCount(), substr_count($output, '[recognised]'));
         self::assertStringContainsString('[kept] ' . $this->scratch('config/audit-log.php'), $output);
         self::assertStringContainsString('[kept] ' . $this->scratch('lang/vendor/mfa/en/messages.php'), $output);
     }
@@ -182,7 +182,7 @@ final class InstallCommandTest extends TestCase
         self::assertFileDoesNotExist($this->scratch('database/migrations/2026_04_15_000000_create_mfa_factors_table.php'));
         self::assertFileEquals($source, $copy);
         self::assertStringContainsString('[recognised] 2026_04_15_000000_create_mfa_factors_table.php, published as ' . $copy, $output);
-        self::assertCount(50, glob($this->scratch('database/migrations/*.php')) ?: []);
+        self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
     }
 
     /**
@@ -237,7 +237,7 @@ final class InstallCommandTest extends TestCase
                 $output,
             );
             self::assertStringNotContainsString('shares its base name', $output);
-            self::assertCount(50, glob($this->scratch('database/migrations/*.php')) ?: []);
+            self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
         }
 
         unlink($own);
@@ -484,9 +484,9 @@ final class InstallCommandTest extends TestCase
         $owed = substr($output, (int) strpos($output, 'Still to do:'));
 
         self::assertStringContainsString(
-            ' - Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s tables are created on'
-                . ' `iam.storage.connection`, laravel-audit-log\'s on `audit-log.storage.connection` and laravel-authorization\'s'
-                . ' on `authorization.connection`, each the default connection when unset.',
+            ' - Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s, laravel-sso\'s and laravel-authorization\'s'
+                . ' tables are created on `iam.storage.connection`, and laravel-audit-log\'s on `audit-log.storage.connection`,'
+                . ' each the default connection when unset.',
             $owed,
         );
         self::assertStringNotContainsString('every member\'s tables', $owed);
@@ -891,7 +891,7 @@ final class InstallCommandTest extends TestCase
         [$code, $output] = $this->install();
 
         self::assertSame(0, $code);
-        self::assertCount(50, glob($this->scratch('database/migrations/*.php')) ?: []);
+        self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
         self::assertSame(count($published), substr_count($output, '[recognised]'));
         self::assertStringContainsString('[kept] ' . $this->scratch('config/authentication.php'), $output);
         self::assertStringContainsString('[published] ' . $this->scratch('config/mfa.php'), $output);
@@ -1190,6 +1190,23 @@ final class InstallCommandTest extends TestCase
         }
 
         return $collapsed;
+    }
+
+    /**
+     * Return how many migrations the members ship between them, each of which
+     * the run publishes once.
+     *
+     * @return int
+     */
+    private static function migrationCount(): int
+    {
+        $count = 0;
+
+        foreach (self::MEMBERS as $provider) {
+            $count += count(glob(self::packagePath($provider) . '/database/migrations/*.php') ?: []);
+        }
+
+        return $count;
     }
 
     /**

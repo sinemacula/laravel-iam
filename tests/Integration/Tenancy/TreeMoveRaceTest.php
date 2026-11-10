@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Events\Enums\RevocationReason;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
@@ -43,7 +44,8 @@ use Tests\TestCase;
  *
  * Run at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL, the move
  * committing inside the change on each, since the move's reads take no lock the
- * change holds.
+ * change holds. The authorization capability is off, its report of a move being
+ * `TreeMoveWideningTest`'s.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,6 +56,7 @@ use Tests\TestCase;
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(TreeChanges::class)]
 #[WithConfig(TenancyContracts::TREE, StoredTenantTree::class, defer: false)]
+#[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
 final class TreeMoveRaceTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;

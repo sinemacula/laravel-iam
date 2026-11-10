@@ -4,6 +4,14 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
+use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
+use SineMacula\Laravel\Authorization\AuthorizationManager;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\SubtreeGrantees;
+use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
+use SineMacula\Laravel\Iam\Sso\IdentityGuards;
 use SineMacula\Laravel\Sso\Config\Enums\Feature;
 use SineMacula\Laravel\Sso\Config\Features;
 
@@ -39,9 +47,52 @@ use SineMacula\Laravel\Sso\Config\Features;
  * resolves through `laravel-authentication`'s tenant resolver
  * (`TenantReferences`); one that cannot be resolved throws
  * `UnresolvedReferenceException` (IAM-8.2), as does a tree that cannot list the
- * subtree, so the move rolls back rather than leave sessions unjudged. Passing
- * the change on to the members that cache by tenant (`laravel-authorization`'s
- * `treeChanged()`, AUTHZ-12.8) comes with M11. Stateless (IAM-8.1).
+ * subtree, so the move rolls back rather than leave sessions unjudged.
+ *
+ * The change is passed on, first and whatever SSO's enforcement and the
+ * requirement say, to `laravel-authorization`, while the authorization
+ * capability's switch (`iam.adapters.authorization`) is on and the application
+ * names or binds its tree (`TenancyContracts::hasTree()`, as the tree is bound
+ * to `laravel-authorization` only then, `Authorization\TenantTreeAdapter`):
+ *
+ * - while its grants are reported to SSO's scope widening too
+ *   (`AuthorizationSeams::reportsWidenings()`, the SSO capability's switch on
+ *   as well), every identity holding a live grant rooted at the moved tenant or
+ *   below it (`Authorization\SubtreeGrantees`) is reported to SSO's scope
+ *   widening in the moved tenant (`ScopeWidenings::widen()`, IAM-6.7): the
+ *   grant half of the principal scope counts a grant below a tenant within it,
+ *   so a move that takes the subtree out from under a tenant widens the scope
+ *   of every person granted in it without a grant being written, and no grant
+ *   hook runs. SSO suspends each one's links by a verified domain in every
+ *   other tenant's connections, and revokes the sessions established through
+ *   them, in the move's transaction. Every one's identity guard is taken first,
+ *   in SSO's order (`Sso\IdentityGuards`), before any connection is locked:
+ *   taken one widening after another, a guard would follow another identity's
+ *   connections, and the move would deadlock with a grant, a reservation or an
+ *   activation of that identity, which holds its guard and waits for one of
+ *   those connections. The package cannot tell a move out from under a tenant
+ *   from one within it, so this is broader than needed, never narrower: a link
+ *   in a tenant the subtree still stands below is suspended
+ *   too, latched as SSO latches every suspension, and is linked again;
+ * - the moved tenant is reported to `laravel-authorization`
+ *   (`Authorization::treeChanged()`, AUTHZ-12.8), which drops every resolution
+ *   built in it or below it, in every worker, at once and again once the
+ *   transaction commits, and has a delegated grant call running meanwhile tried
+ *   again. One report covers the moved tenant's whole subtree, since its
+ *   entries pin the tenant's chain.
+ *
+ * The tenant is named to it as this package names a tenant to
+ * `laravel-authorization` (`Authorization\Translation\TenantTranslator`),
+ * through `laravel-authentication`'s tenant resolver, which `iam:check` makes
+ * mandatory alongside a tree, so a tenant that cannot be resolved, or that
+ * `laravel-authorization` cannot read, throws `UnresolvedReferenceException`
+ * and the move rolls back; a failure of `laravel-authorization`'s cache store
+ * or of SSO's widening propagates the same way. Without a tree
+ * `laravel-authorization` keeps its own flat tree, which no move changes, and
+ * nothing is reported to it. With the switch off, the application binds
+ * `laravel-authorization`'s tree itself, and reports to it itself. The client
+ * of every widening is unknown (`new ClientContext(null, null)`): a move is the
+ * application's, never a request's. Stateless (IAM-8.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,6 +106,11 @@ final readonly class TreeChanges
      *
      * @param  \SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges  $subtrees
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements  $requirements
+     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
+     * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
+     * @param  \SineMacula\Laravel\Iam\Sso\IdentityGuards  $guards
      */
     public function __construct(
 
@@ -63,12 +119,30 @@ final readonly class TreeChanges
 
         /** Tells whether the application has a tenant MFA requirement. */
         private TenantMfaRequirements $requirements,
+
+        /** Resolves `laravel-authorization`'s manager on every call. */
+        private Container $container,
+
+        /** Holds the authorization capability's switch. */
+        private Repository $config,
+
+        /** Names the moved tenant as `laravel-authorization` names it. */
+        private TenantTranslator $tenants,
+
+        /** Reports each identity granted in the moved subtree to SSO's scope widening. */
+        private ScopeWidenings $widenings,
+
+        /** Takes the guard of every identity granted in the moved subtree, in SSO's order, before any is reported. */
+        private IdentityGuards $guards,
     ) {}
 
     /**
-     * Judge the sessions of the tenant moved, and of every tenant below it,
-     * once the move is written, while anything a tenant requires can follow the
-     * tree; answer how many sessions the first passes revoked.
+     * Report the identities granted in the moved tenant's subtree to SSO's
+     * scope widening, and the move to `laravel-authorization`, while the
+     * authorization capability is on beside the application's tree, then judge
+     * the sessions of the tenant moved, and of every tenant below it, once the
+     * move is written, while anything a tenant requires can follow the tree;
+     * answer how many sessions the first passes revoked.
      *
      * @param  string  $tenantId
      * @return int
@@ -78,14 +152,48 @@ final readonly class TreeChanges
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Authorization\Exceptions\InvalidTenantException
      * @throws \Throwable
      */
     public function changed(string $tenantId): int
     {
+        if (AuthorizationSeams::isOn($this->config) && TenancyContracts::hasTree($this->container, $this->config)) {
+            $this->reportToAuthorization($tenantId);
+        }
+
         if (!Features::enabled(Feature::ENFORCEMENT) && !$this->requirements->isConfigured()) {
             return 0;
         }
 
         return $this->subtrees->changed($tenantId);
+    }
+
+    /**
+     * Report each identity granted in the moved tenant's subtree to SSO's scope
+     * widening, every one's guard taken first in SSO's order, while
+     * `laravel-authorization`'s grants are reported to it, then the move to
+     * `laravel-authorization`.
+     *
+     * @param  string  $tenantId
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \Throwable
+     */
+    private function reportToAuthorization(string $tenantId): void
+    {
+        if (AuthorizationSeams::reportsWidenings($this->config)) {
+
+            $client   = new ClientContext(null, null);
+            $grantees = $this->container->make(SubtreeGrantees::class)->of($tenantId);
+
+            foreach ($this->guards->acquire($grantees) as $identity) {
+                $this->widenings->widen($identity, $tenantId, $client);
+            }
+        }
+
+        $this->container->make(AuthorizationManager::class)->treeChanged($this->tenants->toReference($tenantId));
     }
 }

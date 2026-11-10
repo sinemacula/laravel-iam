@@ -29,7 +29,8 @@ use Illuminate\Contracts\Config\Repository;
  * The exclusion is kept regardless, since without it every sign-in through the
  * session service is recorded twice. `laravel-authorization` is always
  * installed with this package, and its decision events are the ones mapped
- * (M11), so Gate capture stays off.
+ * (`AuthorizationEventMapper`), the Gate checks it answers among them, so Gate
+ * capture stays off.
  *
  * It only computes and answers: it never writes configuration. Installation
  * (`iam:install`) writes the exclusions this answers and `iam:check` refuses a

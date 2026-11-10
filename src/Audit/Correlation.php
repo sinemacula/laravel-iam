@@ -14,8 +14,7 @@ namespace SineMacula\Laravel\Iam\Audit;
  * challenge of `laravel-authentication`'s own (a sign-in code, a passkey
  * ceremony, an identifier change) as `authentication:{challenge}`; a session's
  * events as `session:{session_id}`; and every event of one
- * `laravel-authorization` management call as `authorization:{operation_id}`
- * (reserved for M11).
+ * `laravel-authorization` management call as `authorization:{operation_id}`.
  *
  * A part that is `null` or empty means no id at all, never a partial one: an
  * administration event, a failure before a request was matched, an event with

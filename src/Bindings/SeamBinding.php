@@ -32,6 +32,19 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * names in the member's configuration is its binding, and kept, though the
  * member made the binding.
  *
+ * An adapter that must give way to the member's own default while what it
+ * answers from is missing names how the container builds it (`$factory`): the
+ * closure is bound in the adapter's place, with the row's lifetime, and handed
+ * the container, so it answers the adapter or the member's default as the
+ * application stands when it is built.
+ *
+ * A member that listens for its seam being bound again, but only where the seam
+ * is still unbound as it registers (`laravel-authorization` forgets the
+ * resolutions read through its subject resolver or tenant tree), names that
+ * listener (`$rebinding`): binding the adapter over a seam that is still
+ * unbound, before the member registers, registers it first, as the member would
+ * have, so the seam is listened for in every provider order.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -50,6 +63,8 @@ final readonly class SeamBinding
      * @param  bool|\Closure(): bool  $mandatory
      * @param  list<class-string>  $accepted
      * @param  ?string  $defaultKey
+     * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
+     * @param  ?\Closure(): void  $rebinding
      */
     public function __construct(
 
@@ -76,6 +91,12 @@ final readonly class SeamBinding
 
         /** The key the member holds its default under when its binding of the seam only resolves that key, which must still hold one of the member's defaults for the seam to be the member's; `null` for a seam bound to its default directly. */
         public ?string $defaultKey = null,
+
+        /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
+        public ?\Closure $factory = null,
+
+        /** What the member does when the seam is bound again, registered only where the seam is still unbound as the adapter is bound over it; `null` for none. */
+        public ?\Closure $rebinding = null,
     ) {}
 
     /**

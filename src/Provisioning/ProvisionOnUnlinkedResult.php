@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Sso\Events\ResultUnlinked;
 use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
 use SineMacula\Laravel\Sso\Provisioning\ProvisioningHelper;
+use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
  * Provisions a new identity for a `sign_in` result SSO found unlinked: the one
@@ -44,21 +45,28 @@ use SineMacula\Laravel\Sso\Provisioning\ProvisioningHelper;
  *    with the event's grant, the exact result the event carries, the identity's
  *    reference and the completion's client, which takes the enforcing tenant's
  *    rule, the connection, the request and the links, in SSO's lock order, as a
- *    savepoint of this transaction.
+ *    savepoint of this transaction;
+ * 5. once the link is created, while a group mapping is configured
+ *    (`GroupSettings`, IAM-7.2), the roles it answers for the groups the result
+ *    reports, granted to the new identity in the connection's tenant through
+ *    `laravel-authorization` (`GroupGrants::grant()`), after every one of SSO's
+ *    locks, so `laravel-authorization`'s come last; a grant that widens the
+ *    identity's scope reports it to SSO again through the grant hook, which
+ *    finds the identity's guard already held and nothing to suspend.
  *
  * The transaction commits only when the helper answers `created`; a refusal, a
  * value that wrote nothing, rolls the identity and its membership back with it,
  * and the listener returns, so SSO's final step finds the result still unlinked
  * and ends the flow as `unlinked`. Anything thrown (by the provisioner, the
- * widening, the helper or the database) rolls all of it back and propagates,
- * ending the completion as a server error, as SSO's offer does with a
- * listener's exception. The transaction is attempted once, never retried: the
- * helper claims the grant before anything else, in memory, so a second attempt
- * could only be refused `grant_invalid`; a serialisation failure propagates and
- * the person starts a new flow. So that a link committed in the connection
- * while it runs, another person's or the same subject's, never fails it to
- * serialise on PostgreSQL, and so that the widening's locking read of the new
- * identity's links takes no gap lock that would deadlock it against another
+ * widening, the helper, the mapping, a grant or the database) rolls all of it
+ * back and propagates, ending the completion as a server error, as SSO's offer
+ * does with a listener's exception. The transaction is attempted once, never
+ * retried: the helper claims the grant before anything else, in memory, so a
+ * second attempt could only be refused `grant_invalid`; a serialisation failure
+ * propagates and the person starts a new flow. So that a link committed in the
+ * connection while it runs, another person's or the same subject's, never fails
+ * it to serialise on PostgreSQL, and so that the widening's locking read of the
+ * new identity's links takes no gap lock that would deadlock it against another
  * first sign-in, a link or a reservation on MySQL and MariaDB, the attempt it
  * opens reads committed rows on all three, whatever the storage connection's
  * level (`CommittedReads`), and the helper's locked re-reads see that link.
@@ -96,6 +104,8 @@ final readonly class ProvisionOnUnlinkedResult
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
      * @param  \SineMacula\Laravel\Sso\Provisioning\ProvisioningHelper  $helper
+     * @param  \SineMacula\Laravel\Iam\Provisioning\GroupSettings  $groups
+     * @param  \SineMacula\Laravel\Iam\Provisioning\GroupGrants  $grants
      */
     public function __construct(
 
@@ -116,6 +126,12 @@ final readonly class ProvisionOnUnlinkedResult
 
         /** Links the result to the new identity, once, with the event's grant. */
         private ProvisioningHelper $helper,
+
+        /** Finds the application's group mapping, if any. */
+        private GroupSettings $groups,
+
+        /** Grants the roles the groups map to. */
+        private GroupGrants $grants,
     ) {}
 
     /**
@@ -168,10 +184,11 @@ final readonly class ProvisionOnUnlinkedResult
     }
 
     /**
-     * Write the new identity, report its principal, write its membership and
-     * link it, in that order, inside the listener's transaction, once it is set
-     * to read committed rows where the engine takes the level once begun, and
-     * refuse the transaction when the helper refuses the link.
+     * Write the new identity, report its principal, write its membership, link
+     * it and grant what its groups map to, in that order, inside the listener's
+     * transaction, once it is set to read committed rows where the engine takes
+     * the level once begun, and refuse the transaction when the helper refuses
+     * the link.
      *
      * @param  \SineMacula\Laravel\Iam\Contracts\Provisioner  $provisioner
      * @param  \SineMacula\Laravel\Sso\Events\ResultUnlinked  $event
@@ -196,6 +213,31 @@ final readonly class ProvisionOnUnlinkedResult
         if (!$answer->isCreated()) {
             throw new RefusedLink($answer);
         }
+
+        $this->mapGroups($identity, $result);
+    }
+
+    /**
+     * Grant the new identity the roles the configured group mapping answers for
+     * the result's groups, in the connection's tenant; with no mapping, grant
+     * nothing.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \Throwable
+     */
+    private function mapGroups(Identity $identity, #[\SensitiveParameter] VerifiedResult $result): void
+    {
+        $mapping = $this->groups->mapping();
+
+        if ($mapping === null) {
+            return;
+        }
+
+        $this->grants->grant($identity, $result->tenantId, $mapping->grantsFor($result->connectionId, $result->tenantId, GroupGrants::groupsOf($result)));
     }
 
     /**

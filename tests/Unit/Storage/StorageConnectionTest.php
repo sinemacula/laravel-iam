@@ -31,7 +31,7 @@ final class StorageConnectionTest extends TestCase
     public function testTheKeysAreTheSharedKeyAndTheMembers(): void
     {
         self::assertSame('iam.storage.connection', StorageConnection::KEY);
-        self::assertSame(['authentication.storage.connection', 'mfa.storage.connection', 'sso.storage.connection'], StorageConnection::MEMBER_KEYS);
+        self::assertSame(['authentication.storage.connection', 'mfa.storage.connection', 'sso.storage.connection', 'authorization.connection'], StorageConnection::MEMBER_KEYS);
     }
 
     /**

@@ -9,7 +9,9 @@ use Illuminate\Contracts\Config\Repository;
 /**
  * The one storage connection every member keeps its tables on, as
  * `iam.storage.connection` names it, and the member keys that must name the
- * same one (IAM-2.3).
+ * same one (IAM-2.3): each member's storage connection, and
+ * `laravel-authorization`'s `authorization.connection`, which its models, its
+ * migrations and its own transactions use.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -21,11 +23,12 @@ final readonly class StorageConnection
     /** @var string The key that names the shared storage connection. */
     public const string KEY = 'iam.storage.connection';
 
-    /** @var list<string> The member keys that must name the shared connection; authorization's joins with AUTHZ-13.7. */
+    /** @var list<string> The member keys that must name the shared connection. */
     public const array MEMBER_KEYS = [
         'authentication.storage.connection',
         'mfa.storage.connection',
         'sso.storage.connection',
+        'authorization.connection',
     ];
 
     /**

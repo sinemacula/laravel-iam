@@ -10,6 +10,7 @@ use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamServiceProvider;
@@ -45,11 +46,12 @@ final class ConnectionAlignmentTest extends TestCase
     /** @var string A connection no key in these tests is aligned to. */
     private const string ELSEWHERE = 'elsewhere';
 
-    /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each aligned member's configuration root and the provider that merges it. */
+    /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each aligned member key and the provider that merges its member's configuration. */
     private const array MEMBERS = [
-        'authentication' => AuthenticationServiceProvider::class,
-        'mfa'            => MfaServiceProvider::class,
-        'sso'            => SsoServiceProvider::class,
+        'authentication.storage.connection' => AuthenticationServiceProvider::class,
+        'mfa.storage.connection'            => MfaServiceProvider::class,
+        'sso.storage.connection'            => SsoServiceProvider::class,
+        'authorization.connection'          => AuthorizationServiceProvider::class,
     ];
 
     /** @var list<string> The environment variables this test set, cleared once its application is destroyed. */
@@ -79,14 +81,16 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignWritesTheSharedConnectionIntoEveryUnsetMemberKey(): void
     {
-        $config = self::configured('pgsql', [null, '', null]);
+        $config = self::configured('pgsql', [null, '', null, '']);
 
         $config->set('mfa.storage.retained', 'kept');
         $config->set('sso.endpoints', ['base_url' => 'https://sso.test']);
+        $config->set('authorization.tables', ['roles' => 'roles']);
 
         (new ConnectionAlignment)->align($config);
 
-        self::assertSame(['pgsql', 'pgsql', 'pgsql'], self::memberConnections($config));
+        self::assertSame(['pgsql', 'pgsql', 'pgsql', 'pgsql'], self::memberConnections($config));
+        self::assertSame(['roles' => 'roles'], $config->get('authorization.tables'));
         self::assertSame('kept', $config->get('mfa.storage.retained'));
         self::assertSame(['base_url' => 'https://sso.test'], $config->get('sso.endpoints'));
     }
@@ -99,11 +103,11 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignLeavesAMemberKeyThatNamesAConnection(): void
     {
-        $config = self::configured('pgsql', ['pgsql', 'mysql', null]);
+        $config = self::configured('pgsql', ['pgsql', 'mysql', null, 'sqlite']);
 
         (new ConnectionAlignment)->align($config);
 
-        self::assertSame(['pgsql', 'mysql', 'pgsql'], self::memberConnections($config));
+        self::assertSame(['pgsql', 'mysql', 'pgsql', 'sqlite'], self::memberConnections($config));
     }
 
     /**
@@ -114,13 +118,14 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignLeavesAMemberWhoseConfigurationIsNotMerged(): void
     {
-        $config = self::configured('pgsql', [null, null, null], 'mysql', 'mfa');
+        $config = self::configured('pgsql', [null, null, null, null], 'mysql', 'mfa');
 
         (new ConnectionAlignment)->align($config);
 
         self::assertFalse($config->has('mfa'));
         self::assertSame('pgsql', $config->get('authentication.storage.connection'));
         self::assertSame('pgsql', $config->get('sso.storage.connection'));
+        self::assertSame('pgsql', $config->get('authorization.connection'));
     }
 
     /**
@@ -150,9 +155,12 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignReturnsWhatItWrote(): void
     {
-        $config = self::configured('pgsql', [null, 'mysql', '']);
+        $config = self::configured('pgsql', [null, 'mysql', '', null]);
 
-        self::assertSame(['authentication.storage.connection' => 'pgsql', 'sso.storage.connection' => 'pgsql'], (new ConnectionAlignment)->align($config));
+        self::assertSame(
+            ['authentication.storage.connection' => 'pgsql', 'sso.storage.connection' => 'pgsql', 'authorization.connection' => 'pgsql'],
+            (new ConnectionAlignment)->align($config),
+        );
         self::assertSame([], (new ConnectionAlignment)->align($config));
     }
 
@@ -165,20 +173,23 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAKeyAnEarlierCallWroteFollowsTheSharedConnection(): void
     {
-        $config  = self::configured('pgsql', [null, null, null]);
+        $config  = self::configured('pgsql', [null, null, null, null]);
         $written = (new ConnectionAlignment)->align($config);
 
         $config->set('sso.storage.connection', 'mysql');
         $config->set(StorageConnection::KEY, 'sqlite');
 
-        self::assertSame(['authentication.storage.connection' => 'sqlite', 'mfa.storage.connection' => 'sqlite'], (new ConnectionAlignment)->align($config, $written));
-        self::assertSame(['sqlite', 'sqlite', 'mysql'], self::memberConnections($config));
+        self::assertSame(
+            ['authentication.storage.connection' => 'sqlite', 'mfa.storage.connection' => 'sqlite', 'authorization.connection' => 'sqlite'],
+            (new ConnectionAlignment)->align($config, $written),
+        );
+        self::assertSame(['sqlite', 'sqlite', 'mysql', 'sqlite'], self::memberConnections($config));
 
         $config->set(StorageConnection::KEY, null);
 
-        (new ConnectionAlignment)->align($config, ['authentication.storage.connection' => 'sqlite', 'mfa.storage.connection' => 'pgsql']);
+        (new ConnectionAlignment)->align($config, ['authentication.storage.connection' => 'sqlite', 'mfa.storage.connection' => 'pgsql', 'authorization.connection' => 'sqlite']);
 
-        self::assertSame([null, 'sqlite', 'mysql'], self::memberConnections($config));
+        self::assertSame([null, 'sqlite', 'mysql', null], self::memberConnections($config));
     }
 
     /**
@@ -191,16 +202,16 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignLeavesAMemberWhoseProviderHasNotRegistered(): void
     {
-        $config = self::configured('pgsql', [null, null, null]);
+        $config = self::configured('pgsql', [null, null, null, null]);
         $app    = \Mockery::mock(Application::class);
 
-        foreach (self::MEMBERS as $root => $provider) {
-            $app->shouldReceive('getProviders')->with($provider)->andReturn($root === 'mfa' ? [] : [new \stdClass]);
+        foreach (self::MEMBERS as $key => $provider) {
+            $app->shouldReceive('getProviders')->with($provider)->andReturn($key === 'mfa.storage.connection' ? [] : [new \stdClass]);
         }
 
         (new ConnectionAlignment)->align($config, [], $app);
 
-        self::assertSame(['pgsql', null, 'pgsql'], self::memberConnections($config));
+        self::assertSame(['pgsql', null, 'pgsql', 'pgsql'], self::memberConnections($config));
     }
 
     /**
@@ -224,7 +235,7 @@ final class ConnectionAlignmentTest extends TestCase
     #[DataProvider('provideUnsetSharedConnections')]
     public function testWithNoSharedConnectionAlignWritesNothing(?string $shared): void
     {
-        $config = self::configured($shared, [null, '', 'mysql']);
+        $config = self::configured($shared, [null, '', 'mysql', '']);
         $before = $config->all();
 
         (new ConnectionAlignment)->align($config);
@@ -240,7 +251,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignRefusesAMalformedMemberKey(): void
     {
-        $config = self::configured('pgsql', [null, null, null]);
+        $config = self::configured('pgsql', [null, null, null, null]);
 
         $config->set('mfa.storage.connection', 3);
 
@@ -257,7 +268,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAlignRefusesAMalformedSharedConnection(): void
     {
-        $config = self::configured(null, [null, null, null]);
+        $config = self::configured(null, [null, null, null, null]);
 
         $config->set(StorageConnection::KEY, ['pgsql']);
 
@@ -268,19 +279,18 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Rows of `[shared, members, default]`: a shared connection, the three
-     * member keys' values in order, and the default connection, all of which
-     * agree.
+     * Rows of `[shared, members, default]`: a shared connection, the member
+     * keys' values in order, and the default connection, all of which agree.
      *
      * @return iterable<string, array{0: ?string, 1: list<?string>, 2: string}>
      */
     public static function provideAlignedConnections(): iterable
     {
-        yield 'every key naming the shared connection' => ['pgsql', ['pgsql', 'pgsql', 'pgsql'], 'mysql'];
-        yield 'nothing set' => [null, [null, null, null], 'mysql'];
-        yield 'members naming the default with no shared connection' => [null, ['mysql', '', null], 'mysql'];
-        yield 'the shared connection naming the default with members unset' => ['mysql', [null, '', null], 'mysql'];
-        yield 'an empty shared connection with a member naming the default' => ['', [null, 'mysql', null], 'mysql'];
+        yield 'every key naming the shared connection' => ['pgsql', ['pgsql', 'pgsql', 'pgsql', 'pgsql'], 'mysql'];
+        yield 'nothing set' => [null, [null, null, null, null], 'mysql'];
+        yield 'members naming the default with no shared connection' => [null, ['mysql', '', null, 'mysql'], 'mysql'];
+        yield 'the shared connection naming the default with members unset' => ['mysql', [null, '', null, ''], 'mysql'];
+        yield 'an empty shared connection with a member naming the default' => ['', [null, 'mysql', null, null], 'mysql'];
     }
 
     /**
@@ -305,17 +315,18 @@ final class ConnectionAlignmentTest extends TestCase
 
     /**
      * Rows of `[shared, members, default, key, member]`: a shared connection,
-     * the three member keys' values in order and the default connection, which
+     * the member keys' values in order and the default connection, which
      * disagree, then the first member key that differs and what it names.
      *
      * @return iterable<string, array{0: ?string, 1: list<?string>, 2: string, 3: string, 4: ?string}>
      */
     public static function provideMisalignedConnections(): iterable
     {
-        yield 'a member naming another connection' => ['pgsql', ['pgsql', 'mysql', 'pgsql'], 'pgsql', 'mfa.storage.connection', 'mysql'];
-        yield 'a member naming another with no shared connection' => [null, [null, '', 'mysql'], 'pgsql', 'sso.storage.connection', 'mysql'];
-        yield 'an unset member against a shared connection off the default' => ['pgsql', [null, 'pgsql', 'pgsql'], 'mysql', 'authentication.storage.connection', null];
-        yield 'the first of several differing members' => ['pgsql', ['mysql', 'sqlite', 'pgsql'], 'pgsql', 'authentication.storage.connection', 'mysql'];
+        yield 'a member naming another connection' => ['pgsql', ['pgsql', 'mysql', 'pgsql', 'pgsql'], 'pgsql', 'mfa.storage.connection', 'mysql'];
+        yield 'a member naming another with no shared connection' => [null, [null, '', 'mysql', null], 'pgsql', 'sso.storage.connection', 'mysql'];
+        yield 'an unset member against a shared connection off the default' => ['pgsql', [null, 'pgsql', 'pgsql', 'pgsql'], 'mysql', 'authentication.storage.connection', null];
+        yield 'the first of several differing members' => ['pgsql', ['mysql', 'sqlite', 'pgsql', 'sqlite'], 'pgsql', 'authentication.storage.connection', 'mysql'];
+        yield 'authorization\'s connection naming another' => ['pgsql', ['pgsql', 'pgsql', 'pgsql', 'mysql'], 'pgsql', 'authorization.connection', 'mysql'];
     }
 
     /**
@@ -355,7 +366,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAssertAlignedSkipsAMemberWhoseConfigurationIsNotMerged(): void
     {
-        $config = self::configured('pgsql', ['pgsql', null, 'pgsql'], 'mysql', 'mfa');
+        $config = self::configured('pgsql', ['pgsql', null, 'pgsql', 'pgsql'], 'mysql', 'mfa');
 
         (new ConnectionAlignment)->assertAligned($config);
 
@@ -370,7 +381,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAssertAlignedChecksTheMembersAfterAnUnmergedOne(): void
     {
-        $config = self::configured('pgsql', ['pgsql', null, 'mysql'], 'mysql', 'mfa');
+        $config = self::configured('pgsql', ['pgsql', null, 'mysql', 'pgsql'], 'mysql', 'mfa');
 
         $this->expectException(StorageConnectionMismatchException::class);
         $this->expectExceptionMessage('sso.storage.connection names [mysql]');
@@ -387,7 +398,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAssertAlignedSkipsAMemberWhoseProviderHasNotRegistered(): void
     {
-        $config = self::configured('pgsql', ['pgsql', null, 'pgsql']);
+        $config = self::configured('pgsql', ['pgsql', null, 'pgsql', 'pgsql']);
 
         (new ConnectionAlignment)->assertAligned($config, self::applicationWithout('mfa'));
 
@@ -405,7 +416,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAssertAlignedChecksTheMembersAfterAnUnregisteredOne(): void
     {
-        $config = self::configured('pgsql', ['pgsql', null, 'mysql']);
+        $config = self::configured('pgsql', ['pgsql', null, 'mysql', 'pgsql']);
 
         $this->expectException(StorageConnectionMismatchException::class);
         $this->expectExceptionMessage('sso.storage.connection names [mysql]');
@@ -414,15 +425,15 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Rows of `[root, provider]`: each member whose storage is aligned, and its
-     * service provider.
+     * Rows of `[key, provider]`: each member key that is aligned, and the
+     * service provider of its member.
      *
      * @return iterable<string, array{0: string, 1: class-string<\Illuminate\Support\ServiceProvider>}>
      */
     public static function provideMembers(): iterable
     {
-        foreach (self::MEMBERS as $root => $provider) {
-            yield $root => [$root, $provider];
+        foreach (self::MEMBERS as $key => $provider) {
+            yield $key => [$key, $provider];
         }
     }
 
@@ -430,17 +441,17 @@ final class ConnectionAlignmentTest extends TestCase
      * A member whose service provider has not registered is refused, naming the
      * provider and the member's key.
      *
-     * @param  string  $root
+     * @param  string  $key
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
      * @return void
      */
     #[DataProvider('provideMembers')]
-    public function testAssertRegisteredRefusesAMemberWhoseProviderHasNotRegistered(string $root, string $provider): void
+    public function testAssertRegisteredRefusesAMemberWhoseProviderHasNotRegistered(string $key, string $provider): void
     {
         try {
-            (new ConnectionAlignment)->assertRegistered(self::applicationWithout($root));
+            (new ConnectionAlignment)->assertRegistered(self::applicationWithout($key));
         } catch (MemberNotRegisteredException $exception) {
-            self::assertSame($root . '.storage.connection', $exception->key);
+            self::assertSame($key, $exception->key);
             self::assertSame($provider, $exception->provider);
 
             return;
@@ -469,7 +480,7 @@ final class ConnectionAlignmentTest extends TestCase
      */
     public function testAssertAlignedRefusesAMalformedMemberKey(): void
     {
-        $config = self::configured(null, [null, null, null]);
+        $config = self::configured(null, [null, null, null, null]);
 
         $config->set('sso.storage.connection', false);
 
@@ -496,9 +507,12 @@ final class ConnectionAlignmentTest extends TestCase
 
         $config = $this->config();
 
-        self::assertSame([self::CONNECTION, self::CONNECTION, self::CONNECTION], self::memberConnections($config));
+        self::assertSame(array_fill(0, count(self::MEMBERS), self::CONNECTION), self::memberConnections($config));
 
-        foreach (self::MEMBERS as $root => $provider) {
+        foreach (self::MEMBERS as $key => $provider) {
+
+            $root = explode('.', $key)[0];
+
             self::assertSame(array_keys(self::packageConfiguration($provider, $root)), array_keys((array) $config->get($root)), $root);
         }
     }
@@ -536,7 +550,7 @@ final class ConnectionAlignmentTest extends TestCase
         $this->bootInOrder($providers);
 
         self::assertTrue($this->app?->isBooted());
-        self::assertSame([self::CONNECTION, self::CONNECTION, self::CONNECTION], self::memberConnections($this->config()));
+        self::assertSame(array_fill(0, count(self::MEMBERS), self::CONNECTION), self::memberConnections($this->config()));
     }
 
     /**
@@ -594,7 +608,7 @@ final class ConnectionAlignmentTest extends TestCase
     {
         $this->bootInOrder($providers);
 
-        self::assertSame([null, null, null], self::memberConnections($this->config()));
+        self::assertSame(array_fill(0, count(self::MEMBERS), null), self::memberConnections($this->config()));
     }
 
     /**
@@ -647,7 +661,7 @@ final class ConnectionAlignmentTest extends TestCase
 
     /**
      * Return an application on which every member's service provider has
-     * registered but the given member's.
+     * registered but that of the member whose root or key is given.
      *
      * @param  ?string  $missing
      * @return \Illuminate\Contracts\Foundation\Application
@@ -656,8 +670,8 @@ final class ConnectionAlignmentTest extends TestCase
     {
         $app = \Mockery::mock(Application::class);
 
-        foreach (self::MEMBERS as $root => $provider) {
-            $app->shouldReceive('getProviders')->with($provider)->andReturn($root === $missing ? [] : [new \stdClass]);
+        foreach (self::MEMBERS as $key => $provider) {
+            $app->shouldReceive('getProviders')->with($provider)->andReturn(in_array($missing, [$key, explode('.', $key)[0]], true) ? [] : [new \stdClass]);
         }
 
         return $app;

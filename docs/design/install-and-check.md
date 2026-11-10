@@ -6,7 +6,7 @@ This note describes how `iam:install` publishes every member's files and this pa
 application, recognising what is already there, and writes the few member values this package needs (IAM-2.1, IAM-2.4,
 IAM-2.5); how `Iam::schedule()` registers the members' scheduled work they leave to the application (IAM-2.6); the PHP
 extensions this package declares (IAM-2.8); how `iam:check` runs every member's check and this package's own
-(IAM-10); what M11 adds; and the gaps in the members it works around.
+(IAM-10); what `laravel-authorization`'s glue adds to both; and the gaps in the members it works around.
 
 ## Invariants
 
@@ -72,9 +72,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   itself are judged before any file is published, so a malformed `except_guards` or an invalid prefix refuses the run
   with Symfony's `INVALID` exit code and nothing changed.
 - Every run ends with what the application still owes (`Installer::OWED`): migrating, naming the connection each
-  member's tables are created on (`laravel-authentication`'s, MFA's and SSO's on `iam.storage.connection`, which the
-  storage alignment shares; audit-log's on `audit-log.storage.connection` and `laravel-authorization`'s on
-  `authorization.connection`, which it never writes, each the default connection when unset); its email and SMS
+  member's tables are created on (`laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s on
+  `iam.storage.connection`, which the storage alignment shares; audit-log's on `audit-log.storage.connection`, which it
+  never writes, the default connection when unset); its email and SMS
   gateways; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
   before a tenant MFA requirement is named or SSO's enforcement turned on, since MFA's tenant requirement, the tree's
   changes and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
@@ -202,24 +202,32 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     the member's sender is this package's, the member's null default or unbound.
   - `CrossMemberConfigurationCheck` (IAM-2.5): every MFA application names a guard of the `jwt` driver, the one that
     holds sessions, so one on an `api_key` or `session` guard, which every MFA adapter refuses at runtime
-    (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names
-    (`Mfa\Enums\Operation`) is declared under `authentication.freshness`, or the guard's own block, for each MFA
-    application's guard, and, while SSO is in use, every operation SSO names (`FreshnessOperation`) for each SSO
-    application's guard; while SSO's enforcement is on or a tenant MFA requirement is named or bound
-    (`TenancySeams::isEnforcedOrRequired()`), `laravel-authentication`'s `TenantResolver` is no longer its
-    `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the tree's changes
-    and SSO's revocation resolve the session's tenant through it (`Tenancy\TenantReferences`) while
+    (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names (`Mfa\Enums\Operation`) is declared
+    under `authentication.freshness`, or the guard's own block, for each MFA application's guard, and, while SSO is in
+    use, every operation SSO names (`FreshnessOperation`) for each SSO application's guard; while SSO's enforcement is
+    on or a tenant MFA requirement is named or bound (`TenancySeams::isEnforcedOrRequired()`), or the authorization and
+    SSO adapters are both on, so the grant hook reports `laravel-authorization`'s grants to SSO's scope widening
+    (`AuthorizationSeams::reportsWidenings()`), or the authorization adapters are on while the application names or
+    binds a tenant tree (`AuthorizationSeams::isOn()` and `TenancyContracts::hasTree()`), since `TenantTreeAdapter`
+    resolves every tenant `laravel-authorization` asks about through it, `laravel-authentication`'s `TenantResolver` is
+    no longer its `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the
+    tree's changes and SSO's revocation resolve the session's tenant through it, the grant hook the tenant of every
+    grant that widens and the tree adapter every tenant it is asked about (`Tenancy\TenantReferences`), while
     `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
     read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
     `Sso\SsoBridgeCheck` (or `SsoBridgeFallbackCheck` while SSO's check does not run it), `sso.endpoints.base_url` by
     SSO's own `EndpointsCheck` (which `sso:check` runs while SSO is in use, refusing more than an unset value), and
     `sso.storage.connection` by the storage alignment, at boot and in `StorageCheck`; audit-log's are `AuditCheck`'s, so
-    nothing is reported twice; `laravel-authorization`'s seams are bound through the container, so none of its
-    resolver keys is required to name an adapter (the resource tenant resolver waits for the second part of M11); a
-    provider attribute beyond SSO's standard mapping depends on each connection's mapping, a database row, so it stays
-    with the guides
-    (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
-    (`docs/guides/example-application.md`).
+    nothing is reported twice; `laravel-authorization`'s seams are bound through the container, so none of its resolver
+    keys is required to name an adapter. While the application has memberships (`TenancyContracts::hasMemberships()`),
+    so its people act in tenants, `laravel-authorization`'s resource tenant resolver left on its default is a note,
+    never a failure: `authorization.resource_tenant_resolver` still naming `NoResourceTenant` and the contract still
+    bound to `laravel-authorization`'s own closure (`MemberDefaults::holdsDefault()`), the closure being the same
+    whatever class is configured. A model declaring its tenancy (`QueryableResource`) or naming its tenant
+    (`AuthorizableResource`) needs no resolver, which no check can see, and which tenant owns a record is the
+    application's rule (`authorization.md`). A provider attribute beyond SSO's standard mapping depends on each
+    connection's mapping, a database row, so it stays with the guides (`docs/guides/authentication-and-sso.md`, Mapped
+    attributes, and `checks.md`), as SSO's routes do (`docs/guides/example-application.md`).
   - `PlatformCheck` (IAM-2.8): every extension `composer.json` declares is loaded in the PHP running the check, and
     SSO's Composer plugin is installed with the registry of every installed `simplesamlphp-xmlprovider` package linked
     into its directory, compared by content. It fails closed: a provider Composer lists without an install path, without
@@ -237,12 +245,13 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     the schedule as it stood when the building threw, so no run is then noted missing from it, nor is a call to
     `Iam::schedule()` the application already makes asked for. The notes:
     audit-log's sealing, sweep and verification with no event on the application's schedule running them (switched
-    off with nothing else running them), and each run `IamSchedule` registers (`mfa:prune`; `sso:prune` while SSO is
-    in use; `audit-log:drain --until-empty` while delivery is through the outbox) missing from it. Each of those is
-    noted with the call to `Iam::schedule()`, except `sso:prune` with `sso.operations.cadence.prune` switched off
-    (`null` or empty, read as SSO's `OperationsSettings::cadence()` reads it): SSO's operations schedule then hands the
-    command to the application, so the note gives that cause (set the cadence, or schedule `sso:prune` itself), and
-    a second call to `Iam::schedule()`, which would change nothing and duplicate the rest, is never asked for.
+    off with nothing else running them), and each run `IamSchedule` registers (`mfa:prune` and `authorization:prune`;
+    `sso:prune` while SSO is in use; `audit-log:drain --until-empty` while delivery is through the outbox) missing
+    from it. Each of those is noted with the call to `Iam::schedule()`, except `sso:prune` with
+    `sso.operations.cadence.prune` switched off (`null` or empty, read as SSO's `OperationsSettings::cadence()` reads
+    it): SSO's operations schedule then hands the command to the application, so the note gives that cause (set the
+    cadence, or schedule `sso:prune` itself), and a second call to `Iam::schedule()`, which would change nothing and
+    duplicate the rest, is never asked for.
     Audit-log's prune is noted the same way, naming `audit-log.retention.schedule`, but only while its retention can
     delete entries, as audit-log's own `Console\IntegritySchedule::prunes()` judges it (audit-log schedules the prune
     only then, and its own check notes no prune switched off): a configured retention keeping anything for a number of
@@ -275,9 +284,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   alignment's, which refuses boot on a mismatch already, so the bridge repeats neither. SSO's freshness operations are
   left to `iam:check`, so an application that has not declared them yet is told at deploy rather than refused at boot.
 
-### What M11 adds
+### What the authorization glue adds
 
-- M11's first part (decision Q8) binds `laravel-authorization`'s seams (`Authorization\AuthorizationSeams`, see
+- Its first part (decision Q8) binds `laravel-authorization`'s seams (`Authorization\AuthorizationSeams`, see
   `authorization.md`): `laravel-authentication`'s scope registry and application access join the mandatory rows
   `MandatorySeamsCheck` reads, under the mandates `Authorization\AccessMandates` declares. `laravel-authorization`'s
   subject resolver, requirement checker and session policy source are bound through the container by the binding rule
@@ -288,10 +297,17 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   the binding rule's outcome lists, bound or kept, whose live binding holds `laravel-authorization`'s own default again
   (`MemberDefaults::holdsDefault()`), whatever its mandate: `laravel-authorization` registered once nothing could bind
   the seam back, so the outcome, and the note it gives a kept seam, would otherwise be false.
-- Its second part still brings: a resource tenant resolver, named by `iam:install` and required by
-  `CrossMemberConfigurationCheck`; `authorization.connection` in the storage alignment and `StorageCheck`;
-  `authorization:prune` registered by `IamSchedule`; and the audit access policy answered from
-  `laravel-authorization`.
+- Its second part aligns `authorization.connection` with the other members' keys (`StorageConnection::MEMBER_KEYS`,
+  `ConnectionAlignment`), so boot refuses it naming another connection and `StorageCheck` reports it; registers
+  `authorization:prune` daily in `IamSchedule`, which `SchedulesCheck` notes when nothing runs it; and notes a resource
+  tenant resolver left on `laravel-authorization`'s default while people act in tenants
+  (`CrossMemberConfigurationCheck`). The tenant resolver requirement of `CrossMemberConfigurationCheck` gains the grant
+  hook's condition (the authorization and SSO adapters both on, `AuthorizationSeams::reportsWidenings()`) and the tree's
+  (the authorization adapters on while the application names or binds a tenant tree, `TenancyContracts::hasTree()`), so
+  a widening grant or a tree read never resolves its tenant through `ResolveNoTenant`. No resource tenant resolver is
+  named by `iam:install`: a record's tenant is the application's to say, which this package cannot read from its models
+  (`authorization.md`). `iam:install` still writes none of `laravel-authorization`'s resolver keys, and
+  `authorization:check` already ran inside `iam:check`; it always exits `0`, so it fails no run.
 
 ## Success Path
 
@@ -332,7 +348,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `routes/console.php`), the exception stops every console command as it starts, `iam:check`, `config:clear` and
   `migrate` included, with SSO's message and exit code 1, and no report. A delivery mode audit-log does not read as
   `outbox` schedules no drain.
-- `authorization:prune` (IAM-2.6) is registered with the second part of `laravel-authorization`'s glue (M11), with Q8.
+- `authorization:prune` (IAM-2.6) is registered whatever `iam.adapters.authorization` says: `laravel-authorization`'s
+  grants expire whether or not this package binds its seams.
 - MFA's own boot check (it stands aside only for `mfa:check` and the configuration commands) and
   `laravel-authorization`'s configuration validation in its `boot()` throw before `iam:check` can run, so a
   configuration either refuses stops `iam:check` with that member's message and a non-zero exit: it fails closed,
@@ -435,7 +452,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testWhetherAConfigurationCarriesThePrefix`
 - `tests/Integration/Install/PrefixedAuthorizationTablesTest.php` `testTheLongestPrefixMigratesEveryTable` (MySQL and
   PostgreSQL)
-- `tests/Feature/Scheduling/IamScheduleTest.php` `testOnlyMfaPruneIsScheduledWhileSsoIsNotInUseAndDeliveryIsSync`,
+- `tests/Feature/Scheduling/IamScheduleTest.php` `testOnlyThePrunesAreScheduledWhileSsoIsNotInUseAndDeliveryIsSync`,
   `testSsosOperationsAreScheduledOnceWhileSsoIsInUse`,
   `testTheDrainIsScheduledEveryMinuteWhileDeliveryIsThroughTheOutbox`,
   `testAnyOtherDeliveryModeSchedulesNoDrain`, `testAuditLogsOwnSchedulesAreNeverRegisteredAgain`
@@ -480,11 +497,13 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testEveryMfaApplicationMustBeAGuard`, `testEveryMfaApplicationMustBeAJwtGuard`,
   `testSsosOperationsMustBeDeclaredWhileSsoIsInUse`,
   `testSsosBulletsAreHeldBySsosCheck`, `testAuditLogsBulletsAreHeldByTheAuditCheck`,
-  `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testNoTenantsRuleRequiresNoResolver`
+  `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testGrantsNeedNoResolverWhileSsoIsOff`,
+  `testNoTenantsRuleRequiresNoResolver`,
+  `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`
 - `tests/Unit/Checks/PlatformCheckTest.php` `testAMissingExtensionIsReported`,
   `testAProviderWhoseRegistryIsNotLinkedIsReported`, `testAProviderWhoseRegistryCannotBeReadIsReported`
 - `tests/Feature/Checks/SchedulesCheckTest.php` `testAuditLogsRunsSwitchedOffAreNotedUntilSomethingRunsThem`,
-  `testMfasPruneIsNotedUntilThePackageSchedulesIt`, `testSsosPruneSwitchedOffIsNotedWithItsCause`,
+  `testThePrunesAreNotedUntilThePackageSchedulesThem`, `testSsosPruneSwitchedOffIsNotedWithItsCause`,
   `testAuditLogsPruneSwitchedOffIsNotedWhileItsRetentionCanDelete`,
   `testAuditLogsPruneIsNotedWithItsCauseWhenRetentionCannotBeJudged`,
   `testAScheduleThatCannotBeBuiltIsOneProblemNamingItsCause`
@@ -502,8 +521,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `MigrationLedger`'s recognition of a copy by the namespace it names.
 - A member reshaping the defaults `AuditLogConfiguration` and `AuthorizationTablePrefix` write over, or
   `laravel-authorization` adding a table or a longer derived name: `MAX_LENGTH` follows.
-- A member scheduling work of its own, or leaving more to the application (`authorization:prune`, M11): `IamSchedule`
-  follows, and so does `iam:check`'s report of schedules switched off.
+- A member scheduling work of its own, or leaving more to the application: `IamSchedule` follows, and so does
+  `iam:check`'s report of schedules switched off.
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.
 - A member adding a check command, a check of its own that covers one of this package's (glue, not policy), or a
   public way to add a check (IAM-13.8 for `laravel-authentication`): `Checker` and the checks follow.
@@ -515,5 +534,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `SsoCheckRegistration`, `SsoBridgeFallbackCheck`, `SsoSeams::isInUse()` and `CrossMemberConfigurationCheck` follow.
 - SSO binding a link storage default of its own, or its guide binding the link storage to another class: the link
   storage row's `accepted` list follows.
-- The second part of M11 landing (see above): the checks, `Installer`, `IamSchedule` and their tests follow.
+- `laravel-authorization` binding its resource tenant resolver so the configured class can be read from its binding,
+  or `authorization:check` failing on what it reports: `CrossMemberConfigurationCheck` and `Checker` follow.
 - A member closes one of the gaps listed above: the workaround it names goes.

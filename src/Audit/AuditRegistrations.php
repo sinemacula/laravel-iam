@@ -9,11 +9,14 @@ use Illuminate\Foundation\Application as FoundationApplication;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\AuditLog\Recorder;
 use SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity;
+use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
 use SineMacula\Laravel\Iam\Audit\Enums\MfaActivity;
 use SineMacula\Laravel\Iam\Audit\Enums\SessionActivity;
 use SineMacula\Laravel\Iam\Audit\Enums\SsoActivity;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
+use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\SsoEventMapper;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
@@ -49,12 +52,13 @@ use SineMacula\Laravel\Sso\Contracts\SsoEvent;
  *
  * While the mappers' switch is on (`iam.audit.mappers`), one mapper is mapped
  * for each member's marker interface (`AuthenticationEvent`, `MfaEvent`,
- * `SsoEvent`), so every event a member dispatches, and only those, is described
- * by its member's mapper (no member event implements two of them, and audit-log
- * never maps its own events), and every case of this package's code enums is
- * defined (`AuthenticationActivity`, `SessionActivity`, `MfaActivity`,
- * `SsoActivity`), none of which is a code audit-log ships, so no code is ever
- * defined twice. With it off nothing is mapped or defined.
+ * `SsoEvent`, `AuthorizationEvent`), so every event a member dispatches, and
+ * only those, is described by its member's mapper (no member event implements
+ * two of them, and audit-log never maps its own events), and every case of this
+ * package's code enums is defined (`AuthenticationActivity`, `SessionActivity`,
+ * `MfaActivity`, `SsoActivity`, `AuthorizationActivity`), none of which is a
+ * code audit-log ships, so no code is ever defined twice. With it off nothing
+ * is mapped or defined.
  *
  * The caller's context contributor (`CallerContextContributor`, IAM-9.7) is
  * registered whatever the switch says: it fills only the gaps of a record,
@@ -84,6 +88,7 @@ final readonly class AuditRegistrations
         AuthenticationEvent::class => AuthenticationEventMapper::class,
         MfaEvent::class            => MfaEventMapper::class,
         SsoEvent::class            => SsoEventMapper::class,
+        AuthorizationEvent::class  => AuthorizationEventMapper::class,
     ];
 
     /** @var list<class-string<\SineMacula\Laravel\AuditLog\Contracts\DefinesAuditEvents>> The enums defining every code the mappers record that audit-log does not ship. */
@@ -92,6 +97,7 @@ final readonly class AuditRegistrations
         SessionActivity::class,
         MfaActivity::class,
         SsoActivity::class,
+        AuthorizationActivity::class,
     ];
 
     /** @var string The container key recording that this package's part is registered with the application's audit-log. */

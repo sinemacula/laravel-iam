@@ -17,19 +17,20 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
  *
  * Boot already aligns and refuses a mismatch, but `iam:check` stands that
  * refusal aside so it can report it: every member whose storage key
- * `ConnectionAlignment` aligns (`laravel-authentication`, MFA and SSO) has
+ * `ConnectionAlignment` aligns (`laravel-authentication`, MFA, SSO and
+ * `laravel-authorization`, whose `authorization.connection` is aligned) has
  * registered, every member key names the shared connection, and the shared
- * connection is one `database.connections` configures. The members without one
- * are left to their own reports: `laravel-audit-log`'s provider to
- * `AuditCheck`, and every member's to its check command, which `iam:check`
- * reports unregistered. The identity models live on the shared connection too:
- * the model of each user provider a `jwt` or `api_key` guard signs people in
- * through, read from the model's own connection without touching the database,
- * which boot cannot do. No setting names the principal models (an identity
- * reaches its principals through its own relation), so they are left to the
- * guide. A guard naming no provider signs people in through the default one
- * (`auth.defaults.provider`), as `laravel-authentication` and Laravel resolve
- * it, so that provider's model is read for it.
+ * connection is one `database.connections` configures. The member without one,
+ * `laravel-audit-log`, is left to `AuditCheck`, and every member's provider to
+ * its own check command, which `iam:check` reports unregistered. The identity
+ * models live on the shared connection too: the model of each user provider a
+ * `jwt` or `api_key` guard signs people in through, read from the model's own
+ * connection without touching the database, which boot cannot do. No setting
+ * names the principal models (an identity reaches its principals through its
+ * own relation), so they are left to the guide. A guard naming no provider
+ * signs people in through the default one (`auth.defaults.provider`), as
+ * `laravel-authentication` and Laravel resolve it, so that provider's model is
+ * read for it.
  *
  * `laravel-audit-log`'s storage connection is no member key this package
  * aligns, and the application may put the trail on a connection of its own;

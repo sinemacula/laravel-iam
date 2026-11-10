@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Sessions\FactorChangeResult;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Requirements\SessionChange;
@@ -30,7 +31,12 @@ use SineMacula\Laravel\Mfa\Requirements\SessionChange;
  * kept active, returned to pending with a new pending credential, revoked, or
  * skipped when it is no longer live and active. Its result is MFA's completion,
  * which reaches the caller in the change's result once the change commits. The
- * change made crosses by its value, which both members spell the same.
+ * change made crosses by its value, which both members spell the same. The
+ * decision `laravel-authorization` keeps that read an authentication
+ * requirement in that sign-in or about the identity is then forgotten
+ * (`DecisionCacheInvalidation`, IAM-6.11): a confirmed factor or a registered
+ * passkey can change the requirement the identity's sessions meet, and a
+ * session returned to pending meets none.
  *
  * Stateless: the session is read on every call (IAM-8.1).
  *
@@ -46,6 +52,7 @@ final readonly class SessionTransitionAdapter implements SessionTransition
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator  $changes
+     * @param  \SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation  $decisions
      */
     public function __construct(
 
@@ -54,11 +61,15 @@ final readonly class SessionTransitionAdapter implements SessionTransition
 
         /** Translates MFA's change made to `laravel-authentication`'s. */
         private ChangeTranslator $changes,
+
+        /** Forgets the decision that read the identity's authentication. */
+        private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
-     * Judge the session the change was made on again, returning
-     * `laravel-authentication`'s factor change result as MFA's completion.
+     * Judge the session the change was made on again, then forget the decision
+     * that read its authentication, returning `laravel-authentication`'s factor
+     * change result as MFA's completion.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\SessionChange  $change
      * @return \SineMacula\Laravel\Authentication\Sessions\FactorChangeResult
@@ -73,8 +84,12 @@ final readonly class SessionTransitionAdapter implements SessionTransition
         $owner   = $this->sessions->identity($change->identity);
         $current = $this->sessions->named($change->identity, $change->application, $change->session);
 
-        return $this->sessions
+        $result = $this->sessions
             ->sessions($change->application)
             ->factorChanged($owner, $this->changes->factorChangeMade($change->change), $current);
+
+        $this->decisions->authenticationChanged($change->identity, $change->session);
+
+        return $result;
     }
 }

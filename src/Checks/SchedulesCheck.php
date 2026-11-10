@@ -39,11 +39,12 @@ use SineMacula\Laravel\Sso\Operations\OperationsSettings;
  *   resolved), the prune is noted with that cause, naming the exception's class
  *   and never its message.
  * - The work this package's `Iam::schedule()` registers (`IamSchedule`): MFA's
- *   prune always, SSO's prune while SSO is in use (its operations schedule
- *   registers it), and audit-log's drain while its delivery runs through its
- *   outbox. Each is noted when no event runs it, with the call that registers
- *   it; SSO's prune, when its cadence (`sso.operations.cadence.prune`, read as
- *   SSO's `OperationsSettings::cadence()` reads it) is switched off (`null` or
+ *   prune and `laravel-authorization`'s always, SSO's prune while SSO is in use
+ *   (its operations schedule registers it), and audit-log's drain while its
+ *   delivery runs through its outbox. Each is noted when no event runs it, with
+ *   the call that registers it; SSO's prune, when its cadence
+ *   (`sso.operations.cadence.prune`, read as SSO's
+ *   `OperationsSettings::cadence()` reads it) is switched off (`null` or
  *   empty), is noted with that cause instead, since SSO's operations schedule
  *   then hands the command to the application and calling `Iam::schedule()`
  *   would change nothing.
@@ -165,6 +166,7 @@ final readonly class SchedulesCheck implements Check
             self::noteUnless($events, self::VERIFY, null, sprintf($own, self::VERIFY)),
             self::noteUnless($events, self::AUDIT_PRUNE, null, $this->auditPruneNote(...)),
             self::noteUnless($events, IamSchedule::MFA_PRUNE, null, sprintf($iam, IamSchedule::MFA_PRUNE)),
+            self::noteUnless($events, IamSchedule::AUTHORIZATION_PRUNE, null, sprintf($iam, IamSchedule::AUTHORIZATION_PRUNE)),
         ];
 
         if (SsoSeams::isInUse($this->config)) {

@@ -59,8 +59,8 @@ final readonly class AuditCheck implements Check
     private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice; `iam:install` writes them.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
-    private const string GATE_CAPTURE_ON = '`%s` must be false, so each authorization decision is recorded once, after a later release maps laravel-authorization\'s events;'
-        . ' until then no authorization decision is recorded, the application\'s own Gate checks included.';
+    private const string GATE_CAPTURE_ON = '`%s` must be false, so no authorization decision is recorded twice:'
+        . ' this package maps laravel-authorization\'s decision events, the Gate checks laravel-authorization answers among them.';
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNCHECKED_CODES = '`%s` must be true, so a code without a definition is refused rather than recorded unchecked; '

@@ -74,11 +74,12 @@ Route::middleware(['auth:api', 'mfa'])->group(static function (): void {
   is answered with a step-up before it can be denied. The step-up a whole route needs is stated with `mfa:level=` or
   `mfa:operation=`; one a policy statement states with an `authentication_requirement` is answered with the same
   step-up response, MFA's (see [Authorization](authorization.md#step-up-before-authorization)).
-- **No tenant isolation from `authorize:` or `permission:` yet.** The refund route checks the caller's grants in its
-  active tenant and nothing of the invoice's tenant, so a tenant's administrator granted `invoices:refund` could refund
-  another tenant's invoice by its id. Have the invoice name its tenant, or bind your own resource tenant resolver, or
-  scope the bound invoice to the caller's tenant, before you rely on the route to keep tenants apart (see
-  [Authorization](authorization.md#tenants)).
+- **No tenant isolation from `authorize:` or `permission:` until a record names its tenant.** The refund route checks
+  the caller's grants in its active tenant and nothing of the invoice's tenant, so a tenant's administrator granted
+  `invoices:refund` could refund another tenant's invoice by its id. Have the invoice name its tenant, or bind your own
+  resource tenant resolver, or scope the bound invoice to the caller's tenant, before you rely on the route to keep
+  tenants apart (see [Authorization](authorization.md#tenants)); `iam:check` notes the default resolver while your
+  memberships are bound.
 
 ## Signing in with a password
 
@@ -455,8 +456,10 @@ use SineMacula\Laravel\Mfa\Exceptions\InsufficientAuthenticationException;
 })
 ```
 
-`laravel-authorization` raises an exception of its own for an unmet `authentication_requirement`; this package does
-not map it to MFA's yet, so render it too if your policies state one (see its [README][authorization-requirements]).
+`laravel-authorization` raises an exception of its own for an unmet `authentication_requirement` (see its
+[README][authorization-requirements]); this package renders it as MFA's step-up exception on Laravel's own handler, so
+the one renderer above answers both (see [Authorization](authorization.md#step-up-before-authorization)). Only an
+application with an exception handler of its own maps `laravel-authorization`'s exception itself.
 
 ## A gateway
 

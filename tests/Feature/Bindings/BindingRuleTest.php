@@ -6,6 +6,7 @@ namespace Tests\Feature\Bindings;
 
 use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Foundation\Application as ApplicationContract;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
@@ -817,6 +818,54 @@ final class BindingRuleTest extends TestCase
         self::assertSame([SharedSeam::class], $outcome->bound);
         self::assertNotSame($closureScoped, $app->make(ApplicationImplementation::class));
         self::assertSame($shared, $app->make(SharedSeam::class));
+    }
+
+    /**
+     * A binding that names how the container builds the seam has that built in
+     * the adapter's place, handed the container, with the binding's lifetime:
+     * built on every resolution, once, or once until the scoped instances are
+     * forgotten.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    public function testAFactoryBuildsTheSeamInTheAdaptersPlaceWithItsLifetime(): void
+    {
+        $app     = $this->application();
+        $handed  = [];
+        $factory = static function (ContainerContract $container) use (&$handed): MemberDefault {
+            $handed[] = $container;
+
+            return new MemberDefault;
+        };
+
+        $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(
+            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], factory: $factory),
+            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, factory: $factory),
+            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, factory: $factory),
+        ));
+
+        $shared = $app->make(SharedSeam::class);
+        $scoped = $app->make(ScopedSeam::class);
+
+        self::assertSame([TransientSeam::class, SharedSeam::class, ScopedSeam::class], $outcome->bound);
+        self::assertInstanceOf(MemberDefault::class, $app->make(TransientSeam::class));
+        self::assertNotSame($app->make(TransientSeam::class), $app->make(TransientSeam::class));
+        self::assertInstanceOf(MemberDefault::class, $shared);
+        self::assertInstanceOf(MemberDefault::class, $scoped);
+        self::assertSame($scoped, $app->make(ScopedSeam::class));
+
+        $app->forgetScopedInstances();
+
+        self::assertSame($shared, $app->make(SharedSeam::class));
+        self::assertNotSame($scoped, $app->make(ScopedSeam::class));
+        self::assertCount(6, $handed);
+
+        foreach ($handed as $container) {
+            self::assertSame($app, $container);
+        }
     }
 
     /**

@@ -52,16 +52,18 @@ final readonly class Installer
 {
     /** @var list<string> What the application owes after every run. */
     public const array OWED = [
-        'Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s tables are created on `iam.storage.connection`,'
-            . ' laravel-audit-log\'s on `audit-log.storage.connection` and laravel-authorization\'s on `authorization.connection`,'
-            . ' each the default connection when unset.',
+        'Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s, laravel-sso\'s and laravel-authorization\'s tables are'
+            . ' created on `iam.storage.connection`, and laravel-audit-log\'s on `audit-log.storage.connection`, each the default'
+            . ' connection when unset.',
         'Bind your email and SMS gateways (`EmailGateway`, `SmsGateway`) or name them in `iam.delivery.email` and `iam.delivery.sms`'
             . ' before you allow a code sign-in method or an `email` or `sms` factor.',
         'Name your tenant MFA requirement, memberships and tenant tree in `iam.tenancy`, or bind them, if your application has tenants.',
         'Bind laravel-authentication\'s `TenantResolver`, resolving every tenant id to the tenant whose `getTenantIdentifier()` is that id,'
-            . ' before you name a tenant MFA requirement or turn laravel-sso\'s enforcement on, even if your principals act only in their own tenant:'
-            . ' under its default `ResolveNoTenant`, laravel-mfa\'s tenant requirement, `Iam::treeChanges()` and laravel-sso\'s revocation'
-            . ' throw `UnresolvedReferenceException`.',
+            . ' before you grant anything in a tenant through laravel-authorization while laravel-iam\'s authorization and SSO adapters are on'
+            . ' (they are by default), name a tenant MFA requirement or turn laravel-sso\'s enforcement on, even if your principals act only'
+            . ' in their own tenant: under its default `ResolveNoTenant`, the grant hook, the principal scope\'s grant half,'
+            . ' `AdministrativeCheck` for an object in a tenant, laravel-mfa\'s tenant requirement, `Iam::treeChanges()` and'
+            . ' laravel-sso\'s revocation throw `UnresolvedReferenceException`.',
         'Name your provisioner in `iam.provisioning.provisioner`, or bind it, to provision people signing in through SSO for the first time.',
         'Add the routes, following laravel-iam\'s example application guide (docs/guides/example-application.md): redeem SSO\'s handoffs'
             . ' through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly;'

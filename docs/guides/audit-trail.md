@@ -11,20 +11,21 @@ How audit-log stores, reads and keeps records is in its guides: [events][audit-e
 
 ## What is recorded
 
-While `iam.audit.mappers` (`IAM_AUDIT_MAPPERS`) is on, the default, every event of `laravel-authentication`, MFA and
-SSO is recorded through one mapper per member:
+While `iam.audit.mappers` (`IAM_AUDIT_MAPPERS`) is on, the default, every event of `laravel-authentication`, MFA, SSO
+and `laravel-authorization` is recorded through one mapper per member:
 
 | Member events                                      | Mapper                                                           |
 |----------------------------------------------------|------------------------------------------------------------------|
 | `laravel-authentication`'s (`AuthenticationEvent`) | `SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper` |
 | MFA's (`MfaEvent`)                                 | `SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper`            |
 | SSO's (`SsoEvent`)                                 | `SineMacula\Laravel\Iam\Audit\Mappers\SsoEventMapper`            |
+| `laravel-authorization`'s (`AuthorizationEvent`)   | `SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper`  |
 
 A mapper reads only the event, its context and the morph map, never the request or the current user. A bind's noise
 (`PrincipalAssigned`, `SessionAuthenticated`) and a refresh's `SignedIn`, which repeats the `Refreshed` beside it, are
 skipped. Every other pair the members report is two facts and is recorded once each, such as a sign-in's
-`session.created` and `authentication.signed_in`. `laravel-authorization`'s events are not mapped yet (see
-[Authorization](authorization.md)).
+`session.created` and `authentication.signed_in`. Of `laravel-authorization`'s decisions only those worth a record are
+recorded (see [Authorization decisions](#authorization-decisions)).
 
 The registrations are made while the application boots, before audit-log stops taking them, so a change to the switch
 takes effect on the next boot: a deploy or a worker restart. Turn it off (`false`, `0`, `off`, `no`) only to map the
@@ -45,7 +46,8 @@ answers across guards:
 | A password reset                                   | `account.password_reset`        |
 
 Everything else has a code of its own, under its member's prefix, defined by the package's code enums
-(`SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity`, `SessionActivity`, `MfaActivity` and `SsoActivity`):
+(`SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity`, `SessionActivity`, `MfaActivity`, `SsoActivity` and
+`AuthorizationActivity`):
 
 - **`authentication.*`** (25 codes): refusals by flow (`authentication.request_rejected`,
   `authentication.api_key_rejected`, and `authentication.{flow}_failed` for client credentials, code requests,
@@ -60,10 +62,18 @@ Everything else has a code of its own, under its member's prefix, defined by the
   recovery codes, and every verification passed or failed.
 - **`sso.*`** (34 codes): a flow's stages and its failure (`sso.flow_failed`, keeping its flow), links, connections,
   domains, enforcement and exemptions, keys, and metadata and key set refreshes.
+- **`authorization.*`** (29 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,
+  the application and the deciding statements, with the decision's reason code), allowed by a break-glass grant
+  (`authorization.break_glass_used`) or previewed for another principal (`authorization.access_previewed`); roles,
+  permissions and policies created, updated and deleted; a permission granted to or revoked from a role; a role,
+  permission or policy assigned to or taken from a grantee; boundaries and guardrails set and removed; a grant expired
+  or its expiry changed; a policy attached to or detached from a resource; and a protected record changed by a system
+  override. None is audit-log's `authorization.gate_denied`, whose capture stays off.
 
 Every definition is version 1 and keeps only the properties it lists. Nothing kept is a secret or free text: a factor
-by its id and type, never its label or destination; reasons as codes; an identifier change's identifiers
-pseudonymised under audit-log's redaction key. Every code's definition is registered, so turn audit-log's
+by its id and type, never its label or destination; a policy by its document's version and digest, never the document,
+and an update by the names of the fields it changed, never their values; reasons as codes; an identifier change's
+identifiers pseudonymised under audit-log's redaction key. Every code's definition is registered, so turn audit-log's
 `definitions.require_registered` on, which `iam:install` writes and `iam:check` requires: a code with no definition is
 then refused rather than recorded unchecked.
 
@@ -84,10 +94,12 @@ AuditLog::define(EventDefinition::for('orders.shipped')->category('orders'));
 
 ## Categories
 
-Every code is in the `security` category, except SSO's administration (connections created, changed, enabled,
-disabled and deleted; domains claimed, verified, rechecked, restored, lapsed and removed; enforcement changed; keys
-added, made current and retired), which is in `access_management`: a change to who may sign in and how, which you may
-keep longer. Set each category's retention in audit-log (see its [retention guide][audit-retention]).
+Every code is in the `security` category, except SSO's administration (connections created, changed, enabled, disabled
+and deleted; domains claimed, verified, rechecked, restored, lapsed and removed; enforcement changed; keys added, made
+current and retired) and every change `laravel-authorization` makes (its roles, permissions, policies, grants,
+boundaries and guardrails), which are in `access_management`: a change to who may sign in, or do what, which you may
+keep longer than routine denials. `laravel-authorization`'s decisions are in `security`, and audit-log's own records of
+who read the trail in `audit`. Set each category's retention in audit-log (see its [retention guide][audit-retention]).
 
 ## Correlation
 
@@ -99,6 +111,7 @@ Each record carries one correlation id, the first of these that applies:
 | `mfa:{challenge}`                         | MFA's code and verification events, and a refused factor code naming that challenge |
 | `authentication:{challenge}`              | `laravel-authentication`'s own code challenges                                      |
 | `session:{session_id}`                    | everything else about a session                                                     |
+| `authorization:{operation_id}`            | every change of one `laravel-authorization` management call                         |
 
 A missing part means no id, and an id longer than 191 bytes is none, so correlation never loses a record. So an SSO
 sign-in reads as `sso.authorization_request_started`, `sso.result_verified`, `sso.handoff_issued` and
@@ -115,6 +128,10 @@ the session.
   contributor fills the actor, guard, principal, tenant and session from what a `jwt` or `api_key` guard already holds,
   never authenticating anything to find out.
 - An operator the event names (MFA's actor, SSO's acting identity) is the actor.
+- A `laravel-authorization` change is the call's: the identity behind the acting principal, as that principal; the
+  reference a trusted console command names; or explicitly no one for system work (a grant the pruner found expired,
+  a write through a model outside its services), never the request's caller. A decision is the subject's it was made
+  about, and a preview the previewer's, about the principal previewed.
 
 Your own records get the same: `AuditLog::record('orders.shipped')`, its code defined as [Codes](#codes) shows, on a
 bearer request names the caller the guard holds. A queued job carries the caller who dispatched it, so the records it
@@ -124,9 +141,10 @@ leaves to the caller name that person.
 
 `laravel-authentication` reports a refusal at once, from inside whatever transaction is open, and several roll back on
 purpose once it has refused: a refused SSO redemption, so the code stays unspent; a refused step-up or pending
-completion inside MFA's transaction; a transaction of your own. A refusal reported while a transaction is open on
-audit-log's storage connection is held and recorded once the outermost transaction there has ended, whichever way it
-ended, so it is recorded once and never lost with the rollback. Every other record is written at once, and is durable
+completion inside MFA's transaction; a transaction of your own. `laravel-authorization` reports each decision the same
+way, as it is made. A refusal, or a decision recorded, reported while a transaction is open on audit-log's storage
+connection is held and recorded once the outermost transaction there has ended, whichever way it ended, so it is
+recorded once and never lost with the rollback. Every other record is written at once, and is durable
 only once any transaction around it commits.
 
 ## No double records
@@ -136,7 +154,7 @@ audit-log's own capture of Laravel's events would record each a second time. So:
 
 - every `jwt` and `api_key` guard is listed in `audit-log.capture.laravel.except_guards`;
 - audit-log's Gate capture stays off (`audit-log.capture.gate.enabled`), so that each authorization decision is
-  recorded once, after a later release maps `laravel-authorization`'s events.
+  recorded once, through `laravel-authorization`'s own events.
 
 `iam:install` writes the exclusions into a `config/audit-log.php` it publishes, and `iam:check` refuses a configuration
 without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list yourself. Two
@@ -144,12 +162,30 @@ consequences of the exclusion: a sign-in made through a `jwt` guard's own `attem
 session service, dispatches only `Login`, and is recorded by nothing; nor is an `api_key` guard's `logout()`. Sign
 people in through `Auth::sessions()`.
 
-Until a later release maps them, **no authorization decision is recorded**: neither `laravel-authorization`'s nor
-those of your own `Gate` checks, since Gate capture is off and nothing maps its events (see
-[Authorization](authorization.md#what-waits)). If you need them now, listen to
-`SineMacula\Laravel\Authorization\Events\AuthorizationFailed`, which `laravel-authorization` dispatches before its
-`authorize()` throws, or to `SineMacula\Laravel\Authorization\Events\DecisionEvaluated` for every decision, and
-record each with `AuditLog::record()` under a code you define (see [Codes](#codes)).
+## Authorization decisions
+
+`laravel-authorization` reports every check it decides, allows included, and a denial `authorize()` throws a second
+time (`AuthorizationFailed`). The mapper records:
+
+- a denial, once, as `authorization.access_denied`, denied with `laravel-authorization`'s reason code (`no_match`,
+  `tenant_scope`, `explicit_deny` and the rest), whether it came from `can()`, `check()`, `authorize()`, the Gate or
+  your own `Gate` checks, since `laravel-authorization` answers the Gate;
+- a check a break-glass grant allowed, as `authorization.break_glass_used`;
+- a preview, as `authorization.access_previewed`, by the previewer, about the principal previewed, whatever it decided.
+
+It records no other allow. A denial as `insufficient_authentication` is recorded as `authorization.access_denied` too,
+denied with that reason: on a request's own session it asks for a stronger proof, and MFA's step-up records what
+follows, but a check made on no session, a job's or a command's, can never be stepped up, so the denial is the only
+record of the refusal. Filter on the reason to tell step-up prompts apart from other denials. A role, permission or
+policy deleted with grants still held carries every grantee as its manifest, as audit-log's bulk record does, so the
+bound store must keep attachments, as audit-log's own stores do; a store that keeps none fails the record, reported as
+`AuditCaptureFailed`.
+
+Each `authorization.*` record is filed under the tenant `laravel-authorization` names, by its identifier, which is its
+key: a tenant whose key does not resolve back to it through `laravel-authentication`'s
+[tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver) (keyed otherwise than by its identifier) is
+recorded with no tenant, which no viewer scoped to tenants reads, rather than under its key, which could be another
+tenant's identifier.
 
 ## Operational alerts
 
@@ -182,12 +218,35 @@ names no listener.
 
 ## Reading the trail
 
-Nothing in this package reads the trail, and nothing answers audit-log's access policy yet: that waits for
-`laravel-authorization` (see [Authorization](authorization.md#what-waits)). Until then audit-log's
-`SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy` stays on its
-`SineMacula\Laravel\AuditLog\Access\DenyAllPolicy`, so every read through `AuditLog::trail()` comes back empty and is
-recorded as denied. Bind your own policy in a service provider's `register()` to let a viewer read what its scope
-allows ([laravel-audit-log: reading][audit-reading]).
+Nothing in this package reads the trail. Audit-log's `SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy` is
+answered from `laravel-authorization`'s grants (`SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter`), while
+`iam.adapters.authorization` is on, of the permissions in this package's catalogue (see
+[Authorization](authorization.md#administrative-operations-and-the-trail)). Each read purpose has its own permissions,
+so a viewer may page through the trail and be denied export:
+
+| Permission                       | Reaches                                                                       |
+|----------------------------------|-------------------------------------------------------------------------------|
+| `audit-log.{purpose}`            | every category, where it is granted                                           |
+| `audit-log.{purpose}.{category}` | one of the suite's categories (`security`, `access_management`, `audit`)      |
+| `audit-log.{purpose}.own`        | only the viewer's own activity, as the actor or the subject of a record       |
+
+`{purpose}` is `read`, `count`, `export` or `verify`. The grants become one scope, never wider than any of them:
+
+- the tenants it holds the purpose in, among its own tenant and the tenants your memberships say it belongs to, in the
+  categories every one of those tenants allows, so tenants whose grants share no category see nothing; a principal
+  counts its own grants in a membership tenant only where your `TenantAccess` lets it act there, and elsewhere only its
+  identity's grants;
+- otherwise, its own activity in the tenants it holds `.own` in;
+- otherwise nothing.
+
+Each tenant is decided as a check there would be, so a platform-wide grant counts in every one of those tenants, but a
+tenant whose own policies deny the purpose is left out. A grant never shows the whole trail: no viewer sees records
+with no tenant, which may be about any tenant's people, and a viewer with no tenant of its own and no membership sees
+nothing, whatever it is granted platform-wide. Grants in more tenants
+than audit-log's scope holds (100) refuse the read rather than show some of them. The policy hands no session, so a
+permission you put an authentication requirement on is never held by it: enforce freshness on the route that reads.
+Bind your own policy in a service provider's `register()` to decide otherwise, as reading the whole platform's trail
+needs; it is kept ([laravel-audit-log: reading][audit-reading]).
 
 This package records every tenant, on the members' records and on your own records made on a bearer request, as
 `Reference::of('tenant', $tenant->getTenantIdentifier())` (`Iam\Audit\References::TENANT_TYPE`): the opaque tenant

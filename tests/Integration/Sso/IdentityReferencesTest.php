@@ -193,6 +193,37 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
+     * A type names an identity only when it names, through the morph map or as
+     * a class name, an Eloquent model that is an identity: a type naming no
+     * class, a class that is no Eloquent model, and a model that is no identity
+     * name none.
+     *
+     * @param  string  $type
+     * @return void
+     */
+    #[DataProvider('provideTypesOfNoIdentity')]
+    public function testATypeNamingNoEloquentIdentityNamesNoIdentity(string $type): void
+    {
+        self::assertFalse($this->references()->namesIdentity($type));
+    }
+
+    /**
+     * A person's class names an identity, and so does its alias through the
+     * morph map.
+     *
+     * @return void
+     */
+    public function testAPersonsClassAndAliasNameAnIdentity(): void
+    {
+        self::assertTrue($this->references()->namesIdentity(Person::class));
+        self::assertFalse($this->references()->namesIdentity(self::ALIAS));
+
+        Relation::morphMap([self::ALIAS => Person::class]);
+
+        self::assertTrue($this->references()->namesIdentity(self::ALIAS));
+    }
+
+    /**
      * An id no stored person holds resolves to nobody.
      *
      * @return void

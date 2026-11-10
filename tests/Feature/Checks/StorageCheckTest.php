@@ -82,6 +82,7 @@ final class StorageCheckTest extends TestCase
         $config->set('authentication.storage.connection', 'missing');
         $config->set('mfa.storage.connection', 'missing');
         $config->set('sso.storage.connection', 'missing');
+        $config->set('authorization.connection', 'missing');
 
         self::assertSame([
             '`iam.storage.connection` names a connection `database.connections` does not configure.',
@@ -204,6 +205,7 @@ final class StorageCheckTest extends TestCase
         $config->set('authentication.storage.connection', self::ELSEWHERE);
         $config->set('mfa.storage.connection', self::ELSEWHERE);
         $config->set('sso.storage.connection', self::ELSEWHERE);
+        $config->set('authorization.connection', self::ELSEWHERE);
         $config->set('audit-log.storage.connection', self::ELSEWHERE);
         $config->set('auth.providers.people.model', IdentityElsewhere::class);
 

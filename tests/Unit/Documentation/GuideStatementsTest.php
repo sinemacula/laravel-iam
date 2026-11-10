@@ -124,6 +124,12 @@ final class GuideStatementsTest extends TestCase
      */
     public static function provideStatements(): iterable
     {
+        yield 'the example application answers both step-up exceptions with one renderer' => [
+            self::EXAMPLE,
+            ['this package renders it as MFA\'s step-up exception on Laravel\'s own handler, so', 'the one renderer above answers both'],
+            ['does not map it to MFA', 'not map it to MFA\'s yet', 'so render it too'],
+        ];
+
         yield 'a tenant a person may not act in fails the sign-in' => [
             'docs/guides/testing.md',
             ['`The caller did not sign in on guard [api]: [tenant_ineligible].`'],
@@ -321,11 +327,11 @@ final class GuideStatementsTest extends TestCase
         yield 'a grant scope of the application\'s own is warned against' => [
             'docs/guides/bindings.md',
             [
-                'Yours is kept, but leave it on `Iam\Tenancy\UnknownGrantScope` until `laravel-authorization`\'s grant scope query is bound.',
+                'Yours is kept. An implementation that answers `within_tenant` for a person whose grants (platform-wide ones included) reach beyond the tenant',
                 'lets that tenant\'s verified domain link the person, so its provider can sign in as them',
                 'and takes this one out of SSO\'s boot',
             ],
-            ['None of them is yours to replace'],
+            ['None of them is yours to replace', 'until `laravel-authorization`\'s grant scope query is bound'],
         ];
 
         yield 'iam:check cannot find a binding made in the application\'s providers' => [
@@ -334,25 +340,26 @@ final class GuideStatementsTest extends TestCase
             ['`iam:check` notes each seam it kept with'],
         ];
 
-        yield 'authorization decides in the caller\'s tenant, and refuses no resource for its own' => [
+        yield 'authorization decides in the caller\'s tenant, and refuses no resource for its own unless told' => [
             'docs/guides/authorization.md',
             [
                 '`laravel-authorization` decides in the caller\'s active tenant',
-                'It still refuses **no resource for its tenant**',
+                'It still refuses **no resource for its tenant** unless you tell it which tenant owns each record',
                 '`SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant`',
+                '`iam:check` notes the default resolver left in place',
             ],
-            ['decides with **no active tenant**', 'binds nothing of it yet'],
+            ['decides with **no active tenant**', 'binds nothing of it yet', 'named by `iam:install`'],
         ];
 
-        yield 'what waits on laravel-authorization, and what it leaves to you' => [
+        yield 'nothing of laravel-authorization\'s glue waits any more' => [
             'docs/guides/authorization.md',
             [
-                '`Iam::scopeWidenings()->widen()`',
-                'Check every SSO, MFA and audit-log administrative call yourself',
-                '`SineMacula\Laravel\AuditLog\Access\DenyAllPolicy`',
-                'A resource tenant resolver named by `iam:install`',
+                'this package forgets that last decision if it read an authentication requirement in that session',
+                'There is nothing else to invalidate: no decision is cached',
+                'aligns with the other members\' keys',
+                '`Iam::schedule()` registers `authorization:prune` daily',
             ],
-            ['`SineMacula\Laravel\Authorization\Resolvers\NoSessionPolicy`', 'Its `RefusingRequirementChecker`'],
+            ['## What waits', 'which this package does not align yet', 'Check every SSO, MFA and audit-log administrative call yourself'],
         ];
 
         yield 'only MFA produces step-up responses, and the gate still comes first' => [
@@ -502,24 +509,33 @@ final class GuideStatementsTest extends TestCase
 
         yield 'the example warns that authorize: isolates no tenant' => [
             self::EXAMPLE,
+            ['**No tenant isolation from `authorize:` or `permission:` until a record names its tenant.**'],
             ['**No tenant isolation from `authorize:` or `permission:` yet.**'],
-            [],
         ];
 
-        yield 'nobody can read the audit trail yet' => [
+        yield 'the audit trail is read through the viewer\'s grants' => [
             'docs/guides/audit-trail.md',
-            ['`SineMacula\Laravel\AuditLog\Access\DenyAllPolicy`'],
-            [],
+            [
+                '(`SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter`)',
+                'only the viewer\'s own activity, as the actor or the subject of a record',
+                'no viewer sees records with no tenant, which may be about any tenant\'s people',
+                'a tenant whose own policies deny the purpose is left out',
+            ],
+            ['nothing answers audit-log\'s access policy yet'],
         ];
 
         yield 'the seams left on their defaults include the refusing one' => [
             'docs/guides/bindings.md',
             [
                 '`Authentication\Contracts\TenantAccess` is not `laravel-authorization`\'s to answer',
-                '`AuditLog\Contracts\AuditAccessPolicy`',
+                '| `AuditLog\Contracts\AuditAccessPolicy`',
+            ],
+            [
+                'which a later release of this package answers',
+                'Two more wait the same way',
+                'will be answered from the credential\'s scopes',
                 'One more waits on a member default that refuses',
             ],
-            ['which a later release of this package answers', 'Two more wait the same way', 'will be answered from the credential\'s scopes'],
         ];
 
         yield 'the application\'s own audit codes need definitions' => [
@@ -561,19 +577,25 @@ final class GuideStatementsTest extends TestCase
             ['(`create_roles_table`, say) is not taken for the member\'s'],
         ];
 
-        yield 'iam:check says no authorization decision is recorded yet' => [
+        yield 'iam:check says Gate capture would record the mapped decisions again' => [
             'docs/guides/checks.md',
-            ['Until then **no authorization decision is recorded**, your own `Gate` checks included', '`SineMacula\Laravel\Authorization\Events\AuthorizationFailed`'],
-            ['decisions are recorded through their own events'],
+            ['This package maps `laravel-authorization`\'s decision events, the `Gate` checks it answers among them'],
+            ['Until then **no authorization decision is recorded**', 'after a later release maps'],
         ];
 
-        yield 'the audit trail says no authorization decision is recorded yet' => [
+        yield 'the audit trail records each authorization denial once' => [
             'docs/guides/audit-trail.md',
             [
-                '**no authorization decision is recorded**: neither `laravel-authorization`\'s nor those of your own `Gate` checks',
-                '`SineMacula\Laravel\Authorization\Events\AuthorizationFailed`',
+                '- a denial, once, as `authorization.access_denied`, denied with `laravel-authorization`\'s reason code',
+                'or your own `Gate` checks, since `laravel-authorization` answers the Gate;',
+                'It records no other allow. A denial as `insufficient_authentication` is recorded as `authorization.access_denied` too,',
             ],
-            ['decisions will be mapped'],
+            [
+                '**no authorization decision is recorded**',
+                'decisions will be mapped',
+                'after a later release maps',
+                'nor a denial as `insufficient_authentication`',
+            ],
         ];
 
         yield 'the routes owed follow this package\'s example application' => [
@@ -727,7 +749,7 @@ final class GuideStatementsTest extends TestCase
 
         yield 'replacing the audit access policy is said to decide who reads the trail' => [
             'docs/guides/authorization.md',
-            ['Bind your own policy to let a viewer read what its scope allows; a policy that replaces `DenyAllPolicy` decides who reads every person\'s trail'],
+            ['a policy that replaces this package\'s decides who reads every person\'s trail'],
             ['to let anyone read it'],
         ];
 
@@ -745,15 +767,15 @@ final class GuideStatementsTest extends TestCase
         yield 'the install owes the tenant resolver' => [
             'docs/guides/installation.md',
             [
-                '| Bind `laravel-authentication`\'s `TenantResolver` before you name a tenant MFA requirement or turn SSO\'s enforcement on,'
-                    . ' even if your principals act only in their own tenant |',
+                '| Bind `laravel-authentication`\'s `TenantResolver` before you grant in a tenant while the authorization and SSO adapters are on'
+                    . ' (the default), name a tenant MFA requirement or turn SSO\'s enforcement on, even if your principals act only in their own tenant |',
             ],
             [],
         ];
 
         yield 'iam:check refuses a tenant resolver left on its default' => [
             'docs/guides/checks.md',
-            ['is still bound to SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on or a tenant MFA requirement is named'],
+            ['SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, a tenant MFA requirement is'],
             [],
         ];
 

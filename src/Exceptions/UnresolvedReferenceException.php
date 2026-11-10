@@ -160,6 +160,23 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
+     * Build an exception for a tenant a grant that widens an identity's scope
+     * holds in that `laravel-authentication`'s tenant resolver resolves to no
+     * tenant, or to one of another type or identifier, so the widening cannot
+     * be reported to SSO for it.
+     *
+     * @param  string  $tenantId
+     * @return self
+     */
+    public static function forGrantTenant(string $tenantId): self
+    {
+        $message = 'The tenant [%s] a grant holds in cannot be resolved: laravel-authentication\'s tenant resolver must resolve it to the tenant of its type'
+            . ' whose identifier it is, so the widening of the identity\'s scope can be reported to laravel-sso; the grant is refused rather than written unreported.';
+
+        return new self(sprintf($message, $tenantId), ReferenceKind::TENANT);
+    }
+
+    /**
      * Build an exception for a tenant `laravel-authentication` asks about whose
      * identifier is neither a non-empty string nor an integer, so it cannot be
      * named to the member that answers for it.

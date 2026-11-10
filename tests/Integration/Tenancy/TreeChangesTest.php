@@ -18,6 +18,7 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
@@ -49,7 +50,9 @@ use Tests\TestCase;
  * is judged by the change's pass after the commit, which lists the subtree
  * again; a move that rolls back revokes nothing; without a tree only the tenant
  * itself is judged; and a subtree tenant that cannot be resolved, or a tree
- * that cannot list the subtree, throws with nothing judged.
+ * that cannot list the subtree, throws with nothing judged. The authorization
+ * capability is off, its report of the move being `TenantTreeAdapterTest`'s and
+ * `TreeMoveWideningTest`'s.
  *
  * Each scenario that commits runs at the connection's own level on every
  * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL;
@@ -64,6 +67,7 @@ use Tests\TestCase;
 #[CoversClass(TreeChanges::class)]
 #[CoversClass(SubtreePolicyChanges::class)]
 #[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
 final class TreeChangesTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;

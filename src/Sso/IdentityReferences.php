@@ -33,7 +33,9 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  * would hold it as another identity. An id that cannot be a key of the model is
  * not queried. Anything else throws `UnresolvedReferenceException` (IAM-8.2),
  * inside whatever transaction SSO opened, so the change it was making rolls
- * back; nothing is guessed.
+ * back; nothing is guessed. Whether a type can name such an identity at all is
+ * asked apart (`namesIdentity()`), by a caller that passes over a reference of
+ * any other kind rather than refuse it.
  *
  * The other way (`reference()`), an Eloquent identity is named by its morph
  * class and its key as a string, which SSO compares byte for byte. Only an
@@ -59,9 +61,9 @@ final readonly class IdentityReferences
      */
     public function identity(IdentityReference $reference): Identity&Model
     {
-        $class = Relation::getMorphedModel($reference->type) ?? $reference->type;
+        $class = self::classOf($reference->type);
 
-        if (!is_a($class, Model::class, true) || !is_a($class, Identity::class, true)) {
+        if (!self::isIdentityModel($class)) {
             throw UnresolvedReferenceException::forIdentityReference($reference->type);
         }
 
@@ -73,6 +75,19 @@ final readonly class IdentityReferences
         }
 
         return $found;
+    }
+
+    /**
+     * Whether the type names, through the morph map or as a class name, an
+     * Eloquent model implementing `laravel-authentication`'s `Identity`
+     * contract: the only kind of identity a reference of it can resolve to.
+     *
+     * @param  string  $type
+     * @return bool
+     */
+    public function namesIdentity(string $type): bool
+    {
+        return self::isIdentityModel(self::classOf($type));
     }
 
     /**
@@ -96,6 +111,31 @@ final readonly class IdentityReferences
         }
 
         return new IdentityReference($identity->getMorphClass(), (string) $key);
+    }
+
+    /**
+     * The class the type names: its morph map entry, or the type itself.
+     *
+     * @param  string  $type
+     * @return string
+     */
+    private static function classOf(string $type): string
+    {
+        return Relation::getMorphedModel($type) ?? $type;
+    }
+
+    /**
+     * Whether the class is an Eloquent model implementing
+     * `laravel-authentication`'s `Identity` contract.
+     *
+     * @param  string  $class
+     * @return bool
+     *
+     * @phpstan-assert-if-true class-string<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\Identity> $class
+     */
+    private static function isIdentityModel(string $class): bool
+    {
+        return is_a($class, Model::class, true) && is_a($class, Identity::class, true);
     }
 
     /**

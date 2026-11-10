@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
+use Orchestra\Testbench\Attributes\WithConfig;
 use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -32,6 +33,7 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -186,27 +188,46 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The grant half of SSO's principal scope is this package's
-     * `UnknownGrantScope`, one shared instance, while nothing else is bound to
+     * The grant half of SSO's principal scope is `laravel-authorization`'s
+     * grant scope query (`GrantScopeAdapter`), built afresh on each call, while
+     * the authorization capability's switch is on and nothing else is bound to
      * it, and an instance bound once the package has registered is kept.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheGrantScopeIsUnknownUntilSomethingElseIsBound(): void
+    public function testTheGrantScopeIsAuthorizationsQueryUntilSomethingElseIsBound(): void
     {
         $app   = $this->application();
         $scope = $app->make(GrantScope::class);
 
-        self::assertInstanceOf(UnknownGrantScope::class, $scope);
-        self::assertSame($scope, $app->make(GrantScope::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $scope);
+        self::assertNotSame($scope, $app->make(GrantScope::class));
 
         $bound = new UnknownGrantScope;
 
         $app->instance(GrantScope::class, $bound);
 
         self::assertSame($bound, $app->make(GrantScope::class));
+    }
+
+    /**
+     * With the authorization capability's switch off, the grant half is this
+     * package's `UnknownGrantScope`, one shared instance.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
+    public function testTheGrantScopeIsUnknownWithTheAuthorizationSwitchOff(): void
+    {
+        $app   = $this->application();
+        $scope = $app->make(GrantScope::class);
+
+        self::assertInstanceOf(UnknownGrantScope::class, $scope);
+        self::assertSame($scope, $app->make(GrantScope::class));
     }
 
     /**

@@ -63,23 +63,26 @@ The current note set is:
   PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
   rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
   its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
-  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half stays unknown
-  until `laravel-authorization` answers it) and enforcement inheritance; how an enforcement change and a reported move
-  of a tenant judge its whole subtree, a broken tree refused; the testing kits and fakes for the application's
-  contracts; and the gaps in the members the adapters work around.
+  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half is
+  `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and enforcement
+  inheritance, and behind `laravel-authorization`'s tree; how an enforcement change and a reported move of a tenant
+  judge its whole subtree, a broken tree refused, and how the move reaches `laravel-authorization`; how a provider's
+  groups map to grants at provisioning and, where the application opts in, at later sign-ins; the testing kits and
+  fakes for the application's contracts; and the gaps in the members the adapters work around.
 
-- `audit-mapping.md`: how `laravel-authentication`'s, MFA's and SSO's events are recorded in `laravel-audit-log`: the
-  mappers, codes and definitions registered while the application boots, before audit-log freezes its registries; how
-  each event is recorded from the event alone, under audit-log's own code where it means the same and a code of its
-  member's prefix otherwise, a refusal by its flow and a concealed reason kept concealed, the actor the identity, no one
-  or the caller, every reference through the morph map and every record correlated as one SSO sign-in, a challenge or a
-  session; the whole record sequences of a password sign-in, an MFA step-up and an SSO sign-in; the one context
-  contributor that fills a record's gaps from the caller a package guard already holds, never triggering authentication,
-  and only on a record about that caller; the `jwt` and `api_key` guards excluded from audit-log's own capture, and its
-  Gate capture off, so nothing is recorded twice, computed for installation to write and the check to enforce, and
-  audit-log's refusal of a code no definition registers read for them too; the operational events handed to the
-  application's alerting; the trail read audit-log refuses inside a change that spans members; what M11 adds for
-  authorization; and the gaps in the members the mapping works around.
+- `audit-mapping.md`: how `laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s events are recorded in
+  `laravel-audit-log`: the mappers, codes and definitions registered while the application boots, before audit-log
+  freezes its registries; how each event is recorded from the event alone, under audit-log's own code where it means the
+  same and a code of its member's prefix otherwise, a refusal by its flow and a concealed reason kept concealed, the
+  actor the identity, no one or the caller, every reference through the morph map and every record correlated as one SSO
+  sign-in, a challenge or a session; the whole record sequences of a password sign-in, an MFA step-up and an SSO
+  sign-in; the one context contributor that fills a record's gaps from the caller a package guard already holds, never
+  triggering authentication, and only on a record about that caller; the `jwt` and `api_key` guards excluded from
+  audit-log's own capture, and its Gate capture off, so nothing is recorded twice, computed for installation to write
+  and the check to enforce, and audit-log's refusal of a code no definition registers read for them too; the operational
+  events handed to the application's alerting; the trail read audit-log refuses inside a change that spans members;
+  `laravel-authorization`'s decisions and changes, its access policy over the trail and the catalogue of the members'
+  administrative permissions; and the gaps in the members the mapping works around.
 
 - `install-and-check.md`: how `iam:install` publishes every member's configuration, language files and migrations, and
   this package's configuration, in their working order, each where its provider publishes it; how it recognises a
@@ -92,8 +95,8 @@ The current note set is:
   the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
   and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
   the platform and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as
-  `[iam]` and failing SSO's boot only while SSO is in use; what M11 adds; and the gaps in the members installation and
-  the checks work around.
+  `[iam]` and failing SSO's boot only while SSO is in use; what `laravel-authorization`'s glue adds, its prune and its
+  resource tenant resolver's note among them; and the gaps in the members installation and the checks work around.
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the
@@ -103,8 +106,12 @@ The current note set is:
   its insufficient-authentication exception, rendered as MFA's step-up from the request Laravel hands its handler; the
   session policy source, the scope registry and application access; how the binding rule replaces a member that binds
   its defaults unconditionally, and binds again what it replaced, never over a class the application names in that
-  member's configuration; when the scope registry and application access are mandatory; what the second part of this
-  work still adds; and the gaps in the members the adapters work around.
+  member's configuration; when the scope registry and application access are mandatory; the second part: the grant
+  hook, answered by SSO's scope widening first inside the grant's own transaction, its lock order and its retries, the
+  identity directory, the grant scope and the tree, the permission catalogue and the audit access policy, forgetting the
+  request's last decision when the authentication it read changes, from the MFA adapters, and
+  `laravel-authorization`'s connection, prune, check, request state and resource tenants; and the gaps in the members
+  the adapters work around.
 
 A note is added here with the code it describes.
 

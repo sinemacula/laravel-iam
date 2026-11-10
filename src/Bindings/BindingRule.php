@@ -61,7 +61,11 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * binds it again (`BindingOutcome::$restorers`), and `reclaim()` binds it again
  * where that member's default holds the seam once more. `reclaim()` runs once
  * more when the application has booted, for such a member registered from
- * another provider's `boot()`.
+ * another provider's `boot()`. Such a member listens for some of its seams
+ * being bound again only where the seam is unbound as it registers, so where
+ * the rule binds first it registers the member's listener before the adapter
+ * (`SeamBinding::$rebinding`), and the seam is listened for once, in every
+ * provider order.
  *
  * A scoped adapter is never scoped under the member's seam itself: Laravel
  * keeps a scoped abstract on its list of scoped instances for good, and forgets
@@ -466,7 +470,8 @@ final readonly class BindingRule
 
     /**
      * Bind the adapter over the seam with the binding's lifetime, once the seam
-     * is off the container's scoped instances.
+     * is off the container's scoped instances and, where it is still unbound,
+     * once the member's listener for its being bound again is registered.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
@@ -476,9 +481,14 @@ final readonly class BindingRule
     {
         self::unscope($app, $binding->abstract);
 
+        if ($binding->rebinding !== null && !$app->bound($binding->abstract)) {
+            // @phpstan-ignore staticMethod.dynamicCall
+            $app->rebinding($binding->abstract, $binding->rebinding);
+        }
+
         match ($binding->lifetime) {
-            Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->adapter),
-            Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->adapter),
+            Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->factory ?? $binding->adapter),
+            Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->factory ?? $binding->adapter),
             Lifetime::SCOPED    => self::bindScoped($app, $binding),
         };
     }
@@ -524,7 +534,7 @@ final readonly class BindingRule
     {
         $key = self::SCOPED_PREFIX . $binding->abstract;
 
-        $app->scoped($key, $binding->adapter);
+        $app->scoped($key, $binding->factory ?? $binding->adapter);
         $app->bind($binding->abstract, static fn (Container $container): mixed => $container->make($key));
     }
 }

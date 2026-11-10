@@ -20,6 +20,7 @@ use SineMacula\Laravel\Authentication\Events\SessionCreated;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
+use SineMacula\Laravel\Iam\Transactions\OpenTransactions;
 use Tests\TestCase;
 
 /**
@@ -41,6 +42,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(DeferredRefusals::class)]
+#[CoversClass(OpenTransactions::class)]
 #[CoversClass(AuthenticationEventMapper::class)]
 final class DeferredRefusalsTest extends TestCase
 {

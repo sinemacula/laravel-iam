@@ -4,8 +4,10 @@
 package binds it to the other members: it decides about `laravel-authentication`'s caller, reads its authentication
 context, judges a policy's authentication requirements with MFA, answers a refusal for want of a step-up with MFA's
 step-up response, caps a machine by its credential's scopes, and answers `laravel-authentication`'s scope registry and
-application access from its grants. Some of the glue is still to come: what that leaves to you is in
-[What waits](#what-waits).
+application access from its grants. It reports a grant that widens a person's reach to SSO, answers the grant half of
+SSO's principal scope, hands it your tenant tree and its changes, forgets the decision it keeps once the authentication
+that decision read changes, answers audit-log's access policy from its grants, offers a catalogue of the members'
+administrative permissions, maps its events into the audit trail, and keeps its tables on the storage connection.
 
 `laravel-authorization` has no separate guides yet; everything below that is its own is in its
 [README][authorization-readme]. How each binding is made, and what replacing it risks, is in
@@ -19,13 +21,17 @@ application access from its grants. Some of the glue is still to come: what that
 - [Machines and their scopes](#machines-and-their-scopes)
 - [Access contracts](#access-contracts)
 - [Tenants](#tenants)
-- [What waits](#what-waits)
+- [Grants, the tree and SSO](#grants-the-tree-and-sso)
+- [Decisions after authentication changes](#decisions-after-authentication-changes)
+- [Administrative operations and the trail](#administrative-operations-and-the-trail)
 - [Its tables](#its-tables)
+- [Pruning and checks](#pruning-and-checks)
 
 ## What is bound
 
-All of it is bound while `iam.adapters.authorization` is on (see [Configuration](configuration.md#adapters)), and the
-requirement checker and the step-up only while `iam.adapters.mfa` is on too.
+All of it is bound while `iam.adapters.authorization` is on (see [Configuration](configuration.md#adapters)), the
+requirement checker and the step-up only while `iam.adapters.mfa` is on too, and the grant hook only while
+`iam.adapters.sso` is on too.
 
 | `laravel-authorization` asks for              | Answered from                                                                                  |
 |-----------------------------------------------|------------------------------------------------------------------------------------------------|
@@ -36,11 +42,17 @@ requirement checker and the step-up only while `iam.adapters.mfa` is on too.
 | The scopes that cap a check                   | The scopes of the credential the caller holds                                                  |
 | `laravel-authentication`'s scope registry     | `laravel-authorization`'s scope registry                                                       |
 | `laravel-authentication`'s application access | The permission `authorization.application_access` maps the application to                      |
+| The principals an identity owns               | `laravel-authentication`'s principals of that identity                                         |
+| The tenant tree                               | Your `SineMacula\Laravel\Iam\Contracts\TenantTree`, or its own flat tree without one           |
+| The grant hook                                | SSO's scope widening, then the hooks `authorization.grant_hooks` lists                         |
+| Audit-log's access policy                     | The catalogue's audit permissions the viewer holds                                             |
 
 `laravel-authorization` binds its own defaults whether or not anything is bound already, so this package replaces them
 only while they are still `laravel-authorization`'s defaults. A class you name in its configuration
-(`authorization.subject_resolver`, `authorization.requirement_checker`, `authorization.session.source`) is kept, and so
-is anything you bind over its contracts in a service provider's `register()` or `boot()`. A binding of one of its
+(`authorization.subject_resolver`, `authorization.requirement_checker`, `authorization.session.source`,
+`authorization.identity_directory`, `authorization.tenant_tree`) is kept, and so is anything you bind over its contracts
+in a service provider's `register()` or `boot()`. Hooks you list in `authorization.grant_hooks` are not a class of their
+own: the grant hook is bound over them and runs them after SSO's widening. A binding of one of its
 contracts made before `laravel-authorization` registers is lost to its own provider, unless you made it before this
 package registered too, when this package binds it back: name your class in its configuration instead. Should
 `laravel-authorization` bind its defaults over this package's adapters or your binding once nothing can bind them
@@ -173,7 +185,9 @@ use SineMacula\Laravel\Mfa\Exceptions\InsufficientAuthenticationException;
 
 A refusal none of whose requirements MFA can express stays Laravel's `403`, and so does a refusal about a subject you
 name (`Authorization::for($account)->authorize()`): it was decided on no session, so no step-up by the caller could
-ever meet it, and only a refusal decided on the caller's own session asks for one. The rendering is registered on
+ever meet it, and only a refusal decided on the caller's own session asks for one. Either way the refusal is recorded
+as `authorization.access_denied`, denied with `insufficient_authentication` (see
+[The audit trail](audit-trail.md#authorization-decisions)). The rendering is registered on
 Laravel's own exception handler; with a handler of your own, map `laravel-authorization`'s exception yourself.
 
 A requirement a whole route has is still MFA's route gate's to state. Put the gate before `laravel-authorization`'s
@@ -237,67 +251,157 @@ in other tenants. Your own binding of any of the three, in a service provider's 
 ## Tenants
 
 `laravel-authorization` decides in the caller's active tenant, so a role or permission granted inside a tenant counts
-there, and a platform-wide one everywhere. It still refuses **no resource for its tenant**: its default resource tenant
-resolver, `SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant`, knows no model's tenant, and this package binds
-none yet. So a grant in one tenant reaches every tenant's resources: an administrator of one tenant could refund another
-tenant's invoice by its id. Until this package names one, do one of these:
+there, and a platform-wide one everywhere. It refuses a record of another tenant (`tenant_scope`) only where it knows
+the record's tenant. It still refuses **no resource for its tenant** unless you tell it which tenant owns each record:
+its default resource tenant resolver, `SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant`, knows no model's
+tenant, and which tenant owns a record is your rule, on your models, so this package binds none. Without one of these, a
+grant in one tenant reaches every tenant's resources: an administrator of one tenant could refund another tenant's
+invoice by its id.
 
-- have the models implement `SineMacula\Laravel\Authorization\Contracts\AuthorizableResource`, so a resource names its
-  tenant, or bind your own `SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver`;
+- have the models declare their tenancy (`SineMacula\Laravel\Authorization\Contracts\QueryableResource`) or name their
+  tenant (`SineMacula\Laravel\Authorization\Contracts\AuthorizableResource`);
+- name your own `SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver` in
+  `authorization.resource_tenant_resolver`, or bind the contract yourself;
 - or scope every route-bound model to the caller's tenant, so another tenant's resource is never found.
 
-## What waits
+While your memberships are bound or named, `iam:check` notes the default resolver left in place (see
+[Checks](checks.md#configuration)). It cannot see your models, so it only notes it.
 
-| What                                                                                                                                                                   | Until then                                                                                                                                                                                             |
-|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| The grant scope query behind SSO's principal scope                                                                                                                     | The principal scope's grant half is `unknown`, so SSO links nobody by a verified domain                                                                                                                |
-| The grant hook that calls SSO's scope widening                                                                                                                         | Call `Iam::scopeWidenings()->widen()` yourself, in the grant's transaction                                                                                                                             |
-| The tenant tree and `treeChanged()`                                                                                                                                    | Report tree changes to `Authorization::treeChanged()` yourself                                                                                                                                         |
-| Invalidating decisions that depended on authentication when MFA confirms, removes or resets a factor, a verification passes or a session returns to pending (IAM-6.11) | Nothing yet: `laravel-authorization` caches grant resolutions, not decisions, and keeps a decision only as the request's last, dropped once its requirement's `metUntil` passes or for another session |
-| Mapping a provider's groups to grants at provisioning, and re-syncing them                                                                                             | Your provisioner writes any grant itself                                                                                                                                                               |
-| The permission catalogue, and the check for the members' administrative operations                                                                                     | Check every SSO, MFA and audit-log administrative call yourself                                                                                                                                        |
-| The audit access policy                                                                                                                                                | Audit-log's `DenyAllPolicy`: every trail read is empty and recorded as denied                                                                                                                          |
-| Its events in the audit trail, mapped to codes                                                                                                                         | Recorded by nothing, nor are your own `Gate` checks: audit-log's Gate capture is off (see [The audit trail](audit-trail.md#no-double-records))                                                         |
-| `authorization.connection` aligned to `iam.storage.connection`, and checked                                                                                            | Set it yourself (see [Its tables](#its-tables))                                                                                                                                                        |
-| `authorization:prune` in `Iam::schedule()`                                                                                                                             | Schedule it yourself, if you rely on it                                                                                                                                                                |
-| A resource tenant resolver named by `iam:install`                                                                                                                      | No resource is refused for its tenant (see [Tenants](#tenants))                                                                                                                                        |
+## Grants, the tree and SSO
 
-`iam:check` already runs `authorization:check`, which reports `laravel-authorization`'s state but always exits `0`, and
-the worker reset already forgets its request state between units of work (see
-[Operations](operations.md#workers-and-octane)).
+These are bound while `iam.adapters.authorization` is on, and those that report to SSO only while `iam.adapters.sso` is
+on too (see [Bindings](bindings.md#authorization)).
 
-What the rows leave to you:
+- **A grant that widens a person's reach is reported to SSO first.** `laravel-authorization`'s grant hook is answered by
+  SSO's scope widening, inside the grant's own transaction: a grant to a person, or to a principal they own, that
+  reaches beyond what they held (another tenant, the platform, a subtree) suspends their SSO links in every other
+  tenant before it is written, and a refusal rolls the grant back. Grant hooks you list in
+  `authorization.grant_hooks` still run, after SSO's. A grant to a grantee that is not `laravel-authentication`'s
+  identity (an admin panel's user on a Laravel session guard, say) is not reported to SSO, which never links one, and
+  its tenants are not resolved; your listed hooks still run for it. See
+  [Provisioning and tenancy](provisioning-and-tenancy.md#scope-widening). Each tenant such a grant holds in is named
+  to SSO through `laravel-authentication`'s tenant resolver, so bind one (see
+  [The tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver)): a grant to the person always widens, and so
+  does a principal's first grant in a tenant, so under the default `ResolveNoTenant` every such grant in a tenant is
+  refused, and `iam:check` refuses that default while both adapters are on. When one of the person's links by a
+  verified domain is committed while the grant runs, SSO refuses the widening, and the hook hands the refusal on as a
+  concurrency error (SQLSTATE `40001`): `laravel-authorization` tries a delegated grant again by itself, but never a
+  trusted one, so make a trusted grant inside `Iam::transaction()` (or `DB::transaction()` given attempts) to have it
+  tried again rather than refused.
+- **The grant half of SSO's principal scope** is answered by `laravel-authorization`'s grant scope query, over the
+  principals `laravel-authentication` lists for the identity (its `principals()` relation, global scopes set aside;
+  `unknown` for an identity that is neither a principal nor owns principals), and combined with the membership half: a
+  person is within a tenant only when both halves say so, and outside when either does (see [Provisioning and
+  tenancy](provisioning-and-tenancy.md#principal-scope)).
+- **One tenant tree.** `laravel-authorization`'s tenant tree is your `SineMacula\Laravel\Iam\Contracts\TenantTree`, so a
+  grant on a tenant with its subtree reaches the tenants your tree puts below it, and a tree change you report with
+  `Iam::treeChanges()->changed()` reaches `laravel-authorization` too. Keep the tree on the storage connection, so
+  the grant scope query can read it. Your subtree may select its ids as integers: they are compared as text. Every
+  tenant of the tree must be of one type: a tree placing a tenant below one of another type is refused (see
+  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). While you
+  name or bind no tree, `laravel-authorization` keeps its own flat tree, which it scopes `whereAuthorized()` by a
+  record's tenant column alone, whichever connection the record is on. With a tree, every tenant
+  `laravel-authorization` asks about resolves through `laravel-authentication`'s tenant resolver, so bind one (see
+  [The tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver)); `iam:check` refuses the default then.
+- **A move reports the people granted below it.** A grant rooted below a tenant counts within it, so moving that
+  subtree out from under the tenant takes the person's grant beyond it with no grant written. While both adapters are
+  on, `Iam::treeChanges()->changed()` reports everyone holding a live grant in the moved subtree to SSO's scope
+  widening, in the move's transaction, which suspends their links by a verified domain in every other tenant and
+  revokes the sessions established through them (see
+  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). It takes every one of their SSO identity
+  guards first, in SSO's lock order, so a grant, reservation or activation of one of them made at the same time waits
+  for the move, or the move for it, and neither is aborted for a deadlock.
+- **Group mapping.** A provider's groups map to grants at provisioning, and, where you opt in, again at each later
+  sign-in, once the sign-in commits (see [Provisioning and tenancy](provisioning-and-tenancy.md)).
 
-- **A grant that widens a person's reach is not reported to SSO.** No grant hook is bound, so SSO's links in other
-  tenants are not suspended when a grant widens a person's scope. Call `Iam::scopeWidenings()->widen()` yourself, inside
-  the grant's transaction, for any grant that widens a person's reach, as you do for a membership (see
-  [Provisioning and tenancy](provisioning-and-tenancy.md#scope-widening)).
-- **The members' administrative operations check no permission.** SSO's connection and domain management, MFA's factor
-  administration and audit-log's reads check only what their own guides say; the catalogue of their permissions and the
-  helper that checks them do not exist yet. Authorise every such call yourself before you make it.
-- **Nobody can read the audit trail.** Audit-log's `SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy` stays
-  on its `SineMacula\Laravel\AuditLog\Access\DenyAllPolicy`, so every read through `AuditLog::trail()` comes back
-  empty and is recorded as denied. Bind your own policy to let a viewer read what its scope allows; a policy that
-  replaces `DenyAllPolicy` decides who reads every person's trail, so a scope too wide (`AccessScope::all()`, or
-  `withTenantless()` for a tenant's viewer) shows one tenant's viewer every tenant's people (see
-  [The audit trail](audit-trail.md#reading-the-trail)).
+## Decisions after authentication changes
+
+`laravel-authorization` decides every check afresh, on the session's proofs as they are, so a check made after a step-up
+or a removed factor reads the change. The one decision it keeps is the request's last, which
+`Authorization::lastDecision()` returns and an exception handler reads to explain a refusal. When MFA confirms or
+removes a factor, registers a passkey, resets a person's factors, passes a verification or returns a session to
+pending, this package forgets that last decision if it read an authentication requirement in that session or about
+that person, so it never explains a refusal, or an allow, the session's proofs no longer support. A decision made in a
+transaction that rolls back afterwards is forgotten again, including when MFA's change was made in a savepoint of a
+transaction of yours that rolls back once the savepoint has committed. There is nothing else to invalidate: no decision
+is cached across checks.
+
+## Administrative operations and the trail
+
+- **Administrative operations.** The members authorise none of their administrative operations themselves: SSO's
+  connection, key, domain, enforcement and link management, MFA's resets, unlocks and erasure, and reads of the audit
+  trail. This package ships a catalogue of their permissions,
+  `SineMacula\Laravel\Iam\Authorization\PermissionCatalogue`, which you opt into by naming it in
+  `authorization.permission_providers` and running `authorization:sync`. Its names are
+  `SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation`'s cases: SSO's own operation names where SSO
+  has one (`sso.connection.trust`, `sso.domain.verify`, `sso.link.remove` and the rest), and names of this package's
+  where neither member names one (`sso.connection.create`, `sso.keys.trust_certificate`, `sso.link.remove_others`,
+  `mfa.identity.reset`, `mfa.factor.unlock`, `mfa.factor.enable`, `mfa.identity.erase`, and `mfa.requirements.manage`
+  for your own screens over your requirement contracts). Removing someone else's link is a permission of its own.
+  Re-enabling a factor disabled at its ceiling (`SineMacula\Laravel\Mfa\Attempts\AttemptService::enableFactor()`) is
+  `mfa.factor.enable`.
+- **Checking one.** Before the call, check it with
+  `SineMacula\Laravel\Iam\Authorization\AdministrativeCheck::authorize()`, handing it the subject, the operation and
+  the member's object: its type, its id (`null` for an operation on the type, such as creating a connection) and its
+  tenant's identifier. The subject is a resolved `SineMacula\Laravel\Authorization\Subject`, never a bare model: hand
+  it the request's subject (`Authorization::currentSubject()`), which carries the session, so an authentication
+  requirement on the operation is judged against that session's proofs, or one you build for a job or a command. It is
+  decided in the tenant and application it names, or on the platform when it names no tenant. The object's tenant is
+  resolved through `laravel-authentication`'s [tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver), so
+  an object in a tenant needs one bound. A denial throws
+  `laravel-authorization`'s `AuthorizationException`, or MFA's step-up exception for want of a stronger proof, before
+  anything is changed, and is recorded as `authorization.access_denied`:
+
+  ```php
+  use Illuminate\Auth\AuthenticationException;
+  use SineMacula\Laravel\Authorization\Facades\Authorization;
+  use SineMacula\Laravel\Iam\Authorization\AdministrativeCheck;
+  use SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation;
+
+  app(AdministrativeCheck::class)->authorize(
+      Authorization::currentSubject() ?? throw new AuthenticationException,
+      AdministrativeOperation::SSO_CONNECTION_TRUST,
+      'sso_connection',
+      $connectionId,
+      $tenantId,
+  );
+  ```
+
+  A grant counts for an object of the tenant the subject acts in, or of one below it; an object of any other tenant is
+  refused unless a platform-wide grant admits it.
+- **Reading the audit trail.** Audit-log's `SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy` is answered from
+  `laravel-authorization`'s grants of the catalogue's audit permissions, one set for each purpose (`read`, `count`,
+  `export`, `verify`): `audit-log.{purpose}` for every category, `audit-log.{purpose}.{category}` for one of `security`,
+  `access_management` and `audit`, and `audit-log.{purpose}.own` for the viewer's own activity. The scope is never
+  wider than the grants allow and sees only the tenants the viewer belongs to, never the whole platform's trail (see
+  [The audit trail](audit-trail.md#reading-the-trail)). Your own binding of the policy
+  is kept, and a policy that replaces this package's decides who reads every person's trail, so a scope too wide
+  (`AccessScope::all()`, or `withTenantless()` for a tenant's viewer) shows one tenant's viewer every tenant's people.
+- **Its events in the audit trail.** `laravel-authorization`'s events are mapped to the `authorization.*` codes (see
+  [The audit trail](audit-trail.md)), so audit-log's own Gate capture stays off.
 
 ## Its tables
 
 `laravel-authorization`'s tables live on `authorization.connection` (`AUTHORIZATION_DB_CONNECTION`), which this package
-does not align yet. To grant inside the same transaction as a provisioned membership or any other change that spans
-members, put them on the storage connection:
+aligns with the other members' keys: left unset, it is given `iam.storage.connection`, and naming another connection
+refuses boot (`StorageConnectionMismatchException`, reported by `iam:check`). So a grant commits or rolls back with a
+provisioned membership, SSO's scope widening runs in the grant's transaction, and the grant scope query reads your tree
+on the same connection (see [Configuration](configuration.md#storage)).
 
-```dotenv
-IAM_STORAGE_CONNECTION=mysql
-AUTHORIZATION_DB_CONNECTION=mysql
-```
+## Pruning and checks
+
+- `Iam::schedule()` registers `authorization:prune` daily, which removes expired grants and those of grantees and
+  records that are gone (see [Operations](operations.md#the-schedule)). An expired grant stops counting at its expiry
+  either way.
+- `iam:check` runs `authorization:check`, which reports whether `laravel-authorization` answers Laravel's Gate and
+  always exits `0`, and the worker reset forgets its request state between units of work (see
+  [Operations](operations.md#workers-and-octane)).
 
 ## Further reading
 
 - [The authorization design note](../design/authorization.md): how each seam is bound and answered.
-- [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): why the principal scope waits.
-- [The install and check design note](../design/install-and-check.md#what-m11-adds): what the checks gain.
+- [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): the principal scope's two halves.
+- [The install and check design note](../design/install-and-check.md#what-the-authorization-glue-adds): what the checks gain.
 
 [authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md

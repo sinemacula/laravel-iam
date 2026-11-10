@@ -9,20 +9,28 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
+use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
+use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
 use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
+use SineMacula\Laravel\Iam\Contracts\TenantTree;
+use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Config\Checks\EndpointsCheck;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 use Tests\Concerns\RunsChecks;
+use Tests\Fixtures\Authorization\OwnResourceTenants;
 use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
@@ -32,7 +40,9 @@ use Tests\TestCase;
  * bullet by bullet: the ones this check holds (MFA's applications, the members'
  * freshness operations and the tenant resolver a tenant's rule needs), and the
  * ones held where they belong, SSO's by the check SSO's own runs and
- * audit-log's by the audit check, so every bullet is pinned here.
+ * audit-log's by the audit check, so every bullet is pinned here. The
+ * authorization capability is off unless a test turns it on, so only the test's
+ * own rule asks for a tenant resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,8 +59,25 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
     /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
     private const string NO_TENANT_RESOLVER = 'SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to'
-        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on or a tenant MFA requirement is named:'
-        . ' bind a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is that id.';
+        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, a tenant MFA requirement is named,'
+        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
+        . ' bind a resolver that resolves every tenant id'
+        . ' to the tenant whose `getTenantIdentifier()` is that id.';
+
+    /**
+     * Turn the authorization capability's switch off, so no grant is reported
+     * to SSO's scope widening and nothing but each test's own rule needs a
+     * tenant resolver.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app?->make('config')->set(AuthorizationSeams::SWITCH, false);
+    }
 
     /**
      * MFA's operations, undeclared under `laravel-authentication`'s freshness
@@ -154,8 +181,10 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Rows of how a tenant's rule comes to reach a session: a tenant MFA
-     * requirement named, one bound, and SSO's enforcement turned on.
+     * Rows of how a tenant comes to be resolved: a tenant MFA requirement
+     * named, one bound, SSO's enforcement turned on, and the authorization
+     * capability's switch on beside SSO's, so the grant hook names every tenant
+     * a widening grant holds in.
      *
      * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
@@ -172,14 +201,19 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         yield 'SSO\'s enforcement on' => [static function (Application $app): void {
             $app->make('config')->set(TenancySeams::ENFORCEMENT, true);
         }];
+
+        yield 'grants reported to SSO\'s scope widening' => [static function (Application $app): void {
+            $app->make('config')->set(AuthorizationSeams::SWITCH, true);
+        }];
     }
 
     /**
-     * While a tenant's rule reaches a session, `laravel-authentication`'s
-     * tenant resolver left on its `ResolveNoTenant` is refused, since MFA's
-     * tenant requirement, the tree's changes and SSO's revocation resolve the
-     * session's tenant through it; a resolver of the application's own, as an
-     * instance, a class name or a closure, passes.
+     * While a tenant's rule reaches a session, or a grant is reported to SSO's
+     * scope widening, `laravel-authentication`'s tenant resolver left on its
+     * `ResolveNoTenant` is refused, since MFA's tenant requirement, the tree's
+     * changes and SSO's revocation resolve the session's tenant through it, and
+     * the grant hook the tenant of every grant that widens; a resolver of the
+     * application's own, as an instance, a class name or a closure, passes.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
      * @return void
@@ -211,6 +245,72 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
+     * With the authorization capability on but SSO's off, no grant is reported
+     * to SSO's scope widening, so no tenant resolver is needed for grants.
+     *
+     * @return void
+     */
+    public function testGrantsNeedNoResolverWhileSsoIsOff(): void
+    {
+        $config = $this->app?->make('config');
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $config?->set(AuthorizationSeams::SWITCH, true);
+        $config?->set(SsoSeams::SWITCH, false);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * Rows of how the application has a tenant tree: named, or bound.
+     *
+     * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
+     */
+    public static function provideTrees(): iterable
+    {
+        yield 'a tree named' => [static function (Application $app): void {
+            $app->make('config')->set(TenancyContracts::TREE, StoredTenantTree::class);
+        }];
+
+        yield 'a tree bound' => [static function (Application $app): void {
+            $app->bind(TenantTree::class, StoredTenantTree::class);
+        }];
+    }
+
+    /**
+     * With the authorization capability on beside a tenant tree, SSO's off,
+     * `laravel-authorization`'s tree resolves every tenant it asks about
+     * through the tenant resolver, so `ResolveNoTenant` is refused; without a
+     * tree it reads its own flat one, and needs none.
+     *
+     * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $tree
+     * @return void
+     */
+    #[DataProvider('provideTrees')]
+    public function testTheTenantResolverMustResolveWhileAuthorizationReadsATree(\Closure $tree): void
+    {
+        $app = $this->app;
+
+        assert($app instanceof Application);
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $app->make('config')->set(AuthorizationSeams::SWITCH, true);
+        $app->make('config')->set(SsoSeams::SWITCH, false);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $tree($app);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->make('config')->set(AuthorizationSeams::SWITCH, false);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
      * With no tenant MFA requirement and SSO's enforcement off, no tenant's
      * rule reaches a session, so `ResolveNoTenant` is the application's choice,
      * even with a tenant tree named, whose changes then resolve nothing.
@@ -228,6 +328,52 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         self::assertSame(ResolveNoTenant::class, $this->app?->make(SeamHolders::class)->of($this->app, TenantResolver::class));
         self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * While the application has memberships, `laravel-authorization`'s
+     * resource tenant resolver left on its default is noted, never failed;
+     * a resolver the application names in `laravel-authorization`'s
+     * configuration, or binds itself, is not, nor is the default where nobody
+     * acts in a tenant.
+     *
+     * @return void
+     */
+    public function testTheResourceTenantResolverIsNotedWhilePeopleActInTenants(): void
+    {
+        $app = $this->app;
+
+        assert($app instanceof Application);
+
+        $config = $app->make('config');
+        $note   = sprintf(
+            '%s is still %s while people act in tenants: no record is refused for its tenant unless its model declares its tenancy'
+                . ' (QueryableResource) or names its tenant (AuthorizableResource); name a resolver in `authorization.resource_tenant_resolver`, or bind %s.',
+            ResourceTenantResolver::class,
+            NoResourceTenant::class,
+            ResourceTenantResolver::class,
+        );
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        self::assertSame([], self::notes($this->check()->checks()));
+
+        $config->set(TenancyContracts::MEMBERSHIPS, FakeMemberships::class);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([$note], self::notes($this->check()->checks()));
+
+        $config->set('authorization.resource_tenant_resolver', OwnResourceTenants::class);
+
+        self::assertSame([], self::notes($this->check()->checks()));
+
+        $config->set('authorization.resource_tenant_resolver', NoResourceTenant::class);
+
+        self::assertSame([$note], self::notes($this->check()->checks()));
+
+        $app->bind(ResourceTenantResolver::class, OwnResourceTenants::class);
+
+        self::assertSame([], self::notes($this->check()->checks()));
     }
 
     /**

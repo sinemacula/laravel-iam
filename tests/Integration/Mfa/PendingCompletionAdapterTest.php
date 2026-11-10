@@ -46,6 +46,7 @@ use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PendingCompletionTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 use Tests\Concerns\BindsStrayRequests;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Fixtures\Mfa\Pending\Concerns\ArrangesPendingSessions;
 use Tests\Fixtures\Models\Person;
@@ -77,7 +78,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class PendingCompletionAdapterTest extends TestCase
 {
-    use ArrangesPendingSessions, BindsStrayRequests, PendingCompletionTests, RunsAtIsolationLevels;
+    use ArrangesPendingSessions, BindsStrayRequests, PendingCompletionTests, RecordsRequirementDecisions, RunsAtIsolationLevels;
 
     /** @var string The detail of a refusal of a proof made for another pending session. */
     private const string NOT_BOUND = 'The proof is not bound to the pending session.';
@@ -130,6 +131,27 @@ final class PendingCompletionAdapterTest extends TestCase
         self::assertTrue($result->isSignedIn());
         self::assertSame($pending->sessionId, $this->signInReference($this->guard()->session() ?? self::fail('The guard was not bound.')));
         self::assertSame(['factor-1'], $this->storedFactors($result));
+    }
+
+    /**
+     * The decision `laravel-authorization` keeps that read an authentication
+     * requirement in the pending session is forgotten once the session takes
+     * the proof (IAM-6.11).
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheDecisionThatReadThePendingSessionsAuthenticationIsForgotten(): void
+    {
+        $credential = $this->signInPending($this->createPerson());
+        $pending    = $this->pendingContextFor($credential);
+
+        $this->recordRequirementDecision($pending->sessionId);
+
+        $this->completeInTransaction($pending, $this->verified($pending, $this->factorProof($pending)));
+
+        self::assertNull($this->lastDecision());
     }
 
     /**

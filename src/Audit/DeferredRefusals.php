@@ -7,17 +7,18 @@ namespace SineMacula\Laravel\Iam\Audit;
 use Illuminate\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\DatabaseTransactionRecord;
-use Illuminate\Database\DatabaseTransactionsManager;
 use SineMacula\Laravel\AuditLog\Database\StorageConnection;
 use SineMacula\Laravel\AuditLog\Recorder;
 use SineMacula\Laravel\Authentication\Events\AuthenticationFailed;
+use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
+use SineMacula\Laravel\Iam\Transactions\OpenTransactions;
 
 /**
- * The refusals `laravel-authentication` reports while a transaction is open on
- * audit-log's storage connection, held until the outermost transaction there
- * has ended, whichever way it ended, and recorded then (IAM-9.5).
+ * The refusals `laravel-authentication` reports, and the decisions
+ * `laravel-authorization` reports that are recorded, while a transaction is
+ * open on audit-log's storage connection, held until the outermost transaction
+ * there has ended, whichever way it ended, and recorded then (IAM-9.5).
  *
  * `laravel-authentication` dispatches `AuthenticationFailed` at once, never
  * after a commit, from inside whatever transaction its caller opened: this
@@ -32,16 +33,22 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  * refusal, with `laravel-authentication`'s own reason, would be left
  * unrecorded.
  *
- * So the authentication mapper hands this every `AuthenticationFailed` it meets
- * (`defers()`). With no transaction open on the storage connection it holds
- * nothing, and the refusal is recorded at once. Otherwise it holds the refusal,
- * the mapper records nothing of it, and it waits for the transactions open
- * there to end: a rollback of any of them releases it at once (a rollback
- * callback of each, since not every version of Laravel tells a savepoint that
- * has committed of its enclosing transaction's rollback); a commit, once the
- * outermost transaction there has committed and every callback queued on it has
- * run (`AfterConnectionCommits`, released by Laravel's `TransactionCommitted`).
- * A release hands each refusal held, the same object, in the order reported, to
+ * `laravel-authorization` reports each decision the same way, as it is made
+ * (`DecisionEvaluated`), since a denial is a fact even if the surrounding
+ * transaction rolls back, so the same holds of a denial it reports inside any
+ * of them, or of an application transaction a check runs in.
+ *
+ * So the authentication mapper hands this every `AuthenticationFailed` it
+ * meets, and the authorization mapper every decision it records (`defers()`).
+ * With no transaction open on the storage connection it holds nothing, and the
+ * refusal is recorded at once. Otherwise it holds the refusal, the mapper
+ * records nothing of it, and it waits for the transactions open there to end: a
+ * rollback of any of them releases it at once (a rollback callback of each,
+ * since not every version of Laravel tells a savepoint that has committed of
+ * its enclosing transaction's rollback); a commit, once the outermost
+ * transaction there has committed and every callback queued on it has run
+ * (`AfterConnectionCommits`, released by Laravel's `TransactionCommitted`). A
+ * release hands each refusal held, the same object, in the order reported, to
  * audit-log's capture, where the mapper hands it here again: while a
  * transaction is still open there (a savepoint rolled back inside another) it
  * is held again, waiting for those still open, and once none is, the mapper
@@ -51,10 +58,11 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  * by an attempt the retry helper ran again is recorded as well, since it
  * reached every other listener too.
  *
- * The transactions open are those Laravel's transactions manager lets callbacks
- * apply to, so the transaction a testing trait wraps a test in is none, and of
- * those only the ones the connection still has open, since inside the rollback
- * of the outermost the manager still lists it.
+ * The transactions open are those `Transactions\OpenTransactions` lists: those
+ * Laravel's transactions manager lets callbacks apply to, so the transaction a
+ * testing trait wraps a test in is none, and of those only the ones the
+ * connection still has open, since inside the rollback of the outermost the
+ * manager still lists it.
  *
  * It is bound scoped, under this package's own key for scoped adapters, so it
  * holds one request's or one job's refusals alone, and the worker reset forgets
@@ -69,10 +77,7 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  */
 final class DeferredRefusals
 {
-    /** @var string The container key Laravel binds its transactions manager under. */
-    private const string MANAGER = 'db.transactions';
-
-    /** @var list<\SineMacula\Laravel\Authentication\Events\AuthenticationFailed> The refusals held until the transactions open have ended, in the order they were reported. */
+    /** @var list<\SineMacula\Laravel\Authentication\Events\AuthenticationFailed|\SineMacula\Laravel\Authorization\Events\DecisionEvaluated> The refusals held until the transactions open have ended, in the order they were reported. */
     private array $held = [];
 
     /**
@@ -89,14 +94,14 @@ final class DeferredRefusals
      */
     public function defers(#[\SensitiveParameter] object $event): bool
     {
-        $manager = $event instanceof AuthenticationFailed ? self::manager() : null;
+        $manager = $event instanceof AuthenticationFailed || $event instanceof DecisionEvaluated ? OpenTransactions::manager() : null;
 
         if ($manager === null) {
             return false;
         }
 
         $storage = Container::getInstance()->make(DatabaseManager::class)->connection(StorageConnection::name());
-        $open    = self::open($manager, $storage);
+        $open    = OpenTransactions::on($manager, $storage);
 
         if ($open === []) {
             return false;
@@ -159,39 +164,5 @@ final class DeferredRefusals
         foreach ($held as $refusal) {
             $recorder->capture($refusal);
         }
-    }
-
-    /**
-     * The transactions manager the application holds, or `null` for none,
-     * without which no transaction's end could be waited for.
-     *
-     * @return ?\Illuminate\Database\DatabaseTransactionsManager
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private static function manager(): ?DatabaseTransactionsManager
-    {
-        $container = Container::getInstance();
-        $manager   = $container->bound(self::MANAGER) ? $container->make(self::MANAGER) : null;
-
-        return $manager instanceof DatabaseTransactionsManager ? $manager : null;
-    }
-
-    /**
-     * The transactions the manager lets callbacks apply to that are still open
-     * on the connection, outermost first.
-     *
-     * @param  \Illuminate\Database\DatabaseTransactionsManager  $manager
-     * @param  \Illuminate\Database\Connection  $storage
-     * @return array<int, \Illuminate\Database\DatabaseTransactionRecord>
-     */
-    private static function open(DatabaseTransactionsManager $manager, Connection $storage): array
-    {
-        $name  = $storage->getName();
-        $level = $storage->transactionLevel();
-
-        return $manager->callbackApplicableTransactions()
-            ->filter(static fn (DatabaseTransactionRecord $transaction): bool => $transaction->connection === $name && $transaction->level <= $level)
-            ->all();
     }
 }

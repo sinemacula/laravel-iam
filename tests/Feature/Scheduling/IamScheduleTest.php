@@ -16,9 +16,10 @@ use Tests\TestCase;
 
 /**
  * Feature tests for registering the members' scheduled work they leave to the
- * application (IAM-2.6): `mfa:prune` daily, SSO's operations schedule while SSO
- * is in use, `audit-log:drain` every minute while audit-log delivers through
- * its outbox, and never audit-log's own seal, sweep, verify or prune.
+ * application (IAM-2.6): `mfa:prune` and `authorization:prune` daily, SSO's
+ * operations schedule while SSO is in use, `audit-log:drain` every minute while
+ * audit-log delivers through its outbox, and never audit-log's own seal, sweep,
+ * verify or prune.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,13 +34,13 @@ final class IamScheduleTest extends TestCase
 
     /**
      * With SSO not in use and audit-log delivering synchronously, only
-     * `mfa:prune` is scheduled, daily.
+     * `mfa:prune` and `authorization:prune` are scheduled, daily.
      *
      * @return void
      */
-    public function testOnlyMfaPruneIsScheduledWhileSsoIsNotInUseAndDeliveryIsSync(): void
+    public function testOnlyThePrunesAreScheduledWhileSsoIsNotInUseAndDeliveryIsSync(): void
     {
-        self::assertSame([['mfa:prune', '0 0 * * *']], $this->scheduled());
+        self::assertSame([['mfa:prune', '0 0 * * *'], ['authorization:prune', '0 0 * * *']], $this->scheduled());
     }
 
     /**
@@ -58,6 +59,7 @@ final class IamScheduleTest extends TestCase
 
         self::assertSame([
             ['mfa:prune', '0 0 * * *'],
+            ['authorization:prune', '0 0 * * *'],
             ['sso:prune', '7 * * * *'],
             ['sso:domains:recheck', '0 * * * *'],
             ['sso:metadata:refresh', '*/5 * * * *'],
@@ -79,6 +81,7 @@ final class IamScheduleTest extends TestCase
 
         self::assertSame([
             ['mfa:prune', '0 0 * * *'],
+            ['authorization:prune', '0 0 * * *'],
             ['audit-log:drain --until-empty', '* * * * *'],
         ], $this->scheduled());
     }
@@ -110,7 +113,7 @@ final class IamScheduleTest extends TestCase
     {
         $this->config()->set('audit-log.delivery.mode', $mode);
 
-        self::assertSame([['mfa:prune', '0 0 * * *']], $this->scheduled());
+        self::assertSame([['mfa:prune', '0 0 * * *'], ['authorization:prune', '0 0 * * *']], $this->scheduled());
     }
 
     /**

@@ -30,7 +30,7 @@ use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 use SineMacula\Laravel\Sso\Linking\MembershipStanding;
-use Tests\Concerns\MigratesSso;
+use Tests\Concerns\MigratesAuthorization;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
@@ -66,7 +66,7 @@ use Tests\Performance\PerformanceContractTestCase;
 #[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
 final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 {
-    use MigratesSso, RunsSsoFlows, SignsInPeople;
+    use MigratesAuthorization, RunsSsoFlows, SignsInPeople;
 
     /** @var string The root of the tree. */
     private const string ROOT = 'root';
@@ -123,8 +123,13 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         self::assertNotNull($standing->acceptedAt);
 
-        // Reads (1): the person; the shipped grant half reads nothing.
-        self::assertSame(ScopeVerdict::UNKNOWN, $this->assertQueryBudget(1, 0, static fn (): ScopeVerdict => $scope->judge(self::reference($person), self::TENANT)));
+        // Reads (3): the person; the grant half, `laravel-authorization`'s
+        // grant scope query, reads the person again through the identity
+        // directory, and every grant of the person and its principals in one
+        // query, in a savepoint of its own. Writes: none.
+        $judged = $this->assertQueryBudget(3, 0, static fn (): ScopeVerdict => $scope->judge(self::reference($person), self::TENANT), begins: 1, commits: 1);
+
+        self::assertSame(ScopeVerdict::WITHIN_TENANT, $judged);
     }
 
     /**
@@ -174,8 +179,12 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         $move = static fn (): int => DB::transaction(static fn (): int => Iam::treeChanges()->changed('moved'));
 
-        // First passes, one savepoint per tenant, nearest the moved tenant
-        // first. Reads (10, 11, 12): the tenant's live sessions' keys, locked,
+        // The report to laravel-authorization first. Reads (4): the moved
+        // subtree, as laravel-authorization reads it, then the live grants
+        // rooted in it, one read of each of its three grant tables, which hold
+        // none, so nothing is reported to SSO's scope widening. First passes,
+        // one savepoint per tenant, nearest the moved tenant first. Reads (10,
+        // 11, 12): the tenant's live sessions' keys, locked,
         // and the sessions; the person, twice; the policy's reads of the rule
         // up the path (the tenant's own, each ancestor's up to the enforcing
         // root's, then the root's rule again with its connections, so one more
@@ -184,7 +193,7 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         // commits, one transaction per tenant: each reads the tenant's live
         // sessions' keys and finds none left (3). Transactions: the move's, and
         // six of laravel-authentication's.
-        $revoked = $this->assertQueryBudget(36, 3, $move, begins: 7, commits: 7);
+        $revoked = $this->assertQueryBudget(40, 3, $move, begins: 7, commits: 7);
 
         self::assertSame(3, $revoked);
     }

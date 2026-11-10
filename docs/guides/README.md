@@ -75,7 +75,7 @@ It runs every member's own check and this package's, and exits non-zero on any f
 | [Authentication and MFA](authentication-and-mfa.md)     | Pending sign-ins, step-up, requirements, factor changes, codes, passkeys      |
 | [Authentication and SSO](authentication-and-sso.md)     | Redeeming handoff codes, links, re-authentication, revocation, freshness      |
 | [MFA and SSO](mfa-and-sso.md)                           | A provider's evidence, the two gates it passes, and tenants' requirements     |
-| [Authorization](authorization.md)                       | The subject, its context, requirements and step-up, scopes, and what waits    |
+| [Authorization](authorization.md)                       | The subject, requirements and step-up, scopes, grants and the tree, the trail |
 | [Provisioning and tenancy](provisioning-and-tenancy.md) | The provisioner, memberships, the tenant tree and the tenant requirement      |
 | [The audit trail](audit-trail.md)                       | Codes, categories, correlation, double records and operational alerts         |
 | [An example application](example-application.md)        | Routes and controllers for the flows this package changes, as an example only |

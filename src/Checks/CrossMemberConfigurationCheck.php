@@ -8,15 +8,21 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
+use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
+use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
+use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 
 /**
- * The configuration that crosses `laravel-authentication`, MFA and SSO holds
- * (IAM-2.5), at deploy.
+ * The configuration that crosses `laravel-authentication`, MFA, SSO and
+ * `laravel-authorization` holds (IAM-2.5), at deploy.
  *
  * - MFA's applications are `laravel-authentication`'s guards: every key of
  *   `mfa.applications` names a guard in `auth.guards` of the `jwt` driver,
@@ -33,15 +39,36 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   `null` removes one. Operations are read as array keys, never as
  *   configuration paths, since their names hold dots.
  * - `laravel-authentication`'s tenant resolver resolves tenants while SSO's
- *   enforcement is on or the application names or binds a tenant MFA
- *   requirement: MFA's tenant requirement, the tree's changes and SSO's
- *   revocation resolve the session's tenant through it
- *   (`Tenancy\TenantReferences`), while `laravel-authentication` admits a
- *   principal's own tenant without one, so an application that never needed a
- *   resolver would otherwise refuse every MFA-gated request from a session in a
- *   tenant at runtime. Its live binding (`SeamHolders`) still naming
+ *   enforcement is on, the application names or binds a tenant MFA requirement,
+ *   `laravel-authorization`'s grants are reported to SSO's scope widening (both
+ *   capabilities' switches on, as they are by default,
+ *   `AuthorizationSeams::reportsWidenings()`), or the authorization
+ *   capability's switch is on while the application names or binds a tenant
+ *   tree: MFA's tenant requirement, the tree's changes and SSO's revocation
+ *   resolve the session's tenant through it, the grant hook every tenant a
+ *   widening grant holds in (`Tenancy\TenantReferences`), and
+ *   `laravel-authorization`'s tree every tenant it asks about, in every
+ *   tenant-scoped check and query (`Authorization\TenantTreeAdapter`), while
+ *   `laravel-authentication` admits a principal's own tenant without one, so an
+ *   application that never needed a resolver would otherwise refuse every
+ *   MFA-gated request from a session in a tenant, every grant to an identity,
+ *   or a principal's first, in a tenant, every tenant-scoped check and every
+ *   move of a tenant, at runtime. Its live binding (`SeamHolders`) still naming
  *   `laravel-authentication`'s `ResolveNoTenant` is refused; a resolver bound
  *   through a closure is not built, so it is the application's to answer.
+ * - While the application has memberships, so its people act in tenants,
+ *   `laravel-authorization`'s resource tenant resolver still on its default is
+ *   noted, never failed: the shipped `NoResourceTenant` knows no model's
+ *   tenant, so a grant in one tenant reaches another tenant's records unless
+ *   each model declares its tenancy (`QueryableResource`) or names its tenant
+ *   (`AuthorizableResource`), which no check can see without the application's
+ *   models. Which tenant owns a record is the application's answer, never this
+ *   package's (IAM-1.2), so nothing here binds one. The default is read where
+ *   it is unmistakable: `authorization.resource_tenant_resolver` still naming
+ *   `NoResourceTenant`, and the contract still bound to the closure
+ *   `laravel-authorization`'s provider declares
+ *   (`MemberDefaults::holdsDefault()`), since that closure is the same for any
+ *   class configured.
  *
  * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
  * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`, which SSO's
@@ -85,8 +112,17 @@ final readonly class CrossMemberConfigurationCheck implements Check
     private const string NOT_SESSION_GUARD = '`%s.%s` names a guard in `%s` whose driver is not `%s`: MFA\'s application is a guard that holds sessions.';
 
     /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
-    private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on or a tenant MFA requirement is named:'
-        . ' bind a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is that id.';
+    private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on, a tenant MFA requirement is named,'
+        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
+        . ' bind a resolver that resolves every tenant id'
+        . ' to the tenant whose `getTenantIdentifier()` is that id.';
+
+    /** @var string The key of `laravel-authorization`'s resource tenant resolver. */
+    private const string RESOURCE_TENANTS = 'authorization.resource_tenant_resolver';
+
+    /** @var string The note of a resource tenant resolver still on `laravel-authorization`'s default while people act in tenants. */
+    private const string NO_RESOURCE_TENANTS = '%s is still %s while people act in tenants: no record is refused for its tenant unless its model declares its tenancy'
+        . ' (QueryableResource) or names its tenant (AuthorizableResource); name a resolver in `%s`, or bind %s.';
 
     /** @var string Why a member's operations the guard's freshness does not declare are refused. */
     private const string UNDECLARED = '%s\'s freshness operations [%s] are not declared for guard [%s] under `%s` or the guard\'s `freshness`.';
@@ -97,6 +133,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Checks\SeamHolders  $holders
+     * @param  \SineMacula\Laravel\Iam\Bindings\MemberDefaults  $defaults
      */
     public function __construct(
 
@@ -108,6 +145,9 @@ final readonly class CrossMemberConfigurationCheck implements Check
 
         /** Names the class the tenant resolver's live binding answers with. */
         private SeamHolders $holders,
+
+        /** Tells whether the resource tenant resolver still holds `laravel-authorization`'s own binding. */
+        private MemberDefaults $defaults,
     ) {}
 
     /**
@@ -134,18 +174,22 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The tenant resolver while a tenant's rule reaches a session, every MFA
-     * application a guard, then the freshness operations of MFA's applications
-     * and, while SSO is in use, of SSO's.
+     * The tenant resolver while a tenant's rule reaches a session, a grant is
+     * reported to SSO's scope widening or `laravel-authorization` reads the
+     * application's tree, the resource tenant resolver while the application
+     * has memberships, every MFA application a guard, then the freshness
+     * operations of MFA's applications and, while SSO is in use, of SSO's.
      *
      * @return list<\Closure(): mixed>
      */
     #[\Override]
     public function checks(): array
     {
-        $checks = TenancySeams::isEnforcedOrRequired($this->config, $this->container)
-            ? [fn () => $this->assertTenantsResolve()]
-            : [];
+        $checks = $this->resolvesTenants() ? [fn () => $this->assertTenantsResolve()] : [];
+
+        if (TenancyContracts::hasMemberships($this->container, $this->config)) {
+            $checks[] = fn (): ?string => $this->resourceTenantsNote();
+        }
 
         foreach (self::names($this->config->get(self::MFA_APPLICATIONS)) as $application) {
             $checks[] = fn () => $this->assertGuard($application);
@@ -164,6 +208,21 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
+     * Whether a member resolves tenants through `laravel-authentication`'s
+     * tenant resolver: while a tenant's rule reaches a session, a grant is
+     * reported to SSO's scope widening, or `laravel-authorization` reads the
+     * application's tenant tree.
+     *
+     * @return bool
+     */
+    private function resolvesTenants(): bool
+    {
+        return TenancySeams::isEnforcedOrRequired($this->config, $this->container)
+            || AuthorizationSeams::reportsWidenings($this->config)
+            || (AuthorizationSeams::isOn($this->config) && TenancyContracts::hasTree($this->container, $this->config));
+    }
+
+    /**
      * Refuse a tenant resolver whose live binding is still
      * `laravel-authentication`'s `ResolveNoTenant`, which resolves no tenant.
      *
@@ -178,6 +237,25 @@ final readonly class CrossMemberConfigurationCheck implements Check
         }
 
         throw new \LogicException(sprintf(self::NO_TENANT_RESOLVER, TenantResolver::class, ResolveNoTenant::class));
+    }
+
+    /**
+     * The note of `laravel-authorization`'s resource tenant resolver left on
+     * its default, configured and bound, or nothing once either names another.
+     *
+     * @return ?string
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function resourceTenantsNote(): ?string
+    {
+        $named = $this->config->get(self::RESOURCE_TENANTS, NoResourceTenant::class) === NoResourceTenant::class;
+
+        if (!$named || !$this->defaults->holdsDefault($this->container, ResourceTenantResolver::class, [AuthorizationServiceProvider::class])) {
+            return null;
+        }
+
+        return sprintf(self::NO_RESOURCE_TENANTS, ResourceTenantResolver::class, NoResourceTenant::class, self::RESOURCE_TENANTS, ResourceTenantResolver::class);
     }
 
     /**

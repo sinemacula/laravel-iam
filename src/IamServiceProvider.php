@@ -22,6 +22,7 @@ use SineMacula\Laravel\Iam\Audit\JobCallers;
 use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
@@ -365,10 +366,12 @@ final class IamServiceProvider extends ServiceProvider
      * registration and the step-up's rendering; and bind the default of this
      * package's own port for the grant half of SSO's principal scope (IAM-6.8),
      * only while nothing is bound to it, so an application's or a test's
-     * binding, made before or after, is kept: this package does not answer it
-     * from `laravel-authorization`'s grant scope query (AUTHZ-14.2) yet, so it
-     * is `UnknownGrantScope`, which answers `unknown` for everyone (Q9),
-     * shared, since it reads and keeps nothing. It is no member's seam, so the
+     * binding, made before or after, is kept: while the authorization
+     * capability's switch is on, `laravel-authorization`'s grant scope query
+     * (AUTHZ-14.2, `GrantScopeAdapter`), transient, since it resolves the query
+     * on every call; with it off, `UnknownGrantScope`, which answers `unknown`
+     * for everyone, shared, since it reads and keeps nothing, so nobody is
+     * `within_tenant` on the memberships alone. It is no member's seam, so the
      * binding rule has no default of a member's to tell it from.
      *
      * While the SSO capability's switch is on, the seams answered from the
@@ -410,7 +413,12 @@ final class IamServiceProvider extends ServiceProvider
         }
 
         $app->instance(BindingOutcome::class, $outcome);
-        $app->singletonIf(GrantScope::class, UnknownGrantScope::class);
+
+        if ($this->authorizationOn) {
+            $app->bindIf(GrantScope::class, GrantScopeAdapter::class);
+        } else {
+            $app->singletonIf(GrantScope::class, UnknownGrantScope::class);
+        }
     }
 
     /**

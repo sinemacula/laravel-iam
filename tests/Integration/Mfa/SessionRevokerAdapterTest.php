@@ -30,6 +30,7 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\SessionRevokerTests;
 use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
@@ -42,9 +43,10 @@ use Tests\TestCase;
  * the current session's proofs made with the factor and judges it again,
  * carrying `laravel-authentication`'s result and any new pending credential
  * back as MFA's completion, a removal made from the sign-in MFA names whatever
- * the guard holds, a reset that ends every session, and a removal from a
- * sign-in that is no session of the identity's refused by throwing so the
- * removal rolls back (IAM-8.2).
+ * the guard holds, a reset that ends every session, a removal and a reset each
+ * forgetting the decision that read the authentication it changed (IAM-6.11),
+ * and a removal from a sign-in that is no session of the identity's refused by
+ * throwing so the removal rolls back (IAM-8.2).
  *
  * MFA's own flows are run too: removing a factor and resetting an identity,
  * with this package's factor-change adapters bound alone, end the sessions in
@@ -60,7 +62,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class SessionRevokerAdapterTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesMembers, RunsAtIsolationLevels, SessionRevokerTests, SignsInPeople;
+    use ArrangesFactorChanges, MigratesMembers, RecordsRequirementDecisions, RunsAtIsolationLevels, SessionRevokerTests, SignsInPeople;
 
     /** @var ?(\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession) The session the guard acts on, removals' sign-in. */
     private (EloquentSession&Model)|null $current = null;
@@ -159,6 +161,63 @@ final class SessionRevokerAdapterTest extends TestCase
 
         self::assertFalse($this->doesCurrentSessionCount($person));
         self::assertFalse($this->doesAnotherSessionCount($person));
+    }
+
+    /**
+     * A reset names no sign-in, so the decision `laravel-authorization` keeps
+     * that read an authentication requirement about the identity is forgotten,
+     * whichever session it was made in (IAM-6.11).
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testRevokingAllForgetsTheDecisionThatReadTheIdentitysAuthentication(): void
+    {
+        $person = $this->revokedPerson();
+
+        $this->recordRequirementDecision('another-sign-in', $person);
+
+        $this->revoker()->revokeAll($person);
+
+        self::assertNull($this->lastDecision());
+    }
+
+    /**
+     * A removal forgets the decision `laravel-authorization` keeps that read an
+     * authentication requirement in the sign-in it is made from, whoever it was
+     * about, or about the identity, whichever session it was made in; one about
+     * another identity made in another session is kept (IAM-6.11).
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testRemovingAFactorForgetsTheDecisionThatReadTheSessionsAuthentication(): void
+    {
+        $person   = $this->revokedPerson();
+        $stranger = $this->createPerson();
+        $signIn   = $this->currentSessionOf($person);
+
+        $this->verifyAnotherSession($person);
+
+        $kept = $this->recordRequirementDecision('another-sign-in', $stranger);
+
+        $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
+
+        self::assertSame($kept, $this->lastDecision());
+
+        $this->recordRequirementDecision($signIn, $stranger);
+
+        $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
+
+        self::assertNull($this->lastDecision());
+
+        $this->recordRequirementDecision('another-sign-in', $person);
+
+        $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
+
+        self::assertNull($this->lastDecision());
     }
 
     /**

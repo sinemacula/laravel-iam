@@ -27,9 +27,10 @@ use Tests\Fixtures\Models\Person;
  * first time, the provider asserting the organisation's value; the completion
  * reserves a link, and this package's redemption activates it.
  *
- * `laravel-authorization`'s grant scope query has not shipped, so the grant
- * half of the principal scope answering `within_tenant` is a test binding of
- * this package's own port (`grantsWithin()`). It is used with `RunsSsoFlows`
+ * The grant half of the principal scope answering `within_tenant` is a test
+ * binding of this package's own port (`grantsWithin()`), standing in for
+ * `laravel-authorization`'s grant scope query so that a test of the memberships
+ * alone needs no `laravel-authorization` grants. It is used with `RunsSsoFlows`
  * and `SignsInPeople`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -98,7 +99,8 @@ trait LinksByVerifiedDomain
 
     /**
      * Bind a grant half answering `within_tenant`, standing in for
-     * `laravel-authorization`'s grant scope query, which has not shipped.
+     * `laravel-authorization`'s grant scope query, so that a test of the
+     * memberships alone needs no `laravel-authorization` grants.
      *
      * @return void
      */

@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Mfa;
 use Illuminate\Database\ConnectionResolverInterface;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
@@ -66,7 +67,11 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * `laravel-authentication`'s, cannot be resolved and throw (IAM-8.2).
  *
  * What it returns is `laravel-authentication`'s `SignInResult`, signed in or
- * still pending, which reaches the caller as MFA's completion.
+ * still pending, which reaches the caller as MFA's completion. Once the session
+ * has taken the proof, the decision `laravel-authorization` keeps that read an
+ * authentication requirement in that session or about the identity is forgotten
+ * (`DecisionCacheInvalidation`, IAM-6.11): the verification passed changed the
+ * proofs it read.
  *
  * Stateless: the guard and the session are read on every call (IAM-8.1).
  *
@@ -83,6 +88,7 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
      * @param  \Illuminate\Database\ConnectionResolverInterface  $database
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
+     * @param  \SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation  $decisions
      */
     public function __construct(
 
@@ -94,12 +100,15 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
 
         /** Translates the verified proof. */
         private ProofTranslator $proofs,
+
+        /** Forgets the decision that read the identity's authentication. */
+        private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
      * Satisfy the caller's pending sign-in with the verified proof, for the
-     * caller's client, returning `laravel-authentication`'s sign-in result as
-     * MFA's completion.
+     * caller's client, then forget the decision that read its authentication,
+     * returning `laravel-authentication`'s sign-in result as MFA's completion.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
@@ -134,6 +143,8 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
         $refusal = sprintf('laravel-authentication refused the proof as [%s].', $outcome->reason?->value);
 
         OperationRefusedException::unless(!$outcome->isFailed(), FailureReason::NOT_ACCEPTED, $refusal);
+
+        $this->decisions->authenticationChanged($identity, $pending->sessionId);
 
         return $outcome;
     }

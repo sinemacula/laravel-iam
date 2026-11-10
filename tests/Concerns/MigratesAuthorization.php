@@ -7,14 +7,18 @@ namespace Tests\Concerns;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
+use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
  * Creates the tables a test of the adapters between `laravel-authentication`,
  * MFA and `laravel-authorization` runs against, on the shared storage
  * connection: every migration `MigratesMembers` runs
- * (`laravel-authentication`'s, MFA's and the fixtures'), and every one
+ * (`laravel-authentication`'s, MFA's and the fixtures'), every one
  * `laravel-authorization` ships, which it only publishes and never loads
- * itself. It is used in place of `MigratesMembers`, never beside it.
+ * itself, and SSO's, since a grant that widens an identity's scope reports it
+ * to SSO's scope widening first (`GrantHookAdapter`), which takes SSO's
+ * identity guard. It is used in place of `MigratesMembers` or `MigratesSso`,
+ * never beside either.
  *
  * As with `MigratesMembers`, the tables are created before each test and
  * dropped after it, never inside a transaction the test runs in, so a test may
@@ -31,7 +35,7 @@ trait MigratesAuthorization
 {
     /**
      * Run every member's migrations the test needs, `laravel-authorization`'s
-     * among them, and the fixtures', rolled back once the test ends.
+     * and SSO's among them, and the fixtures', rolled back once the test ends.
      *
      * @return void
      */
@@ -40,7 +44,7 @@ trait MigratesAuthorization
     {
         $this->loadMigrationsFrom(dirname(__DIR__) . '/Fixtures/database/migrations');
 
-        foreach ([AuthenticationServiceProvider::class, MfaServiceProvider::class, AuthorizationServiceProvider::class] as $provider) {
+        foreach ([AuthenticationServiceProvider::class, MfaServiceProvider::class, SsoServiceProvider::class, AuthorizationServiceProvider::class] as $provider) {
 
             $file = (new \ReflectionClass($provider))->getFileName();
 

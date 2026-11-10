@@ -13,8 +13,9 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
   `InvalidArgumentException` naming the key, rather than putting a member on a connection that was not meant.
   `StorageConnection::read()` reads a member's key by the same rule.
 - The member keys that must name the shared connection are `StorageConnection::MEMBER_KEYS`:
-  `authentication.storage.connection`, `mfa.storage.connection` and `sso.storage.connection`.
-  `laravel-authorization`'s key joins them with AUTHZ-13.7 (M11).
+  `authentication.storage.connection`, `mfa.storage.connection`, `sso.storage.connection` and
+  `laravel-authorization`'s `authorization.connection`, which it reads on every query, migration and transaction of its
+  own, so its grants commit or roll back with a change that spans members (`authorization.md`).
 - `Storage\ConnectionAlignment::align()` writes the shared connection into every member key that is unset (`null` or
   empty), from `IamServiceProvider::register()`, again from the booting callback, and once more from a `booted()`
   callback when the application has booted; both callbacks exist for this and the checks below alone (the seam
@@ -229,7 +230,7 @@ whole after a concurrency failure and when it rethrows instead (IAM-11.2).
 
 ## Change Triggers
 
-- A member adding a storage key, or `laravel-authorization` shipping AUTHZ-13.7: its key joins `MEMBER_KEYS`, and its
+- A member adding or renaming a storage key (`authorization.connection` included): its key joins `MEMBER_KEYS`, and its
   provider `ConnectionAlignment::MEMBER_PROVIDERS`.
 - Any change to how connections are compared, to when the keys are written, or to Laravel's configuration merge.
 - A change to the console's global options (another that takes a value) or its default command:

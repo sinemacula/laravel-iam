@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Artisan;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Checks\Checker;
@@ -25,6 +26,7 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Concerns\MigratesAuditLog;
+use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
@@ -209,8 +211,9 @@ final class CheckCommandTest extends TestCase
     /**
      * Configure what the suite needs and the members ship without: audit-log's
      * exclusions and refusal of unregistered codes, MFA's operations declared
-     * under `laravel-authentication`'s freshness, the package's schedule, and
-     * audit-log's spill channel in its documented format.
+     * under `laravel-authentication`'s freshness, a tenant resolver, which the
+     * grant hook names a widening grant's tenant through, the package's
+     * schedule, and audit-log's spill channel in its documented format.
      *
      * @return void
      */
@@ -233,6 +236,8 @@ final class CheckCommandTest extends TestCase
         $app = $this->app;
 
         assert($app !== null);
+
+        $app->instance(TenantResolver::class, new OpenTenancy);
 
         $app->make(IamSchedule::class)->register($app->make(Schedule::class));
     }

@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Proofs\RemovalRevocation;
@@ -39,7 +40,10 @@ use SineMacula\Laravel\Mfa\Proofs\RemovalRevocation;
  * which ends every session of the identity on every guard, the current one
  * included, and forgets the binding of the guard it went through. Both run as
  * savepoints of MFA's transaction, after its locks, so they commit or roll back
- * with the change.
+ * with the change. Either then forgets the decision `laravel-authorization`
+ * keeps that read an authentication requirement in the sign-in named or about
+ * the identity (`DecisionCacheInvalidation`, IAM-6.11), since the proofs it
+ * read have changed or gone.
  *
  * Stateless: the guard and the session are read on every call (IAM-8.1).
  *
@@ -54,16 +58,21 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
+     * @param  \SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation  $decisions
      */
     public function __construct(
 
         /** Resolves the guard, its session service and the sign-in a removal is made from. */
         private CurrentSession $sessions,
+
+        /** Forgets the decision that read the identity's authentication. */
+        private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
      * End the identity's other sessions, void the current session's proofs made
-     * with the factor and judge it again.
+     * with the factor and judge it again, then forget the decision that read
+     * its authentication.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $factorId
@@ -80,14 +89,18 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
     {
         $owner   = $this->sessions->identity($identity);
         $current = $this->sessions->named($identity, $application, $session);
+        $removal = $this->sessions->sessions($application)->factorRemoved($owner, $factorId, $current);
 
-        return RemovalRevocation::judged($this->sessions->sessions($application)->factorRemoved($owner, $factorId, $current));
+        $this->decisions->authenticationChanged($identity, $session);
+
+        return RemovalRevocation::judged($removal);
     }
 
     /**
      * End every session of the identity, the current one included, through the
      * default guard when it holds sessions and otherwise through the first
-     * guard declared that does.
+     * guard declared that does, then forget the decision that read its
+     * authentication.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return void
@@ -101,5 +114,7 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
         $owner = $this->sessions->identity($identity);
 
         $this->sessions->identitySessions()->factorReset($owner);
+
+        $this->decisions->authenticationChanged($identity);
     }
 }

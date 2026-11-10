@@ -21,7 +21,6 @@ connection's or a model's name may appear in it.
 - [configuration](#configuration)
 - [platform](#platform)
 - [schedule](#schedule)
-- [What later releases add](#what-later-releases-add)
 
 ## Reading the output
 
@@ -50,7 +49,8 @@ Fix what each section below says, then run `iam:check` again.
 
 `iam:check` first runs each member's own check command through the console, in this order: `authentication:check`,
 `authorization:check`, `mfa:check`, `sso:check` and `audit-log:check`. Each reports in its own words, as it does when
-you run it yourself, and one that exits non-zero fails the run. One that is not registered is reported as
+you run it yourself, and one that exits non-zero fails the run. `authorization:check` reports whether
+`laravel-authorization` answers Laravel's Gate, and always exits `0`. One that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 
@@ -60,11 +60,13 @@ The storage connection is one connection (see [Configuration](configuration.md#s
 but stands aside while `iam:check` runs, so this check can report it. Each message is shown in italics, with what it
 names elided.
 
-- `laravel-authentication`, `laravel-mfa` or `laravel-sso` has not registered (`MemberNotRegisteredException`):
+- `laravel-authentication`, `laravel-mfa`, `laravel-sso` or `laravel-authorization` has not registered
+  (`MemberNotRegisteredException`):
   register every member's service provider before the application finishes booting, or let package discovery register
   them.
 - *... names [...], but iam.storage.connection names [...]* (`StorageConnectionMismatchException`): a member's own
-  storage key names another connection. Unset the member's key, or set it to the same connection.
+  storage key names another connection, `laravel-authorization`'s `authorization.connection`
+  (`AUTHORIZATION_DB_CONNECTION`) included. Unset the member's key, or set it to the same connection.
 - *`iam.storage.connection` names a connection `database.connections` does not configure.*: configure the connection,
   or name one that exists.
 - *The identity model ... is no Eloquent model.*: the user provider of a `jwt` or `api_key` guard names a model that is
@@ -149,12 +151,10 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   switch.
 - *Guards [...] are missing from `audit-log.capture.laravel.except_guards`, ...*: add every `jwt` and `api_key` guard
   to audit-log's exclusions, or each of their sign-ins is recorded twice. `iam:install` writes the guards it finds.
-- *`audit-log.capture.gate.enabled` must be false, so each authorization decision is recorded once, ...*: turn
-  audit-log's Gate capture off, so each decision is recorded once, after a later release maps `laravel-authorization`'s
-  events. Until then **no authorization decision is recorded**, your own `Gate` checks included (see
-  [Authorization](authorization.md#what-waits)). If you need the records now, listen to `laravel-authorization`'s
-  `SineMacula\Laravel\Authorization\Events\AuthorizationFailed` yourself and record each denial with
-  `AuditLog::record()` under a code you define ([The audit trail](audit-trail.md#no-double-records)).
+- *`audit-log.capture.gate.enabled` must be false, so no authorization decision is recorded twice: ...*: turn
+  audit-log's Gate capture off. This package maps `laravel-authorization`'s decision events, the `Gate` checks it
+  answers among them, so audit-log's own capture would record each of them again
+  ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
   rather than recorded unchecked. `iam:install` writes it.
 - Any value of `iam.audit.alerts` that names no alert, or no listener class, or a listener class with neither `handle()`
@@ -191,13 +191,24 @@ The members' settings agree with each other.
   `sso.*` operations for every SSO application's guard, under `authentication.freshness` or the guard's own `freshness`
   block. See [laravel-authentication: configuration][authentication-configuration].
 - *SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to
-  SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO's enforcement is on or a tenant MFA requirement
-  is named: ...*: MFA's tenant requirement, a tree's changes and SSO's revocation resolve a session's tenant through
-  `laravel-authentication`'s tenant resolver, whose default resolves none, so every MFA-gated request from a session
-  in a tenant would answer a server error. Bind a resolver that resolves every tenant id to the tenant whose
+  SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO's enforcement is on, a tenant MFA requirement is
+  named, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
+  tree: ...*: MFA's tenant requirement, a tree's changes and SSO's revocation resolve a session's tenant through
+  `laravel-authentication`'s tenant resolver; while the authorization and SSO adapters are both on (the default), the
+  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while the authorization
+  adapters are on and you name or bind a tenant tree, `laravel-authorization`'s tree resolves every tenant it asks about
+  through it. Its default resolves none, so every MFA-gated request from a session in a tenant, every grant to an
+  identity or a principal's first grant in a tenant, every tenant-scoped check and every move of a tenant would answer
+  a server error. Bind a resolver that resolves every tenant id to the tenant whose
   `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). A resolver bound through a closure is
   not built, so the check passes it.
+- Note: *SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver is still
+  SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant while people act in tenants: ...*: shown while your
+  memberships are bound or named. `laravel-authorization`'s default resolver knows no record's tenant, so a grant in
+  one tenant reaches another tenant's records unless each model declares its tenancy or names its tenant. Name your
+  resolver in `authorization.resource_tenant_resolver`, bind the contract yourself, or leave it where every model the
+  checks name declares its tenant (see [Authorization](authorization.md#tenants)).
 
 A provider attribute beyond SSO's standard mapping (`sso.mapping.custom_attributes`) depends on each connection's
 mapping, which lives in the database, so no check can see it; nor can one see your routes. See
@@ -223,7 +234,7 @@ built.
 - *The application's schedule cannot be built, so no run on it is checked: ...*: fix the cause named, usually a
   malformed `sso.operations.cadence.*` value, which stops the scheduler too.
 - Note: *`mfa:prune` is not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*
-  (and the same for `sso:prune` while SSO is in use, and for `audit-log:drain --until-empty` while
+  (and the same for `authorization:prune`, for `sso:prune` while SSO is in use, and for `audit-log:drain --until-empty` while
   `audit-log.delivery.mode` is `outbox`): register the scheduled work ([Operations](operations.md)).
 - Note: *SSO's operations schedule runs `sso:prune` only while `sso.operations.cadence.prune` gives a cron expression,
   ...*: set the cadence, or schedule `sso:prune` yourself.
@@ -237,12 +248,6 @@ built.
 - Note: *audit-log cannot judge whether its retention can delete entries (...), and no event on the schedule runs
   `audit-log:prune`; ...*: audit-log refused to answer, and the brackets name the class of its cause. Settle
   `audit-log.retention.*` as audit-log's guide says, or schedule `audit-log:prune` yourself.
-
-## What later releases add
-
-- The configuration check requires `laravel-authorization`'s resource tenant resolver to name this package's adapter,
-  `authorization.connection` joins the storage check, `authorization:prune` joins the schedule, and audit-log's access
-  policy is answered from `laravel-authorization`. See [Authorization](authorization.md#what-waits).
 
 [audit-log-operations]: https://github.com/sinemacula/laravel-audit-log/blob/master/docs/guides/operations.md
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md

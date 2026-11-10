@@ -44,6 +44,7 @@ use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\StepUpTests;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
@@ -74,7 +75,7 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class StepUpAdapterTest extends TestCase
 {
-    use BindsStrayRequests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople, StepUpTests;
+    use BindsStrayRequests, MigratesMembers, RecordsRequirementDecisions, RunsAtIsolationLevels, SignsInPeople, StepUpTests;
 
     /** @var string The reference of the factor the step-up proves. */
     private const string FACTOR = 'factor-1';
@@ -117,6 +118,52 @@ final class StepUpAdapterTest extends TestCase
         self::assertSame(AuthenticationChannelKind::AUTHENTICATOR_APP, $proof->channel->kind);
         self::assertTrue($proof->evaluation?->multifactor);
         self::assertCount(2, $this->proofsOf($session));
+    }
+
+    /**
+     * Once the session is stepped up, the decision `laravel-authorization`
+     * keeps that read an authentication requirement in it is forgotten
+     * (IAM-6.11), so the next check reads the step-up.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheDecisionThatReadTheSessionsAuthenticationIsForgotten(): void
+    {
+        $person    = $this->createPerson();
+        $session   = $this->signInAndActOnSession($person);
+        $reference = $this->signInReference($session);
+
+        $this->recordRequirementDecision($reference);
+
+        $this->adapter()->stepUp(self::callerOf($person), $this->verifiedResult($person, $reference));
+
+        self::assertNull($this->lastDecision());
+    }
+
+    /**
+     * A step-up that is refused changes nothing the decision read, so the
+     * decision is kept.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARefusedStepUpKeepsTheDecision(): void
+    {
+        $person    = $this->createPerson();
+        $session   = $this->signInAndActOnSession($person);
+        $reference = $this->signInReference($session);
+        $decision  = $this->recordRequirementDecision($reference);
+
+        try {
+            $this->adapter()->stepUp(self::callerOf($person), VerificationResult::failed(FailureReason::NOT_ACCEPTED, 'The code did not match.'));
+
+            self::fail('A failed verification stepped the session up.');
+        } catch (OperationRefusedException) {
+            self::assertSame($decision, $this->lastDecision());
+        }
     }
 
     /**
