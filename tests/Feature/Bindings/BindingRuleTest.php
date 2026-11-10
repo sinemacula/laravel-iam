@@ -1065,7 +1065,7 @@ final class BindingRuleTest extends TestCase
      * Load the application's configuration, then, when the test boots it as if
      * cached, the cached configuration over it, before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
@@ -1076,8 +1076,6 @@ final class BindingRuleTest extends TestCase
         if ($this->cachedConfiguration === null) {
             return;
         }
-
-        assert($app instanceof Application);
 
         $app->make(Repository::class)->set($this->cachedConfiguration);
     }

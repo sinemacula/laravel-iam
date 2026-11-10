@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -186,15 +185,13 @@ final class PasskeyFactorsTest extends TestCase
      * judgement, and require no factor of anyone, so the session stays active
      * once the passkey is enrolled and is stepped up with it.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(TenantResolver::class, OpenTenancy::class);
         $app->singleton(TenantAccess::class, OpenTenancy::class);

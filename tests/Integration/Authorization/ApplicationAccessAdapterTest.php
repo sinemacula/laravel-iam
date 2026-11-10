@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Authorization;
 
 use Illuminate\Auth\SessionGuard;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
@@ -228,15 +227,13 @@ final class ApplicationAccessAdapterTest extends TestCase
      * sign in on to the permission to use it, and declare the permission,
      * before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $config = $app->make('config');
 

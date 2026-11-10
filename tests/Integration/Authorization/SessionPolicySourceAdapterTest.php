@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Authorization;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -259,15 +258,13 @@ final class SessionPolicySourceAdapterTest extends TestCase
      * before any provider registers, so the scope registry lets a key carry
      * them.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $app->make('config')->set('authorization.permission_enums', [ReportPermission::class]);
     }

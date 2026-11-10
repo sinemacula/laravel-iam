@@ -397,15 +397,13 @@ final class DeliveredFactorsTest extends TestCase
      * anyone, so the session stays active once a factor is enrolled and is
      * stepped up with it.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(TenantResolver::class, OpenTenancy::class);
         $app->singleton(TenantAccess::class, OpenTenancy::class);
@@ -427,15 +425,13 @@ final class DeliveredFactorsTest extends TestCase
     /**
      * Name both gateways before any provider registers.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function resolveApplicationConfiguration(mixed $app): void
     {
         parent::resolveApplicationConfiguration($app);
-
-        assert($app instanceof Application);
 
         $this->nameTheGateways($app);
     }

@@ -292,7 +292,7 @@ final class ApplicationResolverAdapterTest extends TestCase
      * Declare the administrators' guard and a panel's session guard beside the
      * guard people sign in on.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]

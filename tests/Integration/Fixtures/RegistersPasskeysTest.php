@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Fixtures;
 
-use Illuminate\Contracts\Foundation\Application;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use SineMacula\Laravel\Authentication\Contracts\PasskeyFactorGate;
 use SineMacula\Laravel\Authentication\Models\Passkey;
@@ -90,15 +89,13 @@ final class RegistersPasskeysTest extends TestCase
      * Seed the environment, then bind `laravel-authentication`'s own passkey
      * factor gate as the application's, once every provider has registered.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
     protected function defineEnvironment(mixed $app): void
     {
         parent::defineEnvironment($app);
-
-        assert($app instanceof Application);
 
         $app->singleton(PasskeyFactorGate::class, NoPasskeyFactors::class);
     }

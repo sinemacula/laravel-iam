@@ -205,7 +205,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
      * Declare a connection whose reads go to a replica of their own, which sees
      * nothing written to the primary.
      *
-     * @param  mixed  $app
+     * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
