@@ -38,18 +38,17 @@ use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
  * every one of them clears state held in a scoped instance its `RequestState`
  * forgets, and its explanations keep nothing beyond the check that asks for
  * one. The adapters this package binds over its seams keep nothing at all; the
- * subject resolver, application access and the tenant tree are scoped all the
- * same, under `iam.scoped:`, the resolver so that `laravel-authorization` keeps
- * the tenant it resolved for one unit of work and the tree so that it keeps the
- * tenant chain it read, since it keys that memo by the tree instance, and
- * forgotten with the rest. It then clears the roots Laravel's facades keep, as
- * the queue worker does once it forgets its scoped instances and Octane does as
- * it switches application: `laravel-authorization`'s `Authorization` facade
- * keeps the manager it first resolved, and the manager holds its last decision,
- * evaluator and resolvers, so through the facade a later unit of work would
- * otherwise keep reading the first one's. It registers itself for Octane's
- * workers and requests and the queue's jobs, and is safe to call by hand in any
- * other long-lived process, between its units of work.
+ * subject resolver and application access are scoped all the same, under
+ * `iam.scoped:`, the resolver so that `laravel-authorization` keeps the tenant
+ * it resolved for one unit of work, and forgotten with the rest. It then clears
+ * the roots Laravel's facades keep, as the queue worker does once it forgets
+ * its scoped instances and Octane does as it switches application:
+ * `laravel-authorization`'s `Authorization` facade keeps the manager it first
+ * resolved, and the manager holds its last decision, evaluator and resolvers,
+ * so through the facade a later unit of work would otherwise keep reading the
+ * first one's. It registers itself for Octane's workers and requests and the
+ * queue's jobs, and is safe to call by hand in any other long-lived process,
+ * between its units of work.
  *
  * Only the suite's own scoped instances are forgotten, never every one the
  * container holds: Laravel keeps a command's or a job's `Context` and its

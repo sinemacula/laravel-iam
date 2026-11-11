@@ -16,10 +16,10 @@ use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Events\SessionRevoked;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason;
@@ -32,6 +32,7 @@ use Tests\Concerns\SignsInThroughLinks;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -306,7 +307,7 @@ final class SessionRevocationAdapterTest extends TestCase
 
         $this->assertStanding([...$below, ...$outside]);
 
-        FakeTenantTree::fake($this->app)->place(self::PARENT)->place(self::SSO_TENANT, self::PARENT)->place(self::CHILD, self::SSO_TENANT)->place(self::GRANDCHILD, self::CHILD);
+        $this->placeChain(self::PARENT, self::SSO_TENANT, self::CHILD, self::GRANDCHILD);
 
         $this->revokeInTransaction($scope);
 
@@ -327,7 +328,7 @@ final class SessionRevocationAdapterTest extends TestCase
     {
         $this->bindTenancy();
 
-        FakeTenantTree::fake($this->app)->place(self::SSO_TENANT)->place(self::CHILD, self::SSO_TENANT);
+        $this->placeChain(self::SSO_TENANT, self::CHILD);
 
         $late = $this->signInThrough($this->createPerson());
 
@@ -356,7 +357,7 @@ final class SessionRevocationAdapterTest extends TestCase
     {
         $this->bindTenancy();
 
-        FakeTenantTree::fake($this->app)->place(self::SSO_TENANT)->place(self::CHILD, self::SSO_TENANT)->place(self::GRANDCHILD, self::CHILD);
+        $this->placeChain(self::SSO_TENANT, self::CHILD, self::GRANDCHILD);
 
         $session  = $this->inTenant($this->signInThrough($this->createPerson()), self::SSO_TENANT);
         $resolver = \Mockery::mock(TenantResolver::class);
@@ -717,6 +718,25 @@ final class SessionRevocationAdapterTest extends TestCase
     private function revokeInTransaction(RevocationScope $scope): void
     {
         DB::connection(StorageConnection::name())->transaction(fn () => $this->adapter()->revoke($scope));
+    }
+
+    /**
+     * Bind the application's tree, each tenant placed below the one before it.
+     *
+     * @param  string  ...$tenantIds
+     * @return void
+     */
+    private function placeChain(string ...$tenantIds): void
+    {
+        $parent = null;
+
+        foreach ($tenantIds as $tenantId) {
+            StoredTenantTree::place($tenantId, $parent);
+
+            $parent = $tenantId;
+        }
+
+        $this->app?->instance(TenantTree::class, new StoredTenantTree);
     }
 
     /**

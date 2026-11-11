@@ -15,8 +15,6 @@ use SineMacula\Laravel\Authentication\Events\Enums\RevocationReason;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\EnforcementInheritanceAdapter;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -24,6 +22,7 @@ use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInDuringTheFirstPass;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -51,7 +50,7 @@ use Tests\TestCase;
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(SubtreePolicyChanges::class)]
 #[CoversClass(EnforcementInheritanceAdapter::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class InheritedEnforcementRaceTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInDuringTheFirstPass, SignsInPeople;
@@ -81,7 +80,8 @@ final class InheritedEnforcementRaceTest extends TestCase
 
         Config::set('sso.features.enforcement', true);
 
-        FakeTenantTree::fake($this->app)->place(self::PARENT)->place(self::TENANT, self::PARENT);
+        StoredTenantTree::place(self::PARENT);
+        StoredTenantTree::place(self::TENANT, self::PARENT);
 
         $this->app?->instance(TenantResolver::class, new OpenTenancy);
         $this->app?->instance(TenantAccess::class, new OpenTenancy);

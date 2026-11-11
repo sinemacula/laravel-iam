@@ -234,9 +234,9 @@ abstract class TestCase extends OrchestraTestCase
 
     /**
      * The factor types the MFA application people sign in on offers: TOTP,
-     * unless the test offers more. A test that offers `sms` or `email` binds a
-     * sender or names a gateway for it before the application boots, since MFA
-     * refuses to boot while one of them is offered with its own senders.
+     * unless the test offers more. A test that offers `sms` or `email` binds
+     * `laravel-authentication`'s one-time code sender before the application
+     * boots, since MFA's senders forward to it and MFA resolves them at boot.
      *
      * @return list<string>
      */

@@ -29,7 +29,6 @@ final readonly class Checker
         SsoBridgeCheck::class,
         ContextNamespacesCheck::class,
         AuditCheck::class,
-        SendersCheck::class,
         CrossMemberConfigurationCheck::class,
         SchedulesCheck::class,
     ];

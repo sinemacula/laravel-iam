@@ -7,27 +7,20 @@ namespace Tests\Fixtures\Tenancy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use SineMacula\Laravel\Authentication\Contracts\Tenant;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
-use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * A tenant MFA requirement the application keeps in its own table, read on the
- * default connection every time it is asked, as an application's own data is: a
- * tenant whose row requires multifactor requires a further factor at the row's
- * version, and a tenant with no row requires nothing at a version of its own.
- * So a transaction that changed a row answers the change, and another
- * transaction answers what it reads committed, or what its snapshot holds.
+ * MFA's tenant requirement kept in the application's own table, read on the
+ * default connection every time.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class ReadsStoredRequirements implements TenantMfaRequirement
+final readonly class ReadsStoredRequirements implements TenantRequirement
 {
     /** @var string The table the requirements are kept in. */
     public const string TABLE = 'iam_stored_tenant_requirements';
@@ -43,7 +36,6 @@ final readonly class ReadsStoredRequirements implements TenantMfaRequirement
         Schema::connection($connection)->create(self::TABLE, static function (Blueprint $table): void {
             $table->string('tenant_id')->primary();
             $table->boolean('multifactor');
-            $table->unsignedInteger('version');
         });
     }
 
@@ -59,23 +51,19 @@ final readonly class ReadsStoredRequirements implements TenantMfaRequirement
     }
 
     /**
-     * What the tenant's row requires, read on the default connection.
+     * Multifactor authentication where the tenant's row requires it, otherwise
+     * nothing.
      *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
-     * @return \SineMacula\Laravel\Iam\Tenancy\TenantMfaRule
+     * @param  string  $tenant
+     * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
      */
     #[\Override]
-    public function requirementFor(Tenant $tenant, string $application): TenantMfaRule
+    public function requirementFor(MultiFactorAuthenticatable $identity, string $application, string $tenant): Requirement
     {
-        $stored = DB::table(self::TABLE)->where('tenant_id', IdentifierCoercion::stringify($tenant->getTenantIdentifier()))->first();
+        $stored = DB::table(self::TABLE)->where('tenant_id', $tenant)->first();
 
-        if ($stored === null) {
-            return new TenantMfaRule(new Requirement, 'stored-none');
-        }
-
-        $requirement = (bool) $stored->multifactor ? new Requirement(multifactor: new RequirementPart) : new Requirement;
-
-        return new TenantMfaRule($requirement, 'stored-' . (int) $stored->version);
+        return $stored !== null && (bool) $stored->multifactor ? Requirement::none()->withMultifactor() : Requirement::none();
     }
 }

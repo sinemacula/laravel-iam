@@ -44,10 +44,9 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  * - SSO's `ReauthenticationSessions` is answered from
  *   `laravel-authentication`'s external standing, with its renewal recorded for
  *   the redemption's one write (`ReauthenticationSessionsAdapter`). It is
- *   mandatory while SSO's enforcement is on or the application names or binds a
- *   tenant MFA requirement (IAM-10.2): left on SSO's default then, nobody held
- *   to a tenant's rule could renew a session through the connection the rule
- *   names.
+ *   mandatory while SSO's enforcement is on or the application binds MFA's
+ *   tenant requirement (IAM-10.2): left on SSO's default then, nobody held to a
+ *   tenant's rule could renew a session through the connection the rule names.
  * - SSO's `SessionRevocation` ends `laravel-authentication`'s sessions inside
  *   SSO's change (`SessionRevocationAdapter`). It is mandatory: left on SSO's
  *   default, an enforcement change, a disabled or deleted connection, a removed
@@ -87,7 +86,7 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  * no seam: its contributor (`SsoContextContributor`) is registered in the
  * service provider's `boot()`, under the same switch. The tenant authentication
  * policy SSO's enforcement folds into is declared apart
- * (`Tenancy\TenancySeams`), since the tenant MFA requirement is its source too.
+ * (`Tenancy\TenancySeams`), since MFA's tenant requirement is its source too.
  *
  * SSO's handoff issuer is never bound: SSO issues and redeems its own handoff
  * codes, so it keeps its default, `Handoffs\DatabaseHandoffStore`.
@@ -119,7 +118,7 @@ final readonly class SsoSeams implements ProvidesSeams
      */
     public function __construct(
 
-        /** Tells whether the application has bound a tenant MFA requirement, which the re-authentication sessions' mandate reads; with none, only the configuration is read. */
+        /** Tells whether the application has bound MFA's tenant requirement, which the re-authentication sessions' mandate reads; with none, only the configuration is read. */
         private ?Container $container = null,
     ) {}
 
@@ -139,7 +138,7 @@ final readonly class SsoSeams implements ProvidesSeams
         $on       = static fn (Repository $switches): bool => self::isOn($switches);
         $evidence = static fn (Repository $switches): bool => self::isOn($switches) && self::isEvidenceOn($switches);
         $inUse    = self::isInUse($config);
-        $enforced = TenancySeams::isEnforcedOrRequired($config, $this->container);
+        $enforced = fn (): bool => TenancySeams::isEnforcedOrRequired($config, $this->container);
 
         return [
             new SeamBinding(ReauthenticationSessions::class, ReauthenticationSessionsAdapter::class, [NoReauthenticationSessions::class], appliesWhen: $on, mandatory: $enforced),

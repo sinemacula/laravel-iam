@@ -458,7 +458,7 @@ final class SsoSeamsTest extends TestCase
             $store = in_array($binding->adapter, self::SCOPED, true);
 
             self::assertSame($store ? Lifetime::SCOPED : Lifetime::TRANSIENT, $binding->lifetime, $binding->abstract);
-            self::assertSame($binding->abstract === SessionRevocation::class, $binding->mandatory, $binding->abstract);
+            self::assertSame($binding->abstract === SessionRevocation::class, $binding->isMandatory(), $binding->abstract);
             self::assertSame(isset(self::MEMBER_DEFAULTS[$binding->abstract]) ? [self::MEMBER_DEFAULTS[$binding->abstract]] : [], $binding->memberDefaults, $binding->abstract);
         }
     }

@@ -45,7 +45,7 @@ run through are in `storage-and-transactions.md`.
   identity links and the linker are mandatory while SSO is in use (a protocol switched on, or its
   switch malformed, `SsoSeams::isInUse()`, as SSO's `Features::isInUse()` reads it): left on their defaults, or
   unbound, no sign-in through SSO finds its identity and no link is made. The re-authentication sessions are mandatory
-  while SSO's enforcement is on or the application names or binds a tenant MFA requirement (IAM-10.2): left on SSO's
+  while SSO's enforcement is on or the application binds MFA's tenant requirement (IAM-10.2): left on SSO's
   default then, nobody held to a tenant's rule could renew a session through the connection the rule names. Each
   mandate is read by `iam:check` whatever `iam.adapters.sso` says (`install-and-check.md`).
 - The whole capability is switched by `iam.adapters.sso` (`IAM_ADAPTERS_SSO`), read in `register()` and leniently, as

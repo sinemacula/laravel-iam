@@ -4,45 +4,39 @@ declare(strict_types = 1);
 
 namespace Tests\Fixtures\Tenancy;
 
-use SineMacula\Laravel\Authentication\Contracts\Tenant;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * A tenant MFA requirement written to this package's contract: a plain model
- * read of the landlord's tenant, which pins nothing itself and relies on being
- * asked on the write connection, as the contract promises. A tenant the
- * connection holds requires multifactor authentication; one it does not hold
- * cannot be answered for, and throws.
+ * MFA's tenant requirement read through a landlord model, refusing a tenant the
+ * connection does not hold.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class ReadsLandlordRequirements implements TenantMfaRequirement
+final readonly class ReadsLandlordRequirements implements TenantRequirement
 {
     /**
      * Multifactor authentication for a tenant the connection holds, as it reads
      * it.
      *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
-     * @return \SineMacula\Laravel\Iam\Tenancy\TenantMfaRule
+     * @param  string  $tenant
+     * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
      *
      * @throws \RuntimeException
      */
     #[\Override]
-    public function requirementFor(Tenant $tenant, string $application): TenantMfaRule
+    public function requirementFor(MultiFactorAuthenticatable $identity, string $application, string $tenant): Requirement
     {
-        $stored = LandlordTenant::query()->find($tenant->getTenantIdentifier());
-
-        if ($stored === null) {
+        if (LandlordTenant::query()->find($tenant) === null) {
             throw new \RuntimeException('The landlord holds no such tenant.');
         }
 
-        return new TenantMfaRule(new Requirement(multifactor: new RequirementPart), 'landlord-1');
+        return Requirement::none()->withMultifactor();
     }
 }

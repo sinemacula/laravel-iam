@@ -18,7 +18,6 @@ use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Events\Enums\FailureReason;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
@@ -27,9 +26,8 @@ use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyVersion;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementResult;
@@ -48,6 +46,7 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Sso\Handoff;
 use Tests\Fixtures\Tenancy\ExemptsIdentities;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
@@ -150,7 +149,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         self::assertSame($judged, $provenance->policy_version);
         self::assertSame($judged, $policy->version);
         self::assertSame(self::TENANT, $session->getTenantId());
-        self::assertSame(TenantPolicyVersion::of($policy, null, TenantMfaRule::none()), $this->stored($session)->getTenantPolicyVersion());
+        self::assertSame(TenantPolicyVersion::of($policy, null, new Requirement), $this->stored($session)->getTenantPolicyVersion());
         Event::assertNotDispatched(ExemptionUsed::class);
     }
 
@@ -339,7 +338,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        $requirement = FakeTenantMfaRequirement::fake($this->app);
+        $requirement = ScriptedTenantRequirement::bind($this->app);
 
         $this->linkThroughFlow($this->createPerson());
 
@@ -440,7 +439,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
 
         $session = $this->signedIn($this->signInWithPassword($this->createPerson()));
 
-        FakeTenantMfaRequirement::fake($this->app)->require(self::TENANT, new Requirement(multifactor: new RequirementPart));
+        ScriptedTenantRequirement::bind($this->app)->require(self::TENANT, MfaRequirement::none()->withMultifactor());
 
         self::assertSame(1, $this->sessions()->tenantPolicyChanged(new ClaimedTenant(self::TENANT)));
         self::assertNotNull($this->stored($session)->getRevokedAt());

@@ -12,7 +12,6 @@ next boot: a deploy, or a restart of every worker (see [Operations](operations.m
 - [Adapters](#adapters)
 - [Tenancy](#tenancy)
 - [Provisioning](#provisioning)
-- [Delivery](#delivery)
 - [SSO](#sso)
 - [Audit](#audit)
 - [Transactions](#transactions)
@@ -73,24 +72,20 @@ session, so it is `stale`. See [Authentication and SSO](authentication-and-sso.m
 
 ## Tenancy
 
-| Key                           | Default | Environment | What it does                                                                            |
-|-------------------------------|---------|-------------|-----------------------------------------------------------------------------------------|
-| `iam.tenancy.mfa_requirement` | `null`  | None        | Your tenant MFA requirement, a class implementing `Iam\Contracts\TenantMfaRequirement`. |
-| `iam.tenancy.memberships`     | `null`  | None        | Your memberships, a class implementing `Iam\Contracts\Memberships`.                     |
-| `iam.tenancy.tree`            | `null`  | None        | Your tenant tree, a class implementing `Iam\Contracts\TenantTree`.                      |
+| Key                       | Default | Environment | What it does                                                        |
+|---------------------------|---------|-------------|---------------------------------------------------------------------|
+| `iam.tenancy.memberships` | `null`  | None        | Your memberships, a class implementing `Iam\Contracts\Memberships`. |
 
-Classes are named relative to `SineMacula\Laravel\`. Each is optional, and a class bound in the container by the time
-every service provider has registered counts as named. Any value that is no class name fails closed.
+Classes are named relative to `SineMacula\Laravel\`. It is optional, and a class bound in the container by the time
+every service provider has registered counts as named. Any value that is no class name fails closed. The tenant MFA
+requirement is no key: implement laravel-mfa's `TenantRequirement` and bind it (see [Provisioning and
+tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)).
 
-- The tenant MFA requirement is the one answer MFA's tenant requirement and `laravel-authentication`'s tenant
-  authentication policy are both given. It answers for exactly the tenant asked: this package applies no inheritance
-  down a tree. Name none and no tenant requires a further factor; SSO's enforcement still applies.
 - The memberships answer SSO's tenant membership, link eligibility and the membership half of its principal scope.
   Name none and SSO's defaults stay: no membership, no `link`, no linking by a verified domain.
-- The tree lets a tenant inherit SSO's enforcement from the nearest tenant above it that has a rule, and is
-  `laravel-authorization`'s tree, so a grant with its subtree reaches the tenants below. Name none and every tenant
-  stands alone, `laravel-authorization` keeping its own flat tree. With the authorization adapters on, a tree needs a
-  tenant resolver, which `iam:check` requires.
+- The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`); this package reads it for SSO's
+  enforcement inheritance and the tree changes (see [Provisioning and
+  tenancy](provisioning-and-tenancy.md#the-tenant-tree)). A tree needs a tenant resolver, which `iam:check` requires.
 
 Report every change to a tenant's answer ([Provisioning and
 tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), every move in the tree ([Provisioning and
@@ -117,33 +112,6 @@ mapping that throws, rolls the provisioning back. A value that is no class name,
 to role names, fails closed. Mapping and re-syncing groups is in
 [Provisioning and tenancy](provisioning-and-tenancy.md#group-mapping).
 
-## Delivery
-
-| Key                        | Default   | Environment | What it does                                                                       |
-|----------------------------|-----------|-------------|------------------------------------------------------------------------------------|
-| `iam.delivery.email`       | `null`    | None        | Your email gateway, a class implementing `Iam\Contracts\EmailGateway`.             |
-| `iam.delivery.sms`         | `null`    | None        | Your SMS gateway, a class implementing `Iam\Contracts\SmsGateway`.                 |
-| `iam.delivery.types.email` | `'email'` | None        | The gateway `laravel-authentication`'s `email` identifier type's codes go through. |
-| `iam.delivery.types.phone` | `'sms'`   | None        | The gateway `laravel-authentication`'s `phone` identifier type's codes go through. |
-
-Both gateways are handed the same `Iam\Delivery\CodeMessage`, whichever member issued the code, and your application
-writes every message's wording and template. A gateway bound in the container before this package registers counts as
-named; one bound after comes too late, so name the gateway here.
-
-- Naming a gateway points MFA's sender of that channel at it.
-- `laravel-authentication`'s one-time code sender is pointed at the gateways once every gateway `iam.delivery.types`
-  routes to is named. Each entry maps one of `laravel-authentication`'s identifier types to `email` or `sms`.
-- Name none and MFA keeps its own senders, which refuse to send (MFA refuses to boot while an application offers `sms`
-  or `email` factors with them), and `laravel-authentication`'s one-time code sender stays unbound.
-
-Setting `iam.delivery` in your own file without a `types` key replaces the shipped block one level deep, so it is read
-with the shipped `types` (`email` and `phone`). A code for one of MFA's own `email` or `sms` factors goes through
-`laravel-authentication` only while its one-time code sender is bound (see
-[Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)); otherwise MFA sends it itself. A code MFA
-sends itself is delivered inside MFA's transaction; one `laravel-authentication` issues is delivered from its queued
-job once the code has committed, and your queue retries it. This package never queues or retries a delivery itself.
-See [Testing](testing.md#fakes) for the fake gateways.
-
 ## SSO
 
 | Key                | Default | Environment        | What it does                                                                         |
@@ -168,7 +136,7 @@ package's: see [laravel-sso: managing connections][sso-custom-attributes] and
 `iam.audit.mappers` is read leniently, as the adapter switches are, and as the package boots, so a change takes effect
 on the next boot. Turn it off only to map the members' events yourself. Whatever it says, `iam:check` requires every
 `jwt` and `api_key` guard excluded from audit-log's own capture (`audit-log.capture.laravel.except_guards`), its Gate
-capture off and `audit-log.definitions.require_registered` on; `iam:install` writes the first and the last.
+capture off and `audit-log.definitions.require_registered` on; `iam:install` lists the first and the last as owed.
 
 The codes, categories, correlation and the events to alert on are in [The audit trail](audit-trail.md).
 

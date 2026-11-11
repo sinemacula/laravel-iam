@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Authorization;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -14,19 +13,16 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableTenant;
 use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\IdentityPrincipals;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
-use SineMacula\Laravel\Iam\Authorization\TenantTreeAdapter;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
-use SineMacula\Laravel\Iam\Contracts\TenantTree as ApplicationTree;
-use SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 use Tests\Concerns\MigratesAuthorization;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -42,21 +38,21 @@ use Tests\Fixtures\Authorization\Seat;
 use Tests\Fixtures\Authorization\SeatHolder;
 use Tests\Fixtures\Authorization\Staff;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
  * Integration tests for the grant half of SSO's principal scope, answered by
  * `laravel-authorization`'s grant scope query (IAM-6.8, AUTHZ-14.2), with the
  * identity's principals listed from `laravel-authentication`'s
- * (`IdentityDirectoryAdapter`) and the tenant tree the application's
- * (`TenantTreeAdapter`): a person who acts as themselves and holds no grant, or
- * grants only in the tenant or below it, is `within_tenant`; one granted in
- * another tenant, an ancestor of it or platform-wide is `outside_tenant`; a
- * person who owns principals is placed by their principals' grants too; a
- * tenant that cannot be resolved, or that `laravel-authorization` cannot read,
- * throws, as does a tree nesting two tenant types that would place a grant
- * below the tenant outside it; and the identity directory answers an identity
- * it cannot resolve as an incomplete list.
+ * (`IdentityDirectoryAdapter`) and the tenant tree the application's: a person
+ * who acts as themselves and holds no grant, or grants only in the tenant or
+ * below it, of whatever type, is `within_tenant`; one granted in another
+ * tenant, an ancestor of it or platform-wide is `outside_tenant`; a person who
+ * owns principals is placed by their principals' grants too; a tenant that
+ * cannot be resolved, or that `laravel-authorization` cannot read, throws; and
+ * the identity directory answers an identity it cannot resolve as an incomplete
+ * list.
  *
  * The query reads on the write connection, in a savepoint of the caller's
  * transaction, as SSO asks it inside its own, so each judgement runs inside one
@@ -71,7 +67,6 @@ use Tests\TestCase;
 #[CoversClass(GrantScopeAdapter::class)]
 #[CoversClass(IdentityDirectoryAdapter::class)]
 #[CoversClass(TenantTranslator::class)]
-#[CoversClass(TenantTreeAdapter::class)]
 final class GrantScopeAdapterTest extends TestCase
 {
     use MigratesAuthorization, RunsAtIsolationLevels, SignsInPeople;
@@ -256,8 +251,7 @@ final class GrantScopeAdapterTest extends TestCase
 
     /**
      * Below the tenant in the application's tree is within it, and at its
-     * parent is outside it, as `laravel-authorization` reads the tree through
-     * this package's adapter.
+     * parent is outside it.
      *
      * @return void
      *
@@ -265,7 +259,7 @@ final class GrantScopeAdapterTest extends TestCase
      */
     public function testTheTreePlacesAGrantBelowTheTenantWithinIt(): void
     {
-        FakeTenantTree::fake($this->app)->place('parent')->place(self::TENANT, 'parent')->place('child', self::TENANT);
+        $this->placeOrganisations(['parent' => null, self::TENANT => 'parent', 'child' => self::TENANT]);
 
         [$below, $above] = [$this->createPerson(), $this->createPerson()];
 
@@ -277,93 +271,30 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A grant below the tenant in a tenant of another type, an account placed
-     * below an organisation once granted (a grant in it is refused while it is
-     * there), is never read as outside it: the subtree names every tenant by
-     * the organisation's type, so the query, missing the account's grant,
-     * answers `outside`, and the tree is refused rather than have SSO suspend a
-     * link for it. A grant outside a tree of one type is still outside.
+     * A grant in an account below the organisation asked about is within it,
+     * though the account is of another type.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAGrantBelowTheTenantInATenantOfAnotherTypeIsRefused(): void
+    public function testAGrantBelowTheTenantInATenantOfAnotherTypeIsWithinIt(): void
     {
-        $account = Account::PREFIX . '1';
+        $account = new Reference(Account::TYPE, Account::PREFIX . '1');
 
-        $tree = FakeTenantTree::fake($this->app)->place(self::TENANT)->place(self::OTHER_TENANT)->place($account);
+        $this->placeOrganisations([self::TENANT => null, self::OTHER_TENANT => null]);
+
+        StoredTenantTree::place($account, new Reference(Organisation::TYPE, self::TENANT));
 
         $this->app?->instance(TenantResolver::class, new AccountTenancy);
 
-        [$below, $beyond] = [$this->createPerson(), $this->createPerson()];
-
+        $person  = $this->createPerson();
         $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
 
-        $service->grantRole($below, self::ROLE, tenant: new Reference(Account::TYPE, $account), includeSubtree: false);
+        $service->grantRole($person, self::ROLE, tenant: $account, includeSubtree: false);
 
-        $this->grant($beyond, self::TENANT);
-
-        $tree->place($account, self::TENANT);
-
-        self::assertSame(ScopeVerdict::WITHIN_TENANT, $this->judged($beyond, self::TENANT));
-        self::assertSame(ScopeVerdict::OUTSIDE_TENANT, $this->judged($beyond, self::OTHER_TENANT));
-
-        $this->expectException(TenancyMisconfiguredException::class);
-
-        $this->judged($below, self::TENANT);
-    }
-
-    /**
-     * A tree whose subtree selects its tenants' ids as integers, as one over an
-     * integer key does, places a person granted only in the tenant within it,
-     * at every isolation level: the ids are compared with
-     * `laravel-authorization`'s text columns as text, which PostgreSQL
-     * otherwise refuses.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testATreeOfIntegerIdsPlacesAGrantInTheTenantWithinIt(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $tree = \Mockery::mock(ApplicationTree::class);
-
-        $tree->allows('ancestors')->andReturn([]);
-        $tree->allows('isWithin')->andReturnUsing(static fn (string $tenantId, string $ancestorId): bool => $tenantId === $ancestorId);
-        $tree->allows('subtree')->andReturnUsing(static fn (string $tenantId): Builder => DB::query()->selectRaw('? + 0 as ' . ApplicationTree::ID_COLUMN, [(int) $tenantId]));
-
-        $this->app?->instance(ApplicationTree::class, $tree);
-
-        $person = $this->createPerson();
-
-        $this->grant($person, '7');
-
-        self::assertSame(ScopeVerdict::WITHIN_TENANT, DB::transaction(fn (): ScopeVerdict => $this->judged($person, '7')));
-    }
-
-    /**
-     * A tree `laravel-authorization` cannot read leaves a person granted only
-     * in a tenant of it `unknown`, never `within_tenant`.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testATreeThatCannotBeReadIsUnknown(): void
-    {
-        $tree   = FakeTenantTree::fake($this->app)->place(self::TENANT);
-        $person = $this->createPerson();
-
-        $this->grant($person, self::TENANT);
-
-        $tree->failFor(self::TENANT);
-
-        self::assertSame(ScopeVerdict::UNKNOWN, $this->judged($person, self::TENANT));
+        self::assertSame(ScopeVerdict::WITHIN_TENANT, $this->judged($person, self::TENANT));
+        self::assertSame(ScopeVerdict::OUTSIDE_TENANT, $this->judged($person, self::OTHER_TENANT));
     }
 
     /**
@@ -483,6 +414,21 @@ final class GrantScopeAdapterTest extends TestCase
         $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
 
         $service->grantRole($grantee, self::ROLE, tenant: $tenantId === null ? null : new Reference(Organisation::TYPE, $tenantId), includeSubtree: false);
+    }
+
+    /**
+     * Bind the application's tree, each organisation placed under its parent.
+     *
+     * @param  array<string, ?string>  $parents
+     * @return void
+     */
+    private function placeOrganisations(array $parents): void
+    {
+        foreach ($parents as $tenantId => $parentId) {
+            StoredTenantTree::place(new Reference(Organisation::TYPE, $tenantId), $parentId === null ? null : new Reference(Organisation::TYPE, $parentId));
+        }
+
+        $this->app?->instance(TenantTree::class, new StoredTenantTree);
     }
 
     /**

@@ -14,20 +14,17 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -36,6 +33,8 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -45,19 +44,18 @@ use Tests\TestCase;
  * more once it commits, while SSO's enforcement or a tenant MFA requirement is
  * on, every other tenant's left alone; a removal, reported as the move of each
  * child moved out from under the removed tenant once written, judges those
- * children against the new structure; with neither on nothing is judged or
- * read; a tenant moved under an ancestor while the ancestor's rule is turned on
+ * children against the new structure; with neither on nothing is judged; a
+ * tenant moved under an ancestor while the ancestor's rule is turned on
  * is judged by the change's pass after the commit, which lists the subtree
  * again; a move that rolls back revokes nothing; without a tree only the tenant
- * itself is judged; and a subtree tenant that cannot be resolved, or a tree
- * that cannot list the subtree, throws with nothing judged. The authorization
- * capability is off, its report of the move being `TenantTreeAdapterTest`'s and
- * `TreeMoveWideningTest`'s.
+ * itself is judged; and a subtree tenant that cannot be resolved throws with
+ * nothing judged. The authorization capability is off, its report of the move
+ * being `AuthorizationTreeChangesTest`'s and `TreeMoveWideningTest`'s.
  *
  * Each scenario that commits runs at the connection's own level on every
  * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL;
- * a move that rolls back, a subtree tenant that cannot be resolved and a broken
- * subtree commit nothing, so run at the connection's own level alone.
+ * a move that rolls back and a subtree tenant that cannot be resolved commit
+ * nothing, so run at the connection's own level alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -66,7 +64,7 @@ use Tests\TestCase;
  */
 #[CoversClass(TreeChanges::class)]
 #[CoversClass(SubtreePolicyChanges::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 #[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
 final class TreeChangesTest extends TestCase
 {
@@ -84,9 +82,6 @@ final class TreeChangesTest extends TestCase
     /** @var string A tenant that never moves. */
     private const string STILL = 'still';
 
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeTenantTree The application's tree. */
-    private ?FakeTenantTree $tree = null;
-
     /**
      * Arrange SSO, the tree before the move (the enforcing root, the tenant to
      * move with its child, and a tenant that stays), and a tenancy in which
@@ -101,7 +96,10 @@ final class TreeChangesTest extends TestCase
 
         $this->arrangeSso();
 
-        $this->tree = FakeTenantTree::fake($this->app)->place(self::ROOT)->place(self::MOVED)->place(self::CHILD, self::MOVED)->place(self::STILL);
+        StoredTenantTree::place(self::ROOT);
+        StoredTenantTree::place(self::MOVED);
+        StoredTenantTree::place(self::CHILD, self::MOVED);
+        StoredTenantTree::place(self::STILL);
 
         $this->app?->instance(TenantResolver::class, new OpenTenancy);
         $this->app?->instance(TenantAccess::class, new OpenTenancy);
@@ -130,7 +128,7 @@ final class TreeChangesTest extends TestCase
 
         $first = DB::transaction(function (): int {
 
-            $this->tree()->place(self::MOVED, self::ROOT);
+            StoredTenantTree::place(self::MOVED, self::ROOT);
 
             return Iam::treeChanges()->changed(self::MOVED);
         });
@@ -170,11 +168,10 @@ final class TreeChangesTest extends TestCase
 
         $first = DB::transaction(function (): int {
 
-            $children = $this->tree()->descendants(self::MOVED);
+            StoredTenantTree::remove(self::MOVED);
+            StoredTenantTree::place(self::CHILD, self::ROOT);
 
-            $this->tree()->remove(self::MOVED)->place(self::CHILD, self::ROOT);
-
-            return array_sum(array_map(static fn (string $moved): int => Iam::treeChanges()->changed($moved), $children));
+            return Iam::treeChanges()->changed(self::CHILD);
         });
 
         self::assertSame(1, $first);
@@ -204,7 +201,7 @@ final class TreeChangesTest extends TestCase
 
         DB::transaction(function () use ($late): void {
 
-            $this->tree()->place(self::MOVED, self::ROOT);
+            StoredTenantTree::place(self::MOVED, self::ROOT);
 
             self::assertSame(0, $this->changes()->changed(self::MOVED));
 
@@ -247,7 +244,7 @@ final class TreeChangesTest extends TestCase
 
             self::assertTrue($result->isChanged(), sprintf('The enforcement did not change: [%s].', $result->reason->value ?? $result->status->value));
 
-            $this->tree()->place(self::MOVED, self::ROOT);
+            StoredTenantTree::place(self::MOVED, self::ROOT);
         });
 
         foreach ($revoked as $session) {
@@ -274,14 +271,14 @@ final class TreeChangesTest extends TestCase
         try {
             DB::transaction(function (): void {
 
-                $this->tree()->place(self::MOVED, self::ROOT);
+                StoredTenantTree::place(self::MOVED, self::ROOT);
 
                 self::assertSame(1, $this->changes()->changed(self::MOVED));
 
                 throw new \RuntimeException('The move failed.');
             });
         } catch (\RuntimeException) {
-            $this->tree()->place(self::MOVED);
+            StoredTenantTree::place(self::MOVED);
         }
 
         self::assertNull($this->stored($session)->getRevokedAt());
@@ -289,8 +286,7 @@ final class TreeChangesTest extends TestCase
 
     /**
      * With SSO's enforcement off and no tenant MFA requirement, nothing any
-     * tenant requires can follow the tree: nothing is judged, and the tree is
-     * not read.
+     * tenant requires can follow the tree, so nothing is judged.
      *
      * @param  ?string  $level
      * @return void
@@ -305,12 +301,10 @@ final class TreeChangesTest extends TestCase
         Config::set('sso.features.enforcement', false);
 
         $session = $this->signInIn($this->createPerson(), self::MOVED);
-        $before  = count($this->tree()->asked());
 
-        $this->tree()->place(self::MOVED, self::ROOT);
+        StoredTenantTree::place(self::MOVED, self::ROOT);
 
         self::assertSame(0, DB::transaction(fn (): int => $this->changes()->changed(self::MOVED)));
-        self::assertCount($before, $this->tree()->asked());
         self::assertNull($this->stored($session)->getRevokedAt());
     }
 
@@ -334,13 +328,13 @@ final class TreeChangesTest extends TestCase
         $person      = $this->createPerson();
         $session     = $this->signInIn($person, self::CHILD);
         $kept        = $this->signInIn($person, self::STILL);
-        $requirement = FakeTenantMfaRequirement::fake($this->app);
+        $requirement = ScriptedTenantRequirement::bind($this->app);
 
         DB::transaction(function () use ($requirement): void {
 
-            $this->tree()->place(self::MOVED, self::ROOT);
+            StoredTenantTree::place(self::MOVED, self::ROOT);
 
-            $requirement->require(self::CHILD, new Requirement(multifactor: new RequirementPart(300)));
+            $requirement->require(self::CHILD, MfaRequirement::none()->withMultifactor(300));
 
             $this->changes()->changed(self::MOVED);
         });
@@ -367,15 +361,12 @@ final class TreeChangesTest extends TestCase
         $person      = $this->createPerson();
         $moved       = $this->signInIn($person, self::MOVED);
         $child       = $this->signInIn($person, self::CHILD);
-        $requirement = FakeTenantMfaRequirement::fake($this->app);
+        $requirement = ScriptedTenantRequirement::bind($this->app);
 
-        $this->app?->forgetInstance(TenantTree::class);
-        $this->app?->offsetUnset(TenantTree::class);
+        $this->app?->instance(TenantTree::class, new FlatTenantTree);
 
-        Config::set(TenancyContracts::TREE, null);
-
-        $requirement->require(self::MOVED, new Requirement(multifactor: new RequirementPart(300)));
-        $requirement->require(self::CHILD, new Requirement(multifactor: new RequirementPart(300)));
+        $requirement->require(self::MOVED, MfaRequirement::none()->withMultifactor(300));
+        $requirement->require(self::CHILD, MfaRequirement::none()->withMultifactor(300));
 
         DB::transaction(fn (): int => $this->changes()->changed(self::MOVED));
 
@@ -407,7 +398,7 @@ final class TreeChangesTest extends TestCase
         try {
             DB::transaction(function (): void {
 
-                $this->tree()->place(self::MOVED, self::ROOT);
+                StoredTenantTree::place(self::MOVED, self::ROOT);
 
                 $this->changes()->changed(self::MOVED);
             });
@@ -418,49 +409,6 @@ final class TreeChangesTest extends TestCase
         }
 
         self::assertNull($this->stored($moved)->getRevokedAt());
-    }
-
-    /**
-     * Rows of `[descendants]`: each answer a broken tree gives below the moved
-     * tenant.
-     *
-     * @return iterable<string, array{0: list<string>}>
-     */
-    public static function provideBrokenSubtrees(): iterable
-    {
-        yield 'the tenant itself' => [[self::CHILD, self::MOVED]];
-
-        yield 'an empty descendant' => [[self::CHILD, '']];
-
-        yield 'a blank descendant' => [[self::CHILD, '  ']];
-
-        yield 'a descendant twice' => [[self::CHILD, self::CHILD, self::STILL]];
-    }
-
-    /**
-     * A tree that answers the tenant among its own descendants, a blank
-     * descendant or a descendant twice is refused, with nothing judged.
-     *
-     * @param  list<string>  $descendants
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideBrokenSubtrees')]
-    public function testABrokenSubtreeIsRefused(array $descendants): void
-    {
-        $this->enforceRoot();
-
-        $tree = \Mockery::mock(TenantTree::class);
-
-        $tree->allows('descendants')->with(self::MOVED)->andReturn($descendants);
-
-        $this->app?->instance(TenantTree::class, $tree);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('has a cycle or is broken');
-
-        $this->changes()->changed(self::MOVED);
     }
 
     /**
@@ -531,15 +479,5 @@ final class TreeChangesTest extends TestCase
     private function changes(): TreeChanges
     {
         return Iam::treeChanges();
-    }
-
-    /**
-     * The application's tree.
-     *
-     * @return \SineMacula\Laravel\Iam\Testing\FakeTenantTree
-     */
-    private function tree(): FakeTenantTree
-    {
-        return $this->tree ?? self::fail('The tree is not arranged.');
     }
 }

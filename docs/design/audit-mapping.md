@@ -293,7 +293,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   sign-out through the session service is recorded twice, and this package records no Laravel event itself: audit-log
   captures those, and a listener here deciding which `Login` has a `SignedIn` beside it would read request state the
   mappers never read. The gap is `laravel-authentication`'s, listed below.
-- `Audit\CaptureExclusions` only computes, for `iam:install` to write and `iam:check` to enforce (decision Q5 (a)), and
+- `Audit\CaptureExclusions` only computes, for `iam:check` to enforce (decision Q5 (a)), and
   never writes configuration: `guards()` finds every guard of the `jwt` or `api_key` driver in the order
   `auth.guards` lists them; `unexcludedGuards()` those `except_guards` lacks (none under `['*']`); `exceptGuards()` the
   value to write, what the application excludes, in its order, then every guard still missing, `['*']` kept as it is;
@@ -302,7 +302,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   or read as excluding nothing. Every value is read when it is asked, never kept.
 - Audit-log's `definitions.require_registered` (IAM-2.5) is read the same way and never written:
   `AuditSettings::refusesUnregisteredCodes()` says whether it is on, which it is only while it is `true`, the one value
-  audit-log reads as on, for `iam:install` to turn on and `iam:check` to enforce. With it on, a code no definition
+  audit-log reads as on, for `iam:check` to enforce. With it on, a code no definition
   registers is refused rather than recorded under the permissive default; every code the mappers record is defined
   here or by audit-log, so the record sequences are pinned with it on.
 
@@ -767,7 +767,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   way.
 - MFA gives `EnrollmentAbandoned` a cause and a reset's operator: the mapper names the operator from the event and
   records the attempt ceiling's by no one.
-- `iam:install` or `iam:check` changes what it writes or enforces from `CaptureExclusions`' answers and
+- `iam:check` changes what it enforces from `CaptureExclusions`' answers and
   `AuditSettings::refusesUnregisteredCodes()` (`install-and-check.md`).
 - A member closes one of the gaps listed above: the workaround it names goes.
 - `laravel-authentication` reports a refusal once the outermost transaction has ended, or audit-log offers a capture

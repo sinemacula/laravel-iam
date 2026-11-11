@@ -59,7 +59,7 @@ Run a queue worker for:
 
 - SSO's metadata refresh, on `sso.metadata.queue`;
 - `laravel-authentication`'s delivery of one-time codes, MFA's email and SMS codes among them, on
-  `authentication.delivery.queue.connection` and `authentication.delivery.queue.name`. A gateway that throws fails the
+  `authentication.delivery.queue.connection` and `authentication.delivery.queue.name`. A sender that throws fails the
   job, and your queue retries it under its own policy.
 
 Audit-log's outbox uses no queue. With `audit-log.delivery.mode` set to `outbox`, records wait in the outbox table until

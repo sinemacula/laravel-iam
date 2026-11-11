@@ -3,69 +3,60 @@
 ## Purpose
 
 This note describes how the package answers `laravel-authentication`'s tenant authentication policy (IAM-4.5,
-AUTH-2.12) from SSO's enforcement, SSO's exemption gate and the application's one tenant MFA requirement, and routes
-that same requirement to MFA's tenant requirement (MFA-10.2). It covers the application's contract and its rule, how
-the policy's answer and its version are composed, which reads it makes and on which connection, when the exemption gate
-is asked, how an enforcement change and a changed requirement reach existing sessions, the testing kit and fake the
-package ships for the application's requirement, and the gaps in the members the adapters work around. The redemptions
-and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the binding rule that applies every row in
-`binding-precedence.md`.
+AUTH-2.12) from SSO's enforcement, SSO's exemption gate and the application's implementation of laravel-mfa's
+`TenantRequirement` (MFA-10.2). It covers how the policy's answer and its version are composed, which reads it makes and
+on which connection, when the exemption gate is asked, how an enforcement change and a changed requirement reach
+existing sessions, and the gaps in the members the adapters work around. The redemptions and SSO's revocation scopes
+are in `sso-redemption-and-revocation.md`, and the binding rule that applies every row in `binding-precedence.md`.
 
 ## Invariants
 
-- Which tenants require which further factors is the application's own data. The application implements
-  `Contracts\TenantMfaRequirement::requirementFor(Tenant $tenant, string $application): Tenancy\TenantMfaRule` once,
-  names it in `iam.tenancy.mfa_requirement` (or binds it in the container, which wins, IAM-8.4), and the package hands
-  its one answer to both members (`Tenancy\TenantMfaRequirements`). With none named or bound (`null`, or blank text),
-  no tenant requires a further factor. A class named that implements no requirement, a value that is no class name at
-  all (`true`, `false`, a number, an array), or a binding that resolves to no requirement, throws
-  `TenantMfaRequirementMisconfiguredException`, never an empty answer: only `null` or blank text is a choice of none.
+- Which tenants require which further factors is the application's own data. The application implements laravel-mfa's
+  `TenantRequirement::requirementFor(MultiFactorAuthenticatable $identity, string $application, string $tenant)` and
+  binds it; MFA asks it itself, and the package reads the same binding into the tenant policy
+  (`Tenancy\TenantMfaRequirements`), so the two members never disagree. A requirement is in use while MFA's tenant
+  requirement resolves to something other than MFA's `NoTenantRequirement` (`isConfigured()`); with MFA's default, no
+  tenant requires a further factor and nothing is asked. The application tests its own with MFA's
+  `TenantRequirementTests` kit.
 - The requirement answers for exactly the tenant asked: the package applies no inheritance down a tenant tree (Decision
-  Q6 (a)), even with the application's tree configured, which reaches SSO's enforcement alone; an application whose
-  requirement passes down its tree works that out itself, and a move it reports
-  (`Iam::treeChanges()->changed($tenantId)`) judges the moved tenant's subtree against what the requirement then answers
-  (Decision Q7, `provisioning-and-tenancy.md`). It is asked inside `WriteConnection::during()` for the tenant, so a
-  model read it makes is pinned to the write connection, by MFA's path as much as by `laravel-authentication`'s, and is
-  resolved from the container on every call. Whatever it throws propagates.
-- `Tenancy\TenantMfaRule(Requirement $requirement, ?string $version = null)` carries `laravel-authentication`'s
-  requirement and a version of 1 to 64 characters (`TenantRequirement::VERSION_MAX_LENGTH`, counted as
-  `laravel-authentication` counts them) or none; `none()` requires nothing.
-- The seams, and the default each replaces:
+  Q6 (a)), and a move the application reports (`Iam::treeChanges()->changed($tenantId)`) judges the moved tenant's
+  subtree against what the requirement then answers (Decision Q7, `provisioning-and-tenancy.md`). The policy asks it
+  inside `WriteConnection::during()` for the tenant, with the tenant's identifier as a string, resolved from the
+  container on every call, and translates its answer part by part (`RequirementTranslator::toAuthentication()`).
+  Whatever it throws propagates. MFA's contract types the identity as `MultiFactorAuthenticatable`, so once a
+  requirement is bound an identity that is not one throws `UnresolvedReferenceException::forMfaIdentity()`, never an
+  empty answer.
+- The seam, and the default it replaces:
 
-  | Member seam                                | Bound to                                    | Member default replaced   | Lifetime  | Switch                                    |
-  | ------------------------------------------ | ------------------------------------------- | ------------------------- | --------- | ----------------------------------------- |
-  | AUTH `TenantAuthenticationPolicy`          | `Tenancy\TenantAuthenticationPolicyAdapter` | `RequireNothingOfTenants` | transient | `iam.adapters.sso`                        |
-  | MFA `TenantRequirement`                    | `Mfa\TenantRequirementAdapter`              | `NoTenantRequirement`     | transient | `iam.adapters.mfa`                        |
+  | Member seam                       | Bound to                                    | Member default replaced   | Lifetime  | Switch             |
+  | --------------------------------- | ------------------------------------------- | ------------------------- | --------- | ------------------ |
+  | AUTH `TenantAuthenticationPolicy` | `Tenancy\TenantAuthenticationPolicyAdapter` | `RequireNothingOfTenants` | transient | `iam.adapters.sso` |
 
-  The policy's row is declared in `Tenancy\TenancySeams`, apart from either capability, since it is the one answer for
-  both of its sources. It is bound while `iam.adapters.sso` is on, whatever `iam.adapters.mfa` says: it composes SSO's
-  enforcement and exemption gate, and hands the gate the client of the redemption this package's SSO capability
-  admitted in the request (`AdmittedRedemptions`), which nothing records with that capability off. It is mandatory while
-  SSO's `sso.features.enforcement` is on or the application names or binds a tenant MFA requirement, a mandate
-  `iam:check` reads from the row (`Checks\MandatorySeamsCheck`): left on the default then, no tenant's enforcement or
-  requirement would reach a session. It is bound whatever those say, since either may be turned on while the
-  application runs. With `iam.adapters.sso` off the policy
-  is the application's to bind, beside the SSO seams it binds, as a mandatory one under the same conditions, MFA's
-  tenant requirement still answered from `iam.tenancy.mfa_requirement` while `iam.adapters.mfa` is on; with both
-  switches off nothing of the package's reads it, and both seams are the application's to bind. The packaged
-  configuration says so (`config/iam.php`, `adapters` and `tenancy`).
+  The policy's row is declared in `Tenancy\TenancySeams`, apart from either capability, since it composes both. It is
+  bound while `iam.adapters.sso` is on, whatever `iam.adapters.mfa` says: it composes SSO's enforcement and exemption
+  gate, and hands the gate the client of the redemption this package's SSO capability admitted in the request
+  (`AdmittedRedemptions`), which nothing records with that capability off. It is mandatory while SSO's
+  `sso.features.enforcement` is on or MFA's tenant requirement is bound off its default, a mandate `iam:check` reads
+  from the row (`Checks\MandatorySeamsCheck`): left on the default then, no tenant's enforcement or requirement would
+  reach a session. It is bound whatever those say, since either may be turned on while the application runs. With
+  `iam.adapters.sso` off the policy is the application's to bind, beside the SSO seams it binds, as a mandatory one
+  under the same conditions. The packaged configuration says so (`config/iam.php`, `adapters` and `tenancy`).
 - The policy's answer, on every call and with nothing cached (`TenantAuthenticationPolicyAdapter::requirementFor()`):
   1. SSO's `Enforcement::policy($tenantId, $application)`, the tenant named by its identifier as a string and the
      application by the guard; with the `enforcement` feature off it reads nothing;
   2. where the rule is required and the session (or the sign-in) was not established through one of its satisfying
      connections, SSO's `ExemptionGate::admit()`, the only place the exemption is asked;
-  3. the application's requirement for the tenant.
+  3. MFA's tenant requirement for the identity, the application and the tenant.
 
   The connections are the rule's satisfying connections, unless the rule requires none (`null`) or the identity is
   exempt (`null`); a rule whose every connection has gone requires `[]`, which none satisfies. The further factor is
-  the application's requirement.
+  MFA's tenant requirement, translated.
 - The version (`Tenancy\TenantPolicyVersion::of()`) is the SHA-256 digest, in hexadecimal (64 characters), of every
   input in one canonical form: SSO's policy as it serialises itself (the tenant, the enforcing tenant, whether a
   connection is required, the satisfying connections in id order, the rule's version), the exemption's outcome where
-  the gate was asked, and the application's rule (its version and its requirement part by part). SSO's own version
-  changes only with the enforcing tenant's rule, not when a satisfying connection is disabled, and an exemption has no
-  version, so the digest is what changes whenever anything the answer depends on does. A rule that requires something
-  with no version makes the whole version `null`, never taken as already checked.
+  the gate was asked, and the requirement part by part. SSO's own version changes only with the enforcing tenant's
+  rule, not when a satisfying connection is disabled, and an exemption has no version, so the digest is what changes
+  whenever anything the answer depends on does.
 - The connection a session, or a sign-in, was established through is the one `laravel-authentication` names to the
   policy (`TenantPolicyContext::connectionId()`), asked only once the rule requires a connection, so a tenant with
   nothing enforced costs no read of the session's provenance. `laravel-authentication` finds it once for the policy
@@ -92,17 +83,11 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   The identity is named to SSO through the morph map (`Sso\IdentityReferences`); a tenant whose identifier is neither a
   non-empty string nor an integer throws `UnresolvedReferenceException::forTenantIdentifier()` inside the caller's
   transaction (IAM-8.2).
-- MFA's tenant requirement (`Mfa\TenantRequirementAdapter`) is the same answer: MFA's opaque tenant id is resolved
-  through `laravel-authentication`'s tenant resolver to the tenant of exactly that identifier (`TenantReferences`), the
-  application's requirement is asked for it and the application, and its requirement is translated part by part
-  (`RequirementTranslator::toMfa()`). The identity MFA hands over is not asked about. With no requirement named or
-  bound, nothing is resolved, so a session acting in a tenant the resolver does not know is not refused for a
-  requirement nobody asked for.
 
 ## Success Path
 
-1. A password sign-in in a tenant with SSO's enforcement off and no requirement: the policy reads nothing and answers
-   no requirement at a version of its own; the session records it.
+1. A password sign-in in a tenant with SSO's enforcement off and MFA's default tenant requirement: the policy reads
+   nothing and answers no requirement at a version of its own; the session records it.
 2. A sign-in through SSO in an enforcing tenant: SSO's redemption locks the enforcing tenant's rule and admits the
    connection; `signInExternally()` asks the policy, which reads the rule and its connections, is told the sign-in's
    connection from its evidence, asks no exemption, and answers the connections, the
@@ -184,9 +169,9 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   an exempt identity, and the version it records is the one the next judgement answers. At READ COMMITTED each
   statement reads what is committed, and on PostgreSQL at REPEATABLE READ the locking read never finds a session
   committed after the snapshot (the second pass judges it), so there a plain read would agree with the locking one.
-- A tenant MFA requirement that cannot answer for a tenant throws, and the sign-in, refresh or change fails rather than
-  proceed as though nothing were required; a requirement named that implements no requirement throws
-  `TenantMfaRequirementMisconfiguredException`.
+- A tenant requirement that cannot answer for a tenant throws, and the sign-in, refresh or change fails rather than
+  proceed as though nothing were required; so does an identity that is not `MultiFactorAuthenticatable` once a
+  requirement is bound.
 - Gaps in the members the adapters work around:
   - `laravel-authentication`'s `TenantPolicyContext` carries no `ClientContext`, though every caller of the policy
     holds one. A sign-in or a re-authentication this package redeems hands the gate the client it keeps with the
@@ -196,26 +181,22 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   - `laravel-sso`'s `EnforcementPolicy::$version` does not change when a satisfying connection is disabled, and an
     exemption has no version (`EnforcementExemption`), so the adapter versions SSO's whole serialised policy and the
     gate's outcome rather than SSO's version alone.
-  - Neither member ships a contract kit for `TenantAuthenticationPolicy`; MFA's `TenantRequirementTests` is extended
-    for MFA's seam (IAM-8.3).
+  - Neither member ships a contract kit for `TenantAuthenticationPolicy`.
+  - laravel-mfa offers no public way to tell its own default binding from the application's, so a requirement is in use
+    while the binding does not resolve to `NoTenantRequirement`; it switches to `MfaServiceProvider::isPackageDefault()`
+    once laravel-mfa ships it.
 
 ## Implementation Anchors
 
-- `src/Contracts/TenantMfaRequirement.php`; `src/Tenancy/TenantMfaRule.php`: `none()`, `isEmpty()`;
-  `src/Tenancy/TenantMfaRequirements.php`: `ruleFor()`, `isConfigured()`, `isNamed()`, `KEY`, found through
-  `src/Bindings/ConfiguredImplementations.php`: `find()` (`provisioning-and-tenancy.md`); `config/iam.php`:
-  `tenancy.mfa_requirement`.
+- `src/Tenancy/TenantMfaRequirements.php`: `requirementFor()`, `isConfigured()`;
+  `src/Mfa/Translation/RequirementTranslator.php`: `toAuthentication()`.
 - `src/Tenancy/TenantAuthenticationPolicyAdapter.php`: `requirementFor()`; `src/Tenancy/TenantPolicyVersion.php`:
   `of()`; `src/Sso/AdmittedRedemptions.php`: `clientFor()`, `record()`;
   `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`: `redeem()`, recording the client.
-- `src/Tenancy/TenancySeams.php`: `seams()`, `ENFORCEMENT`; `src/Mfa/MfaSeams.php`: the tenant requirement row;
+- `src/Tenancy/TenancySeams.php`: `seams()`, `isEnforcedOrRequired()`, `ENFORCEMENT`;
   `src/IamServiceProvider.php`: `seamProviders()`.
-- `src/Mfa/TenantRequirementAdapter.php`: `requirementFor()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
 - `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`.
-- `src/Exceptions/TenantMfaRequirementMisconfiguredException.php`: `forClass()`, `forValue()`, `forBinding()`;
-  `src/Exceptions/UnresolvedReferenceException.php`: `forTenantIdentifier()`.
-- `src/Testing/FakeTenantMfaRequirement.php`: `fake()`, `require()`, `requireNothing()`, `failFor()`, `asked()`;
-  `src/Testing/Seams/TenantMfaRequirementContract.php`; `src/Testing/Seams/Concerns/TenantMfaRequirementTests.php`.
+- `src/Exceptions/UnresolvedReferenceException.php`: `forTenantIdentifier()`, `forMfaIdentity()`.
 - `benchmarks/Tenancy/TenantAuthenticationPolicyBench.php`, `benchmarks/Support/TenantAuthenticationPolicyBenchHarness.php`.
 
 ## Authoritative Tests
@@ -225,13 +206,12 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   `testAnEnforcedTenantRequiresItsConnections`, `testASessionTheRuleWouldRefuseIsJudgedByTheGate`,
   `testAnExemptIdentitysSessionNeedsNoConnection`, `testAnExemptIdentitysCompliantSessionReportsNoExemption`,
   `testASignInThroughASatisfyingConnectionNeedsNoGate`, `testASignInThroughNoSatisfyingConnectionIsJudgedByTheGate`,
-  `testTheConnectionIsAskedForOnlyWhenTheRuleRequiresOne`,
-  `testARuleWithNoConnectionLeftIsSatisfiedByNone`, `testTheApplicationsRequirementIsTheFurtherFactor`,
-  `testTheVersionChangesWhenAnyInputChanges`, `testAnUnversionedRequirementIsAnsweredAtNoVersion`,
+  `testTheConnectionIsAskedForOnlyWhenTheRuleRequiresOne`, `testARuleWithNoConnectionLeftIsSatisfiedByNone`,
+  `testTheApplicationsRequirementIsTheFurtherFactor`, `testTheVersionChangesWhenAnyInputChanges`,
   `testTheApplicationsRequirementIsReadOnTheWriteConnection`, `testItTakesNoLockUnderTheSessionsLock`,
   `testItTakesNoLockOutsideATransaction`, `testATenantThatCannotBeNamedThrows`,
-  `testARequirementThatCannotBeBuiltThrows`; the locks are counted from the moment the session's own lock is taken, or
-  the question asked outside a transaction (`Tests\Concerns\CountsLockingReads`)
+  `testAnIdentityMfaHoldsNoFactorsForIsRefusedOnceARequirementIsBound`; the locks are counted from the moment the
+  session's own lock is taken, or the question asked outside a transaction (`Tests\Concerns\CountsLockingReads`)
 - `tests/Integration/Tenancy/EnforcementThroughTenantPolicyTest.php` (every isolation level where it commits)
   `testASignInNamesTheEnforcementVersionJudgedUnderTheLocks`, `testAPasswordSignInInTheEnforcingTenantIsRefused`,
   `testAnExemptPersonSignsInWithAPassword`, `testAnExemptRedemptionReportsTheExemptionWithItsClient`,
@@ -256,31 +236,19 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   change committed on another connection after the redemption read its code and before it locked)
   `testARuleThatNoLongerAdmitsTheConnectionRefusesTheSignIn`,
   `testARuleThatStillAdmitsTheConnectionSignsInAndIsJudgedAsItIsNow`
-- `tests/Integration/Mfa/TenantRequirementAdapterTest.php` (MFA's `TenantRequirementTests`)
-  `testTenantRequirementKeepsNoStateBetweenCalls`, `testTheAdapterIsMfasTenantRequirementBound`,
-  `testTheApplicationsAnswerIsTranslatedForMfa`, `testMfaIsGivenTheAnswerAuthenticationsPolicyIsGiven`,
-  `testMfaComposesTheTenantsRequirementOnceTheSessionActsInIt`, `testWithNoRequirementNamedATenantRequiresNothing`,
-  `testATenantThatResolvesToNoneThrows`, `testWhatTheApplicationsRequirementThrowsPropagates`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` `testTheAdapterIsBoundOverTheDefaultInEveryProviderOrder`,
   `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testBothSwitchesOffBindNothing`,
   `testMfaOnWithSsoOffBindsNothing`, `testTheBindingIsOnWhileTheSsoSwitchIs`, `testTheBindingIsTransientOverTheDefault`,
-  `testTheBindingIsMandatoryWhileEnforcementOrARequirementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
+  `testTheBindingIsMandatoryWhileEnforcementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
   `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`
 - `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
-  `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`,
-  `testAnUnversionedRequirementMakesTheVersionNone`; `tests/Unit/Tenancy/TenantMfaRuleTest.php`
-  `testAVersionWithinItsBoundsIsCarried`, `testAVersionOutOfBoundsIsRefused`, `testARuleThatRequiresNothingIsEmpty`;
-  `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testWithNoRequirementNoTenantRequiresAFactor`,
-  `testTheClassNamedIsAsked`, `testTheApplicationsBindingWinsOverTheClassNamed`,
-  `testAClassNamedThatIsNoRequirementFailsClosed`, `testABindingThatResolvesToNoRequirementFailsClosed`,
-  `testARequirementIsConfiguredOnceBoundOrNamed`; `tests/Unit/Sso/AdmittedRedemptionsTest.php`
+  `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`;
+  `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,
+  `testTheBindingIsAskedAndItsAnswerTranslated`, `testWithMfasDefaultNothingIsRequired`,
+  `testAnIdentityMfaHoldsNoFactorsForIsRefused`; `tests/Unit/Sso/AdmittedRedemptionsTest.php`
   `testASignInsClientIsAnsweredForItsIdentityAndNoSessionAlone`,
   `testAReauthenticationsClientIsAnsweredForItsIdentityAndSessionAlone`, `testTheNextRedemptionAnswersItsOwnClient`
-- `tests/Unit/Testing/FakeTenantMfaRequirementTest.php` (this package's `TenantMfaRequirementTests`)
-  `testTenantMfaRequirementIsDeterministic`, `testTenantMfaRequirementVersionChangesWithTheAnswer`,
-  `testTenantMfaRequirementThrowsRatherThanAnswersNothing`, `testTheVersionCountsTheChangesToTheTenantsRequirement`,
-  `testTheKitFailsAChangedAnswerAtTheSameVersion`, `testTheKitFailsAnAnswerForAnUnanswerableTenant`
 - `tests/Performance/Tenancy/TenantPolicyQueryBudgetTest.php` `testAPasswordSignInWithNothingOn`,
   `testALinkedSignInInAnEnforcingTenant`, `testARefreshWithNothingOn`, `testARefreshInAnEnforcingTenant`
 
@@ -294,7 +262,7 @@ Update this note when:
   policy as a session is written (the second pass of every policy change may then be dropped);
 - SSO changes `Enforcement::policy()`, `EnforcementPolicy`, its version's meaning or `ExemptionGate::admit()`, or
   starts versioning or watching exemptions (the application's obligation to report a changed exemption then goes);
-- MFA changes `TenantRequirement` or ships a kit for another seam here;
+- MFA changes `TenantRequirement` or ships `MfaServiceProvider::isPackageDefault()`;
 - a reported tree move (`Iam::treeChanges()`, `provisioning-and-tenancy.md`) stops judging the moved tenant's whole
   subtree through `SubtreePolicyChanges` while SSO's enforcement or a requirement is on (Decision Q7), or inheritance of
   a requirement down the tree is decided otherwise than Q6 (a);

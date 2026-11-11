@@ -21,8 +21,8 @@ use Tests\TestCase;
  * recorded twice (IAM-9.6): `laravel-authentication`'s guard dispatches
  * Laravel's `Login`, `Failed` and `Logout` beside its own events, which this
  * package maps to audit-log's own codes, so once the guard is excluded from
- * audit-log's Laravel capture, as `CaptureExclusions` computes it for
- * `iam:install` to write, a sign-in, a refused sign-in and a sign-out are each
+ * audit-log's Laravel capture, as `CaptureExclusions` computes it for the
+ * application to set, a sign-in, a refused sign-in and a sign-out are each
  * recorded once, in audit-log's own tables; without the exclusion each is
  * recorded twice, which is what the exclusion is for.
  *
@@ -273,7 +273,7 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * Write the exclusions `CaptureExclusions` computes, as `iam:install`
+     * Write the exclusions `CaptureExclusions` computes, as the application
      * would, or leave audit-log's capture of every guard on.
      *
      * @param  bool  $excluded
