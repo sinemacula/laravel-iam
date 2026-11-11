@@ -195,8 +195,7 @@ are in `sso-redemption-and-revocation.md`, and the binding rule that applies eve
   `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`: `redeem()`, recording the client.
 - `src/Tenancy/TenancySeams.php`: `seams()`, `isEnforcedOrRequired()`, `ENFORCEMENT`;
   `src/IamServiceProvider.php`: `seamProviders()`.
-- `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`;
-  `src/Transactions/AfterConnectionCommits.php`: `run()`, `committed()`, `settle()`.
+- `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`.
 - `src/Exceptions/UnresolvedReferenceException.php`: `forTenantIdentifier()`, `forMfaIdentity()`.
 - `benchmarks/Tenancy/TenantAuthenticationPolicyBench.php`, `benchmarks/Support/TenantAuthenticationPolicyBenchHarness.php`.
 

@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration\Mfa;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Auth\User;
@@ -606,9 +607,9 @@ final class ProofStoreAdapterTest extends TestCase
             self::fail('A proof of a session revoked concurrently was kept.');
         } catch (ProofRefusedException) {
             self::assertFalse($serialises, 'PostgreSQL at REPEATABLE READ must fail to serialise instead.');
-        } catch (QueryException $exception) {
+        } catch (DeadlockException|QueryException $exception) {
             self::assertTrue($serialises, $exception->getMessage());
-            self::assertSame('40001', $exception->getCode());
+            self::assertSame('40001', (string) $exception->getCode());
         }
     }
 

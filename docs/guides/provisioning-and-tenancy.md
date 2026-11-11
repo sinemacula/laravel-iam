@@ -10,14 +10,13 @@ package asks you for each answer once, through a contract of its own, and routes
 | `SineMacula\Laravel\Iam\Contracts\GroupMapping`              | `iam.provisioning.groups.mapping` | the roles a provider's groups give a person provisioned through it, in the connection's tenant (see [Group mapping](#group-mapping))                                      |
 | `SineMacula\Laravel\Iam\Contracts\GroupResync`               | `iam.provisioning.groups.resync`  | whether, and how, a later sign-in brings a person's roles into line with the groups it reports                                                                            |
 | `SineMacula\Laravel\Iam\Contracts\Memberships`               | `iam.tenancy.memberships`         | SSO's tenant membership, link eligibility and the membership half of principal scope                                                                                      |
-| `SineMacula\Laravel\Iam\Contracts\TenantTree`                | `iam.tenancy.tree`                | SSO's enforcement inheritance, `laravel-authorization`'s tree, and which sessions a change reaches                                                                        |
 | `SineMacula\Laravel\Mfa\Contracts\TenantRequirement`         | None: bind it                     | MFA's tenant requirement and the tenant's part of the tenant policy (see [The tenant MFA requirement](#the-tenant-mfa-requirement))                                       |
 | `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                     | every tenant id to its tenant, owed with MFA's tenant requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
 
 Name each by its class in `config/iam.php`, or bind it in the container in a service provider's `register()`.
-Memberships or a tree bound only from a `boot()` are still the ones asked, but bind no adapter, so SSO's own defaults
-stay. A value that is no class name fails closed. Each is optional: leave it unnamed and the member's own
-default, which refuses or requires nothing, stays.
+Memberships bound only from a `boot()` are still the ones asked, but bind no adapter, so SSO's own defaults stay. The
+tenant tree is `laravel-authorization`'s (see [The tenant tree](#the-tenant-tree)). A value that is no class name fails
+closed. Each is optional: leave it unnamed and the member's own default, which refuses or requires nothing, stays.
 
 Every one of them is asked inside the members' transactions on the storage connection, some under SSO's locks, so:
 
@@ -283,25 +282,12 @@ other tenant's verified domain and revokes the sessions established through them
 
 ## The tenant tree
 
-```php
-// config/iam.php
-'tenancy' => [
-    'tree' => App\Tenancy\Organisations::class, // implements SineMacula\Laravel\Iam\Contracts\TenantTree
-],
-```
-
-The tree names tenants by the opaque identifiers SSO and `laravel-authentication` use, has no cycles, and answers:
-
-- `ancestors($tenantId)`: nearest first, the tenant excluded; nothing for a root or a tenant it does not hold;
-- `descendants($tenantId)`: every tenant below, each once, the tenant excluded;
-- `isWithin($tenantId, $ancestorId)`: agreeing with both, a tenant counting as within itself;
-- `subtree($tenantId)`: a query of the tenant and every descendant, selecting their ids in the `tenant_id` column
-  (`TenantTree::ID_COLUMN`).
-
-With a tree named, a tenant inherits SSO's enforcement from the nearest tenant, from itself up through its ancestors,
-that has a rule stored, on or off: a rule turned off keeps its tenant, and every tenant inheriting from it, out of an
-ancestor's rule. An enforcement change judges the sessions of the enforcing tenant and of every tenant below it.
-Without a tree every tenant stands alone.
+Implement `laravel-authorization`'s `SineMacula\Laravel\Authorization\Contracts\TenantTree` and name it in
+`authorization.tenant_tree`; its `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract` tests your
+implementation. Tenants of different types may nest. This package reads the same tree: a tenant inherits SSO's
+enforcement from the nearest tenant, from itself up, with a rule stored, on or off, and an enforcement change judges the
+sessions of the enforcing tenant and every tenant below it. With `laravel-authorization`'s flat default every tenant
+stands alone.
 
 Report every move of a tenant inside the transaction that writes it, after the write, and a removal as the move of
 each child moved out from under the removed tenant:
@@ -316,37 +302,11 @@ Iam::transaction(function () use ($organisation, $parentId): void {
 });
 ```
 
-While SSO's enforcement is on or MFA's tenant requirement is bound, it judges the sessions of the moved tenant and its
-whole subtree, once in the transaction and once more after it commits; otherwise no session can have changed, and it
-judges none. A report made before the write would judge the tree as it was. It resolves each tenant through your
-[tenant resolver](#the-tenant-resolver), and throws `UnresolvedReferenceException` under `ResolveNoTenant`.
-
-The same tree is `laravel-authorization`'s, while `iam.adapters.authorization` is on: a grant made in a tenant reaches
-the tenants below it as your tree places them, each named as your tenant resolver names it. A tenant's key must be its
-identifier: a tenant `laravel-authorization` names whose key does not resolve back, through your resolver, to that same
-tenant is refused (`UnresolvedReferenceException`), and so is a grant in it, so bind a resolver: `iam:check` refuses
-`ResolveNoTenant` while the authorization adapters are on beside a tree. Your `subtree()` may select its ids as integers
-(`Organisation::query()->select('id as tenant_id')`): this package selects them as text, as `laravel-authorization`
-compares them. Every tenant of your tree must be of one type, one model: your `subtree()` selects ids alone, so
-`laravel-authorization` reads every tenant of a subtree as the type of the tenant at its top. A tree that places a
-tenant below one of another type (an account below an organisation, say) is refused with
-`TenancyMisconfiguredException`: a check in the tenant below, a principal scope that would place a person outside a
-tenant above it, and a move of a subtree holding one all throw, rather than read a grant below the tenant as one beyond
-it. Keep the tree to one tenant model, or bind a tree of your own to `laravel-authorization` with the authorization
-adapters off. Without a tree, `laravel-authorization` keeps its own flat tree, and nothing is reported to it.
-
-Each report passes the move on to `laravel-authorization` first, whatever SSO's enforcement says. A grant rooted below
-a tenant counts within it for SSO's principal scope, so a move that takes a subtree out from under a tenant takes the
-grants in that subtree beyond it with no grant written, and no grant hook runs. So, while the SSO adapters are on too,
-the report names everyone holding a live role, permission or policy grant in the moved tenant or below it (a
-principal's grant naming the person who owns it) to SSO's [scope widening](#scope-widening) in the moved tenant, in
-your transaction: SSO suspends each one's links by a verified domain in every other tenant's connections and revokes
-the sessions established through them, and all of it rolls back with the move. This package sees only where the tenant
-ends up, so it reports every move this way, a move within the linked tenant included: such a link is suspended too,
-and the person links again. Then `Authorization::treeChanged()` drops every resolution `laravel-authorization` built in
-the moved tenant or below it, in every worker, at once and again once your transaction commits; so a report is owed
-whenever the tree moves, even with no enforcement and no tenant requirement, and it resolves the moved tenant through
-your resolver then too. Do not call `Authorization::treeChanged()` yourself beside it.
+The report passes the move to `laravel-authorization` (`Authorization::treeChanged()`: do not call it yourself beside
+it). While the authorization and SSO adapters are on, it reports everyone granted in the moved subtree to SSO's
+[scope widening](#scope-widening), since no grant hook runs for a move. While SSO's enforcement is on or MFA's tenant
+requirement is bound, it judges the sessions of the moved subtree, once in the transaction and once more after it
+commits. It resolves each tenant through your [tenant resolver](#the-tenant-resolver).
 
 ## The tenant MFA requirement
 

@@ -12,6 +12,8 @@ use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
@@ -20,7 +22,6 @@ use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -269,57 +270,35 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Rows of how the application has a tenant tree: named, or bound.
+     * With a tenant tree bound to `laravel-authorization`, the tree's changes
+     * and SSO's inheritance resolve every tenant they ask about through the
+     * tenant resolver, so `ResolveNoTenant` is refused; with its flat tree,
+     * none is needed.
      *
-     * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
-     */
-    public static function provideTrees(): iterable
-    {
-        yield 'a tree named' => [static function (Application $app): void {
-            $app->make('config')->set(TenancyContracts::TREE, StoredTenantTree::class);
-        }];
-
-        yield 'a tree bound' => [static function (Application $app): void {
-            $app->bind(TenantTree::class, StoredTenantTree::class);
-        }];
-    }
-
-    /**
-     * With the authorization capability on beside a tenant tree, SSO's off,
-     * `laravel-authorization`'s tree resolves every tenant it asks about
-     * through the tenant resolver, so `ResolveNoTenant` is refused; without a
-     * tree it reads its own flat one, and needs none.
-     *
-     * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $tree
      * @return void
      */
-    #[DataProvider('provideTrees')]
-    public function testTheTenantResolverMustResolveWhileAuthorizationReadsATree(\Closure $tree): void
+    public function testTheTenantResolverMustResolveWithATree(): void
     {
-        $app = $this->app;
-
-        assert($app instanceof Application);
+        $app = $this->app ?? self::fail('The application has not booted.');
 
         $this->declare(array_column(Operation::cases(), 'value'));
 
-        $app->make('config')->set(AuthorizationSeams::SWITCH, true);
         $app->make('config')->set(SsoSeams::SWITCH, false);
 
         self::assertSame([], self::problems($this->check()->checks()));
 
-        $tree($app);
+        $app->instance(TenantTree::class, new StoredTenantTree);
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
 
-        $app->make('config')->set(AuthorizationSeams::SWITCH, false);
+        $app->instance(TenantTree::class, new FlatTenantTree);
 
         self::assertSame([], self::problems($this->check()->checks()));
     }
 
     /**
      * With no tenant MFA requirement and SSO's enforcement off, no tenant's
-     * rule reaches a session, so `ResolveNoTenant` is the application's choice,
-     * even with a tenant tree named, whose changes then resolve nothing.
+     * rule reaches a session, so `ResolveNoTenant` is the application's choice.
      *
      * @return void
      */
@@ -329,7 +308,6 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         $this->declare(array_column(Operation::cases(), 'value'));
 
-        $config?->set('iam.tenancy.tree', StoredTenantTree::class);
         $config?->set(TenancySeams::ENFORCEMENT, false);
 
         $app = $this->app ?? self::fail('The application has not booted.');

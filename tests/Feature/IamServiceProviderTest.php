@@ -10,13 +10,8 @@ use Illuminate\Console\Application as Artisan;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Contracts\Queue\Job;
-use Illuminate\Database\Connection;
 use Illuminate\Foundation\Application as FoundationApplication;
-use Illuminate\Queue\Events\JobExceptionOccurred;
-use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
@@ -40,7 +35,6 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
-use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 use SineMacula\Laravel\Iam\IamManager;
@@ -56,16 +50,11 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
-use SineMacula\Laravel\Iam\Transactions\CommittedWork;
-use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
-use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
-use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
@@ -74,7 +63,6 @@ use SineMacula\Laravel\Sso\Database\StorageConnection as SsoStorageConnection;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\Concerns\ReadsRawListeners;
-use Tests\Concerns\RunsInOctaneSandboxes;
 use Tests\Fixtures\Providers\RecordsAuthorizationContextWhileBooting;
 use Tests\Fixtures\Providers\RecordsBindingOutcome;
 use Tests\Fixtures\Providers\RecordsSettlementWhileBooting;
@@ -106,7 +94,7 @@ use Tests\TestCase;
 #[CoversClass(IamServiceProvider::class)]
 final class IamServiceProviderTest extends TestCase
 {
-    use PermutesProviderOrder, ReadsRawListeners, RunsInOctaneSandboxes;
+    use PermutesProviderOrder, ReadsRawListeners;
 
     /** @var string A connection no key in these tests is aligned to. */
     private const string ELSEWHERE = 'elsewhere';
@@ -603,10 +591,9 @@ final class IamServiceProviderTest extends TestCase
      * bound every capability's seams over the members' defaults, MFA's, the
      * passkey factor gate, its context's, SSO's and `laravel-authorization`'s,
      * and kept none, the application binding nothing of its own, offering no
-     * passkeys, naming no gateway, no memberships and no tree, and leaving
-     * SSO's evidence off, so MFA keeps its own challenge gateway and its own
-     * passkey gateway, and SSO its own evidence policy, tenant membership, link
-     * eligibility, principal scope and enforcement inheritance.
+     * passkeys, naming no memberships, and leaving SSO's evidence off, so MFA
+     * keeps its own passkey gateway, and SSO its own evidence policy, tenant
+     * membership, link eligibility and principal scope.
      *
      * @return void
      *
@@ -615,12 +602,12 @@ final class IamServiceProviderTest extends TestCase
     public function testTheBindingRulesOutcomeIsKeptForTheChecks(): void
     {
         $outcome = $this->app?->make(BindingOutcome::class);
-        $mfa     = (new MfaSeams(new DeliverySeams(new Container)))->seams(new Repository);
+        $mfa     = (new MfaSeams)->seams(new Repository);
         $sso     = [...(new SsoSeams)->seams(new Repository), ...(new TenancySeams(new Container))->seams(new Repository)];
         $mfa     = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
         $rows    = [...$mfa, ...$sso, ...(new AuthorizationSeams)->seams(new Repository)];
-        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class, EnforcementInheritance::class];
-        $unbound = [ChallengeGateway::class, PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
+        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class];
+        $unbound = [PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
         $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), $unbound));
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
@@ -939,165 +926,6 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Every outermost commit a connection begins is counted in this request's
-     * record, once however many savepoints it holds, and never for a
-     * transaction rolled back.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testEachOutermostCommitIsCounted(): void
-    {
-        $commits    = $this->app?->make(OutermostCommits::class) ?? self::fail('The application has not booted.');
-        $connection = DB::connection();
-
-        DB::transaction(static fn (): mixed => DB::transaction(static fn (): null => null));
-
-        self::assertSame(1, $commits->count($connection));
-
-        DB::beginTransaction();
-        DB::rollBack();
-
-        self::assertSame(1, $commits->count($connection));
-
-        DB::transaction(static fn (): null => null);
-
-        self::assertSame(2, $commits->count($connection));
-    }
-
-    /**
-     * With the worker reset turned off, outermost commits are still counted.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DefineEnvironment('turnTheResetOff')]
-    public function testOutermostCommitsAreCountedWithTheWorkerResetOff(): void
-    {
-        $commits = $this->app?->make(OutermostCommits::class) ?? self::fail('The application has not booted.');
-
-        DB::transaction(static fn (): null => null);
-
-        self::assertSame(1, $commits->count(DB::connection()));
-    }
-
-    /**
-     * Work held for a connection runs once that connection's commit has
-     * finished, through the record this request keeps, with the worker reset
-     * turned off too.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DefineEnvironment('turnTheResetOff')]
-    public function testHeldWorkRunsOnceTheConnectionCommits(): void
-    {
-        /** @var \ArrayObject<int, true> $runs */
-        $runs = new \ArrayObject;
-
-        DB::transaction(function () use ($runs): void {
-
-            $this->afterCommits()->run(self::storage(), static function () use ($runs): void {
-                $runs->append(true);
-            });
-
-            self::assertCount(0, $runs);
-        });
-
-        self::assertCount(1, $runs);
-    }
-
-    /**
-     * Work a commit left held, a commit callback having failed, runs as the
-     * application terminates, at the end of a request or a console command,
-     * with the worker reset turned off too.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DefineEnvironment('turnTheResetOff')]
-    public function testWorkACommitLeftHeldRunsAsTheApplicationTerminates(): void
-    {
-        $runs = $this->leaveHeld();
-
-        self::assertCount(0, $runs);
-
-        $this->application()->terminate();
-
-        self::assertCount(1, $runs);
-    }
-
-    /**
-     * Rows of `[event]`: the queue's events a job's end fires.
-     *
-     * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Queue\Job): object}>
-     */
-    public static function provideJobEndings(): iterable
-    {
-        yield 'a job processed' => [static fn (Job $job): object => new JobProcessed('redis', $job)];
-
-        yield 'a job that threw' => [static fn (Job $job): object => new JobExceptionOccurred('redis', $job, new \RuntimeException('The job failed.'))];
-    }
-
-    /**
-     * Work a commit left held runs as a queued job ends, whether it was
-     * processed or threw, with the worker reset turned off too.
-     *
-     * @param  \Closure(\Illuminate\Contracts\Queue\Job): object  $event
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideJobEndings')]
-    #[DefineEnvironment('turnTheResetOff')]
-    public function testWorkACommitLeftHeldRunsAsAJobEnds(\Closure $event): void
-    {
-        $runs = $this->leaveHeld();
-
-        Event::dispatch($event(\Mockery::mock(Job::class)));
-
-        self::assertCount(1, $runs);
-    }
-
-    /**
-     * Under Octane, whose events dispatcher keeps the worker's application,
-     * each commit listener reaches the request's sandbox's own records: the
-     * work held in the sandbox runs once its commit has finished, and the
-     * commit is counted in the sandbox's record, not the worker's.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheCommitListenersReachAnOctaneSandboxsRecords(): void
-    {
-        $worker = $this->application()->make(OutermostCommits::class);
-
-        $this->application()->make(CommittedWork::class);
-
-        $this->inOctaneSandbox(function (FoundationApplication $sandbox) use ($worker): void {
-
-            $runs = 0;
-
-            DB::transaction(static function () use ($sandbox, &$runs): void {
-
-                $sandbox->make(AfterConnectionCommits::class)->run(self::storage(), static function () use (&$runs): void {
-                    $runs++;
-                });
-            });
-
-            self::assertSame(1, $runs, 'The work held in the sandbox never ran.');
-            self::assertSame([], $sandbox->make(CommittedWork::class)->connections());
-            self::assertSame(1, $sandbox->make(OutermostCommits::class)->count(self::storage()));
-            self::assertSame(0, $worker->count(self::storage()), 'The commit was counted in the worker\'s record.');
-        });
-    }
-
-    /**
      * With the switch missing from the configuration, the worker reset is on.
      *
      * @return void
@@ -1211,7 +1039,7 @@ final class IamServiceProviderTest extends TestCase
     public function testEveryCapabilitysSeamsAreProvided(): void
     {
         self::assertSame(
-            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, DeliverySeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class],
+            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class],
             IamServiceProvider::seamProviders(),
         );
     }
@@ -1336,60 +1164,6 @@ final class IamServiceProviderTest extends TestCase
 
             $this->environment[] = $name;
         }
-    }
-
-    /**
-     * The helper that defers work until a connection's commit has finished.
-     *
-     * @return \SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits
-     */
-    private function afterCommits(): AfterConnectionCommits
-    {
-        return $this->app?->make(AfterConnectionCommits::class) ?? self::fail('The application has not booted.');
-    }
-
-    /**
-     * Hold work that counts each time it runs for a commit of the default
-     * connection whose callback queued after it fails, so the commit finishes
-     * with the work held; answer the count.
-     *
-     * @return \ArrayObject<int, true>
-     *
-     * @throws \Throwable
-     */
-    private function leaveHeld(): \ArrayObject
-    {
-        /** @var \ArrayObject<int, true> $runs */
-        $runs = new \ArrayObject;
-
-        try {
-            DB::transaction(function () use ($runs): void {
-
-                $this->afterCommits()->run(self::storage(), static function () use ($runs): void {
-                    $runs->append(true);
-                });
-
-                DB::afterCommit(static fn () => throw new \LogicException('A callback failed.'));
-            });
-        } catch (\LogicException) {
-            return $runs;
-        }
-
-        self::fail('The callback did not fail.');
-    }
-
-    /**
-     * The default connection.
-     *
-     * @return \Illuminate\Database\Connection
-     */
-    private static function storage(): Connection
-    {
-        $connection = DB::connection();
-
-        self::assertInstanceOf(Connection::class, $connection);
-
-        return $connection;
     }
 
     /**

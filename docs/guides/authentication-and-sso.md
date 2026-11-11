@@ -185,7 +185,7 @@ Nothing is yours to call. When a connection is disabled or deleted, a link is re
 enforcement changes, SSO asks the package to revoke inside its own transaction, and exactly the sessions the change
 concerns end with it. An enforcement change judges the sessions acting in the tenant against the tenant policy, once
 in SSO's transaction and once more after it commits, so a session that entered the tenant meanwhile is judged too.
-With a tenant tree named, every tenant below the enforcing one is judged as well.
+With a tenant tree bound to `laravel-authorization`, every tenant below the enforcing one is judged as well.
 
 Bind `laravel-authentication`'s `TenantResolver` before you turn enforcement on: its default resolves no tenant, and
 every enforcement change then throws. See `laravel-authentication`'s [extending guide][auth-extending].
@@ -245,7 +245,8 @@ The package ships no routes. SSO's start, completion and metadata routes are SSO
 ## Transactions and locks
 
 - The sign-in and re-authentication redemptions run in one transaction on the storage connection, retried whole; a
-  `link` runs through SSO's standalone redemption.
+  `link` runs through SSO's standalone redemption, in SSO's own transaction, so retry the request when it fails to
+  serialise.
 - SSO's starts and completions talk to the provider and refuse to run inside a transaction: never wrap them.
 - Every adapter takes its locks in SSO's lock order, with `laravel-authentication`'s session row last. Your own
   contracts that SSO asks under its locks (memberships, link eligibility) come after SSO's, so take no lock on rows

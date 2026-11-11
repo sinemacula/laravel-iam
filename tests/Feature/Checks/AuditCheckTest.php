@@ -31,7 +31,7 @@ final class AuditCheckTest extends TestCase
 
     /** @var string Why the guard the tests sign in on is refused while audit-log still captures it. */
     private const string UNEXCLUDED = 'Guards [api] are missing from `audit-log.capture.laravel.except_guards`, '
-        . 'so each of their sign-ins is recorded twice; `iam:install` writes them.';
+        . 'so each of their sign-ins is recorded twice: add them.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
     private const string GATE_CAPTURE_ON = '`audit-log.capture.gate.enabled` must be false, so no authorization decision is recorded twice:'
@@ -39,7 +39,7 @@ final class AuditCheckTest extends TestCase
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNREGISTERED = '`audit-log.definitions.require_registered` must be true, '
-        . 'so a code without a definition is refused rather than recorded unchecked; `iam:install` writes it.';
+        . 'so a code without a definition is refused rather than recorded unchecked; turn it on.';
 
     /**
      * Audit-log as it ships, with the mappers on, records the guard's sign-ins
@@ -55,13 +55,13 @@ final class AuditCheckTest extends TestCase
     }
 
     /**
-     * What `iam:install` writes passes.
+     * The audit-log values the application owes pass.
      *
      * @return void
      */
-    public function testWhatTheInstallWritesPasses(): void
+    public function testTheOwedValuesPass(): void
     {
-        $this->install();
+        $this->setOwedValues();
 
         self::assertSame([], self::problems($this->check()->checks()));
     }
@@ -73,7 +73,7 @@ final class AuditCheckTest extends TestCase
      */
     public function testGateCaptureOnFails(): void
     {
-        $this->install();
+        $this->setOwedValues();
 
         $this->app?->make('config')->set(CaptureExclusions::GATE_KEY, true);
 
@@ -88,7 +88,7 @@ final class AuditCheckTest extends TestCase
      */
     public function testAMalformedExclusionListFails(): void
     {
-        $this->install();
+        $this->setOwedValues();
 
         $this->app?->make('config')->set(CaptureExclusions::EXCEPT_GUARDS_KEY, 'api');
 
@@ -102,7 +102,7 @@ final class AuditCheckTest extends TestCase
      */
     public function testMappersThatNeverRegisteredFail(): void
     {
-        $this->install();
+        $this->setOwedValues();
 
         $this->app?->offsetUnset(AuditRegistrations::REGISTERED);
 
@@ -146,18 +146,18 @@ final class AuditCheckTest extends TestCase
 
         self::assertSame([self::UNEXCLUDED, self::GATE_CAPTURE_ON, self::UNREGISTERED], self::problems($this->check()->checks()));
 
-        $this->install();
+        $this->setOwedValues();
         $config?->set(CaptureExclusions::GATE_KEY, false);
 
         self::assertSame([], self::problems($this->check()->checks()));
     }
 
     /**
-     * Write what `iam:install` writes into audit-log's configuration.
+     * Set the audit-log values the application owes.
      *
      * @return void
      */
-    private function install(): void
+    private function setOwedValues(): void
     {
         $config = $this->app?->make('config');
 

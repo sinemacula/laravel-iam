@@ -11,19 +11,15 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Bindings\ConfiguredImplementations;
 use SineMacula\Laravel\Iam\Contracts\Memberships;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 
 /**
- * Unit tests for finding the application's memberships and tenant tree
- * (IAM-7.4, IAM-7.5): the application's binding wins over the class it names
- * (IAM-8.4), a class named is built, neither means none (memberships asked for
- * then throw, a tree is answered as none), and a class named that does not
- * implement the contract, a value that is no class name, or a binding that
- * resolves to no implementation, fails closed.
+ * Unit tests for finding the application's memberships (IAM-7.4): the
+ * application's binding wins over the class it names (IAM-8.4), a class named
+ * is built, neither throws, and anything that is no implementation fails
+ * closed.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,20 +49,18 @@ final class TenancyContractsTest extends TestCase
         parent::setUp();
 
         $this->container = new Container;
-        $this->config    = new Repository(['iam' => ['tenancy' => ['memberships' => null, 'tree' => null]]]);
+        $this->config    = new Repository(['iam' => ['tenancy' => ['memberships' => null]]]);
     }
 
     /**
-     * With neither named nor bound, there is no tree, memberships asked for
-     * throw rather than answer none, and neither is configured.
+     * With memberships neither named nor bound, asking for them throws rather
+     * than answer none.
      *
      * @return void
      */
-    public function testWithNeitherThereIsNoneOfEither(): void
+    public function testWithNoneMembershipsThrow(): void
     {
-        self::assertNull($this->contracts()->tree());
         self::assertFalse(TenancyContracts::hasMemberships($this->container, $this->config));
-        self::assertFalse(TenancyContracts::hasTree($this->container, $this->config));
 
         $this->expectException(TenancyMisconfiguredException::class);
         $this->expectExceptionMessage('Nothing implements ' . Memberships::class . ': name the class in iam.tenancy.memberships');
@@ -83,13 +77,10 @@ final class TenancyContractsTest extends TestCase
     public function testAClassNamedIsBuilt(): void
     {
         $this->config->set(TenancyContracts::MEMBERSHIPS, FakeMemberships::class);
-        $this->config->set(TenancyContracts::TREE, FakeTenantTree::class);
 
         self::assertInstanceOf(FakeMemberships::class, $this->contracts()->memberships());
         self::assertNotSame($this->contracts()->memberships(), $this->contracts()->memberships());
-        self::assertInstanceOf(FakeTenantTree::class, $this->contracts()->tree());
         self::assertTrue(TenancyContracts::hasMemberships($this->container, $this->config));
-        self::assertTrue(TenancyContracts::hasTree($this->container, $this->config));
     }
 
     /**
@@ -101,16 +92,12 @@ final class TenancyContractsTest extends TestCase
     public function testTheApplicationsBindingWins(): void
     {
         $memberships = FakeMemberships::fake($this->container);
-        $tree        = FakeTenantTree::fake($this->container);
 
         self::assertTrue(TenancyContracts::hasMemberships($this->container, $this->config));
-        self::assertTrue(TenancyContracts::hasTree($this->container, $this->config));
 
         $this->config->set(TenancyContracts::MEMBERSHIPS, 'App\Missing');
-        $this->config->set(TenancyContracts::TREE, 'App\Missing');
 
         self::assertSame($memberships, $this->contracts()->memberships());
-        self::assertSame($tree, $this->contracts()->tree());
     }
 
     /**
@@ -127,7 +114,7 @@ final class TenancyContractsTest extends TestCase
 
         yield 'blank' => ['   ', false];
 
-        yield 'a class' => [FakeTenantTree::class, true];
+        yield 'a class' => [FakeMemberships::class, true];
 
         yield 'false' => [false, true];
 
@@ -145,9 +132,9 @@ final class TenancyContractsTest extends TestCase
     #[DataProvider('provideNames')]
     public function testOnlyNullAndBlankTextNameNothing(mixed $value, bool $named): void
     {
-        $this->config->set(TenancyContracts::TREE, $value);
+        $this->config->set(TenancyContracts::MEMBERSHIPS, $value);
 
-        self::assertSame($named, TenancyContracts::hasTree($this->container, $this->config));
+        self::assertSame($named, TenancyContracts::hasMemberships($this->container, $this->config));
     }
 
     /**
@@ -158,12 +145,12 @@ final class TenancyContractsTest extends TestCase
      */
     public function testAValueThatIsNoClassNameFailsClosed(): void
     {
-        $this->config->set(TenancyContracts::TREE, true);
+        $this->config->set(TenancyContracts::MEMBERSHIPS, true);
 
         $this->expectException(TenancyMisconfiguredException::class);
-        $this->expectExceptionMessage('iam.tenancy.tree holds a value of type [bool], which names no class implementing ' . TenantTree::class);
+        $this->expectExceptionMessage('iam.tenancy.memberships holds a value of type [bool], which names no class implementing ' . Memberships::class);
 
-        $this->contracts()->tree();
+        $this->contracts()->memberships();
     }
 
     /**
@@ -173,10 +160,10 @@ final class TenancyContractsTest extends TestCase
      */
     public function testAClassThatIsNoImplementationFailsClosed(): void
     {
-        $this->config->set(TenancyContracts::MEMBERSHIPS, FakeTenantTree::class);
+        $this->config->set(TenancyContracts::MEMBERSHIPS, \stdClass::class);
 
         $this->expectException(TenancyMisconfiguredException::class);
-        $this->expectExceptionMessage('iam.tenancy.memberships names [' . FakeTenantTree::class . '], which is not a class implementing ' . Memberships::class);
+        $this->expectExceptionMessage('iam.tenancy.memberships names [stdClass], which is not a class implementing ' . Memberships::class);
 
         $this->contracts()->memberships();
     }
@@ -189,12 +176,12 @@ final class TenancyContractsTest extends TestCase
      */
     public function testABindingThatResolvesToNoImplementationFailsClosed(): void
     {
-        $this->container->bind(TenantTree::class, static fn (): object => new \stdClass);
+        $this->container->bind(Memberships::class, static fn (): object => new \stdClass);
 
         $this->expectException(TenancyMisconfiguredException::class);
-        $this->expectExceptionMessage('The container binding of ' . TenantTree::class . ' resolves to [stdClass], which does not implement ' . TenantTree::class);
+        $this->expectExceptionMessage('The container binding of ' . Memberships::class . ' resolves to [stdClass], which does not implement ' . Memberships::class);
 
-        $this->contracts()->tree();
+        $this->contracts()->memberships();
     }
 
     /**

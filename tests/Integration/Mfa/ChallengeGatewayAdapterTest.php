@@ -14,7 +14,6 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
-use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
 use SineMacula\Laravel\Authentication\Events\AuthenticationFailed;
 use SineMacula\Laravel\Authentication\Models\OneTimeCode;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthenticationChannelKind;
@@ -33,6 +32,7 @@ use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
+use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\LockoutApplied;
@@ -50,6 +50,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\Codes\Concerns\ArrangesDeliveredFactors;
 use Tests\Fixtures\Mfa\Codes\Concerns\DeliversFactorCodes;
 use Tests\Fixtures\Mfa\Codes\DetachedFactor;
+use Tests\Fixtures\Mfa\Codes\RecordingCodeDriver;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
@@ -137,10 +138,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         self::assertSame(self::GUARD, $messages[0]->guard);
         self::assertEquals($messages[0]->expiresAt, $sent->expiresAt);
         self::assertSame($this->person()->getKey(), $messages[0]->identity->getAuthIdentifier());
-
-        foreach ($this->gateways() as $gateway) {
-            self::assertSame([], $gateway->sent());
-        }
+        self::assertSame($messages, $this->codeSender()->sent(), 'MFA\'s own senders deliver nothing.');
     }
 
     /**
@@ -170,10 +168,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         self::assertSame($factor->id, $proof->factor);
         self::assertSame(AuthenticationChannelKind::SMS, $proof->channel->kind);
         self::assertSame(self::DELIVERED_PHONE, $proof->channel->reference);
-
-        foreach ($this->gateways() as $gateway) {
-            self::assertSame([], $gateway->sent());
-        }
+        self::assertCount(1, $this->codeSender()->sent(), 'MFA\'s own senders deliver nothing.');
     }
 
     /**
@@ -324,10 +319,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
     /**
      * A binding of another application than the caller's is refused by throwing
-     * `not_accepted`, before the code's path is chosen, on
-     * `laravel-authentication`'s path and on MFA's own: no code is kept or
-     * delivered for it, nothing is counted, and the challenge it checked still
-     * answers the caller it was sent for.
+     * `not_accepted`: no code is kept or delivered for it, nothing is counted,
+     * and the challenge it checked still answers the caller it was sent for.
      *
      * @return void
      *
@@ -340,22 +333,10 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $factor    = $this->challengedFactor();
         $binding   = $this->challengeBinding();
         $elsewhere = self::callerOf($this->person(), 'admin');
-        $app       = $this->app ?? self::fail('The application has not booted.');
 
         $calls = [
             fn (): mixed => $this->challengeGateway()->send($elsewhere, $factor, $binding),
             fn (): mixed => $this->challengeGateway()->verify($elsewhere, $factor, $binding, $challenge, $code),
-            function () use ($app, $elsewhere, $factor, $binding, $challenge, $code): mixed {
-                $sender = $app->make(OneTimeCodeSender::class);
-
-                unset($app[OneTimeCodeSender::class]);
-
-                try {
-                    return $this->challengeGateway()->verify($elsewhere, $factor, $binding, $challenge, $code);
-                } finally {
-                    $app->instance(OneTimeCodeSender::class, $sender);
-                }
-            },
         ];
 
         foreach ($calls as $call) {
@@ -867,6 +848,77 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
+     * Rows of `[factor type, channel kind]` for each channel a code goes by.
+     *
+     * @return iterable<string, array{0: string, 1: \SineMacula\Laravel\Mfa\Enums\ChannelKind}>
+     */
+    public static function provideCodeChannels(): iterable
+    {
+        yield 'sms' => ['sms', ChannelKind::SMS];
+
+        yield 'email' => ['email', ChannelKind::EMAIL];
+    }
+
+    /**
+     * A driver the application registers for SMS or email has its codes sent
+     * and checked through `laravel-authentication`, never by itself.
+     *
+     * @param  string  $type
+     * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $kind
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideCodeChannels')]
+    public function testAnApplicationsSmsOrEmailDriverGoesThroughAuthentication(string $type, ChannelKind $kind): void
+    {
+        $driver = new RecordingCodeDriver($kind);
+
+        Mfa::extend($type, static fn (): RecordingCodeDriver => $driver);
+
+        $factor   = $this->deliveredFactor($this->person(), $type);
+        $sent     = $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding());
+        $messages = $this->deliverFactorCodes();
+
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+        self::assertCount(1, $messages);
+        self::assertSame($type, $messages[0]->type);
+        self::assertSame(self::deliveredDestination($this->person(), $type), $messages[0]->identifier);
+        self::assertSame([], $driver->messages());
+
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), (string) $sent->challengeId, $messages[0]->code->reveal());
+
+        self::assertTrue($outcome->hasPassed());
+    }
+
+    /**
+     * A factor whose driver delivers by neither SMS nor email is refused as not
+     * accepted, and no code is issued for it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testADriverOfAnotherChannelKindIsNotAccepted(): void
+    {
+        config()->set('mfa.applications.' . self::GUARD . '.types', ['totp', 'sms', 'email', 'push']);
+
+        $driver = new RecordingCodeDriver(ChannelKind::EXTERNAL_PROVIDER);
+
+        Mfa::extend('push', static fn (): RecordingCodeDriver => $driver);
+
+        $factor  = $this->deliveredFactor($this->person(), 'push', 'device-token-1');
+        $sent    = $this->challengeGateway()->send($this->challengeCaller(), $factor, $this->challengeBinding());
+        $outcome = $this->challengeGateway()->verify($this->challengeCaller(), $factor, $this->challengeBinding(), self::UNKNOWN_CHALLENGE, '000000');
+
+        self::assertSame(FailureReason::NOT_ACCEPTED, $sent->reason);
+        self::assertSame(FailureReason::NOT_ACCEPTED, $outcome->reason);
+        self::assertSame(ChallengeGatewayAdapter::NOT_A_CODE_CHANNEL, $outcome->detail);
+        self::assertSame([], $driver->messages());
+        self::assertSame(0, OneTimeCode::query()->count());
+    }
+
+    /**
      * An application that names no guard of `laravel-authentication`'s cannot
      * be resolved, and both a send and a check throw.
      *
@@ -905,7 +957,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     public function testAnAuthenticationFactoryOfAnotherKindThrows(): void
     {
         $app     = $this->app ?? self::fail('The application has not booted.');
-        $gateway = new ChallengeGatewayAdapter(new LaravelAuthManager($app), $app->make(CurrentSession::class), $app->make(CodeTranslator::class), $app, new FactorCodeCallers);
+        $gateway = new ChallengeGatewayAdapter(new LaravelAuthManager($app), $app->make(CurrentSession::class), $app->make(CodeTranslator::class), new FactorCodeCallers);
         $refusal = self::thrownBy(fn (): mixed => $gateway->send($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding()));
 
         self::assertInstanceOf(UnresolvedReferenceException::class, $refusal);
@@ -1050,7 +1102,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Bind the application's gateways before the application boots.
+     * Bind the application's one-time code sender before the application boots.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

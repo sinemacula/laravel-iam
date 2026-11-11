@@ -62,7 +62,7 @@ final class CheckCommandTest extends TestCase
             self::assertMatchesRegularExpression('/^' . preg_quote($header, '/') . '$/m', $output);
         }
 
-        foreach (['storage', 'seams', 'context', 'audit', 'senders', 'configuration', 'schedule'] as $subject) {
+        foreach (['storage', 'seams', 'context', 'audit', 'configuration', 'schedule'] as $subject) {
             self::assertStringContainsString("[{$subject}] OK", $output);
         }
 

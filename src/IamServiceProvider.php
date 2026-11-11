@@ -5,12 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Database\Events\TransactionCommitted;
-use Illuminate\Database\Events\TransactionCommitting;
-use Illuminate\Queue\Events\JobExceptionOccurred;
-use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -29,7 +24,6 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
-use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
@@ -44,9 +38,6 @@ use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
-use SineMacula\Laravel\Iam\Transactions\CommittedWork;
-use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -63,10 +54,9 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * booted callbacks, the audit trail's mappers and codes, the `mfa` and `sso`
  * authentication context contributors, the rendering of
  * `laravel-authorization`'s insufficient-authentication exception as MFA's
- * step-up, the listeners counting outermost commits and releasing the work held
- * for a commit to finish, the listener provisioning SSO's unlinked results, the
- * listeners carrying the caller into each queued job, the worker reset
- * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
+ * step-up, the listener provisioning SSO's unlinked results, the listeners
+ * carrying the caller into each queued job, the worker reset listeners, the
+ * publishing tag and the `iam:install` and `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -81,19 +71,19 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  *
  * Two more steps wait for the booting phase, from a `booting()` callback that
  * runs once every provider has registered and before any boots. The first is
- * SSO's seams answered from the application's memberships and tenant tree,
- * whose switches read whether the application has bound either, which it does
- * in its own provider's `register()`, after the packages': the rule is applied
- * to them once more there, over the very bindings of SSO's defaults it reserved
- * in `register()` only, so an application's binding of one of them made in
- * between is kept. The second is the storage connection. A member key can be
- * written only once its member has merged its configuration, which a member
- * registering after this package does only then, since a key written before
- * would replace the member's whole `storage` block; and an application provider
- * registered later may name another shared connection. So the member keys are
- * aligned again and checked there, before any provider boots. A provider
- * registered once the booting callbacks have run settles from its own `boot()`,
- * which Laravel runs for it at once.
+ * SSO's seams answered from the application's memberships, whose switches read
+ * whether the application has bound them, which it does in its own provider's
+ * `register()`, after the packages': the rule is applied to them once more
+ * there, over the very bindings of SSO's defaults it reserved in `register()`
+ * only, so an application's binding of one of them made in between is kept. The
+ * second is the storage connection. A member key can be written only once its
+ * member has merged its configuration, which a member registering after this
+ * package does only then, since a key written before would replace the member's
+ * whole `storage` block; and an application provider registered later may name
+ * another shared connection. So the member keys are aligned again and checked
+ * there, before any provider boots. A provider registered once the booting
+ * callbacks have run settles from its own `boot()`, which Laravel runs for it
+ * at once.
  *
  * The storage step runs once more when the application has booted, from a
  * `booted()` callback the settling queues, because a provider's `boot()` can
@@ -208,12 +198,10 @@ final class IamServiceProvider extends ServiceProvider
      * is not refused while a configuration command runs, as a member is not),
      * then queue the `mfa` and `sso` authentication context contributors'
      * registration for when every provider has booted, and bootstrap the
-     * listeners counting outermost commits and releasing the work held for a
-     * commit to finish, the listener provisioning SSO's unlinked results, the
-     * listeners carrying the caller into each queued job, the rendering of
-     * `laravel-authorization`'s insufficient-authentication exception as MFA's
-     * step-up, the worker reset listeners, the publishing tag and the console
-     * commands.
+     * listener provisioning SSO's unlinked results, the listeners carrying the
+     * caller into each queued job, the rendering of `laravel-authorization`'s
+     * insufficient-authentication exception as MFA's step-up, the worker reset
+     * listeners, the publishing tag and the console commands.
      *
      * @return void
      *
@@ -229,7 +217,6 @@ final class IamServiceProvider extends ServiceProvider
         $this->settle();
         AuditRegistrations::register($this->app, !self::isRunningUncheckedCommand($this->app));
         $this->registerContextContributors();
-        $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
         CarryCallerIntoJobs::listen($this->app);
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
@@ -252,7 +239,6 @@ final class IamServiceProvider extends ServiceProvider
             MfaSeams::class,
             PasskeySeams::class,
             ContextSeams::class,
-            DeliverySeams::class,
             SsoSeams::class,
             TenancySeams::class,
             AuthorizationSeams::class,
@@ -296,10 +282,7 @@ final class IamServiceProvider extends ServiceProvider
      * links contract answers from, the renewal a re-authentication records
      * before its one write, the refusals `laravel-authentication` reports
      * inside a transaction, held for the audit trail until the outermost one
-     * has ended, the outermost commits each connection has begun, which a
-     * standalone `link` reads to tell whether its attempt reached its commit
-     * before it failed, and the work held until a connection's commit has
-     * finished. Each is scoped, so it is one request's or one job's alone
+     * has ended. Each is scoped, so it is one request's or one job's alone
      * (IAM-8.1), under this package's own key for its scoped adapters, which
      * `Iam::resetWorkerState()` forgets as it forgets every other one, and
      * resolved through that key, so the explicit reset never leaves a record
@@ -309,7 +292,7 @@ final class IamServiceProvider extends ServiceProvider
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, CommittedWork::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 
@@ -364,8 +347,8 @@ final class IamServiceProvider extends ServiceProvider
      * binding rule has no default of a member's to tell it from.
      *
      * While the SSO capability's switch is on, the seams answered from the
-     * application's memberships and tenant tree that the rule left off are
-     * reserved for the rule applied again once every provider has registered
+     * application's memberships that the rule left off are reserved for the
+     * rule applied again once every provider has registered
      * (`BindingRule::reserve()`): the exact binding of SSO's default each holds
      * is recorded, SSO's default bound there first where SSO has not registered
      * yet, as SSO would bind it, so that only a seam still holding it then is
@@ -455,46 +438,6 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Count every outermost commit a connection begins, in this request's or
-     * this job's record (`OutermostCommits`), release the work held until a
-     * connection's commit has finished, every callback queued on it run
-     * (`AfterConnectionCommits::committed()`), and release what a commit left
-     * held, a commit callback having failed, as the request, the console
-     * command or the queued job ends (`AfterConnectionCommits::settle()`). Each
-     * listener resolves what it calls from the application current when it
-     * runs, never from the events dispatcher's container: under Octane that is
-     * the worker's own application, while the request's records are its
-     * sandbox's. All are always on, whatever the worker reset's switch: a
-     * standalone `link` is never run again once its attempt has reached its
-     * commit, and an enforcement change's or a reported policy change's second
-     * pass waits for the change to commit.
-     *
-     * @return void
-     */
-    protected function registerCommitListeners(): void
-    {
-        Event::listen(TransactionCommitting::class, static function (TransactionCommitting $event): void {
-
-            Container::getInstance()->make(OutermostCommits::class)->committing($event);
-        });
-
-        Event::listen(TransactionCommitted::class, static function (TransactionCommitted $event): void {
-
-            Container::getInstance()->make(AfterConnectionCommits::class)->committed($event);
-        });
-
-        Event::listen([JobProcessed::class, JobExceptionOccurred::class], static function (): void {
-
-            self::settleHeldWork();
-        });
-
-        $this->app->terminating(static function (): void {
-
-            self::settleHeldWork();
-        });
-    }
-
-    /**
      * Register the package's config publishing tag and its console commands,
      * `iam:install` and `iam:check`, in the console only.
      *
@@ -543,22 +486,22 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Apply the binding rule once more to the seams answered from the
-     * application's memberships and tenant tree, then align the storage
-     * connections again and refuse a mismatch, once only, whichever phase
-     * reaches it first, and queue the same once more for when the application
-     * has booted, refusing then a member that has still not registered.
+     * application's memberships, then align the storage connections again and
+     * refuse a mismatch, once only, whichever phase reaches it first, and queue
+     * the same once more for when the application has booted, refusing then a
+     * member that has still not registered.
      *
-     * The seams answered from the memberships and the tree are applied again
-     * only while the SSO capability's switch was on when the binding rule first
-     * read it, and follow the switch as it read then, whatever a provider
-     * registering later wrote, so they and SSO's other seams are bound together
-     * or not at all: a membership contract or a tree the application binds in
-     * its own provider's `register()`, which Laravel runs after the packages',
-     * is bound only by now, and binds the adapters it answers over the very
-     * bindings of SSO's defaults reserved as the rule first ran, never over a
-     * binding of SSO's seam the application has made meanwhile, even one of
-     * SSO's own default class. The outcome kept for the checks gains whatever
-     * this binds or keeps.
+     * The seams answered from the memberships are applied again only while the
+     * SSO capability's switch was on when the binding rule first read it, and
+     * follow the switch as it read then, whatever a provider registering later
+     * wrote, so they and SSO's other seams are bound together or not at all: a
+     * membership contract the application binds in its own provider's
+     * `register()`, which Laravel runs after the packages', is bound only by
+     * now, and binds the adapters it answers over the very bindings of SSO's
+     * defaults reserved as the rule first ran, never over a binding of SSO's
+     * seam the application has made meanwhile, even one of SSO's own default
+     * class. The outcome kept for the checks gains whatever this binds or
+     * keeps.
      *
      * Neither can be done in `register()` alone: a member that registers after
      * this package merges its configuration only then, so its key can be
@@ -660,19 +603,6 @@ final class IamServiceProvider extends ServiceProvider
 
             return [];
         }
-    }
-
-    /**
-     * Release the work a commit left held, as a unit of work ends, through the
-     * application current then.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private static function settleHeldWork(): void
-    {
-        Container::getInstance()->make(AfterConnectionCommits::class)->settle();
     }
 
     /**

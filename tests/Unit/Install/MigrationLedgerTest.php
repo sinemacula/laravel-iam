@@ -12,9 +12,7 @@ use SineMacula\Laravel\Iam\Install\MigrationLedger;
 use Tests\Concerns\UsesScratchDirectory;
 
 /**
- * Unit tests for recognising a member's published migration by its base name,
- * whatever its timestamp, and telling it from an application's own migration of
- * the same base name.
+ * Unit tests for recognising a member's published migration by its base name.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -86,37 +84,33 @@ final class MigrationLedgerTest extends TestCase
      */
     public function testACopyUnderAnotherTimestampIsRecognised(): void
     {
-        $copy = $this->writeScratch('migrations/2020_01_01_000000_create_mfa_factors_table.php', self::MEMBERS_MIGRATION);
-
-        $this->writeScratch('migrations/2020_01_01_000001_create_mfa_codes_table.php', self::MEMBERS_MIGRATION);
-
+        $copy   = $this->writeScratch('migrations/2020_01_01_000000_create_mfa_factors_table.php', self::MEMBERS_MIGRATION);
+        $codes  = $this->writeScratch('migrations/2020_01_01_000001_create_mfa_codes_table.php', self::MEMBERS_MIGRATION);
         $ledger = new MigrationLedger(new Filesystem);
 
         self::assertSame($copy, $ledger->copyOf($this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php'), self::MEMBER));
-        self::assertSame([], $ledger->namesakesOf($this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php'), self::MEMBER));
+        self::assertSame($codes, $ledger->copyOf($this->scratch('migrations/2026_04_15_000003_create_mfa_codes_table.php'), self::MEMBER));
     }
 
     /**
      * An application's own migration of the same base name, which names no
-     * member namespace, is no copy: it is a namesake.
+     * member namespace, is no copy.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    public function testAnApplicationsMigrationOfTheSameBaseNameIsANamesake(): void
+    public function testAnApplicationsMigrationOfTheSameBaseNameIsNoCopy(): void
     {
-        $namesake = $this->writeScratch('migrations/2019_01_01_000000_create_mfa_factors_table.php', self::APPLICATIONS_MIGRATION);
-        $ledger   = new MigrationLedger(new Filesystem);
-        $member   = $this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php');
+        $this->writeScratch('migrations/2019_01_01_000000_create_mfa_factors_table.php', self::APPLICATIONS_MIGRATION);
+        $ledger = new MigrationLedger(new Filesystem);
+        $member = $this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php');
 
         self::assertNull($ledger->copyOf($member, self::MEMBER));
-        self::assertSame([$namesake], $ledger->namesakesOf($member, self::MEMBER));
     }
 
     /**
-     * A copy is found among namesakes, in file name order, and only the
-     * namesakes that are not copies are reported.
+     * The first copy is found among namesakes, in file name order.
      *
      * @return void
      *
@@ -124,8 +118,9 @@ final class MigrationLedgerTest extends TestCase
      */
     public function testACopyIsFoundAmongNamesakes(): void
     {
-        $first    = $this->writeScratch('migrations/2018_01_01_000000_create_mfa_factors_table.php', self::MEMBERS_MIGRATION);
-        $namesake = $this->writeScratch('migrations/2019_01_01_000000_create_mfa_factors_table.php', self::APPLICATIONS_MIGRATION);
+        $this->writeScratch('migrations/2017_01_01_000000_create_mfa_factors_table.php', self::APPLICATIONS_MIGRATION);
+
+        $first = $this->writeScratch('migrations/2018_01_01_000000_create_mfa_factors_table.php', self::MEMBERS_MIGRATION);
 
         $this->writeScratch('migrations/2021_01_01_000000_create_mfa_factors_table.php', self::MEMBERS_MIGRATION);
 
@@ -133,7 +128,6 @@ final class MigrationLedgerTest extends TestCase
         $member = $this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php');
 
         self::assertSame($first, $ledger->copyOf($member, self::MEMBER));
-        self::assertSame([$namesake], $ledger->namesakesOf($member, self::MEMBER));
     }
 
     /**
@@ -155,9 +149,7 @@ final class MigrationLedgerTest extends TestCase
         $member = $this->scratch('migrations/2026_04_15_000000_create_mfa_factors_table.php');
 
         self::assertNull($ledger->copyOf($member, self::MEMBER));
-        self::assertSame([], $ledger->namesakesOf($member, self::MEMBER));
         self::assertSame($copy, $ledger->copyOf($this->scratch('migrations/2026_04_15_000003_create_mfa_codes_table.php'), self::MEMBER));
-        self::assertSame([], $ledger->namesakesOf($this->scratch('migrations/2026_04_15_000003_create_mfa_codes_table.php'), self::MEMBER));
     }
 
     /**

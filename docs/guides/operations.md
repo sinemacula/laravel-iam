@@ -59,7 +59,7 @@ Run a queue worker for:
 
 - SSO's metadata refresh, on `sso.metadata.queue`;
 - `laravel-authentication`'s delivery of one-time codes, MFA's email and SMS codes among them, on
-  `authentication.delivery.queue.connection` and `authentication.delivery.queue.name`. A gateway that throws fails the
+  `authentication.delivery.queue.connection` and `authentication.delivery.queue.name`. A sender that throws fails the
   job, and your queue retries it under its own policy.
 
 Audit-log's outbox uses no queue. With `audit-log.delivery.mode` set to `outbox`, records wait in the outbox table until
@@ -199,22 +199,21 @@ $member = Iam::transaction(function () use ($identity, $tenantId, $client): Memb
 
 Each member's own transaction inside it is a savepoint, so all of it commits or rolls back as one.
 
-- **When it is retried.** When the package opened the outermost transaction, a serialisation failure (SQLSTATE 40001),
-  a deadlock, a lock wait timeout or SSO's `LinkCandidatesChanged` runs the whole closure again, in a new transaction,
-  up to `iam.transactions.attempts` times, the first included (`IAM_TRANSACTION_ATTEMPTS`, 3 by default, at least 1),
-  or the attempts you pass as its second argument. The last failure is rethrown as the database raised it.
-- **Inside your own transaction** it runs once, in a savepoint rolled back whenever it fails, and rethrows the failure
-  in a form your own `DB::transaction($work, $attempts)` recognises, for your outermost transaction to retry.
-- **Keep the closure to database work.** On a retry everything in it runs again: a dispatched job, a request to a
-  provider or a mutated object is repeated. Dispatch what must happen once after the commit.
-- **Once committed, never again.** A failure after the commit (a commit callback, an after-commit job) is rethrown and
-  never retried, since running the work again would apply it twice.
-- **MFA's changes cannot be wrapped.** MFA opens the transaction of every verification, factor change, removal and
-  reset itself, and never retries: never run one inside `Iam::transaction()`, and retry the request when one fails to
-  serialise (see [Authentication and MFA](authentication-and-mfa.md#transactions-and-retries)).
+- **When it is retried.** It runs through Laravel's `transaction($work, $attempts)`, so only when it opens the outermost
+  transaction: a serialisation failure, a deadlock, a lock wait timeout or SSO's `LinkCandidatesChanged` runs the whole
+  closure again, up to `iam.transactions.attempts` (`IAM_TRANSACTION_ATTEMPTS`, 3 by default) or the attempts you pass.
+  The last one is rethrown as a `DeadlockException` with SQLSTATE 40001, the original as its previous.
+- **Inside your own transaction** it runs once and rethrows, in a form your own `DB::transaction($work, $attempts)`
+  recognises.
+- **Keep the closure to database work.** On a retry everything in it runs again. A failure after the commit is never
+  retried.
+- **Flows a member opens itself cannot be wrapped**: MFA's verifications, factor changes, removals and resets, and
+  `Iam::links()`, which SSO redeems in its own transaction. Retry the request when one fails to serialise (see
+  [Authentication and MFA](authentication-and-mfa.md#transactions-and-retries)).
 - **SSO's starts and completions** talk to the provider and refuse to run inside a transaction.
 
-The SSO redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried the same way.
+The sign-in and re-authentication redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried
+the same way.
 
 ## Workers and Octane
 
@@ -262,9 +261,6 @@ it.
       app()->forgetScopedInstances();
   }
   ```
-
-  It also releases any work this package held for a commit that finished without running it, such as the second pass
-  of a tenant policy change.
 
 Turn `iam.workers.reset` off only when the application performs the same reset itself. How the reset is built is in
 the [long-running processes design note](../design/long-running-processes.md).

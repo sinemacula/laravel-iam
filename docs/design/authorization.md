@@ -32,24 +32,20 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   | AUTH `ScopeRegistry`                     | `Authorization\ScopeRegistryAdapter`         | `AcceptAnyScope`             | transient |                    |
   | AUTH `ApplicationAccess`                 | `Authorization\ApplicationAccessAdapter`     | `AdmitAnyPrincipal`          | scoped    |                    |
   | AUTHZ `IdentityDirectory`                | `Authorization\IdentityDirectoryAdapter`     | `GuardUserIdentityDirectory` | transient |                    |
-  | AUTHZ `TenantTree`                       | `Authorization\TenantTreeAdapter`¹           | `FlatTenantTree`             | scoped    |                    |
   | AUTHZ `GrantHook`                        | `Authorization\GrantHookAdapter`             | `GrantHooks` (composite)     | transient | `iam.adapters.sso` |
   | AUDIT `AuditAccessPolicy`                | `Authorization\AuditAccessPolicyAdapter`     | `DenyAllPolicy`              | shared    |                    |
 
-  ¹ Only while the application names or binds a tree; otherwise the row binds `laravel-authorization`'s own
-  `FlatTenantTree`, decided as each request or job first resolves the seam (`TenantTreeAdapter::forApplication()`,
-  through the row's `SeamBinding::$factory`): `laravel-authorization` tells a flat application by the class of the tree
-  bound, never by its answers alone, and takes any other tree down its hierarchical paths, which in `whereAuthorized()`
-  nest the subtree query and refuse one on another connection than the scoped model's.
+  AUTHZ `TenantTree` is the application's own binding (IAM-7.5): it implements `laravel-authorization`'s contract, and
+  this package reads it for SSO's enforcement inheritance and the tree changes (`provisioning-and-tenancy.md`).
 
   The grant half of SSO's principal scope, this package's own port (`Tenancy\Contracts\GrantScope`), is bound beside
   them by the service provider, not as a seam: `Authorization\GrantScopeAdapter`, with `bindIf()`, while the switch is
   on, and `Tenancy\UnknownGrantScope`, with `singletonIf()`, while it is off (`provisioning-and-tenancy.md`).
 
   The subject resolver, the context and the requirement checker are never mandatory: each default refuses (no tenant,
-  every requirement unmet) rather than admits. Nor are the identity directory and the tree: an incomplete directory
-  leaves the grant scope query `unknown` and has every grant to an identity reported as widening, and a flat tree
-  reaches no tenant below, each narrower than the adapter, never wider. Nor is audit-log's access policy, whose default
+  every requirement unmet) rather than admits. Nor is the identity directory: an incomplete directory leaves the grant
+  scope query `unknown` and has every grant to an identity reported as widening, narrower than the adapter, never
+  wider. Nor is audit-log's access policy, whose default
   shows nobody anything. The grant hook is mandatory while SSO links people by a verified domain
   (`sso.features.domain_linking`): left on `laravel-authorization`'s composite then, a grant that takes a person beyond
   a tenant would leave their link by that tenant's domain active. The session policy source's default caps no person and
@@ -64,21 +60,13 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   `currentChain()`, the tenant scope on its roles, permissions and policies), and each new tenant, bound with
   `instance()`, fires `laravel-authorization`'s rebinding listener, which empties the request's resolution memo, so
   every check would read its grants again. The adapter still reads `Auth::caller()` afresh on each call.
-- The tenant tree is scoped for the same reason: `laravel-authorization` keeps a tenant's chain only while the tree bound
-  is the instance it read it from (`ResolvedTenant::chain()` reads again when its first entry is not that tree, and
-  `TenantChain::tree()` resolves the contract on every `TenantScope::currentChain()`), and keys its batch memo of tree
-  reads (`ResolutionCache::answerTree()`) by `spl_object_id()` of the tree. A transient tree would walk the
-  application's tree, and resolve the tenant and every ancestor through the tenant resolver, again on every check and
-  every query on a tenant-scoped model; `TenantTreeAdapterTest::testACheckReadsTheTreeOncePerUnitOfWork` pins one
-  `ancestors()` read for a check. It holds nothing itself, and the worker reset forgets it with the rest of
-  `iam.scoped:`.
 - `laravel-authorization` binds each default only where nothing is bound yet (`bindIf()`, since
   laravel-authorization#129), and says itself whether a contract still holds its default
   (`AuthorizationServiceProvider::isPackageDefault()`). So each of its rows names the default class and asks it
   (`AuthorizationSeams::authorizationRow()`, `SeamBinding::$holdsDefault`), and the seam is replaced only while it is
   unbound or holds that default. A class the application names in `authorization.subject_resolver`,
-  `authorization.requirement_checker`, `authorization.session.source`, `authorization.identity_directory` or
-  `authorization.tenant_tree` is no default: `laravel-authorization` binds it over any earlier binding, the adapter
+  `authorization.requirement_checker`, `authorization.session.source` or `authorization.identity_directory` is no
+  default: `laravel-authorization` binds it over any earlier binding, the adapter
   included, through a closure `isPackageDefault()` answers `false` for, so this package reads none of those keys.
   Registered before this package, `laravel-authorization` has bound the class, and the rule keeps it; registered after,
   it binds the class over the adapter, though the outcome lists the seam as bound. No key names the grant hook's class:
@@ -87,18 +75,16 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   binds over the contract is kept too, made before this package registers or after, and a `laravel-authorization` that
   registers after this package, with the other providers or from another provider's `boot()`, leaves the adapters
   bound.
-- Each adapter bound over one of `laravel-authorization`'s seven contracts is declared to its configuration report
+- Each adapter bound over one of `laravel-authorization`'s six contracts is declared to its configuration report
   (`Diagnostics\Declarations`, laravel-authorization#143), so `authorization:check` names it rather than custom code
   whose class is decided at first use. The row says how (`SeamBinding::$declare`, made by
-  `AuthorizationSeams::declaration()`), and the binding rule declares it in one place, `BindingRule::bind()`, at once
+  `AuthorizationSeams::authorizationRow()`), and the binding rule declares it in one place, `BindingRule::bind()`, at once
   after binding, handing it the closure the container now holds for the contract (`MemberDefaults::bindingOf()`): the
   closure Laravel wrapped the adapter's class in, or, for a scoped adapter, the transient closure forwarding to its
   `iam.scoped:` key, never another made to stand for it, since the report compares the binding with it by identity.
   The owner is `laravel-iam` (`AuthorizationSeams::OWNER`), and the lifetime the row's, in the report's terms
-  (`Lifetime::reported()`, a shared adapter a singleton): the subject resolver and the tree scoped, the rest transient.
-  The tree, which `TenantTreeAdapter::forApplication()` builds, is declared with `factory()`, as one of
-  `TenantTreeAdapter` and `FlatTenantTree`, decided `at first resolution` (`AuthorizationSeams::DECIDES`); every other
-  with `adapter()`. So the report shows each `declared by laravel-iam`, its declaration `standing`, while that closure
+  (`Lifetime::reported()`, a shared adapter a singleton): the subject resolver scoped, the rest transient, each
+  declared with `adapter()`. So the report shows each `declared by laravel-iam`, its declaration `standing`, while that closure
   still supplies the contract; `but overridden later` once anything is bound over it, the class an application names in
   `laravel-authorization`'s configuration included where `laravel-authorization` registers after this package; and
   `but an instance is bound over it` once an instance is. Only a row the rule binds is declared: one it keeps (the
@@ -107,7 +93,7 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   `iam.adapters.authorization` is off declare nothing, and the report shows the binding as it finds it. The scope
   registry, application access and audit-log's access policy are other members' contracts, which the report does not
   cover, so are not declared.
-- `laravel-authorization` empties the resolution memo when the subject resolver or the tenant tree is bound again
+- `laravel-authorization` empties the resolution memo when the subject resolver is bound again
   (`forgetResolutionsOnRebinding()`), in every provider order: where the seam is still unbound as it registers it
   listens at once, and where this package bound the adapter first it listens from the seam's first resolution in each
   container, the earliest a rebinding could change anything memoised. So the rows name no listener of their own, and
@@ -363,29 +349,24 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   its key only once the round trip holds: the key, resolved as an id, must name a tenant of the reference's type and
   key, or `UnresolvedReferenceException` is thrown. Taken on trust, a tenant whose key happened to be another tenant's
   identifier would be read as that other tenant: the grant hook would spare that tenant's links from suspension while
-  the person reached beyond it, and the tree would place a grant where the tenant does not stand. The grant hook and
-  the tree adapter both name a tenant this way, so a grant in a tenant that does not resolve back is refused, by the
-  hook as the grant's tenant (`UnresolvedReferenceException::forGrantTenant()`), never as a session's. A grant to the
-  identity always widens, and so does a principal's first grant in a tenant, so while the hook is bound every such grant
-  in a tenant resolves its tenant: `iam:check` refuses `ResolveNoTenant` whenever the authorization and SSO adapters are
-  both on (`AuthorizationSeams::reportsWidenings()`, `CrossMemberConfigurationCheck`), and whenever the authorization
-  adapters are on beside a tenant tree the application names or binds, since the tree adapter resolves every tenant
-  `laravel-authorization` asks about and the tree changes name the moved tenant to it, not only under SSO's enforcement
-  or a tenant MFA requirement, and the installer owes the resolver for it.
-- The identity directory (`IdentityDirectoryAdapter`), the grant scope (`GrantScopeAdapter`) and the tree
-  (`TenantTreeAdapter`) are described with the principal scope and the tree they serve, in
-  `provisioning-and-tenancy.md`: an identity's principals are those its `laravel-authentication` `principals()` relation
-  lists, the model's global scopes set aside, a complete list, so the grant scope query can answer `within` and the hook
-  classifies a grant by the identity's real principals, an identity that is itself a principal acting as itself alone,
-  and one that is neither, whose principals only a principal resolver knows, incomplete; the grant half maps the query's
-  `within`, `outside` and `unknown` onto SSO's verdicts; and `laravel-authorization`'s tree is the application's one
-  tree, its own `FlatTenantTree` without one, the subtree's ids selected as text in the tree connection's grammar,
-  whatever type the application's tree selects them as, every tenant of it of one type (a tree nesting two is refused
-  wherever it is met), with every move the application reports beside a tree passed on to `Authorization::treeChanged()`
-  while the switch is on, whatever SSO's enforcement says. A move widens the scope of everyone granted in the moved
-  subtree with no grant written, so, while the grant hook is bound, the move reports each of them to SSO's scope
-  widening in the moved tenant, in the move's transaction (`Authorization\SubtreeGrantees`). The group mapping and its
-  re-sync (IAM-7.2) are there too, the re-sync run once the sign-in has committed.
+  the person reached beyond it. The grant hook names a tenant this way, so a grant in a tenant that does not resolve
+  back is refused, by the hook as the grant's tenant (`UnresolvedReferenceException::forGrantTenant()`), never as a
+  session's. A grant to the identity always widens, and so does a principal's first grant in a tenant, so while the hook
+  is bound every such grant in a tenant resolves its tenant: `iam:check` refuses `ResolveNoTenant` whenever the
+  authorization and SSO adapters are both on (`AuthorizationSeams::reportsWidenings()`,
+  `CrossMemberConfigurationCheck`), and whenever the application binds a tenant tree, since the tree changes and SSO's
+  enforcement inheritance name tenants through it.
+- The identity directory (`IdentityDirectoryAdapter`) and the grant scope (`GrantScopeAdapter`) are described with the
+  principal scope they serve, in `provisioning-and-tenancy.md`: an identity's principals are those its
+  `laravel-authentication` `principals()` relation lists, the model's global scopes set aside, a complete list, so the
+  grant scope query can answer `within` and the hook classifies a grant by the identity's real principals, an identity
+  that is itself a principal acting as itself alone, and one that is neither, whose principals only a principal resolver
+  knows, incomplete; the grant half maps the query's `within`, `outside` and `unknown` onto SSO's verdicts; and every
+  move the application reports beside a tree is passed on to `Authorization::treeChanged()`, whatever SSO's enforcement
+  says. A move widens the scope of everyone granted in the moved subtree with no grant written, so, while the grant hook
+  is bound, the move reports each of them to SSO's scope widening in the moved tenant, in the move's transaction
+  (`Authorization\SubtreeGrantees`). The group mapping and its re-sync (IAM-7.2) are there too, the re-sync run once the
+  sign-in has committed.
 - The permission catalogue, the administrative check and the audit access policy (IAM-6.9, IAM-6.10), and the mapping
   of `laravel-authorization`'s events to the `authorization.*` codes (IAM-9.2), are in `audit-mapping.md`.
 - Forgetting the decisions that depended on authentication (IAM-6.11). `laravel-authorization` decides each check
@@ -413,8 +394,8 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   once, so a check later in the transaction reads the new proofs, and again should any transaction open on the storage
   connection roll back, since a check made between the change and the rollback read proofs that were never committed.
   `forgetDecisionsFor()` knows nothing of the transaction, so the second pass is this package's: a rollback callback of
-  every transaction open there that callbacks apply to (`Transactions\OpenTransactions`), not only the innermost, as
-  `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
+  every transaction open there that callbacks apply to (`Transactions\ConnectionTransactions::open()`), not only the
+  innermost, as `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
   transaction's rollback, so MFA's transaction, a savepoint of the caller's, would otherwise leave the decisions
   standing once the caller's rolls back. A commit needs no second pass: what was checked after the change read what
   committed. The manager, the connection and the transactions open are resolved on every call, so the request's or the
@@ -609,20 +590,10 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - The grant hook is bound over `laravel-authorization`'s composite whatever hooks it lists, which
   `laravel-authorization` runs before it, rather than being listed in `authorization.grant_hooks` by `iam:install`: the
   application's own list is kept, and the binding follows the same rule as every other row.
-- The tree's row is bound whenever the switch is on, through a factory (`SeamBinding::$factory`, which the manifest does
-  not list) that builds the adapter while the application names or binds a tree and `laravel-authorization`'s own
-  `FlatTenantTree` otherwise, decided as each request or job first resolves the scoped seam, rather than a row that
-  applies only while the application has a tree: the reserve and apply-again machinery of the SSO tenancy rows is not
-  needed, and a tree bound after the providers register (a test's `FakeTenantTree::fake()`) is read from the next unit
-  of work. `laravel-authorization` tells a flat application by the
-  class of the tree bound, so an adapter answering as a flat tree took a flat application down the hierarchical paths,
-  and `whereAuthorized()` refused a model on another connection than the storage connection (`subtree_connection`).
+- The tenant tree is the application's own binding of `laravel-authorization`'s `TenantTree` (IAM-7.5, as amended):
+  this package binds nothing over it, and reads it for SSO's enforcement inheritance and the tree changes.
   `Iam::treeChanges()->changed()` reports to `laravel-authorization` beside a tree, whatever SSO's enforcement says, and
   `iam:check` makes the tenant resolver mandatory there.
-- The subtree selects each id as text (`CAST(... AS CHAR)` on MySQL and MariaDB, `TEXT` on SQLite, `VARCHAR` on
-  PostgreSQL and elsewhere) rather than as the application's tree selects it: `laravel-authorization` compares it with
-  its own text `tenant_id` columns, which PostgreSQL refuses for an integer column, so the grant scope query answered
-  `unknown` for everyone under a tree over integer keys. `Contracts\TenantTree` is unchanged.
 - A move reports every identity holding a live grant rooted in the moved subtree to SSO's scope widening, in the moved
   tenant, while the grant hook is bound (`Authorization\SubtreeGrantees`, which the manifest does not list, reading
   `laravel-authorization`'s grant tables on its connection, under the names its own reader gives them,
@@ -650,7 +621,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   widening back, inside `laravel-authorization`'s transaction and inside the application's, is
   `GrantHookAdapterTest`. The retries are `laravel-authorization`'s own, proved by its suite, and provisioning is
   attempted once. The provisioning and re-sync rows of `ProvisionOnUnlinkedResultTest` and `SignInRedemptionTest` are
-  that end-to-end test too, and the tree change row of `TreeChangesTest` is `TenantTreeAdapterTest`.
+  that end-to-end test too, and the tree change row of `TreeChangesTest` is `AuthorizationTreeChangesTest`.
 - The audit access policy is a row of `AuthorizationSeams` over audit-log's `DenyAllPolicy`, shared and never
   mandatory. The mapper's codes are `Audit\Enums\AuthorizationActivity`, as `audit-mapping.md` fixed, with four codes
   beyond IAM-9.2's list and the role sequence in `tests/Integration/Audit/AuthorizationRecordsTest.php` rather than
@@ -667,20 +638,13 @@ Part (b) follows the manifest's remaining rows, with these departures:
   (`ReauthenticationRedemptionTest`), which the plan does not list.
 - `src/Console/CheckCommand.php` is unchanged: `authorization:check` already ran inside `iam:check`
   (`Checker::MEMBER_COMMANDS`); its test now binds a tenant resolver, which the grant hook makes mandatory.
-  `src/Workers/WorkerReset.php` changes only its docblock, which names the tenant tree among the scoped instances it
-  forgets; its behaviour and its test are unchanged: part (a) already forgets every scoped instance
-  `laravel-authorization` keeps, and there is no `TenantScope` state of its own to reset.
+  `src/Workers/WorkerReset.php` changes only its docblock; its behaviour and its test are unchanged: part (a) already
+  forgets every scoped instance `laravel-authorization` keeps, and there is no `TenantScope` state of its own to reset.
 - No resource tenant resolver is named by `iam:install` (the last row of part (a)'s waiting list, named in neither the
   plan nor FEATURES): a record's tenant is the application's to say, and a configured class cannot be told from the
   default by its binding. `CrossMemberConfigurationCheck` notes the default instead, while people act in tenants.
-- A tenant tree must hold tenants of one type (`TenantTreeAdapter`, `provisioning-and-tenancy.md`), which neither the
-  plan nor IAM-7.5 says: the application's tree selects ids alone, so the subtree `laravel-authorization` nests names
-  every tenant by the type of the tenant asked about. A tree nesting two types is refused with
-  `TenancyMisconfiguredException` where the package meets it (`ancestors()`, `TenantTreeAdapter::tenantsIn()`, which
-  confirms the grant half's `outside` and lists a move's grantees), rather than have the grant scope query read a
-  grant below a tenant as one beyond it. `iam:check` cannot tell such a tree: the tree contract lists no tenants without
-  one to start from. `Transactions\OpenTransactions`, which the manifest does not list, holds the transactions a
-  rollback callback must wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
+- `Transactions\ConnectionTransactions`, which the manifest does not list, holds the transactions a rollback
+  callback must wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
 - IAM-13.7 (decision Q15) is stale on every count at the commit this package requires: the resolvers are bound with
   `bindIf()` over scoped keys rather than a plain `singleton()`, so they give way to anything bound before or after,
   change events fire after commit, the connection setting exists, the authentication context is a contract, and the
@@ -690,9 +654,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
 ## Implementation Anchors
 
 - `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `reportsWidenings()`, `authorizationRow()`,
-  `declaration()`, `SWITCH`, `DOMAIN_LINKING`, `OWNER`, `DECIDES`; `src/IamServiceProvider.php`: `seamProviders()`;
+  `SWITCH`, `DOMAIN_LINKING`, `OWNER`; `src/IamServiceProvider.php`: `seamProviders()`;
   `config/iam.php`: `adapters.authorization`.
-- `src/Bindings/SeamBinding.php`: `$holdsDefault`, `$factory`, `$declare`, `isMandatory()`;
+- `src/Bindings/SeamBinding.php`: `$holdsDefault`, `$declare`, `isMandatory()`;
   `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`;
   `src/Bindings/BindingRule.php`: `apply()`, `bind()`, `bindScoped()`; `src/Bindings/Enums/Lifetime.php`:
   `reported()`; `src/Checks/MandatorySeamsCheck.php`: `holderOf()`, `isMemberDefault()`.
@@ -713,19 +677,16 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetCallers()`.
 - `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
-  `src/Authorization/GrantScopeAdapter.php`: `judge()`, `outside()`; `src/Authorization/TenantTreeAdapter.php`:
-  `ancestors()`, `isWithin()`, `subtree()`, `tenantsIn()`, `forApplication()`;
-  `src/Exceptions/TenancyMisconfiguredException.php`: `forMixedTree()`; `src/Authorization/SubtreeGrantees.php`: `of()`,
+  `src/Authorization/GrantScopeAdapter.php`: `judge()`; `src/Authorization/SubtreeGrantees.php`: `of()`,
   `tableNamed()`;
   `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
-  `src/Bindings/SeamBinding.php`: `$factory`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `src/IamServiceProvider.php`:
   `registerSeams()`; `src/Tenancy/ScopeWidenings.php`: `widen()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
   `permissions()`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
   `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`.
 - `src/Authorization/DecisionCacheInvalidation.php`: `authenticationChanged()`, `forget()`;
-  `src/Transactions/OpenTransactions.php`: `manager()`, `on()`;
+  `src/Transactions/ConnectionTransactions.php`: `open()`;
   `src/Mfa/SessionRevokerAdapter.php`: `factorRemoved()`, `revokeAll()`; `src/Mfa/SessionTransitionAdapter.php`:
   `factorChanged()`; `src/Mfa/PendingCompletionAdapter.php`: `complete()`; `src/Mfa/StepUpAdapter.php`: `stepUp()`;
   `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`.
@@ -853,8 +814,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testTheGrantHookIsBoundWhateverHooksAreListed`, `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
   `testAnApplicationBindingWins`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
   `testWithTheSwitchOffNothingIsBound`, `testTheGrantHookIsMandatoryWhileDomainLinkingIsOn`,
-  `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`, `testTheTreeIsOneForAUnitOfWork`,
-  `testWithoutATreeTheMembersFlatTreeIsTheSeam`,
+  `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`, `testTheTreeIsLeftToTheApplication`,
   `testGrantsAreReportedToSsoOnlyWhileBothSwitchesAreOn`,
   `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
 - `tests/Integration/Authorization/GrantHookAdapterTest.php` (every isolation level)
@@ -871,17 +831,14 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `tests/Integration/Authorization/GrantScopeAdapterTest.php` (every isolation level) `testAPersonIsPlacedByTheirGrants`,
   `testAPersonIsPlacedByTheirPrincipalsGrants`, `testTheJudgementReadsInsideTheCallersTransaction`,
   `testATenantKeyedOtherwiseThanItsIdentifierThrows`, `testAnIdentityTheDirectoryCannotResolveIsIncomplete`,
-  `testATreeOfIntegerIdsPlacesAGrantInTheTenantWithinIt`; `testAPrincipalAGlobalScopeHidesStillPlacesItsPerson`,
-  `testAnIdentityWhosePrincipalsCannotBeListedIsUnknown`, `testAGrantBelowTheTenantInATenantOfAnotherTypeIsRefused`
-- `tests/Integration/Authorization/TenantTreeAdapterTest.php` (every isolation level) `testItAnswersTheApplicationsTree`,
-  `testTheSubtreeSelectsEachTenantsTypeAndId`, `testWithoutATreeARecordOnAnotherConnectionIsScopedByItsTenant`,
-  `testAReportedMoveReachesAuthorization`, `testWithTheSwitchOffNothingIsReportedToAuthorization`;
-  `testACheckReadsTheTreeOncePerUnitOfWork`, `testTheSubtreeSelectsEachIdAsText`, `testAskedWithNoTreeTheAdapterRefuses`,
-  `testWithoutATreeNothingIsReportedToAuthorization`, `testTheSubtreesTenantsAreListed`,
-  `testATreeNestingTwoTenantTypesIsRefused`
+  `testAPrincipalAGlobalScopeHidesStillPlacesItsPerson`, `testAnIdentityWhosePrincipalsCannotBeListedIsUnknown`,
+  `testAGrantBelowTheTenantInATenantOfAnotherTypeIsWithinIt`
+- `tests/Integration/Authorization/AuthorizationTreeChangesTest.php` (every isolation level)
+  `testAReportedMoveReachesAuthorization`; `testAGrantReachesATenantOfAnotherTypeBelowIt`,
+  `testWithAFlatTreeNothingIsReported`, `testATenantThatCannotBeNamedRefusesTheMove`
 - `tests/Integration/Authorization/TreeMoveWideningTest.php` (every isolation level)
   `testAMoveOutFromUnderTheLinkedTenantSuspendsTheLinkInTheMovesTransaction`, `testAMoveThatRollsBackSuspendsNothing`,
-  `testAMoveOfASubtreeHoldingAnotherTenantTypeIsRefused`;
+  `testAMoveReportsThePeopleGrantedInATenantOfAnotherTypeBelow`;
   `testWithTheSsoSwitchOffNobodyIsReported`, `testThePeopleGrantedAreReadFromEveryGrantTableEachOnce`,
   `testTheGrantTablesAreReadUnderTheirConfiguredNames`, `testAGrantTableNamedByWhatIsNoNameIsRefused`
 - `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php` (every isolation level)
@@ -925,7 +882,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`,
   `testAResourceTenantResolverTheApplicationNamesIsNotNoted`,
   `testTheTenantResolverMustResolveWhileATenantsRuleReachesASession`, `testGrantsNeedNoResolverWhileSsoIsOff`,
-  `testTheTenantResolverMustResolveWhileAuthorizationReadsATree`
+  `testTheTenantResolverMustResolveWithATree`
 
 ## Change Triggers
 

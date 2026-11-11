@@ -18,7 +18,6 @@ connection's or a model's name may appear in it.
 - [sso](#sso)
 - [context](#context)
 - [audit](#audit)
-- [senders](#senders)
 - [configuration](#configuration)
 - [schedule](#schedule)
 
@@ -142,27 +141,13 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   application boots, or turn `iam.audit.mappers` off to map the members' events yourself. Only this one follows the
   switch.
 - *Guards [...] are missing from `audit-log.capture.laravel.except_guards`, ...*: add every `jwt` and `api_key` guard
-  to audit-log's exclusions, or each of their sign-ins is recorded twice. `iam:install` writes the guards it finds.
+  to audit-log's exclusions, or each of their sign-ins is recorded twice.
 - *`audit-log.capture.gate.enabled` must be false, so no authorization decision is recorded twice: ...*: turn
   audit-log's Gate capture off. This package maps `laravel-authorization`'s decision events, the `Gate` checks it
   answers among them, so audit-log's own capture would record each of them again
   ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
-  rather than recorded unchecked. `iam:install` writes it.
-
-## senders
-
-Every code the suite sends has a gateway to go through.
-
-- *`iam.delivery.types` must map identifier types to channels.* or *`iam.delivery.types.<type>` must name a channel:
-  ...*: map each identifier type to `email` or `sms`.
-- *`iam.delivery.email` must name a class implementing ...* (or `sms`): name your gateway's class, which must implement
-  `SineMacula\Laravel\Iam\Contracts\EmailGateway` (or `SmsGateway`).
-- *Guards [...] allow `email_code`, but `iam.delivery.types` routes no `email` type to a channel.* (or `phone_code` and
-  `phone`): route the identifier type to a channel in `iam.delivery.types`.
-- *... send on sms with no gateway: name one in `iam.delivery.sms`, or bind ...* (or email): a guard allowing a code
-  sign-in method, or an MFA application enabling the factor type, sends on the channel, and no gateway takes it. Name
-  your gateway in `iam.delivery.sms` or `iam.delivery.email`, or bind it.
+  rather than recorded unchecked.
 
 ## configuration
 
@@ -183,10 +168,10 @@ The members' settings agree with each other.
   bound, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
   tree: ...*: the tenant policy, a tree's changes and SSO's revocation resolve a session's tenant through
   `laravel-authentication`'s tenant resolver; while the authorization and SSO adapters are both on (the default), the
-  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while the authorization
-  adapters are on and you name or bind a tenant tree, `laravel-authorization`'s tree resolves every tenant it asks about
-  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, every
-  tenant-scoped check and every move of a tenant would answer a server error. Bind a resolver that resolves every tenant
+  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while you bind a tenant
+  tree to `laravel-authorization`, the tree's changes and SSO's enforcement inheritance resolve every tenant they name
+  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, and
+  every move of a tenant, would answer a server error. Bind a resolver that resolves every tenant
   id to the tenant whose `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). A resolver bound through a closure is
   not built, so the check passes it.

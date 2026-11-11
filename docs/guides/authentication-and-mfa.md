@@ -16,22 +16,23 @@ package binds between them, why, and what that changes for your application.
 The package binds each seam below over its member's own default, and keeps any binding of your own. Every adapter
 keeps nothing between calls. [Bindings](bindings.md) says, for each, how to replace it and what replacing it risks.
 
-| Seam                                                       | Answered by                                                                                                           | So that                                                                                                                           |
-|------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
-| Auth `AdditionalFactorPolicy`                              | MFA's requirement policy                                                                                              | a sign-in waits pending exactly when MFA requires a further factor                                                                |
-| Auth `RequirementCheck`                                    | MFA's requirement check, over the session's proofs                                                                    | one answer is shared by sign-in, a tenant's requirement, step-up and the gate                                                     |
-| MFA `PendingSessionResolver`                               | `laravel-authentication`'s pending sessions                                                                           | a pending sign-in can verify its further factor                                                                                   |
-| MFA `PendingCompletion`                                    | `satisfy()` on the pending session                                                                                    | a verified factor activates the session, which issues its tokens                                                                  |
-| MFA `StepUp`                                               | `stepUp()` on the session                                                                                             | a step-up is recorded on the session and returns a new access token                                                               |
-| MFA `ProofStore`, `FirstFactorResolver`                    | the session's own proofs                                                                                              | proofs live on the authentication session, so a stateless guard works                                                             |
-| Auth's `mfa` context namespace                             | MFA's own contributor, from the session's proofs                                                                      | `Auth::context()` reports MFA's view of the session it was built for, in a request or a queued job                                |
-| MFA `Reauthenticator`, `FreshnessGate`                     | `laravel-authentication`'s freshness policy                                                                           | freshness is judged once, by the session's proofs                                                                                 |
-| MFA `FactorChangeGate`                                     | `factorChange()` under the session's lock                                                                             | a factor change takes a fresh step-up, judged as committed                                                                        |
-| MFA `SessionRevoker` (mandatory)                           | `factorRemoved()` and `factorReset()`                                                                                 | removing a factor or resetting an identity ends the sessions it should                                                            |
-| MFA `SessionTransition`                                    | `factorChanged()`                                                                                                     | a session short of its requirement after a change returns to pending                                                              |
-| MFA `ChallengeGateway`, Auth `FactorCodeCounters`          | `laravel-authentication`'s factor codes, counted by MFA's challenge counters, while its one-time code sender is bound | MFA's email and SMS codes are issued and checked in one place, under MFA's limits (see [Codes and delivery](#codes-and-delivery)) |
-| MFA `PasskeyGateway`, Auth `PasskeyFactorGate` (mandatory) | `laravel-authentication`'s passkeys                                                                                   | a passkey is an MFA factor, and removing it takes its factor with it                                                              |
-| MFA's context resolvers                                    | the validated session                                                                                                 | MFA's events, active tenant, subject type and active state match the session                                                      |
+| Seam                                                       | Answered by                                                                  | So that                                                                                                                           |
+|------------------------------------------------------------|------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| Auth `AdditionalFactorPolicy`                              | MFA's requirement policy                                                     | a sign-in waits pending exactly when MFA requires a further factor                                                                |
+| Auth `RequirementCheck`                                    | MFA's requirement check, over the session's proofs                           | one answer is shared by sign-in, a tenant's requirement, step-up and the gate                                                     |
+| MFA `PendingSessionResolver`                               | `laravel-authentication`'s pending sessions                                  | a pending sign-in can verify its further factor                                                                                   |
+| MFA `PendingCompletion`                                    | `satisfy()` on the pending session                                           | a verified factor activates the session, which issues its tokens                                                                  |
+| MFA `StepUp`                                               | `stepUp()` on the session                                                    | a step-up is recorded on the session and returns a new access token                                                               |
+| MFA `ProofStore`, `FirstFactorResolver`                    | the session's own proofs                                                     | proofs live on the authentication session, so a stateless guard works                                                             |
+| Auth's `mfa` context namespace                             | MFA's own contributor, from the session's proofs                             | `Auth::context()` reports MFA's view of the session it was built for, in a request or a queued job                                |
+| MFA `Reauthenticator`, `FreshnessGate`                     | `laravel-authentication`'s freshness policy                                  | freshness is judged once, by the session's proofs                                                                                 |
+| MFA `FactorChangeGate`                                     | `factorChange()` under the session's lock                                    | a factor change takes a fresh step-up, judged as committed                                                                        |
+| MFA `SessionRevoker` (mandatory)                           | `factorRemoved()` and `factorReset()`                                        | removing a factor or resetting an identity ends the sessions it should                                                            |
+| MFA `SessionTransition`                                    | `factorChanged()`                                                            | a session short of its requirement after a change returns to pending                                                              |
+| MFA `ChallengeGateway`, Auth `FactorCodeCounters`          | `laravel-authentication`'s factor codes, counted by MFA's challenge counters | MFA's email and SMS codes are issued and checked in one place, under MFA's limits (see [Codes and delivery](#codes-and-delivery)) |
+| MFA `SmsSender`, `EmailSender`                             | your `OneTimeCodeSender`                                                     | a code MFA sends itself reaches the same sender as every other                                                                    |
+| MFA `PasskeyGateway`, Auth `PasskeyFactorGate` (mandatory) | `laravel-authentication`'s passkeys                                          | a passkey is an MFA factor, and removing it takes its factor with it                                                              |
+| MFA's context resolvers                                    | the validated session                                                        | MFA's events, active tenant, subject type and active state match the session                                                      |
 
 The whole set is switched by `iam.adapters.mfa` (`IAM_ADAPTERS_MFA`). Leave it on unless you bind every one of these
 seams yourself.
@@ -122,41 +123,19 @@ resetting an identity ends all of its sessions. When the current session is retu
 
 ## Codes and delivery
 
-Both members' codes reach your gateways as one neutral message, `SineMacula\Laravel\Iam\Delivery\CodeMessage`, and you
-write every message's wording and template. Name a gateway for each channel you use:
+Bind `laravel-authentication`'s `OneTimeCodeSender`: it delivers every email and SMS code, MFA's included, and you write
+every message's wording and template.
 
-```php
-// config/iam.php
-'delivery' => [
-    'email' => App\Delivery\MailCodes::class,  // implements SineMacula\Laravel\Iam\Contracts\EmailGateway
-    'sms'   => App\Delivery\TextCodes::class,  // implements SineMacula\Laravel\Iam\Contracts\SmsGateway
-    'types' => [
-        'email' => 'email',
-        'phone' => 'sms',
-    ],
-],
-```
+- MFA's challenge gateway sends and checks the code of every factor whose driver delivers by SMS or email through
+  `laravel-authentication`'s factor codes. Its queued job hands the code to your sender with the purpose `mfa` or
+  `enrollment`, and the type `sms` or `email`. A factor of any other channel is refused; rebind MFA's
+  `ChallengeGateway` to send it with MFA's own.
+- MFA's `SmsSender` and `EmailSender` forward to your sender in the same way, so a code MFA sends itself, once you rebind
+  its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction.
+- While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.
 
-- Naming a gateway points MFA's sender of that channel at it. `laravel-authentication`'s one-time code sender is
-  pointed at the gateways once every gateway `types` routes to is named; `types` maps each identifier type to a
-  channel.
-- An MFA code for one of MFA's own `email` or `sms` factors is issued through `laravel-authentication`'s factor codes
-  only while `laravel-authentication`'s one-time code sender is bound: this package binds it once every gateway `types`
-  routes to is named (or bound before this package registers), or you bind your own sender. It is then delivered from
-  `laravel-authentication`'s queued job once the code has committed: a gateway that throws fails the job, and your
-  queue retries it under its own policy. Otherwise MFA sends the code itself, synchronously, inside MFA's transaction,
-  so a gateway that throws leaves no code and nothing is queued or retried. Naming only `iam.delivery.email` with the
-  shipped `types` (`phone` routed to `sms`) is such a case: MFA's email codes then go out from MFA's own transaction.
-- A gateway's return means the message was accepted for delivery, not received. The package never queues or retries a
-  delivery itself.
-- With no gateway named, MFA keeps its own senders, which refuse to send, and refuses to boot while an application
-  offers `sms` or `email` factors.
-
-The message carries the application, its `purpose` (`SineMacula\Laravel\Iam\Delivery\Enums\Purpose`), its `source`,
-its `channel`, the `code` (a `Secret`, revealed with `reveal()`), `expiresAt`, and the `destination()` and
-`recipient()`, which a dump never shows. [An example application](example-application.md#a-gateway) shows a gateway,
-and [Testing](testing.md) the fakes. How each delivery runs and what it locks is in the
-[codes and delivery design note](../design/codes-delivery-and-passkeys.md).
+`laravel-authentication`'s own codes carry the identifier type (`email` or `phone`), so route `email` to email and
+`phone` or `sms` to SMS. [Testing](testing.md) shows the fake senders.
 
 ## Passkeys
 
@@ -210,8 +189,8 @@ adapters run inside it, so those flows cannot be wrapped:
 - when one fails to serialise or deadlocks, retry the request: MFA never retries, and only the outermost transaction
   can be.
 
-Tell a concurrency failure by asking Laravel's detector, rather than by catching one exception class, since what
-reaches you depends on where the statement ran:
+Tell a concurrency failure by asking Laravel's detector, rather than by catching one exception class, and walk the
+exception's previous ones too, since a nested transaction wraps it:
 
 ```php
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
@@ -219,7 +198,7 @@ use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 $retryable = app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception);
 ```
 
-Walk the exception's previous ones too, as `Iam::transaction()` does. See [Operations](operations.md#retries).
+See [Operations](operations.md#retries).
 
 ## Testing
 

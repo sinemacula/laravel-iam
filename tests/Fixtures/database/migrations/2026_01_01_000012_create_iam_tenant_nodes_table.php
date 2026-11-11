@@ -8,8 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Create the table the tests' application keeps its tenant tree in, each tenant
- * with its parent's id (none for a root), on the default connection, which the
- * tests keep as the shared storage connection with every member's tables.
+ * with its parent's type and id (none for a root).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -27,8 +26,13 @@ return new class extends Migration {
     {
         Schema::create('iam_tenant_nodes', static function (Blueprint $table): void {
 
-            $table->string('tenant_id')->primary();
-            $table->string('parent_id')->nullable()->index();
+            $table->string('tenant_type');
+            $table->string('tenant_id');
+            $table->string('parent_type')->nullable();
+            $table->string('parent_id')->nullable();
+
+            $table->primary(['tenant_type', 'tenant_id']);
+            $table->index(['parent_type', 'parent_id']);
         });
     }
 

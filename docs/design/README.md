@@ -20,10 +20,8 @@ The current note set is:
   register in; how a member's default is told from the container's binding table; the lifetimes and the switches, read
   with each member's packaged configuration beneath the application's; and why the storage connection alone still
   waits for a `booting()` callback.
-- `storage-and-transactions.md`: the one storage connection every member is aligned to and the boot refusal of a
-  member on another, and how a change that spans members runs in one transaction on it, retried as a whole after a
-  concurrency failure only when the package opened the outermost transaction, and rolled back to its savepoint inside
-  a caller's.
+- `storage-and-transactions.md`: the one storage connection every member is aligned to, how a change that spans
+  members runs in one transaction on it, retried only when outermost, and work waiting on one connection's commit.
 - `long-running-processes.md`: the combined worker reset that flushes every member's request state, the session that
   holds MFA's proofs among it, what it flushes before each Octane request and each queued job, why a job keeps its
   scoped instances and the application keeps its own instances, and how another long-lived process calls it.
@@ -38,10 +36,8 @@ The current note set is:
 - `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
   `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
   `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
-  subject type and application MFA reads from the validated session; how both members' codes reach the application's
-  email and SMS gateways as one neutral `CodeMessage`, routed by identifier type or factor channel; where each delivery
-  runs, inside MFA's transaction or from `laravel-authentication`'s queued job once the code has committed, and so
-  what a gateway that throws rolls back; and the locks each path takes.
+  subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
+  to the application's `OneTimeCodeSender`; and the locks each path takes.
 - `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
   store as its linker, and the handoff issuer left on SSO's default; how a `sign_in`, a
   `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
@@ -63,10 +59,10 @@ The current note set is:
   PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
   rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
   its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
-  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half is
-  `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and enforcement
-  inheritance, and behind `laravel-authorization`'s tree; how an enforcement change and a reported move of a tenant
-  judge its whole subtree, a broken tree refused, and how the move reaches `laravel-authorization`; how a provider's
+  and `laravel-authorization`'s tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose
+  grant half is `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and
+  enforcement inheritance; how an enforcement change and a reported move of a tenant judge its whole subtree, and how
+  the move reaches `laravel-authorization`; how a provider's
   groups map to grants at provisioning and, where the application opts in, at later sign-ins; the testing kits and
   fakes for the application's contracts; and the gaps in the members the adapters work around.
 
@@ -78,25 +74,23 @@ The current note set is:
   sign-in, a challenge or a session; the whole record sequences of a password sign-in, an MFA step-up and an SSO
   sign-in; the one context contributor that fills a record's gaps from the caller a package guard already holds, never
   triggering authentication, and only on a record about that caller; the `jwt` and `api_key` guards excluded from
-  audit-log's own capture, and its Gate capture off, so nothing is recorded twice, computed for installation to write
-  and the check to enforce, and audit-log's refusal of a code no definition registers read for them too; the operational
+  audit-log's own capture, and its Gate capture off, so nothing is recorded twice, computed for the check to enforce,
+  and audit-log's refusal of a code no definition registers read for them too; the operational
   events handed to the application's alerting; the trail read audit-log refuses inside a change that spans members;
   `laravel-authorization`'s decisions and changes, its access policy over the trail and the catalogue of the members'
   administrative permissions; and the gaps in the members the mapping works around.
 
 - `install-and-check.md`: how `iam:install` publishes every member's configuration, language files and migrations, and
-  this package's configuration, in their working order, each where its provider publishes it; how it recognises a
-  migration already published by its base name whatever its timestamp, tells it from an application's own of the same
-  base name and fails the run where a migration's identity is in doubt, keeps every file already there and changes
-  nothing it did not publish, so it is safe to run twice; the audit-log values and the prefixed `laravel-authorization`
-  table names it writes only into a configuration file it has just published, and what it reports as still owed; the
+  this package's configuration, through `vendor:publish`; how it recognises a migration already published by its base
+  name whatever its timestamp, so it is safe to run twice; the prefixed `laravel-authorization` table names it writes
+  only into a configuration file it has just published, and what it reports as still owed; the
   members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
   the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
-  and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
-  SSO's side while SSO is in use and the schedule, every one reported under `iam:check` alone; what
-  `laravel-authorization`'s glue adds, its prune and its resource tenant resolver's note among them; and the gaps in
-  the members installation and the checks work around.
+  and `sso` namespaces, the audit trail's settings, the configuration that crosses the members, SSO's side while SSO is
+  in use and the schedule, every one reported under `iam:check` alone; what `laravel-authorization`'s glue adds, its
+  prune and its resource tenant resolver's note among them; and the gaps in the members installation and the checks
+  work around.
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the

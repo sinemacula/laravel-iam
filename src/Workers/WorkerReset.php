@@ -17,7 +17,6 @@ use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Support\RequestState as AuthorizationRequestState;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
 
 /**
@@ -39,23 +38,17 @@ use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
  * every one of them clears state held in a scoped instance its `RequestState`
  * forgets, and its explanations keep nothing beyond the check that asks for
  * one. The adapters this package binds over its seams keep nothing at all; the
- * subject resolver, application access and the tenant tree are scoped all the
- * same, under `iam.scoped:`, the resolver so that `laravel-authorization` keeps
- * the tenant it resolved for one unit of work and the tree so that it keeps the
- * tenant chain it read, since it keys that memo by the tree instance, and
- * forgotten with the rest. It then clears the roots Laravel's facades keep, as
- * the queue worker does once it forgets its scoped instances and Octane does as
- * it switches application: `laravel-authorization`'s `Authorization` facade
- * keeps the manager it first resolved, and the manager holds its last decision,
- * evaluator and resolvers, so through the facade a later unit of work would
- * otherwise keep reading the first one's. It registers itself for Octane's
- * workers and requests and the queue's jobs, and is safe to call by hand in any
- * other long-lived process, between its units of work.
- *
- * Before it forgets anything, `reset()` releases the work this package held for
- * a commit that finished without running it, a commit callback having failed
- * (`AfterConnectionCommits::settle()`), on every connection with no transaction
- * open, which forgetting its record would otherwise drop.
+ * subject resolver and application access are scoped all the same, under
+ * `iam.scoped:`, the resolver so that `laravel-authorization` keeps the tenant
+ * it resolved for one unit of work, and forgotten with the rest. It then clears
+ * the roots Laravel's facades keep, as the queue worker does once it forgets
+ * its scoped instances and Octane does as it switches application:
+ * `laravel-authorization`'s `Authorization` facade keeps the manager it first
+ * resolved, and the manager holds its last decision, evaluator and resolvers,
+ * so through the facade a later unit of work would otherwise keep reading the
+ * first one's. It registers itself for Octane's workers and requests and the
+ * queue's jobs, and is safe to call by hand in any other long-lived process,
+ * between its units of work.
  *
  * Only the suite's own scoped instances are forgotten, never every one the
  * container holds: Laravel keeps a command's or a job's `Context` and its
@@ -95,9 +88,9 @@ final readonly class WorkerReset
     ) {}
 
     /**
-     * Release the work held for a commit that has finished, then flush every
-     * member's request state: the guards, the session, the scoped instances the
-     * members keep it in and the facades' roots resolved from them.
+     * Flush every member's request state: the guards, the session, the scoped
+     * instances the members keep it in and the facades' roots resolved from
+     * them.
      *
      * @return void
      *
@@ -105,7 +98,6 @@ final readonly class WorkerReset
      */
     public function reset(): void
     {
-        $this->container->make(AfterConnectionCommits::class)->settle();
         $this->forgetMemberState();
         $this->forgetScopedState();
     }
