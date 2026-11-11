@@ -21,6 +21,7 @@ use SineMacula\Laravel\Authorization\Scopes\TenantScope;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\AuthorizationScope;
 use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\TenantTreeAdapter;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
@@ -75,7 +76,7 @@ use Tests\TestCase;
 #[CoversClass(TenancyMisconfiguredException::class)]
 final class TenantTreeAdapterTest extends TestCase
 {
-    use MigratesAuthorization, RunsAtIsolationLevels, SignsInPeople;
+    use MigratesAuthorization, RunsAtIsolationLevels, SignsInPeople, TenantTreeContract;
 
     /** @var string The root the moved tenant comes to stand below. */
     private const string ROOT = 'root';
@@ -556,6 +557,33 @@ final class TenantTreeAdapterTest extends TestCase
 
         $app->make('config')->set('authorization.permission_enums', [InvoicePermission::class]);
         $app->make('config')->set('authorization.cache.store', 'array');
+    }
+
+    /**
+     * The adapter over the tree arranged in setUp().
+     *
+     * @return \SineMacula\Laravel\Authorization\Contracts\TenantTree
+     */
+    #[\Override]
+    protected function tenantTree(): TenantTree
+    {
+        return $this->adapter();
+    }
+
+    /**
+     * The tree arranged in setUp(): the root and the moved tenant at the top,
+     * the child below the moved tenant.
+     *
+     * @return list<array{0: \SineMacula\Laravel\Authorization\Support\Reference, 1: \SineMacula\Laravel\Authorization\Support\Reference|null}>
+     */
+    #[\Override]
+    protected function tenantTreeNodes(): array
+    {
+        return [
+            [self::organisation(self::ROOT), null],
+            [self::organisation(self::MOVED), null],
+            [self::organisation(self::CHILD), self::organisation(self::MOVED)],
+        ];
     }
 
     /**

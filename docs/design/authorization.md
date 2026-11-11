@@ -883,7 +883,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAReportedMoveReachesAuthorization`, `testWithTheSwitchOffNothingIsReportedToAuthorization`;
   `testACheckReadsTheTreeOncePerUnitOfWork`, `testTheSubtreeSelectsEachIdAsText`, `testAskedWithNoTreeTheAdapterRefuses`,
   `testWithoutATreeNothingIsReportedToAuthorization`, `testTheSubtreesTenantsAreListed`,
-  `testATreeNestingTwoTenantTypesIsRefused`
+  `testATreeNestingTwoTenantTypesIsRefused`, and the `laravel-authorization` tree contract kit's tests
+  (`Testing\Concerns\TenantTreeContract`, single-type)
 - `tests/Integration/Authorization/TreeMoveWideningTest.php` (every isolation level)
   `testAMoveOutFromUnderTheLinkedTenantSuspendsTheLinkInTheMovesTransaction`, `testAMoveThatRollsBackSuspendsNothing`,
   `testAMoveOfASubtreeHoldingAnotherTenantTypeIsRefused`;
