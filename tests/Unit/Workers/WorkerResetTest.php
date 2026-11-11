@@ -35,6 +35,7 @@ use SineMacula\Laravel\Authorization\Contracts\PolicyStore;
 use SineMacula\Laravel\Authorization\Contracts\RequestContext;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Evaluation\DecisionMemory;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
@@ -132,6 +133,7 @@ final class WorkerResetTest extends TestCase
             ResolvedTenant::class,
             ResolutionCache::class,
             LastDecisionStore::class,
+            DecisionMemory::class,
             PolicyEvaluator::class,
             SessionScopes::class,
             CheckContextFactory::class,
