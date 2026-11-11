@@ -31,8 +31,8 @@ use SineMacula\Laravel\Mfa\Requirements\NoActiveTenant;
  * resolver of its own, so that seam is replaced only while unbound. Every
  * adapter is transient, and reads the caller or the session afresh on every
  * call (IAM-8.1). The active tenant's is mandatory while SSO's enforcement is
- * on or the application names or binds a tenant MFA requirement (IAM-10.2):
- * left on MFA's `NoActiveTenant` then, no tenant's requirement would reach MFA.
+ * on or the application binds MFA's tenant requirement (IAM-10.2): left on
+ * MFA's `NoActiveTenant` then, no tenant's requirement would reach MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,14 +48,14 @@ final readonly class ContextSeams implements ProvidesSeams
      */
     public function __construct(
 
-        /** Tells whether the application has bound a tenant MFA requirement, which the active tenant's mandate reads; with none, only the configuration is read. */
+        /** Tells whether the application has bound MFA's tenant requirement, which the active tenant's mandate reads; with none, only the configuration is read. */
         private ?Container $container = null,
     ) {}
 
     /**
      * Return the bindings of MFA's context, each on while MFA's capability
      * switch is, the active tenant's mandatory while SSO's enforcement or a
-     * tenant MFA requirement is on.
+     * bound MFA tenant requirement is on.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -64,7 +64,7 @@ final readonly class ContextSeams implements ProvidesSeams
     public function seams(Repository $config): array
     {
         $on       = static fn (Repository $switches): bool => MfaSeams::isOn($switches);
-        $enforced = TenancySeams::isEnforcedOrRequired($config, $this->container);
+        $enforced = fn (): bool => TenancySeams::isEnforcedOrRequired($config, $this->container);
 
         return [
             new SeamBinding(EventContextResolver::class, EventContextResolverAdapter::class, [DefaultEventContextResolver::class], appliesWhen: $on),

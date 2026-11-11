@@ -32,14 +32,12 @@ use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Contracts\SmsSender;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
-use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Http\MiddlewareSessionTransition;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Proofs\ProofBindings;
 use SineMacula\Laravel\Mfa\Proofs\ProofStoreCompletion;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
-use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 
@@ -48,19 +46,17 @@ use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
  * IAM-3.11): requirements, pending sessions and their completion, step-up,
  * reauthentication and freshness, factor changes, revocation, the return to
  * pending, code challenges and their counters, the proof store and the first
- * factor, and MFA's tenant requirement, answered from the application's tenant
- * MFA requirement (IAM-4.5), the same answer `laravel-authentication`'s tenant
- * authentication policy is given (`Tenancy\TenancySeams`). Passkeys as factors
- * (IAM-3.10) and MFA's context (IAM-3.12) are declared beside them, in
- * `PasskeySeams` and `ContextSeams`, under the same switch, which the `mfa`
- * namespace of `laravel-authentication`'s authentication context follows too
- * (`MfaContextContributor`, registered by the service provider, as a
- * contributor is, rather than bound). The proof store and the first-factor
- * resolver are not mandatory: MFA states no mandate for them, and its own
- * defaults keep working behind a guard that keeps a Laravel session. Beside the
- * store, the recorder MFA's `actingAsVerified()` test helper begins its sign-in
- * and records its proofs through, for which MFA binds no default, is bound to
- * `Testing\VerifiedSignInRecorderAdapter`, which does both through
+ * factor. MFA's tenant requirement is the application's to bind (IAM-4.5).
+ * Passkeys as factors (IAM-3.10) and MFA's context (IAM-3.12) are declared
+ * beside them, in `PasskeySeams` and `ContextSeams`, under the same switch,
+ * which the `mfa` namespace of `laravel-authentication`'s authentication
+ * context follows too (`MfaContextContributor`, registered by the service
+ * provider, as a contributor is, rather than bound). The proof store and the
+ * first-factor resolver are not mandatory: MFA states no mandate for them, and
+ * its own defaults keep working behind a guard that keeps a Laravel session.
+ * Beside the store, the recorder MFA's `actingAsVerified()` test helper begins
+ * its sign-in and records its proofs through, for which MFA binds no default,
+ * is bound to `Testing\VerifiedSignInRecorderAdapter`, which does both through
  * `laravel-authentication`, since the store refuses the helper's own proofs. It
  * is bound with every other seam rather than only in tests, as MFA reads it
  * only from its helper and resolving it costs nothing until then.
@@ -122,7 +118,6 @@ final readonly class MfaSeams implements ProvidesSeams
             new SeamBinding(SmsSender::class, CodeSenderAdapter::class, [NullSmsSender::class], appliesWhen: $on),
             new SeamBinding(EmailSender::class, CodeSenderAdapter::class, [NullEmailSender::class], appliesWhen: $on),
             new SeamBinding(FactorCodeCounters::class, FactorCodeCountersAdapter::class, [RefuseFactorCodes::class], appliesWhen: $on),
-            new SeamBinding(TenantRequirement::class, TenantRequirementAdapter::class, [NoTenantRequirement::class], appliesWhen: $on),
         ];
     }
 

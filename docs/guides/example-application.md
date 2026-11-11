@@ -515,8 +515,8 @@ fails to serialise or deadlocks, retry the request (see
 
 ## What the example leaves to you
 
-- **Your models and contracts.** The identity, principal and tenant models, your memberships, tenant tree, tenant MFA
-  requirement and provisioner (see [Provisioning and tenancy](provisioning-and-tenancy.md)).
+- **Your models and contracts.** The identity, principal and tenant models, your memberships, tenant tree, MFA
+  `TenantRequirement` and provisioner (see [Provisioning and tenancy](provisioning-and-tenancy.md)).
 - **Your authorisation.** Who may administer a tenant's SSO, refund an invoice or act in a tenant, and
   `laravel-authentication`'s tenant access (see [Authorization](authorization.md#access-contracts)).
   `laravel-authorization` decides in the caller's tenant but refuses no resource for its tenant, so have your models

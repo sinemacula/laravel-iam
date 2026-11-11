@@ -32,7 +32,6 @@ keeps nothing between calls. [Bindings](bindings.md) says, for each, how to repl
 | MFA `ChallengeGateway`, Auth `FactorCodeCounters`          | `laravel-authentication`'s factor codes, counted by MFA's challenge counters | MFA's email and SMS codes are issued and checked in one place, under MFA's limits (see [Codes and delivery](#codes-and-delivery)) |
 | MFA `SmsSender`, `EmailSender`                             | your `OneTimeCodeSender`                                                     | a code MFA sends itself reaches the same sender as every other                                                                    |
 | MFA `PasskeyGateway`, Auth `PasskeyFactorGate` (mandatory) | `laravel-authentication`'s passkeys                                          | a passkey is an MFA factor, and removing it takes its factor with it                                                              |
-| MFA `TenantRequirement`                                    | your tenant MFA requirement                                                  | a tenant's requirement reaches MFA (see [Provisioning and tenancy](provisioning-and-tenancy.md))                                  |
 | MFA's context resolvers                                    | the validated session                                                        | MFA's events, active tenant, subject type and active state match the session                                                      |
 
 The whole set is switched by `iam.adapters.mfa` (`IAM_ADAPTERS_MFA`). Leave it on unless you bind every one of these

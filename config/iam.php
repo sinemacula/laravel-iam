@@ -37,9 +37,8 @@ return [
     | first factor, the recorder of MFA's verified test sign-ins, code
     | challenges and their counters, MFA's SMS and email senders, the event
     | context, the active tenant, the subject type, the active state and the
-    | application,
-    | MFA's tenant requirement, answered from `tenancy.mfa_requirement`, the
-    | passkey factor gate, while any MFA application offers the `passkey`
+    | application, the passkey factor gate, while any MFA application offers
+    | the `passkey`
     | factor type, MFA's passkey ceremonies, and the `mfa` namespace of the
     | authentication context. Each adapter replaces only the member's own
     | default, never a binding of the application's, and a contributor the
@@ -77,19 +76,19 @@ return [
     |
     | While `sso` is on, the package also binds `laravel-authentication`'s
     | tenant authentication policy, answered from SSO's enforcement, SSO's
-    | exemptions and the tenant MFA requirement together, whatever `mfa` says:
+    | exemptions and MFA's tenant requirement together, whatever `mfa` says:
     | it finds the connection of a sign-in through the redemption this
     | package's SSO capability admitted, which nothing records with `sso` off.
     | With `sso` off, bind it yourself: it is mandatory while
-    | `sso.features.enforcement` is on or a tenant MFA requirement is named or
-    | bound, since `laravel-authentication`'s default requires nothing of any
+    | `sso.features.enforcement` is on or MFA's tenant requirement is bound,
+    | since `laravel-authentication`'s default requires nothing of any
     | tenant, so no enforcement and no requirement would reach a session.
     |
     | While `sso` is on and the application names its memberships
     | (`tenancy.memberships`), the package binds SSO's tenant membership, its
-    | link eligibility and its principal scope, answered from them; while it
-    | names a tenant tree (`tenancy.tree`), SSO's enforcement inheritance,
-    | answered from the tree. Without them SSO's defaults stay, and refuse.
+    | link eligibility and its principal scope, answered from them. Without
+    | them SSO's defaults stay, and refuse. While `sso` is on, SSO's
+    | enforcement inheritance reads `laravel-authorization`'s tenant tree.
     |
     | `authorization` binds `laravel-authorization` to the other members: its
     | subject resolver, answered from `Auth::caller()` (the principal, its
@@ -127,21 +126,14 @@ return [
     | Tenancy
     |---------------------------------------------------------------------------
     |
-    | `mfa_requirement` names the application's tenant MFA requirement, a
-    | class implementing `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement`:
-    | which further factors a session acting in a tenant must have, the
-    | application's own data. The package hands its one answer to MFA's tenant
-    | requirement while `adapters.mfa` is on, and to `laravel-authentication`'s
-    | tenant authentication policy while `adapters.sso` is on, which it
-    | answers from SSO's enforcement, SSO's exemptions and that requirement
-    | together, with a version that changes when any of them does. With
-    | `adapters.sso` off, bind that policy yourself (see Adapters); with both
-    | off nothing of the package's reads it: bind both seams yourself. It
-    | answers for exactly the tenant asked: the package applies no inheritance
-    | down a tenant tree. A requirement bound in the container counts as
-    | named. Name none (leave it null) and no tenant requires a further
-    | factor; SSO's enforcement still applies. Any value that is no class name
-    | (true, false, a number) fails closed.
+    | Which further factors a tenant requires is the application's own data:
+    | implement laravel-mfa's `TenantRequirement` and bind it. MFA asks it
+    | itself, and while `adapters.sso` is on the package reads it, on the write
+    | connection, into `laravel-authentication`'s tenant authentication policy,
+    | with SSO's enforcement and exemptions, at a version that changes when any
+    | of them does. An identity that is not `MultiFactorAuthenticatable` is
+    | refused once one is bound. Leave MFA's default and no tenant requires a
+    | further factor.
     |
     | Whenever a tenant's answer changes, report it so the sessions that no
     | longer meet it end: call `Iam::tenantPolicies()->changed($tenant)`
@@ -178,36 +170,20 @@ return [
     | link for good. Name none and SSO's defaults stay: no membership, no
     | `link`, no linking by a domain.
     |
-    | `tree` names the application's tenant tree, a class implementing
-    | `SineMacula\Laravel\Iam\Contracts\TenantTree`. While `adapters.sso` is
-    | on, a tenant inherits SSO's enforcement from the nearest tenant, from
-    | itself up through its ancestors, that has a rule stored, on or off: a
-    | rule turned off keeps its tenant, and every tenant inheriting from it,
-    | out of an ancestor's rule, so turning one off only loosens, and an
-    | enforcement change judges the sessions of the enforcing tenant and
-    | every tenant below it. While `adapters.authorization` is on, it is
-    | `laravel-authorization`'s tree too, so a grant in a tenant reaches the
-    | tenants below it. Report every move of a tenant inside the transaction that
-    | writes it, after the write, and a removal as the move of each child moved
-    | out from under the removed tenant:
-    | `Iam::treeChanges()->changed($tenantId)` passes the move on to
-    | `laravel-authorization` while `adapters.authorization` is on, and judges
-    | the sessions of that tenant and every tenant below it while SSO's
-    | enforcement or a tenant MFA requirement is on. Name none and every tenant
-    | stands alone.
+    | The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`).
+    | Report every move of a tenant inside the transaction that writes it,
+    | after the write: `Iam::treeChanges()->changed($tenantId)`.
     |
-    | Either bound in the container counts as named when it is bound by the
-    | time every service provider has registered (in a provider's
-    | `register()`, the application's own included); one bound from a
-    | provider's `boot()` is still the one asked, but binds no adapter. Any
+    | Memberships bound in the container count as named when they are bound
+    | by the time every service provider has registered (in a provider's
+    | `register()`, the application's own included); bound from a provider's
+    | `boot()` they are still the ones asked, but bind no adapter. Any
     | value that is no class name (true, false, a number) fails closed.
     |
     */
 
     'tenancy' => [
-        'mfa_requirement' => null,
-        'memberships'     => null,
-        'tree'            => null,
+        'memberships' => null,
     ],
 
     /*

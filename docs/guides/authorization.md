@@ -5,7 +5,7 @@ package binds it to the other members: it decides about `laravel-authentication`
 context, judges a policy's authentication requirements with MFA, answers a refusal for want of a step-up with MFA's
 step-up response, caps a machine by its credential's scopes, and answers `laravel-authentication`'s scope registry and
 application access from its grants. It reports a grant that widens a person's reach to SSO, answers the grant half of
-SSO's principal scope, hands it your tenant tree and its changes, forgets the decision it keeps once the authentication
+SSO's principal scope, hands it your tenant tree's changes, forgets the decision it keeps once the authentication
 that decision read changes, answers audit-log's access policy from its grants, offers a catalogue of the members'
 administrative permissions, maps its events into the audit trail, and keeps its tables on the storage connection.
 
@@ -43,14 +43,13 @@ requirement checker and the step-up only while `iam.adapters.mfa` is on too, and
 | `laravel-authentication`'s scope registry     | `laravel-authorization`'s scope registry                                                       |
 | `laravel-authentication`'s application access | The permission `authorization.application_access` maps the application to                      |
 | The principals an identity owns               | `laravel-authentication`'s principals of that identity                                         |
-| The tenant tree                               | Your `SineMacula\Laravel\Iam\Contracts\TenantTree`, or its own flat tree without one           |
 | The grant hook                                | SSO's scope widening, after the hooks `authorization.grant_hooks` lists                        |
 | Audit-log's access policy                     | The catalogue's audit permissions the viewer holds                                             |
 
 `laravel-authorization` binds its own defaults only where nothing is bound yet, so this package replaces them only
 while they are still `laravel-authorization`'s defaults, in whatever order the providers register. A class you name in
 its configuration (`authorization.subject_resolver`, `authorization.requirement_checker`,
-`authorization.session.source`, `authorization.identity_directory`, `authorization.tenant_tree`) is kept, and so is
+`authorization.session.source`, `authorization.identity_directory`) is kept, and so is
 anything you bind over its contracts in a service provider's `register()` or `boot()`, before `laravel-authorization`
 registers or after. Hooks you list in `authorization.grant_hooks` are not a class of their own: the grant hook is bound
 over the default whatever you list, and `laravel-authorization` runs your hooks before it, so before SSO's widening.
@@ -305,16 +304,10 @@ on too (see [Bindings](bindings.md#authorization)).
   `unknown` for an identity that is neither a principal nor owns principals), and combined with the membership half: a
   person is within a tenant only when both halves say so, and outside when either does (see [Provisioning and
   tenancy](provisioning-and-tenancy.md#principal-scope)).
-- **One tenant tree.** `laravel-authorization`'s tenant tree is your `SineMacula\Laravel\Iam\Contracts\TenantTree`, so a
-  grant on a tenant with its subtree reaches the tenants your tree puts below it, and a tree change you report with
-  `Iam::treeChanges()->changed()` reaches `laravel-authorization` too. Keep the tree on the storage connection, so
-  the grant scope query can read it. Your subtree may select its ids as integers: they are compared as text. Every
-  tenant of the tree must be of one type: a tree placing a tenant below one of another type is refused (see
-  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). While you
-  name or bind no tree, `laravel-authorization` keeps its own flat tree, which it scopes `whereAuthorized()` by a
-  record's tenant column alone, whichever connection the record is on. With a tree, every tenant
-  `laravel-authorization` asks about resolves through `laravel-authentication`'s tenant resolver, so bind one (see
-  [The tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver)); `iam:check` refuses the default then.
+- **One tenant tree.** Implement `laravel-authorization`'s `SineMacula\Laravel\Authorization\Contracts\TenantTree`
+  and name it in `authorization.tenant_tree`; this package reads it for SSO's enforcement inheritance and for the tree
+  changes you report with `Iam::treeChanges()->changed()`, which reach `laravel-authorization` too (see
+  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)).
 - **A move reports the people granted below it.** A grant rooted below a tenant counts within it, so moving that
   subtree out from under the tenant takes the person's grant beyond it with no grant written. While both adapters are
   on, `Iam::treeChanges()->changed()` reports everyone holding a live grant in the moved subtree to SSO's scope
@@ -419,13 +412,12 @@ on the same connection (see [Configuration](configuration.md#storage)).
   [Operations](operations.md#workers-and-octane)).
 - Each adapter in [What is bound](#what-is-bound) that this package binds over one of `laravel-authorization`'s
   contracts is declared to that report, so `authorization:check` names it rather than code whose class is decided at
-  first use, as `[seam SubjectResolver] declared by laravel-iam; ...\SubjectResolverAdapter; scoped`. The tenant tree
-  is declared as `one of ...\TenantTreeAdapter, ...\FlatTenantTree, decided at first resolution`, since which it builds
-  depends on whether you name or bind a tree. The declaration names the very binding this package made, so once you
-  bind over a contract the seam is shown as your binding, with `declared by laravel-iam as ..., but overridden later`,
-  or `but an instance is bound over it` for an instance. A contract this package left to your binding, or whose switch
-  is off, carries no declaration; one holding a class you name in `laravel-authorization`'s configuration reads
-  `configured in` that key, with this package's declaration shown overridden where this package registered first.
+  first use, as `[seam SubjectResolver] declared by laravel-iam; ...\SubjectResolverAdapter; scoped`. The declaration
+  names the very binding this package made, so once you bind over a contract the seam is shown as your binding, with
+  `declared by laravel-iam as ..., but overridden later`, or `but an instance is bound over it` for an instance. A
+  contract this package left to your binding, or whose switch is off, carries no declaration; one holding a class you
+  name in `laravel-authorization`'s configuration reads `configured in` that key, with this package's declaration shown
+  overridden where this package registered first.
 
 ## Further reading
 

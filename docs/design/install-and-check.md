@@ -76,10 +76,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - Every run ends with what the application still owes (`Installer::OWED`): migrating, naming the connection each
   member's tables are created on (`laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s on
   `iam.storage.connection`, which the storage alignment shares; audit-log's on `audit-log.storage.connection`, which it
-  never writes, the default connection when unset); its `OneTimeCodeSender`,
-  which delivers MFA's codes too; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
-  before a tenant MFA requirement is named or SSO's enforcement turned on, since MFA's tenant requirement, the tree's
-  changes and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
+  never writes, the default connection when unset); its `OneTimeCodeSender`, which delivers MFA's codes too; its
+  memberships and tenant tree, and laravel-mfa's `TenantRequirement`; `laravel-authentication`'s `TenantResolver`,
+  before MFA's tenant requirement is bound or SSO's enforcement turned on, since the tenant policy, the tree's changes
+  and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
   principal's own tenant without one, so an application that never needed a resolver needs one then; its provisioner;
   the routes, following this package's example application guide, so SSO's handoffs are redeemed through
   `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly (the adapters
@@ -167,10 +167,10 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
     passkey factor gate always; the external identity links and the linker while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
-    enforcement is on or a tenant MFA requirement is named or bound; the enforcement inheritance while a tenant tree is
-    named or bound and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
-    `api_key` or `client_credentials`, as the bound application policy says (asked only as the check reads the
-    mandate), and its application access while `authorization.application_access` maps an application
+    enforcement is on or MFA's tenant requirement is bound; the enforcement inheritance while a tenant tree is bound to
+    `laravel-authorization` and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
+    `api_key` or `client_credentials`, as the bound application policy says (asked only as the check reads the mandate),
+    and its application access while `authorization.application_access` maps an application
     (`Authorization\AccessMandates`).
   - `Sso\SsoBridgeCheck` (IAM-2.5, IAM-10.2): while SSO is in use, read as SSO's `Features::isInUse()` reads it, and
     reported under `sso`: each SSO application's guard allowing `external_provider`, no application's
@@ -191,14 +191,13 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names (`Mfa\Enums\Operation`) is declared
     under `authentication.freshness`, or the guard's own block, for each MFA application's guard, and, while SSO is in
     use, every operation SSO names (`FreshnessOperation`) for each SSO application's guard; while SSO's enforcement is
-    on or a tenant MFA requirement is named or bound (`TenancySeams::isEnforcedOrRequired()`), or the authorization and
+    on or MFA's tenant requirement is bound (`TenancySeams::isEnforcedOrRequired()`), or the authorization and
     SSO adapters are both on, so the grant hook reports `laravel-authorization`'s grants to SSO's scope widening
-    (`AuthorizationSeams::reportsWidenings()`), or the authorization adapters are on while the application names or
-    binds a tenant tree (`AuthorizationSeams::isOn()` and `TenancyContracts::hasTree()`), since `TenantTreeAdapter`
-    resolves every tenant `laravel-authorization` asks about through it, `laravel-authentication`'s `TenantResolver` is
+    (`AuthorizationSeams::reportsWidenings()`), or the application binds a tenant tree to `laravel-authorization`
+    (`TenancyContracts::hasTree()`), `laravel-authentication`'s `TenantResolver` is
     no longer its `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the
-    tree's changes and SSO's revocation resolve the session's tenant through it, the grant hook the tenant of every
-    grant that widens and the tree adapter every tenant it is asked about (`Tenancy\TenantReferences`), while
+    tree's changes, SSO's enforcement inheritance and its revocation resolve the session's tenant through it, and the
+    grant hook the tenant of every grant that widens (`Tenancy\TenantReferences`), while
     `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
     read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
     `Sso\SsoBridgeCheck`, `sso.endpoints.base_url` by
@@ -238,7 +237,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   tenant resolver left on `laravel-authorization`'s default while people act in tenants
   (`CrossMemberConfigurationCheck`). The tenant resolver requirement of `CrossMemberConfigurationCheck` gains the grant
   hook's condition (the authorization and SSO adapters both on, `AuthorizationSeams::reportsWidenings()`) and the tree's
-  (the authorization adapters on while the application names or binds a tenant tree, `TenancyContracts::hasTree()`), so
+  (the application binding a tenant tree to `laravel-authorization`, `TenancyContracts::hasTree()`), so
   a widening grant or a tree read never resolves its tenant through `ResolveNoTenant`. No resource tenant resolver is
   named by `iam:install`: a record's tenant is the application's to say, which this package cannot read from its models
   (`authorization.md`). `iam:install` still writes none of `laravel-authorization`'s resolver keys, and
