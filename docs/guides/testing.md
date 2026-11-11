@@ -230,34 +230,22 @@ $this->actingOnVerifiedSession($session, AssuranceLevel::AAL2)->getJson('/api/ac
 Each fake implements one of the contracts your application implements for this package. `fake()` binds a fresh
 instance in the container and returns it.
 
-### Gateways
+### Codes
 
-`FakeEmailGateway` and `FakeSmsGateway` keep every `SineMacula\Laravel\Iam\Delivery\CodeMessage` they are handed
-instead of delivering it, whichever member issued the code. Name the fake in `iam.delivery.email` or `iam.delivery.sms`
-before the application boots, so the members' senders are pointed at it, then call `fake()` in the test. Use them
-rather than MFA's own `FakeEmailSender` and `FakeSmsSender`, and rather than `laravel-authentication`'s
-`SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender`, which that member's testing guide suggests: binding
-one of MFA's fakes replaces this package's sender, so MFA's codes stop reaching your gateway, and binding
-`FakeOneTimeCodeSender::fake()` replaces this package's one-time code sender, so both members' codes, MFA's email and
-SMS codes among them, stop reaching it. Either way the codes take another path than they take in production.
+Every email and SMS code, MFA's included, reaches `laravel-authentication`'s `OneTimeCodeSender`, so read them from
+its fake, `SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender`. MFA's own `FakeEmailSender` and
+`FakeSmsSender` replace this package's senders, so they see only the codes MFA sends itself once you rebind its
+`ChallengeGateway`.
 
 ```php
-use SineMacula\Laravel\Iam\Testing\FakeEmailGateway;
+use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 
-$mailbox = FakeEmailGateway::fake();
+$sender = FakeOneTimeCodeSender::fake();
 
 $this->postJson('/mfa/send', ['factor' => $factor->id])->assertOk();
 
-$code = $mailbox->lastCodeTo('person@example.test');
+$code = $sender->lastCodeFor('person@example.test');
 ```
-
-| Method                                      | What it does                                                 |
-|---------------------------------------------|--------------------------------------------------------------|
-| `sent($filter = null)`                      | Every message, oldest first, or those the closure accepts    |
-| `sentTo($destination)`                      | The messages to the address or phone number                  |
-| `lastCodeTo($destination, $purpose = null)` | The code last sent there, for the purpose given or any       |
-| `failNext($exception = null)`               | Makes the next delivery throw, as a provider's failure would |
-| `reset()`                                   | Forgets every message so far                                 |
 
 A code `laravel-authentication` issues arrives when its queued delivery job runs, so run the queue synchronously in
 tests that read one.
@@ -331,14 +319,11 @@ Each kit is a trait of PHPUnit tests that proves an implementation of one of thi
 promises. Use it in a test case of your own and implement its hooks against your implementation. The fakes above pass
 their kits. Each kit's checks are static assertions on the `Seams\*Contract` class beside its trait
 (`Seams\MembershipsContract`, `Seams\TenantTreeContract`, `Seams\TenantMfaRequirementContract`,
-`Seams\ProvisionerContract`, `Seams\GroupMappingContract`, and `Seams\EmailGatewayContract` and
-`Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can call one directly, such as
+`Seams\ProvisionerContract` and `Seams\GroupMappingContract`), so a test can call one directly, such as
 `Seams\MembershipsContract::assertNeverCompleteWhenUnreadable()`.
 
 | Kit                                        | Proves                      | Hooks                                                                                                                                                                                                                                     |
 |--------------------------------------------|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Seams\Concerns\EmailGatewayTests`         | Your `EmailGateway`         | `codeGateway()`, `codeApplication()`, `codeRecipient()`, `codesDeliveredTo()`, `failCodeDelivery()`                                                                                                                                       |
-| `Seams\Concerns\SmsGatewayTests`           | Your `SmsGateway`           | The same as the email kit                                                                                                                                                                                                                 |
 | `Seams\Concerns\MembershipsTests`          | Your `Memberships`          | `memberships()`, `memberIdentity()`, `membershipTenant()`, `membershipAcceptedAt()`, `invitedIdentity()`, `revokeMembership()`, `partlyReadableIdentity()`, `widelyHeldIdentity()`, `otherMembershipTenant()`, `holdsPlatformPrincipal()` |
 | `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                                                                                                                            |
 | `Seams\Concerns\TenantMfaRequirementTests` | Your `TenantMfaRequirement` | `tenantMfaRequirement()`, `tenantMfaTenant()`, `tenantMfaApplication()`, `changeTenantMfaRequirement()`, `unanswerableTenant()`                                                                                                           |
@@ -363,12 +348,11 @@ final class DatabaseTenantTreeTest extends TestCase
 }
 ```
 
-The gateway kits read the application's log, so a test case using one must not fake the log's `MessageLogged` event
-(as `Event::fake()` with no list does). A contract of MFA's that you bind yourself in place of one of this package's
-adapters (see [Bindings](bindings.md)) is proved with MFA's own kit for it, under
-`SineMacula\Laravel\Mfa\Testing\Seams\Concerns` ([laravel-mfa: testing][mfa-testing]); this package's own tests run
-those kits against its adapters. `laravel-authentication` and SSO ship no contract kits, so an implementation of one
-of their contracts is proved by tests of your own against that member's guide.
+A contract of MFA's that you bind yourself in place of one of this package's adapters (see [Bindings](bindings.md)) is
+proved with MFA's own kit for it, under `SineMacula\Laravel\Mfa\Testing\Seams\Concerns`
+([laravel-mfa: testing][mfa-testing]); this package's own tests run those kits against its adapters.
+`laravel-authentication` and SSO ship no contract kits, so an implementation of one of their contracts is proved by
+tests of your own against that member's guide.
 
 [authentication-testing]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/testing.md
 [mfa-testing]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/testing.md

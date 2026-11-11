@@ -460,31 +460,39 @@ use SineMacula\Laravel\Mfa\Exceptions\InsufficientAuthenticationException;
 the one renderer above answers both (see [Authorization](authorization.md#step-up-before-authorization)). Only an
 application with an exception handler of its own maps `laravel-authorization`'s exception itself.
 
-## A gateway
+## A code sender
 
-Every member's codes reach one gateway per channel as a `CodeMessage`, and the wording is yours:
+Every email and SMS code, MFA's included, reaches `laravel-authentication`'s `OneTimeCodeSender`, and the wording is
+yours:
 
 ```php
 namespace App\Delivery;
 
 use App\Mail\CodeMail;
+use App\Notifications\CodeText;
 use Illuminate\Support\Facades\Mail;
-use SineMacula\Laravel\Iam\Contracts\EmailGateway;
-use SineMacula\Laravel\Iam\Delivery\CodeMessage;
+use Illuminate\Support\Facades\Notification;
+use SineMacula\Laravel\Authentication\Codes\OneTimeCodeMessage;
+use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
 
-final readonly class MailCodes implements EmailGateway
+final readonly class CodeSender implements OneTimeCodeSender
 {
-    public function send(#[\SensitiveParameter] CodeMessage $message): void
+    public function send(OneTimeCodeMessage $message): void
     {
-        // CodeMail is the application's own mailable, worded by the message's purpose
-        Mail::to($message->destination())->send(new CodeMail($message->purpose, $message->code->reveal(), $message->expiresAt));
+        $code = $message->code->reveal();
+
+        // CodeMail and CodeText are the application's own, worded by the message's purpose
+        match ($message->type) {
+            'email'        => Mail::to($message->identifier)->send(new CodeMail($message->purpose, $code, $message->expiresAt)),
+            'phone', 'sms' => Notification::route('vonage', $message->identifier)->notify(new CodeText($message->purpose, $code)),
+        };
     }
 }
 ```
 
-Name it in `iam.delivery.email` (see [Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)). Send it
-once, never log the code or the address, and do not queue a mailable that holds the code: a gateway that queues its
-delivery puts what it needs in a job whose whole payload is encrypted (`ShouldBeEncrypted`).
+Bind it in a service provider's `register()` (see [Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)).
+Send it once, never log the code or the address, and do not queue a mailable that holds the code: a sender that queues
+its delivery puts what it needs in a job whose whole payload is encrypted (`ShouldBeEncrypted`).
 
 ## Flows the members lay out
 

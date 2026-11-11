@@ -23,6 +23,7 @@ use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\ApplicationResolver;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
+use SineMacula\Laravel\Mfa\Contracts\EmailSender;
 use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
 use SineMacula\Laravel\Mfa\Contracts\FirstFactorResolver;
@@ -34,6 +35,7 @@ use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use SineMacula\Laravel\Mfa\Contracts\Reauthenticator;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
+use SineMacula\Laravel\Mfa\Contracts\SmsSender;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Contracts\SubjectTypeResolver;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
@@ -86,6 +88,8 @@ final class AdaptersDocumentationTest extends TestCase
         VerifiedSignInRecorder::class         => 'the recorder of MFA\'s verified test sign-ins',
         ChallengeGateway::class               => 'code challenges',
         FactorCodeCounters::class             => 'code challenges and their counters',
+        SmsSender::class                      => 'MFA\'s SMS and email senders',
+        EmailSender::class                    => 'MFA\'s SMS and email senders',
         TenantRequirement::class              => 'MFA\'s tenant requirement',
         EventContextResolver::class           => 'the event context',
         ActiveTenantResolver::class           => 'the active tenant',

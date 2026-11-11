@@ -108,7 +108,6 @@ final class CheckerTest extends TestCase
             '[SsoBridgeFallbackCheck] OK',
             '[ContextNamespacesCheck] OK',
             '[AuditCheck] OK',
-            '[SendersCheck] OK',
             '[CrossMemberConfigurationCheck] OK',
             '[PlatformCheck] OK',
             '[SchedulesCheck] OK',

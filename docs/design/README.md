@@ -38,10 +38,8 @@ The current note set is:
 - `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
   `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
   `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
-  subject type and application MFA reads from the validated session; how both members' codes reach the application's
-  email and SMS gateways as one neutral `CodeMessage`, routed by identifier type or factor channel; where each delivery
-  runs, inside MFA's transaction or from `laravel-authentication`'s queued job once the code has committed, and so
-  what a gateway that throws rolls back; and the locks each path takes.
+  subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
+  to the application's `OneTimeCodeSender`; and the locks each path takes.
 - `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
   store as its linker and link storage, and the handoff issuer left on SSO's default; how a `sign_in`, a
   `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
@@ -93,7 +91,7 @@ The current note set is:
   members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
   the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
-  and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
+  and `sso` namespaces, the audit trail's settings, the configuration that crosses the members,
   the platform and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as
   `[iam]` and failing SSO's boot only while SSO is in use; what `laravel-authorization`'s glue adds, its prune and its
   resource tenant resolver's note among them; and the gaps in the members installation and the checks work around.

@@ -312,10 +312,13 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'neither member\'s fake sender is used beside the gateway fakes' => [
+        yield 'every code is read from laravel-authentication\'s fake sender' => [
             'docs/guides/testing.md',
-            ['`SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender`', 'both members\' codes, MFA\'s email and SMS codes among them, stop reaching it'],
-            [],
+            [
+                '`SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender`',
+                'MFA\'s own `FakeEmailSender` and `FakeSmsSender` replace this package\'s senders, so they see only the codes MFA sends itself',
+            ],
+            ['FakeEmailGateway'],
         ];
 
         yield 'each kit\'s checks can be called directly' => [
@@ -558,14 +561,14 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'MFA\'s codes take laravel-authentication\'s path only while its sender is bound' => [
+        yield 'MFA\'s SMS and email codes reach the application\'s one-time code sender' => [
             'docs/guides/authentication-and-mfa.md',
             [
-                'only while `laravel-authentication`\'s one-time code sender is bound',
-                'Otherwise MFA sends the code itself, synchronously, inside MFA\'s transaction, so a gateway that throws leaves no code and nothing is queued or retried.',
-                'counted by MFA\'s challenge counters, while its one-time code sender is bound',
+                'MFA\'s challenge gateway sends and checks the code of every factor whose driver delivers by SMS or email through `laravel-authentication`\'s factor codes.',
+                'MFA\'s `SmsSender` and `EmailSender` forward to your sender in the same way',
+                'While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.',
             ],
-            ['is issued through `laravel-authentication`\'s factor codes, and delivered from its queued job'],
+            ['while its one-time code sender is bound'],
         ];
 
         yield 'a prefixed namesake of an authorization migration is only noted' => [

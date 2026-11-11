@@ -76,8 +76,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - Every run ends with what the application still owes (`Installer::OWED`): migrating, naming the connection each
   member's tables are created on (`laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s on
   `iam.storage.connection`, which the storage alignment shares; audit-log's on `audit-log.storage.connection`, which it
-  never writes, the default connection when unset); its email and SMS
-  gateways; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
+  never writes, the default connection when unset); its `OneTimeCodeSender`,
+  which delivers MFA's codes too; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
   before a tenant MFA requirement is named or SSO's enforcement turned on, since MFA's tenant requirement, the tree's
   changes and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
   principal's own tenant without one, so an application that never needed a resolver needs one then; its provisioner;
@@ -85,7 +85,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly (the adapters
   answer only a redemption or a caller those core methods recorded, and `iam:check` cannot see a route);
   `Iam::schedule()`; a queue worker for `laravel-authentication`'s delivery of one-time codes
-  (`authentication.delivery.queue.*`), which MFA's email and SMS codes go through once the gateways are named, whether
+  (`authentication.delivery.queue.*`), which MFA's email and SMS codes go through too, whether
   or not SSO is in use, and for SSO's metadata refresh while it is; allowing SSO's Composer plugin in its own
   `composer.json`; mapping each application to the permission to use it (`authorization.application_access`), since
   `laravel-authentication`'s application access is answered from `laravel-authorization` and admits anyone to an
@@ -201,13 +201,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     as audit-log's provider missing, never as a late registration; `laravel-authorization`'s registration is reported
     through its check command. Only the mappers' registration with a registered audit-log
     (`AuditRegistrations::REGISTERED`) follows their switch.
-  - `SendersCheck`: the routes name channels; every code sign-in method a `jwt` guard allows has its identifier type
-    routed to a channel while `laravel-authentication`'s sender is this package's or unbound, since a code of a type
-    the routes leave out can be delivered by no gateway and `authentication:check` sees a sender bound and passes; a
-    gateway named where none is bound implements its contract, judged by
-    its class, never built; and a channel has a gateway while something sends on it through this package, a `jwt`
-    guard allowing `email_code` or `phone_code` routed to it, or an MFA application enabling `sms` or `email`, while
-    the member's sender is this package's, the member's null default or unbound.
   - `CrossMemberConfigurationCheck` (IAM-2.5): every MFA application names a guard of the `jwt` driver, the one that
     holds sessions, so one on an `api_key` or `session` guard, which every MFA adapter refuses at runtime
     (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names (`Mfa\Enums\Operation`) is declared
@@ -403,9 +396,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   - MFA's boot check stands aside for `mfa:check` and the configuration commands only, and `laravel-authorization`
     validates its configuration in `boot()` for every command, so a configuration either refuses stops `iam:check`
     before it reports; standing aside for a composing package's check command too would let `iam:check` report it.
-  - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
-    (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
-    public constant would let it read them.
   - SSO's `ConfigurationChecker` keeps the checks it was built with to itself, so
     `SsoCheckRegistration::isInForce()` reads them from its mangled properties (`get_mangled_object_vars()`) to know
     whether `sso:check` runs the bridge, failing closed if they cannot be read; a public reader of the checker's
@@ -434,7 +424,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `isMemberDefault()`), `src/Bindings/SeamBinding.php` (`$accepted`), `src/Checks/SeamHolders.php` (`of()`,
   `isMembersOwn()`),
   `src/Checks/SsoBridgeFallbackCheck.php`, `src/Checks/ContextNamespacesCheck.php`, `src/Checks/AuditCheck.php`,
-  `src/Checks/SendersCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`, `src/Checks/PlatformCheck.php`,
+  `src/Checks/CrossMemberConfigurationCheck.php`, `src/Checks/PlatformCheck.php`,
   `src/Checks/SchedulesCheck.php`.
 - `src/Checks/SsoCheckRegistration.php`: `register()`, `isInForce()`; `src/Checks/Sso/SsoBridgeCheck.php`:
   `CAPABILITIES`.
@@ -521,9 +511,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `tests/Feature/Checks/SsoBridgeFallbackCheckTest.php` `testTheWholeBridgeRunsHereWhenSsosCheckDoesNotRunIt`,
   `testItDoesNotApplyWhileSsosCheckRunsTheBridge`, `testItDoesNotApplyWhileSsoIsNotInUse`,
   `testItAppliesWhereSsosCheckCannotBeRead`, `testACheckerOfSsosClassHoldingTheBridgeRunsIt`
-- `tests/Feature/Checks/SendersCheckTest.php` `testACodeMethodNeedsAGatewayOnItsChannel`,
-  `testACodeMethodWhoseTypeIsUnroutedIsRefused`,
-  `testACodeFactorNeedsAGatewayOnItsChannel`, `testANamedGatewayMustImplementTheContract`
 - `tests/Feature/Checks/CrossMemberConfigurationCheckTest.php` `testMfasOperationsMustBeDeclared`,
   `testEveryMfaApplicationMustBeAGuard`, `testEveryMfaApplicationMustBeAJwtGuard`,
   `testSsosOperationsMustBeDeclaredWhileSsoIsInUse`,
