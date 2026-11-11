@@ -148,10 +148,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     repeats). Audit-log's storage connection, when another, is a note
     (`audit-mapping.md`).
   - `MandatorySeamsCheck` (IAM-10.2): every row the capabilities declare mandatory now (`SeamBinding::isMandatory()`,
-    read again from the configuration and the container as they stand) is bound, and its live binding (`Checks\SeamHolders`,
-    never building anything new) names neither one of the row's member defaults nor any other class of a member's own,
-    the row's adapter apart (SSO's own `LinkStore` is the linker's) and the member classes the row accepts
-    (`SeamBinding::$accepted`). A row is checked whatever this
+    read again from the configuration and the container as they stand) is bound, its member does not say it holds the
+    member's default (`SeamBinding::$holdsDefault`), and its live binding (`Checks\SeamHolders`, never building anything
+    new) names none of the row's member defaults. A row is checked whatever this
     package's capability switch says, as the tenant policy's note has it: with the switch off the application binds the
     seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept with the application's
     binding. A binding whose implementation cannot be read without building it (a closure of the application's own,
@@ -329,9 +328,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `src/Scheduling/IamSchedule.php`: `register()`; `src/IamManager.php`: `schedule()`.
 - `src/Console/CheckCommand.php`: `handle()`; `src/Checks/Checker.php`: `run()`, `MEMBER_COMMANDS`, `CHECKS`;
   `src/Checks/Contracts/Check.php`.
-- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `holderOf()`,
-  `isMemberDefault()`), `src/Bindings/SeamBinding.php` (`$accepted`), `src/Checks/SeamHolders.php` (`of()`,
-  `isMembersOwn()`),
+- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `holderOf()`),
+  `src/Bindings/SeamBinding.php` (`$holdsDefault`), `src/Checks/SeamHolders.php` (`of()`),
   `src/Checks/Sso/SsoBridgeCheck.php` (`CAPABILITIES`), `src/Checks/ContextNamespacesCheck.php`,
   `src/Checks/AuditCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`,
   `src/Checks/SchedulesCheck.php`.

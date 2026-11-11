@@ -44,10 +44,11 @@ process calls it.
     own.
   - The members' scoped request state is forgotten: the scoped bindings `laravel-authentication` (`Rehashing`, and the
     `KeptSessions`, `RequiredWork` and `WatchedSessions` that hold a unit of work's kept sessions, the work due at its
-    commit, such as a sign-in's admission recheck, and the sessions checked at that commit), `laravel-sso` (its scoped
-    stores, resolvers and fetcher, and the `DriverScope` that tells its protocol manager a scope has ended) keep
-    request state in, listed in `WorkerReset::SCOPED_STATE`, and every scoped instance `laravel-authorization` holds
-    under its own names, which it forgets itself through its published `Support\RequestState::forget()`: its class
+    commit, such as a sign-in's admission recheck, and the sessions checked at that commit) keeps request state in,
+    listed in `WorkerReset::SCOPED_STATE`; every scoped instance `laravel-sso` holds, which it forgets itself through
+    its published `Support\RequestState::forget()` (its scoped defaults under `sso.default:` keys and the `DriverScope`
+    that tells its protocol manager a scope has ended); and every scoped instance `laravel-authorization` holds
+    under its own names, which it forgets itself through its own `Support\RequestState::forget()`: its class
     names, its `authorization` manager and every `authorization.` key, the scoped defaults behind its contracts under
     `authorization.default:` included, so whatever it scopes later is forgotten with the rest and this package keeps no
     copy of its list (it never touches Laravel's or another package's scoped state, nor its own post-boot state). The
@@ -58,12 +59,11 @@ process calls it.
     Without it a long-running command that resets between tenants would keep the first tenant's `ResolvedTenant`,
     decision and resolutions, and an Octane worker would clone what its boot resolved into its first request. This
     package's scoped adapters are never listed there: the binding rule scopes each under its own key,
-    `BindingRule::SCOPED_PREFIX` (`iam.scoped:`) followed by the seam, and takes the seam itself off the container's
-    scoped list (see `binding-precedence.md`), so `WorkerReset::isSuiteState()` finds them by that prefix and the list
-    never changes for them; listing the seam in
+    `BindingRule::SCOPED_PREFIX` (`iam.scoped:`) followed by the seam, never under the seam itself (see
+    `binding-precedence.md`), so `WorkerReset::isSuiteState()` finds them by that prefix; listing the seam in
     `SCOPED_STATE` would do nothing. Each is forgotten with `forgetInstance()`, so the next unit of work builds its own,
     but only while the container still keeps it as scoped, as Laravel's own `forgetScopedInstances()` does. An instance
-    or a singleton the application bound over one of those seams before the member registered, which the member's
+    or a singleton the application bound over one of those bindings before the member registered, which the member's
     `scopedIf()` then left alone (IAM-8.4), is the application's: forgetting an instance would leave the seam
     unresolvable in every sandbox cloned from the worker, and forgetting a singleton would rebuild it. The container
     lists its scoped abstracts only in its protected `scopedInstances`, which the reset reads through a closure bound to
@@ -178,7 +178,7 @@ process calls it.
   `flushSession()`, `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`,
   `CALLER_MEMO`.
 - `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
-  scoped adapters by, `bindScoped()` and `unscope()`.
+  scoped adapters by, and `bindScoped()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
@@ -234,13 +234,14 @@ process calls it.
   application can keep it.
 - A change to the protected `Container::$scopedInstances` the reset reads, or a public way to ask whether an abstract
   is scoped, which the reset then uses instead.
-- `laravel-authentication` or `laravel-sso` adding, renaming or removing a scoped binding that keeps request state:
-  `WorkerReset::SCOPED_STATE` follows, as `tests/Feature/Workers/WorkerResetTest.php` reports. `laravel-authorization`
-  changing what its `RequestState::forget()` forgets, or its signature: `WorkerReset::forgetScopedState()` follows.
+- `laravel-authentication` adding, renaming or removing a scoped binding that keeps request state:
+  `WorkerReset::SCOPED_STATE` follows, as `tests/Feature/Workers/WorkerResetTest.php` reports. `laravel-sso` or
+  `laravel-authorization` changing its `RequestState::forget()`'s signature: `WorkerReset::forgetScopedState()`
+  follows.
 - A change to `BindingRule::SCOPED_PREFIX` or `bindScoped()`: `WorkerReset::isSuiteState()` follows. This package
   binding a new scoped adapter changes neither.
 - Laravel changing what its container lists among its scoped instances (the closure it lists for a binding scoped by
-  its closure's return type, among them): `WorkerReset::forgetScopedState()` and `BindingRule::unscope()` follow.
+  its closure's return type, among them): `WorkerReset::forgetScopedState()` follows.
 - Octane changing when it registers its listeners, or `FlushAuthenticationState` ceasing to point the auth manager at
   the sandbox.
 - A change to the Octane event names, to how Octane sets the sandbox, or to when the queue worker forgets scoped
