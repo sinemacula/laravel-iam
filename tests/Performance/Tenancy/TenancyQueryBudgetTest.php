@@ -182,19 +182,22 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         // The report to laravel-authorization first. Reads (4): the moved
         // subtree, as laravel-authorization reads it, then the live grants
         // rooted in it, one read of each of its three grant tables, which hold
-        // none, so nothing is reported to SSO's scope widening. First passes,
-        // one savepoint per tenant, nearest the moved tenant first. Reads (9,
-        // 10, 11): the tenant's live sessions' keys, locked,
-        // and the sessions; the person, twice; the policy's reads of the rule
-        // up the path (the tenant's own, each ancestor's up to the enforcing
-        // root's, then the root's rule again with its connections, so one more
-        // for each level down); and the session's provenance connection, once,
-        // shared by the policy and laravel-authentication's judgement.
-        // Writes (1 each): the session revoked. Second passes, once the move
-        // commits, one transaction per tenant: each reads the tenant's live
-        // sessions' keys and finds none left (3). Transactions: the move's, and
-        // six of laravel-authentication's.
-        $revoked = $this->assertQueryBudget(37, 3, $move, begins: 7, commits: 7);
+        // none, so SSO's scope widening is handed no identity, in a savepoint
+        // of its own. First passes, one savepoint per tenant, nearest the moved
+        // tenant first. Reads (9, 10, 11): the tenant's live sessions' keys,
+        // locked, and the sessions; the person, twice; the policy's reads of
+        // the rule up the path (the tenant's own, each ancestor's up to the
+        // enforcing root's, then the root's rule again with its connections, so
+        // one more for each level down); and the session's provenance
+        // connection, once, shared by the policy and laravel-authentication's
+        // judgement.
+        // Writes (1 each): the session revoked. laravel-authentication's second
+        // passes, once the move commits, one transaction per tenant: each reads
+        // the tenant's live sessions' keys and finds none left (3); the subtree
+        // listed again gains no tenant, so nothing more is judged.
+        // Transactions: the move's, the widening's savepoint, and six of
+        // laravel-authentication's.
+        $revoked = $this->assertQueryBudget(37, 3, $move, begins: 8, commits: 8);
 
         self::assertSame(3, $revoked);
     }

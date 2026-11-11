@@ -307,23 +307,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 
 ### Operational alerts (IAM-9.8)
 
-- `Audit\OperationalAlerts::listen()`, from `IamServiceProvider::boot()`, registers one listener of each of
-  audit-log's `AuditWriteFailed`, `AuditCaptureFailed` and `IntegrityCheckFailed` and SSO's `KeyNearingExpiry`,
-  whatever the configuration says. Each hands its event to the listeners `iam.audit.alerts` names for it
-  (`audit_write_failed`, `audit_capture_failed`, `integrity_check_failed`, `key_nearing_expiry`): a class name or a
-  list of them, read at each dispatch, resolved from the application current then (under Octane, the request's
-  sandbox), and called through `handle()`, or invoked, synchronously and in order. The package sends nothing itself.
-- A value that names no listener, and an `iam.audit.alerts` that is no map at all, is refused at the dispatch, never at
-  boot, so a malformed cached configuration can still be cleared and a broken one is never read as naming none;
-  `validate()` refuses it beforehand, with an alert that does not exist, a listener that is neither bound nor a class,
-  and a class, not bound, with neither `handle()` nor `__invoke()`, for `iam:check`; it builds nothing, so the shape of
-  a name bound in the container is refused only at the dispatch. What a listener throws propagates to the dispatch:
-  audit-log reports a failure of its own events' listeners and goes on, and SSO's expiry report, a console command,
-  fails.
-- Audit-log dispatches `AuditWriteFailed` and `AuditCaptureFailed` inside its write guard, so a record their listener
-  makes is refused. It raises `IntegrityCheckFailed` (from `audit-log:seal` and `audit-log:verify`) outside it, and
-  SSO's `KeyNearingExpiry` knows no write guard, so a listener of either could record one, for an integrity failure
-  into the very log just found altered or unverifiable. A listener alerts by other means, whichever event it hears.
+- The package registers no alert listeners. The guide lists the events an application listens to: audit-log's
+  `AuditWriteFailed`, `AuditCaptureFailed` and `IntegrityCheckFailed`, and SSO's `KeyNearingExpiry`.
 
 ### Authorization (IAM-9.2, IAM-6.9, IAM-6.10)
 
@@ -486,8 +471,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - A bearer request's guard holds the caller, and the application records `AuditLog::record('orders.shipped')`:
   audit-log's actor contributor finds no actor it can read, and this package's contributor fills the actor, the guard,
   the principal and the session from the guard.
-- An integrity check fails: audit-log dispatches `IntegrityCheckFailed`, and the listener named in
-  `iam.audit.alerts.integrity_check_failed` pages the operator.
+- An integrity check fails: audit-log dispatches `IntegrityCheckFailed`, and the application's listener of it pages
+  the operator.
 - A role created, assigned to two people and deleted is `authorization.role_created`, two
   `authorization.role_assigned` and `authorization.role_deleted`, each correlated by its own call, the deletion
   carrying both people as its manifest; a denied check is one `authorization.access_denied`, and an `authorize()` that
@@ -520,7 +505,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   of the work held for that commit (`AfterConnectionCommits::settle()`). Every other mapped record is still written at
   once, and is lost when a transaction around its event rolls back.
 - A mapper that throws (a reference over audit-log's 191 characters) writes nothing for that event, and audit-log
-  dispatches `AuditCaptureFailed`, which `iam.audit.alerts.audit_capture_failed` can alert on; the flow that dispatched
+  dispatches `AuditCaptureFailed`, which the application can listen to; the flow that dispatched
   the event goes on.
 - A provider registered for the first time once the application has booted is refused: audit-log takes no
   registration then, and a provider that mapped nothing would leave the members' events unrecorded in silence.
@@ -625,7 +610,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `src/IamServiceProvider.php`: `register()`.
 - `src/Audit/CaptureExclusions.php`: `guards()`, `unexcludedGuards()`, `exceptGuards()`, `isGateCaptureOff()`,
   `holds()`, `DRIVERS`, `EXCEPT_GUARDS_KEY`, `GATE_KEY`.
-- `src/Audit/OperationalAlerts.php`: `listen()`, `validate()`, `KEY`, `EVENTS`; `config/iam.php`: `audit.alerts`.
 - `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Mappers/AuthorizationChange.php`: `of()`;
   `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`, `subjectOf()`, `UNJUDGED_SESSION`;
@@ -734,13 +718,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `Login`, and not at all with it, pinning the gap of `laravel-authentication`'s listed above), and
   `testAnApiKeyGuardsSignOutIsRecordedOnlyByAuditLogsCapture` (once without the exclusion and not at all with it,
   pinning the `api_key` gap)
-- `tests/Feature/Audit/OperationalAlertsTest.php` `testEachEventReachesItsListenersInOrder`,
-  `testAListenerNamedAloneHearsOnlyItsEvent`, `testWithNoListenerNamedNothingIsSent`,
-  `testTheListenersAreReadAtEachDispatch`, `testTheSandboxsListenerIsHanded`, `testAMalformedValueRefusesTheDispatch`,
-  `testAlertsThatAreNoMapRefuseTheDispatch`, `testAListenerThatCannotBeHandedTheEventIsRefused`,
-  `testAListenersFailurePropagatesToTheDispatch`, `testAGuardedFailuresListenerCannotRecord`,
-  `testAnUnguardedEventsListenerCouldRecord`, `testAWellFormedConfigurationIsValid`,
-  `testValidateRefusesAMalformedConfiguration`
 - `tests/Unit/Audit/Mappers/AuthorizationEventMapperTest.php` `testEachEventIsRecordedUnderItsCode`,
   `testEveryCodeIsProvidedFor`, `testEachSkippedEventRecordsNothing`,
   `testADenialIsTheSubjectsAndDeniedWithItsReason`, `testADenialForWantOfAStrongerProofIsRecorded`,
@@ -792,7 +769,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - MFA gives `EnrollmentAbandoned` a cause and a reset's operator: the mapper names the operator from the event and
   records the attempt ceiling's by no one.
 - `iam:check` changes what it enforces from `CaptureExclusions`' answers and
-  `AuditSettings::refusesUnregisteredCodes()`, or how it calls `OperationalAlerts::validate()` (`install-and-check.md`).
+  `AuditSettings::refusesUnregisteredCodes()` (`install-and-check.md`).
 - A member closes one of the gaps listed above: the workaround it names goes.
 - `laravel-authentication` reports a refusal once the outermost transaction has ended, or audit-log offers a capture
   that waits for a transaction to end either way: `DeferredRefusals` goes, and `RefusedRedemptionsTest` and
@@ -801,7 +778,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   hands that refusal to `DeferredRefusals` too.
 - Laravel changes which transactions its transactions manager lets callbacks apply to, or when it runs a transaction's
   rollback callbacks: `DeferredRefusals::defers()` and its tests follow.
-- Audit-log or SSO adds an operational event: `OperationalAlerts::EVENTS` and `iam.audit.alerts` gain it.
+- Audit-log or SSO adds an operational event: the guide's list gains it.
 - `laravel-authorization` makes decision events configurable (BL-72), dispatches `usedBreakGlass` true (BL-70), adds
   events or fields, or a query for the tenants where a subject holds an action: the authorization mapper, its codes,
   `AuthorizationActivity`'s definitions and the access policy's candidate tenants follow.

@@ -34,7 +34,6 @@ use SineMacula\Laravel\Sso\Completion\CompletionService;
 use SineMacula\Laravel\Sso\Completion\Enums\CompletionEndpoint;
 use SineMacula\Laravel\Sso\Connections\ConnectionLifecycle;
 use SineMacula\Laravel\Sso\Connections\ConnectionService;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
 use SineMacula\Laravel\Sso\Events\FlowFailed;
 use SineMacula\Laravel\Sso\Events\HandoffIssued;
@@ -46,6 +45,7 @@ use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
 use SineMacula\Laravel\Sso\Linking\IdentityLock;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Links\Enums\LinkState;
+use SineMacula\Laravel\Sso\Links\LinkStore;
 use SineMacula\Laravel\Sso\Links\LinkSubject;
 use SineMacula\Laravel\Sso\Models\Connection;
 use SineMacula\Laravel\Sso\Models\IdentityGuard;
@@ -73,9 +73,9 @@ use Tests\TestCase;
  * synchronous listener creates a new identity, its membership of the
  * connection's tenant and the link, in one transaction, in that order, after
  * SSO's scope widening, and the sign-in then redeems as the new person; an
- * identity that is not new (an existing person, or one inserted before the call
- * and kept), a helper's refusal and anything thrown roll all three back; the
- * grant is used once and the transaction never retried; a
+ * identity that is not new (an existing person), a helper's refusal and
+ * anything thrown roll all three back; the grant is used once and the
+ * transaction never retried; a
  * subject another request links meanwhile leaves no provisioned person behind;
  * what the listener committed stands after the completion fails, and the next
  * sign-in resolves through the link; a queued listener fails loudly and
@@ -378,44 +378,6 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
         self::assertSame(0, IdentityGuard::query()->count());
         self::assertSame(1, Person::query()->count());
         self::assertSame([], $this->reportedOf(LinkCreated::class));
-        self::assertSame(0, DB::connection()->transactionLevel());
-    }
-
-    /**
-     * A provisioner that answers a person it inserted before it was asked, and
-     * kept, is refused as one that found the person is: the listener witnessed
-     * no insertion of that person during the call. So is a person inserted
-     * during the call with its model events off, which no insertion witnessed.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAnIdentityInsertedBeforeTheCallIsNeverProvisioned(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $kept = Person::query()->create(['name' => 'Kept', 'email' => 'kept@people.test']);
-
-        self::assertTrue($kept->wasRecentlyCreated);
-
-        $fake   = FakeProvisioner::fake(static fn (): Identity => $kept);
-        $thrown = self::thrownBy(fn (): HandoffRedirect => $this->complete());
-
-        self::assertInstanceOf(\LogicException::class, $thrown);
-        self::assertStringContainsString('provisioning always creates a new identity', $thrown->getMessage());
-        self::assertSame([], $fake->memberships());
-
-        FakeProvisioner::fake(static fn (): Identity => Person::query()->createQuietly(['name' => 'Quiet', 'email' => 'quiet@people.test']));
-
-        $thrown = self::thrownBy(fn (): HandoffRedirect => $this->complete());
-
-        self::assertInstanceOf(\LogicException::class, $thrown);
-        self::assertSame(['kept@people.test'], Person::query()->pluck('email')->all());
-        self::assertSame(0, Link::query()->count());
-        self::assertSame(0, IdentityGuard::query()->count());
         self::assertSame(0, DB::connection()->transactionLevel());
     }
 
@@ -797,7 +759,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
         DB::setDefaultConnection($elsewhere);
 
         try {
-            $storage    = $this->app?->make(LinkStorage::class) ?? self::fail('The application has not booted.');
+            $storage    = $this->app?->make(LinkStore::class) ?? self::fail('The application has not booted.');
             $linked     = $subject === null ? LinkSubject::of($result) : new LinkSubject($result->issuer, $subject);
             $connection = Connection::query()->findOrFail($result->connectionId);
             $created    = $storage->create($connection, $linked, (new IdentityReferences)->reference($person), LinkOrigin::LINK_PURPOSE, self::ssoClient());

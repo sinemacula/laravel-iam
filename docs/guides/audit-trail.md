@@ -191,32 +191,15 @@ tenant's identifier.
 
 ## Operational alerts
 
-The suite's operational events can reach your alerting. Name a listener class, or a list of them, for each:
+The package sends no alerts. Listen to these events yourself, with `Event::listen()`, and alert by other means than the
+audit log (a notification, a log channel):
 
-```php
-// config/iam.php
-'audit' => [
-    'alerts' => [
-        'audit_write_failed'     => [App\Alerts\NotifyOperators::class],
-        'audit_capture_failed'   => [App\Alerts\NotifyOperators::class],
-        'integrity_check_failed' => [App\Alerts\PageOnCall::class],
-        'key_nearing_expiry'     => [App\Alerts\NotifyOperators::class],
-    ],
-],
-```
-
-| Key                      | Event                              | When                                                          |
-|--------------------------|------------------------------------|---------------------------------------------------------------|
-| `audit_write_failed`     | audit-log's `AuditWriteFailed`     | a record could not be written                                 |
-| `audit_capture_failed`   | audit-log's `AuditCaptureFailed`   | an event a mapper could not describe                          |
-| `integrity_check_failed` | audit-log's `IntegrityCheckFailed` | sealing or verification found the log altered or unverifiable |
-| `key_nearing_expiry`     | SSO's `KeyNearingExpiry`           | a key or certificate is within a threshold of its end         |
-
-Each listener is resolved from the container and handed the event through its `handle()` method, or invoked,
-synchronously, in the order named. With none named nobody is told: the package sends nothing itself. Alert by other
-means than the audit log (a notification, a log channel): a record a listener makes of a write failure is refused,
-and one it makes of an integrity failure goes into the very log just found altered. `iam:check` refuses a value that
-names no listener.
+| Event                                                     | When                                                          |
+|-----------------------------------------------------------|---------------------------------------------------------------|
+| `SineMacula\Laravel\AuditLog\Events\AuditWriteFailed`     | a record could not be written                                 |
+| `SineMacula\Laravel\AuditLog\Events\AuditCaptureFailed`   | an event a mapper could not describe                          |
+| `SineMacula\Laravel\AuditLog\Events\IntegrityCheckFailed` | sealing or verification found the log altered or unverifiable |
+| `SineMacula\Laravel\Sso\Events\KeyNearingExpiry`          | a key or certificate is within a threshold of its end         |
 
 ## Reading the trail
 

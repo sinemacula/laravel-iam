@@ -40,7 +40,6 @@ use SineMacula\Laravel\Iam\Testing\CallerSession;
 use SineMacula\Laravel\Iam\Testing\CallerSignIn;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
 use SineMacula\Laravel\Iam\Testing\FixtureFactors;
-use SineMacula\Laravel\Iam\Testing\LevelEvidence;
 use SineMacula\Laravel\Iam\Testing\VerifiedSession;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
@@ -56,6 +55,7 @@ use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Testing\Concerns\InteractsWithMfa;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
+use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 use Tests\Concerns\MigratesMembers;
@@ -94,7 +94,6 @@ use Tests\TestCase;
 #[CoversClass(CallerSignIn::class)]
 #[CoversClass(CallerCompletion::class)]
 #[CoversClass(FixtureFactors::class)]
-#[CoversClass(LevelEvidence::class)]
 #[CoversClass(VerifiedSession::class)]
 #[CoversClass(ProofStoreAdapter::class)]
 #[CoversTrait(InteractsWithIam::class)]
@@ -195,15 +194,16 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The levels and the further proof each is verified with.
+     * The levels and the further proof each is verified with: its factor's
+     * type, its channel, and the channel's reference when it is not the factor.
      *
-     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: string, 2: \SineMacula\Laravel\Mfa\Enums\ChannelKind, 3: bool, 4: list<string>}>
+     * @return iterable<string, array{\SineMacula\Laravel\Mfa\Enums\AssuranceLevel, string, \SineMacula\Laravel\Mfa\Enums\ChannelKind, ?string, bool, list<string>}>
      */
     public static function levels(): iterable
     {
-        yield 'AAL1, an email code' => [AssuranceLevel::AAL1, 'email', ChannelKind::EMAIL, false, ['otp']];
-        yield 'AAL2, an authenticator app' => [AssuranceLevel::AAL2, 'totp', ChannelKind::AUTHENTICATOR_APP, true, ['otp']];
-        yield 'AAL3, a hardware-protected passkey' => [AssuranceLevel::AAL3, 'passkey', ChannelKind::PASSKEY, true, ['pop', 'user', 'hwk']];
+        yield 'AAL1, an email code' => [AssuranceLevel::AAL1, 'email', ChannelKind::EMAIL, 'verified@example.test', false, ['otp']];
+        yield 'AAL2, an authenticator app' => [AssuranceLevel::AAL2, 'totp', ChannelKind::AUTHENTICATOR_APP, null, true, ['otp']];
+        yield 'AAL3, a hardware-protected passkey' => [AssuranceLevel::AAL3, 'passkey', ChannelKind::PASSKEY, LevelEvidence::PASSKEY_REFERENCE, true, ['pop', 'user', 'hwk']];
     }
 
     /**
@@ -215,6 +215,7 @@ final class InteractsWithIamTest extends TestCase
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  string  $type
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $channel
+     * @param  ?string  $reference
      * @param  bool  $multifactor
      * @param  list<string>  $methods
      * @return void
@@ -222,8 +223,14 @@ final class InteractsWithIamTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('levels')]
-    public function testTheFurtherProofIsRecordedWithAFactorThePersonHolds(AssuranceLevel $level, string $type, ChannelKind $channel, bool $multifactor, array $methods): void
-    {
+    public function testTheFurtherProofIsRecordedWithAFactorThePersonHolds(
+        AssuranceLevel $level,
+        string $type,
+        ChannelKind $channel,
+        ?string $reference,
+        bool $multifactor,
+        array $methods,
+    ): void {
         $this->app?->instance(CombinationPolicy::class, new LeveledCombinationPolicy);
 
         $person  = $this->createPerson();
@@ -245,7 +252,7 @@ final class InteractsWithIamTest extends TestCase
         self::assertSame($type, $recorded->method);
         self::assertSame($factor->id, $recorded->factor);
         self::assertSame($channel->value, $recorded->channel->kind->value);
-        self::assertSame($channel === ChannelKind::EMAIL ? LevelEvidence::EMAIL_ADDRESS : $factor->id, $recorded->channel->reference);
+        self::assertSame($reference ?? $factor->id, $recorded->channel->reference);
         self::assertTrue($recorded->evaluation?->accepted);
         self::assertSame($multifactor, $recorded->evaluation->multifactor);
         self::assertSame($methods, $recorded->methods);
@@ -1079,23 +1086,44 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A holder of a factor is verified at the level asked for, with the factor
-     * they hold, and the level is exactly the one asked for.
+     * The levels a holder of an authenticator app is verified at, and the types
+     * of the factors they then hold.
      *
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: list<string>}>
+     */
+    public static function heldLevels(): iterable
+    {
+        yield 'AAL1' => [AssuranceLevel::AAL1, ['email', 'totp']];
+        yield 'AAL2' => [AssuranceLevel::AAL2, ['totp']];
+        yield 'AAL3' => [AssuranceLevel::AAL3, ['passkey', 'totp']];
+    }
+
+    /**
+     * A holder of a factor completes the pending sign-in and is verified at
+     * exactly the level asked for, with the factor they hold when it is of the
+     * level's type.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
+     * @param  list<string>  $types
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAPersonWhoHoldsAFactorIsVerifiedAtTheLevel(): void
+    #[DataProvider('heldLevels')]
+    public function testAPersonWhoHoldsAFactorIsVerifiedAtTheLevel(AssuranceLevel $level, array $types): void
     {
+        $this->app?->instance(CombinationPolicy::class, new LeveledCombinationPolicy);
+
         $person = $this->createPerson();
-        $held   = $this->holdFactor($person, 'totp');
 
-        $this->actingAsCaller($person, session: self::withPassword($person), verified: AssuranceLevel::AAL2);
+        $this->holdFactor($person, 'totp');
 
-        $this->getJson(self::AAL2_ROUTE)->assertOk();
+        $this->actingAsCaller($person, session: self::withPassword($person), verified: $level);
 
-        self::assertSame($held->id, $this->onlyFactorOf($person)->id);
+        $this->getJson(self::AAL2_ROUTE)->assertStatus($level === AssuranceLevel::AAL1 ? 401 : 200);
+        $this->getJson(self::AAL3_ROUTE)->assertStatus($level === AssuranceLevel::AAL3 ? 200 : 401);
+
+        self::assertSame($types, $person->authFactors()->pluck('type')->sort()->values()->all());
         self::assertCount(3, $this->proofsOf($this->boundSession()));
     }
 
@@ -1144,7 +1172,7 @@ final class InteractsWithIamTest extends TestCase
 
         self::assertCount(3, $proofs);
         self::assertSame('email', $proofs[1]->method);
-        self::assertSame(LevelEvidence::EMAIL_ADDRESS, $proofs[1]->channel->reference);
+        self::assertSame('verified@example.test', $proofs[1]->channel->reference);
         self::assertFalse($proofs[1]->evaluation?->multifactor);
         self::assertSame(['email', 'totp'], $person->authFactors()->pluck('type')->sort()->values()->all());
 

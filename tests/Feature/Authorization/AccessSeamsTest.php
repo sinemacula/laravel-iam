@@ -10,6 +10,7 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Applications\AdmitAnyPrincipal;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\ScopeRegistry;
@@ -180,8 +181,9 @@ final class AccessSeamsTest extends TestCase
      * The session policy source and the scope registry are transient, and
      * application access is scoped (IAM-6.6); the source is replaced only while
      * `AuthorizationServiceProvider::isPackageDefault()` says it holds
-     * `laravel-authorization`'s default, and the others over
-     * `laravel-authentication`'s defaults.
+     * `laravel-authorization`'s default, and the others while
+     * `AuthenticationServiceProvider::isPackageDefault()` says they hold
+     * `laravel-authentication`'s.
      *
      * @return void
      */
@@ -201,8 +203,12 @@ final class AccessSeamsTest extends TestCase
 
         self::assertSame('isPackageDefault', $holdsDefault->getName());
         self::assertSame(AuthorizationServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
-        self::assertNull($bindings[ScopeRegistry::class]->holdsDefault);
-        self::assertNull($bindings[ApplicationAccess::class]->holdsDefault);
+
+        foreach ([ScopeRegistry::class, ApplicationAccess::class] as $contract) {
+            $holdsDefault = new \ReflectionFunction($bindings[$contract]->holdsDefault ?? self::fail($contract . ' asks no member.'));
+
+            self::assertSame(AuthenticationServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
+        }
     }
 
     /**

@@ -6,25 +6,19 @@ namespace SineMacula\Laravel\Iam\Bindings;
 
 use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
+use SineMacula\Laravel\Mfa\MfaServiceProvider;
 
 /**
- * Tells a member's own default binding of a seam from the application's, by
- * reading the container's binding table.
+ * Tells a member's own default binding of a seam from the application's: by
+ * asking the member (`isPackageDefault()`) where it answers, and by reading the
+ * container's binding table for SSO, which does not.
  *
- * Most members expose no test of their defaults, so the container's table is
- * the only public source for them. A class-string binding is held as the
- * closure Laravel builds for it, which carries the concrete class it was given
- * as a used variable; a closure binding carries the class that lexically
- * declared it as its scope. A member that answers itself whether a seam holds
- * its default (`laravel-authorization`'s `isPackageDefault()`) is asked
- * instead, since it binds a class the application names in its configuration
- * through a closure of its own too.
- *
- * An instance or an alias the container holds is kept, whatever the table says:
- * Laravel's `instance()` and `alias()` leave the binding beneath them in place,
- * and binding over either would drop the application's. A shared default
- * something has already resolved is kept too, since whatever resolved it holds
- * that instance, which a new binding would not replace.
+ * An instance, a resolved shared default or an alias the container holds is
+ * kept, whatever the member says: binding over it would drop the application's
+ * binding or leave the instance with whatever resolved it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,12 +28,10 @@ use Illuminate\Contracts\Container\Container;
 final readonly class MemberDefaults
 {
     /**
-     * Whether the seam may be bound over: it is unbound, or bound to one of the
-     * member's defaults. A member that answers whether the seam holds its
-     * default is asked (`holdsDefault()`); for any other, the default is a
-     * class-string binding to one of the defaults given, or a closure one of
-     * them declares. An instance, a resolved shared default, an alias, or any
-     * other binding is kept.
+     * Whether the seam may be bound over: it is unbound, or holds one of the
+     * member's defaults, as the member's answer given says or, without one, as
+     * a class-string binding to one of the defaults given, or a closure one of
+     * them declares.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
@@ -63,12 +55,26 @@ final readonly class MemberDefaults
     }
 
     /**
-     * Whether the seam holds its member's own default now, as the member's own
-     * answer given says (`laravel-authorization`'s `isPackageDefault()`). The
-     * member is asked only while the binding table has a binding of the seam to
-     * read: an instance, a resolved shared binding or an alias held over the
-     * member's default leaves that default in the table, so is never taken for
-     * it.
+     * The `isPackageDefault()` of the member whose contract the seam is, or
+     * `null` for SSO and any other, which give none.
+     *
+     * @param  string  $abstract
+     * @return ?\Closure(\Illuminate\Container\Container, string): bool
+     */
+    public static function answerOf(string $abstract): ?\Closure
+    {
+        return match (true) {
+            str_starts_with($abstract, 'SineMacula\Laravel\Authentication\\') => AuthenticationServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\Authorization\\')  => AuthorizationServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\Mfa\\')            => MfaServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\AuditLog\\')       => AuditLogServiceProvider::isPackageDefault(...),
+            default                                                           => null,
+        };
+    }
+
+    /**
+     * Whether the seam holds its member's own default, as the member's answer
+     * given says, while the binding table still has a binding of it to read.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
