@@ -63,10 +63,10 @@ The current note set is:
   PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
   rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
   its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
-  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half is
-  `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and enforcement
-  inheritance, and behind `laravel-authorization`'s tree; how an enforcement change and a reported move of a tenant
-  judge its whole subtree, a broken tree refused, and how the move reaches `laravel-authorization`; how a provider's
+  and `laravel-authorization`'s tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose
+  grant half is `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and
+  enforcement inheritance; how an enforcement change and a reported move of a tenant judge its whole subtree, and how
+  the move reaches `laravel-authorization`; how a provider's
   groups map to grants at provisioning and, where the application opts in, at later sign-ins; the testing kits and
   fakes for the application's contracts; and the gaps in the members the adapters work around.
 

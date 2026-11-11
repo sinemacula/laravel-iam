@@ -19,7 +19,6 @@ use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use Tests\Concerns\MigratesSso;
@@ -55,7 +54,7 @@ use Tests\TestCase;
 #[CoversClass(SubtreePolicyChanges::class)]
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(TreeChanges::class)]
-#[WithConfig(TenancyContracts::TREE, StoredTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 #[WithConfig(AuthorizationSeams::SWITCH, false, defer: false)]
 final class TreeMoveRaceTest extends TestCase
 {

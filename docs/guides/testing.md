@@ -269,11 +269,11 @@ tests that read one.
 | Fake              | Contract                                       | What the test tells it                                                                                         |
 |-------------------|------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
 | `FakeMemberships` | `SineMacula\Laravel\Iam\Contracts\Memberships` | `grant($identity, $membership)`, `revoke($identity, $tenantId)`, `incomplete($identity)`, `failFor($identity)` |
-| `FakeTenantTree`  | `SineMacula\Laravel\Iam\Contracts\TenantTree`  | `place($tenantId, $parentId = null)`, `remove($tenantId)`, `failFor($tenantId)`                                |
 
-Each keeps what it was asked (`asked()`). Name `FakeMemberships` in `iam.tenancy.memberships`, or `FakeTenantTree` in
-`iam.tenancy.tree`, before the application boots, as well as calling `fake()`: bound only from the test, either is the
-one asked, but no SSO adapter is bound over SSO's defaults for it.
+It keeps what it was asked (`asked()`). Name `FakeMemberships` in `iam.tenancy.memberships` before the application
+boots, as well as calling `fake()`: bound only from the test, it is the one asked, but no SSO adapter is bound over
+SSO's defaults for it. The tenant tree is `laravel-authorization`'s: bind your own tree, or a small one a test seeds,
+and prove yours with `laravel-authorization`'s `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract`.
 
 ```php
 use Carbon\CarbonImmutable;
@@ -324,33 +324,13 @@ FakeGroupMapping::fake()
 Each kit is a trait of PHPUnit tests that proves an implementation of one of this package's contracts keeps its
 promises. Use it in a test case of your own and implement its hooks against your implementation. The fakes above pass
 their kits. Each kit's checks are static assertions on the `Seams\*Contract` class beside its trait
-(`Seams\TenantTreeContract`, and `Seams\EmailGatewayContract` and `Seams\SmsGatewayContract`, which share
-`Seams\GatewayContract`'s), so a test can call one directly. The `Memberships`, `Provisioner` and `GroupMapping`
-contracts have fakes but no kits.
+(`Seams\EmailGatewayContract` and `Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can
+call one directly. The `Memberships`, `Provisioner` and `GroupMapping` contracts have fakes but no kits.
 
 | Kit                                        | Proves                      | Hooks                                                                                                                           |
 |--------------------------------------------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------|
 | `Seams\Concerns\EmailGatewayTests`         | Your `EmailGateway`         | `codeGateway()`, `codeApplication()`, `codeRecipient()`, `codesDeliveredTo()`, `failCodeDelivery()`                             |
 | `Seams\Concerns\SmsGatewayTests`           | Your `SmsGateway`           | The same as the email kit                                                                                                       |
-| `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                  |
-
-```php
-use App\Tenancy\DatabaseTenantTree;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
-use SineMacula\Laravel\Iam\Testing\Seams\Concerns\TenantTreeTests;
-
-final class DatabaseTenantTreeTest extends TestCase
-{
-    use TenantTreeTests;
-
-    protected function tenantTree(): TenantTree
-    {
-        return new DatabaseTenantTree;
-    }
-
-    // treeLeaf(), treeLeafAncestors(), treeOutsider() and treeRootDescendants() name the tenants your test seeded.
-}
-```
 
 The gateway kits read the application's log, so a test case using one must not fake the log's `MessageLogged` event
 (as `Event::fake()` with no list does). A contract of MFA's that you bind yourself in place of one of this package's

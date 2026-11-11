@@ -76,19 +76,17 @@ session, so it is `stale`. See [Authentication and SSO](authentication-and-sso.m
 | Key                       | Default | Environment | What it does                                                        |
 |---------------------------|---------|-------------|---------------------------------------------------------------------|
 | `iam.tenancy.memberships` | `null`  | None        | Your memberships, a class implementing `Iam\Contracts\Memberships`. |
-| `iam.tenancy.tree`        | `null`  | None        | Your tenant tree, a class implementing `Iam\Contracts\TenantTree`.  |
 
-Classes are named relative to `SineMacula\Laravel\`. Each is optional, and a class bound in the container by the time
+Classes are named relative to `SineMacula\Laravel\`. It is optional, and a class bound in the container by the time
 every service provider has registered counts as named. Any value that is no class name fails closed. The tenant MFA
 requirement is no key: implement laravel-mfa's `TenantRequirement` and bind it (see [Provisioning and
 tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)).
 
 - The memberships answer SSO's tenant membership, link eligibility and the membership half of its principal scope.
   Name none and SSO's defaults stay: no membership, no `link`, no linking by a verified domain.
-- The tree lets a tenant inherit SSO's enforcement from the nearest tenant above it that has a rule, and is
-  `laravel-authorization`'s tree, so a grant with its subtree reaches the tenants below. Name none and every tenant
-  stands alone, `laravel-authorization` keeping its own flat tree. With the authorization adapters on, a tree needs a
-  tenant resolver, which `iam:check` requires.
+- The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`); this package reads it for SSO's
+  enforcement inheritance and the tree changes (see [Provisioning and
+  tenancy](provisioning-and-tenancy.md#the-tenant-tree)). A tree needs a tenant resolver, which `iam:check` requires.
 
 Report every change to a tenant's answer ([Provisioning and
 tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), every move in the tree ([Provisioning and

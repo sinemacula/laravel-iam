@@ -183,10 +183,10 @@ The members' settings agree with each other.
   bound, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
   tree: ...*: the tenant policy, a tree's changes and SSO's revocation resolve a session's tenant through
   `laravel-authentication`'s tenant resolver; while the authorization and SSO adapters are both on (the default), the
-  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while the authorization
-  adapters are on and you name or bind a tenant tree, `laravel-authorization`'s tree resolves every tenant it asks about
-  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, every
-  tenant-scoped check and every move of a tenant would answer a server error. Bind a resolver that resolves every tenant
+  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while you bind a tenant
+  tree to `laravel-authorization`, the tree's changes and SSO's enforcement inheritance resolve every tenant they name
+  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, and
+  every move of a tenant, would answer a server error. Bind a resolver that resolves every tenant
   id to the tenant whose `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). A resolver bound through a closure is
   not built, so the check passes it.

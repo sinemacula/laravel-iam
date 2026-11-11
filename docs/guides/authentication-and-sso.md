@@ -185,7 +185,7 @@ Nothing is yours to call. When a connection is disabled or deleted, a link is re
 enforcement changes, SSO asks the package to revoke inside its own transaction, and exactly the sessions the change
 concerns end with it. An enforcement change judges the sessions acting in the tenant against the tenant policy, once
 in SSO's transaction and once more after it commits, so a session that entered the tenant meanwhile is judged too.
-With a tenant tree named, every tenant below the enforcing one is judged as well.
+With a tenant tree bound to `laravel-authorization`, every tenant below the enforcing one is judged as well.
 
 Bind `laravel-authentication`'s `TenantResolver` before you turn enforcement on: its default resolves no tenant, and
 every enforcement change then throws. See `laravel-authentication`'s [extending guide][auth-extending].

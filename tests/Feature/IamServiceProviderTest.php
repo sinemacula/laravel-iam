@@ -65,7 +65,6 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
-use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
@@ -603,10 +602,10 @@ final class IamServiceProviderTest extends TestCase
      * bound every capability's seams over the members' defaults, MFA's, the
      * passkey factor gate, its context's, SSO's and `laravel-authorization`'s,
      * and kept none, the application binding nothing of its own, offering no
-     * passkeys, naming no gateway, no memberships and no tree, and leaving
-     * SSO's evidence off, so MFA keeps its own challenge gateway and its own
-     * passkey gateway, and SSO its own evidence policy, tenant membership, link
-     * eligibility, principal scope and enforcement inheritance.
+     * passkeys, naming no gateway and no memberships, and leaving SSO's
+     * evidence off, so MFA keeps its own challenge gateway and its own passkey
+     * gateway, and SSO its own evidence policy, tenant membership, link
+     * eligibility and principal scope.
      *
      * @return void
      *
@@ -619,7 +618,7 @@ final class IamServiceProviderTest extends TestCase
         $sso     = [...(new SsoSeams)->seams(new Repository), ...(new TenancySeams(new Container))->seams(new Repository)];
         $mfa     = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
         $rows    = [...$mfa, ...$sso, ...(new AuthorizationSeams)->seams(new Repository)];
-        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class, EnforcementInheritance::class];
+        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class];
         $unbound = [ChallengeGateway::class, PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
         $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), $unbound));
 

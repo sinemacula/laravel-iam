@@ -18,13 +18,12 @@ use SineMacula\Laravel\Authentication\Events\Enums\FailureReason;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
-use SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
+use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\EnforcementInheritanceAdapter;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
@@ -38,33 +37,38 @@ use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Authorization\Account;
+use Tests\Fixtures\Authorization\AccountTenancy;
+use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Tenancy\ExemptsIdentities;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's enforcement inheritance, answered from the
- * application's tenant tree (IAM-7.5), and for the enforcement change that
- * judges every tenant below the enforcing one: the nearest tenant, from the one
- * asked up through its ancestors, that has a rule enforces, and the tenant
- * itself when none has; a rule turned off keeps the question at its tenant, so
- * turning an inner rule off under an enforcing ancestor only loosens what
- * applies below it, while a tenant never configured, or holding only the row
- * SSO's lock inserts, passes it up; a tree with a cycle is refused and none
- * configured throws; a password sign-in in a tenant whose ancestor enforces is
- * `sso_required`; and turning an ancestor's rule on revokes, in its own
- * transaction, the sessions it no longer allows in that tenant and every tenant
- * below it, whatever any setting says, keeping an exempt person's and every
- * session elsewhere, while turning it off revokes nothing.
+ * Integration tests for SSO's enforcement inheritance, read from
+ * `laravel-authorization`'s tenant tree (IAM-7.5), and for the enforcement
+ * change that judges every tenant below the enforcing one: the nearest tenant,
+ * from the one asked up through its ancestors, that has a rule enforces, and
+ * the tenant itself when none has; a rule turned off keeps the question at its
+ * tenant, so turning an inner rule off under an enforcing ancestor only loosens
+ * what applies below it, while a tenant never configured, or holding only the
+ * row SSO's lock inserts, passes it up; tenants of mixed types inherit alike,
+ * and a flat tree leaves each tenant alone; a password sign-in in a tenant
+ * whose ancestor enforces is `sso_required`; and turning an ancestor's rule on
+ * revokes, in its own transaction, the sessions it no longer allows in that
+ * tenant and every tenant below it, whatever any setting says, keeping an
+ * exempt person's and every session elsewhere, while turning it off revokes
+ * nothing.
  *
  * The tree is a root with a region, the region with a branch, the branch with
  * the tests' tenant, and a second root apart. Each scenario that changes rules
  * and then reads the inheritance or judges sign-ins and sessions runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
  * READ on MySQL and PostgreSQL; SSO's policy naming the enforcing ancestor, the
- * row SSO's lock inserts and a broken tree run at the connection's own level
- * alone.
+ * row SSO's lock inserts, a mixed tree and a flat tree run at the connection's
+ * own level alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -74,7 +78,7 @@ use Tests\TestCase;
 #[CoversClass(EnforcementInheritanceAdapter::class)]
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(SubtreePolicyChanges::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class EnforcementInheritanceAdapterTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -90,9 +94,6 @@ final class EnforcementInheritanceAdapterTest extends TestCase
 
     /** @var string A root apart from the tree. */
     private const string APART = 'apart';
-
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeTenantTree The application's tree. */
-    private ?FakeTenantTree $tree = null;
 
     /** @var array<string, string> The connection made for each tenant whose rule a test stores. */
     private array $connections = [];
@@ -116,12 +117,11 @@ final class EnforcementInheritanceAdapterTest extends TestCase
 
         Config::set('sso.features.enforcement', true);
 
-        $this->tree = FakeTenantTree::fake($this->app)
-            ->place(self::ROOT)
-            ->place(self::REGION, self::ROOT)
-            ->place(self::BRANCH, self::REGION)
-            ->place(self::TENANT, self::BRANCH)
-            ->place(self::APART);
+        StoredTenantTree::place(self::ROOT);
+        StoredTenantTree::place(self::REGION, self::ROOT);
+        StoredTenantTree::place(self::BRANCH, self::REGION);
+        StoredTenantTree::place(self::TENANT, self::BRANCH);
+        StoredTenantTree::place(self::APART);
 
         $this->exemptions = new ExemptsIdentities;
 
@@ -285,75 +285,45 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[ancestors]`: each answer a broken tree gives for the tests'
-     * tenant.
-     *
-     * @return iterable<string, array{0: list<string>}>
-     */
-    public static function provideBrokenAncestries(): iterable
-    {
-        yield 'the tenant itself' => [[self::BRANCH, self::TENANT]];
-
-        yield 'an ancestor twice' => [[self::BRANCH, self::REGION, self::BRANCH]];
-
-        yield 'a blank ancestor' => [[self::BRANCH, ' ']];
-    }
-
-    /**
-     * A tree whose ancestry has a cycle, or a blank id, is refused, never
-     * followed.
-     *
-     * @param  list<string>  $ancestors
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideBrokenAncestries')]
-    public function testABrokenTreeIsRefused(array $ancestors): void
-    {
-        $tree = \Mockery::mock(TenantTree::class);
-
-        $tree->allows('ancestors')->with(self::TENANT)->andReturn($ancestors);
-
-        $this->app?->instance(TenantTree::class, $tree);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('has a cycle or is broken');
-
-        $this->enforcing(self::TENANT);
-    }
-
-    /**
-     * With no tree configured by the time it is asked, the adapter throws
-     * rather than stand the tenant alone; a tree that cannot be read throws its
-     * failure.
+     * Tenants of another type than their ancestors inherit alike: an account
+     * below an organisation inherits the organisation's rule.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testNoTreeOrAnUnreadableTreeThrows(): void
+    public function testATenantBelowOneOfAnotherTypeInherits(): void
     {
-        $failure = new \RuntimeException('Unreadable.');
+        $organisation = 'organisation-1';
+        $account      = Account::PREFIX . '1';
 
-        $this->tree()->failFor(self::TENANT, $failure);
+        $this->app?->instance(TenantResolver::class, new AccountTenancy);
 
-        try {
-            $this->enforcing(self::TENANT);
+        StoredTenantTree::place(new Reference(Organisation::TYPE, $organisation));
+        StoredTenantTree::place(new Reference(Account::TYPE, $account), new Reference(Organisation::TYPE, $organisation));
 
-            self::fail('An unreadable tree was answered.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame($failure, $exception);
-        }
+        self::assertSame($account, $this->enforcing($account));
 
-        $this->app?->forgetInstance(TenantTree::class);
-        $this->app?->offsetUnset(TenantTree::class);
+        $this->rule($organisation, true);
 
-        Config::set(TenancyContracts::TREE, null);
+        self::assertSame($organisation, $this->enforcing($account));
+    }
 
-        $this->expectException(TenancyMisconfiguredException::class);
+    /**
+     * With `laravel-authorization`'s flat tree every tenant enforces itself,
+     * whatever its ancestors' rules.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWithAFlatTreeEachTenantEnforcesItself(): void
+    {
+        $this->rule(self::ROOT, true);
 
-        $this->enforcing(self::TENANT);
+        $this->app?->instance(TenantTree::class, new FlatTenantTree);
+
+        self::assertSame(self::TENANT, $this->enforcing(self::TENANT));
     }
 
     /**
@@ -539,16 +509,6 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     private function resolved(string $abstract): mixed
     {
         return $this->app?->make($abstract);
-    }
-
-    /**
-     * The application's tree.
-     *
-     * @return \SineMacula\Laravel\Iam\Testing\FakeTenantTree
-     */
-    private function tree(): FakeTenantTree
-    {
-        return $this->tree ?? self::fail('The tree is not arranged.');
     }
 
     /**
