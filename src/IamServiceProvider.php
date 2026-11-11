@@ -21,7 +21,6 @@ use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\JobCallers;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -70,7 +69,6 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * insufficient-authentication exception as MFA's step-up, the listeners
  * counting outermost commits and releasing the work held for a commit to
  * finish, the listener provisioning SSO's unlinked results, the listeners
- * handing the operational events to the application's alerting, the listeners
  * carrying the caller into each queued job, the worker reset listeners, the
  * publishing tag and the `iam:install` and `iam:check` commands.
  *
@@ -218,8 +216,7 @@ final class IamServiceProvider extends ServiceProvider
      * registration for when every provider has booted, and bootstrap the
      * listeners counting outermost commits and releasing the work held for a
      * commit to finish, the listener provisioning SSO's unlinked results, the
-     * listeners handing the operational events to the application's alerting,
-     * the listeners carrying the caller into each queued job, the rendering of
+     * listeners carrying the caller into each queued job, the rendering of
      * `laravel-authorization`'s insufficient-authentication exception as MFA's
      * step-up, the worker reset listeners, the publishing tag and the console
      * commands, and register this package's checks of
@@ -243,7 +240,6 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerContextContributors();
         $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
-        OperationalAlerts::listen();
         CarryCallerIntoJobs::listen($this->app);
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();

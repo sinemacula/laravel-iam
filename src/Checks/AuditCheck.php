@@ -9,7 +9,6 @@ use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 
 /**
@@ -32,13 +31,6 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
  * its boot instead), and it is reported as what it is. While the mappers are on
  * (`iam.audit.mappers`) and audit-log's provider is registered, this package's
  * part is registered with audit-log too; that alone follows the switch.
- *
- * The operational alerts (`iam.audit.alerts`) are validated whatever the
- * mappers say (`OperationalAlerts::validate()`): an alert that does not exist,
- * a listener that is neither bound nor a class, or a class, not bound, with
- * neither a `handle()` method nor `__invoke()`, would otherwise be found only
- * at the dispatch, when the alert it carries is lost. A name bound in the
- * container is not built here, so its shape is found only at the dispatch.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -72,7 +64,6 @@ final readonly class AuditCheck implements Check
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Audit\AuditSettings  $settings
      * @param  \SineMacula\Laravel\Iam\Audit\CaptureExclusions  $exclusions
-     * @param  \SineMacula\Laravel\Iam\Audit\OperationalAlerts  $alerts
      */
     public function __construct(
 
@@ -84,9 +75,6 @@ final readonly class AuditCheck implements Check
 
         /** Reads audit-log's capture exclusions and Gate capture. */
         private CaptureExclusions $exclusions,
-
-        /** Validates the operational alerts' listeners. */
-        private OperationalAlerts $alerts,
     ) {}
 
     /**
@@ -113,9 +101,9 @@ final readonly class AuditCheck implements Check
     }
 
     /**
-     * The alerts, audit-log's provider, the mappers' registration while they
-     * are on, then the guards' exclusion, Gate capture and the refusal of
-     * unregistered codes.
+     * Audit-log's provider, the mappers' registration while they are on, then
+     * the guards' exclusion, Gate capture and the refusal of unregistered
+     * codes.
      *
      * @return list<\Closure(): mixed>
      */
@@ -125,7 +113,6 @@ final readonly class AuditCheck implements Check
         $registration = $this->settings->mapsEvents() ? [fn () => $this->assertRegistered()] : [];
 
         return [
-            fn () => $this->alerts->validate(),
             fn () => $this->assertAuditLogRegistered(),
             ...$registration,
             fn () => $this->assertExcluded(),
