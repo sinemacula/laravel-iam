@@ -71,12 +71,13 @@ other model, is its own subject, in no tenant and with no session, as `laravel-a
 a check about it counts only the grants made to it, never those of a principal it acts as, and a grant made to it
 reaches a grant hook as a grant to the identity itself.
 
-A default guard that is not `laravel-authentication`'s (a Laravel session guard an admin panel signs in through, say)
-is answered as `laravel-authorization`'s own resolver answers it, except that a `laravel-authentication` principal is
-still mapped to the identity it acts for and its own tenant. Which guard happens to be the default never changes what a
-principal may do: application access, `authorization:why` and `Gate::forUser($principal)` decide the same on the
-grants, denials and boundaries of the principal and its identity, even on a sign-in or refresh route that names no
-guard.
+A default guard that is not `laravel-authentication`'s (a Laravel session guard an admin panel signs in through, say) is
+answered as `laravel-authorization`'s own resolver answers it, except that a `laravel-authentication` principal is still
+mapped to the identity it acts for and its own tenant. A person signed in there with the Laravel session is capped by
+nothing, and a machine signed in that way is allowed nothing, as a machine with no credential of its own is. Which guard
+happens to be the default never changes what a principal may do: application access, `authorization:why` and
+`Gate::forUser($principal)` decide the same on the grants, denials and boundaries of the principal and its identity,
+even on a sign-in or refresh route that names no guard.
 
 ## The authentication context
 

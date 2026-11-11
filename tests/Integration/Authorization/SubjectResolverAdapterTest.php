@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration\Authorization;
 
 use Illuminate\Auth\SessionGuard;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +22,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Authorization\Seat;
 use Tests\Fixtures\Authorization\Staff;
+use Tests\Fixtures\Authorization\UnmarkedServiceAccount;
 use Tests\Fixtures\Models\Machine;
 use Tests\TestCase;
 
@@ -276,8 +278,8 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * On a default guard that is not `laravel-authentication`'s, a user signed
-     * in with the request's session carries no cap, since such a session
+     * On a default guard that is not `laravel-authentication`'s, a person
+     * signed in with the request's session carries no cap, since such a session
      * carries no scopes, so the session policy source looks nothing up for it
      * and caps nothing; a user with no session, and any other model, says
      * nothing of its scopes and is its own subject as that resolver answers it.
@@ -314,6 +316,57 @@ final class SubjectResolverAdapterTest extends TestCase
 
         self::assertSubject(new Subject($staff, $staff, null, 'web', 'web'), $other);
         self::assertNull($other->scopes);
+    }
+
+    /**
+     * Rows of `[the machine signed in, its model]`: a machine identity of its
+     * own, and a principal acting for one.
+     *
+     * @return iterable<string, array{0: class-string<\Illuminate\Contracts\Auth\Authenticatable&\Illuminate\Database\Eloquent\Model>}>
+     */
+    public static function provideMachines(): iterable
+    {
+        yield 'a machine identity' => [Machine::class];
+
+        yield 'a principal acting for a machine identity' => [UnmarkedServiceAccount::class];
+    }
+
+    /**
+     * On a default guard that is not `laravel-authentication`'s, a machine
+     * signed in with the request's session is said to carry none granted, never
+     * no cap, so the session policy source allows it nothing, however it is a
+     * machine.
+     *
+     * @param  class-string<\Illuminate\Contracts\Auth\Authenticatable&\Illuminate\Database\Eloquent\Model>  $kind
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideMachines')]
+    public function testAMachinesSessionOfAnotherKindOfGuardIsAllowedNothing(string $kind): void
+    {
+        $machine = $kind::query()->create(['name' => 'Reporting']);
+        $store   = $this->resolved('session.store');
+
+        self::assertInstanceOf(Store::class, $store);
+        self::assertInstanceOf(Authenticatable::class, $machine);
+
+        $this->app?->make('config')->set('auth.guards.web', ['driver' => 'session', 'provider' => 'machines']);
+        $this->app?->make('config')->set('auth.providers.machines', ['driver' => 'model', 'model' => $kind]);
+
+        $store->start();
+        request()->setLaravelSession($store);
+
+        Auth::shouldUse('web');
+        Auth::guard()->login($machine);
+
+        $subject = $this->resolver()->resolve();
+        $source  = $this->resolved(SessionPolicySource::class);
+
+        self::assertInstanceOf(SessionPolicySource::class, $source);
+        self::assertSame($store->getId(), $subject?->session);
+        self::assertSame([], $subject->scopes?->scopes());
+        self::assertSame([], $source->scopesFor($subject));
     }
 
     /**

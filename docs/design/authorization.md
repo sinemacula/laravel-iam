@@ -134,10 +134,12 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   is answered by `laravel-authorization`'s own resolver, so an admin panel on a Laravel session guard decides as it did
   before, except that a `laravel-authentication` principal, the guard's user or one handed in, is still mapped to its
   identity and its own tenant, with that resolver's application, guard and session. A user that resolver finds signed in
-  with the request's session on that guard is said to carry no cap, since a Laravel session carries no scopes; otherwise
-  the session key would be taken for one of `laravel-authentication`'s sessions to look up, and the source would allow
-  it nothing. One with no session says nothing. Application access, `authorization:why` and `Gate::forUser()` all build
-  their subject through `forUser()`, and a sign-in or refresh route names no guard, so a principal answered as its own
+  with the request's session on that guard is said to carry what a subject naming no credential carries
+  (`SessionPolicySourceAdapter::withoutCredential()`): no cap for a person, since a Laravel session carries no scopes,
+  and none granted for one of `laravel-authentication`'s machines, which stays closed. Left unsaid, the session key
+  would be taken for one of `laravel-authentication`'s sessions to look up, and the source would allow the user nothing.
+  One with no session says nothing. Application access, `authorization:why` and `Gate::forUser()` all build their
+  subject through `forUser()`, and a sign-in or refresh route names no guard, so a principal answered as its own
   identity in no tenant there would lose its identity's grants, denials, boundaries and inactive state only because
   another guard was the default. `laravel-authentication` keeps the caller on the request's attributes, and a queue
   worker's jobs share one request, so the worker reset drops those attributes between units of work
@@ -248,7 +250,7 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     identity is one, or a principal acting for one, is capped to nothing wherever no credential of its own caps it,
     marker or not, and a machine never borrows scopes it was not issued nor goes uncapped for want of them. What a
     subject naming no credential carries is `SessionPolicySourceAdapter::withoutCredential()`, which the audit access
-    policy says of its viewer.
+    policy says of its viewer and the subject resolver of a user signed in with a Laravel session.
 - The scope registry (`ScopeRegistryAdapter`). Each scope is asked of `laravel-authorization`'s registry alone, and every
   one it does not accept is rejected, in the order given, so `laravel-authentication` refuses to issue or rotate the
   credential. The registry is the application's binding of `laravel-authorization`'s contract where it binds one, and
@@ -768,6 +770,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAnyOtherPrincipalHasNoSession`, `testEachJobInAWorkerIsDecidedAboutItsOwnCaller`,
   `testAnIdentityThatIsNoPrincipalAndAnyOtherModelAreTheirOwnSubject`,
   `testAnotherKindOfGuardIsAnsweredAsLaravelAuthorizationsOwn`, `testASessionOfAnotherKindOfGuardCarriesNoCap`,
+  `testAMachinesSessionOfAnotherKindOfGuardIsAllowedNothing`,
   `testAPrincipalKeepsItsIdentityAndTenantWhicheverGuardIsTheDefault`
 - `tests/Integration/Authorization/IdentityGranteeTest.php` (every isolation level)
   `testAGrantToAnIdentityThatIsNoPrincipalIsWrittenAndDecided`

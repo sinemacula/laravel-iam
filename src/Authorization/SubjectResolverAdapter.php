@@ -70,14 +70,17 @@ use SineMacula\Laravel\Authorization\Support\CredentialScopes;
  * before this package was installed; but a `laravel-authentication` principal,
  * the user that guard holds or one handed in, still acts for its identity and
  * in its own tenant. A user that resolver finds signed in with the request's
- * session on that guard is said to carry no cap, since a Laravel session
- * carries no scopes; left unsaid, the session policy source would take the
- * session key for one of `laravel-authentication`'s sessions, find none, and
- * allow the user nothing. Which guard happens to be the default when the
- * question is asked (a sign-in or refresh route need not name
- * `laravel-authentication`'s) never changes what a principal is allowed: the
- * grants, denials, boundaries and inactive state of its identity reach it on
- * every guard, in application access (`ApplicationAccessAdapter`) too.
+ * session on that guard is said to carry what a subject naming no credential
+ * carries (`SessionPolicySourceAdapter::withoutCredential()`): no cap for a
+ * person, since a Laravel session carries no scopes, and none granted for one
+ * of `laravel-authentication`'s machines, which stays closed; left unsaid, the
+ * session policy source would take the session key for one of
+ * `laravel-authentication`'s sessions, find none, and allow the user nothing.
+ * Which guard happens to be the default when the question is asked (a sign-in
+ * or refresh route need not name `laravel-authentication`'s) never changes what
+ * a principal is allowed: the grants, denials, boundaries and inactive state of
+ * its identity reach it on every guard, in application access
+ * (`ApplicationAccessAdapter`) too.
  *
  * It holds nothing between calls (IAM-8.1), but is bound scoped, one for a
  * request or job, as `laravel-authorization`'s own default is: the tenant it
@@ -188,9 +191,10 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
      * the identity behind it and in its own tenant when it is
      * `laravel-authentication`'s principal, with the application, guard and
      * session that resolver found; any other subject as it answered it. A
-     * subject signed in with the request's session on that guard carries no
-     * cap, since such a session carries no scopes; one with no session says
-     * nothing of its scopes.
+     * subject signed in with the request's session on that guard carries no cap
+     * if it is a person, since such a session carries no scopes, and none
+     * granted if it is a machine; one with no session says nothing of its
+     * scopes.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @return \SineMacula\Laravel\Authorization\Subject
@@ -201,7 +205,7 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
         $principal = $model instanceof Principal ? $model : null;
         $identity  = $principal        === null ? $subject->identity : $principal->getIdentity();
         $tenant    = $principal        === null ? $subject->tenant : $principal->getTenant();
-        $scopes    = $subject->session === null ? null : CredentialScopes::uncapped();
+        $scopes    = $subject->session === null ? null : SessionPolicySourceAdapter::withoutCredential($model, $identity);
 
         return new Subject($model, $identity, $tenant, $subject->application, $subject->guard, $subject->session, $scopes);
     }
