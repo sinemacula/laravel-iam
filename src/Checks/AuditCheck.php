@@ -12,8 +12,8 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 
 /**
  * Audit-log is configured as IAM-2.5 states (every `jwt` and `api_key` guard
- * excluded from its capture, Gate capture off, `require_registered` on), and the
- * mappers are registered while they are on.
+ * excluded from its capture, Gate capture off, `require_registered` on), and
+ * the mappers are registered while they are on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -58,15 +58,15 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
  * records SSO's redemptions keep for one request, the callers queued jobs
  * carried, the grant half of SSO's principal scope, the storage connection's
- * alignment, the seam bindings, the authentication context's keys on `laravel-authorization`'s key
- * catalogue, the storage check's booting and booted callbacks, the audit
- * trail's mappers and codes, the `mfa` and `sso` authentication context
- * contributors, the rendering of `laravel-authorization`'s
- * insufficient-authentication exception as MFA's step-up, the listeners
- * counting outermost commits and releasing the work held for a commit to
- * finish, the listener provisioning SSO's unlinked results, the listeners
- * carrying the caller into each queued job, the worker reset listeners, the
- * publishing tag and the `iam:install` and `iam:check` commands.
+ * alignment, the seam bindings, the authentication context's keys on
+ * `laravel-authorization`'s key catalogue, the storage check's booting and
+ * booted callbacks, the audit trail's mappers and codes, the `mfa` and `sso`
+ * authentication context contributors, the rendering of
+ * `laravel-authorization`'s insufficient-authentication exception as MFA's
+ * step-up, the listeners counting outermost commits and releasing the work held
+ * for a commit to finish, the listener provisioning SSO's unlinked results, the
+ * listeners carrying the caller into each queued job, the worker reset
+ * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own

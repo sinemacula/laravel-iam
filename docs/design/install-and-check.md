@@ -163,7 +163,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     behaviour it inherits, so an anonymous subclass of a member's default still fails; one extending nothing is the
     application's own, named by the file and line it is declared at, and passes. No member declares an anonymous
     default, so where the class is declared is not read. While SSO is in use, the rows of
-    `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, so `iam:check` reports each mandatory seam once; while SSO is not in use, the bridge
+    `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, so `iam:check` reports each
+    mandatory seam once; while SSO is not in use, the bridge
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
     passkey factor gate always; the external identity links and the linker while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
