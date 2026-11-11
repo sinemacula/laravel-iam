@@ -204,7 +204,7 @@ final readonly class ProvisionOnUnlinkedResult
         $context  = $event->context();
         $identity = self::created(...InsertionWitness::witness(static fn (): Identity => $provisioner->createIdentity($result)));
 
-        $this->widenings->widen($identity, $result->tenantId, new ClientContext($context->ip, $context->userAgent));
+        $this->widenings->widen([$identity], $result->tenantId, new ClientContext($context->ip, $context->userAgent));
 
         $provisioner->createMembership($identity, $result->tenantId, $result);
 

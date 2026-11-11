@@ -16,10 +16,12 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\ScopeWidenings;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Events\LinkSuspended;
+use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Links\Enums\LinkState;
 use SineMacula\Laravel\Sso\Models\Link;
 use SineMacula\Laravel\Sso\Revocation\RevocationScope;
+use SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
@@ -36,9 +38,10 @@ use Tests\TestCase;
  * person's link by a verified domain in a connection of another tenant is
  * suspended and the sessions established through it are revoked in that
  * transaction, whatever any setting says, and a second report suspends and
- * revokes nothing more; a link in the new principal's own tenant is left alone,
- * and a platform principal reaches every tenant's; outside a transaction it is
- * a `LogicException` with nothing locked or written; a revocation that throws
+ * revokes nothing more; several people reported together are each suspended; a
+ * link in the new principal's own tenant is left alone, and a platform
+ * principal reaches every tenant's; outside a transaction it is a
+ * `LogicException` with nothing locked or written; a revocation that throws
  * rolls the report back, so a caller that catches it keeps no suspension; and
  * an identity that cannot be named throws before anything is touched. Every
  * suspension SSO reports carries the IP address and user agent of the client
@@ -129,17 +132,40 @@ final class ScopeWideningsTest extends TestCase
         $person  = $this->person();
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen($person, self::TENANT, self::client())));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, self::client())));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         self::assertNotNull($this->stored($session)->getRevokedAt());
         $this->assertSuspendedFor(self::CLIENT_IP, self::CLIENT_AGENT);
 
         $revokedAt = $this->stored($session)->getRevokedAt();
 
-        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen($person, self::TENANT, self::client())));
+        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, self::client())));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         self::assertEquals($revokedAt, $this->stored($session)->getRevokedAt());
         self::assertCount(1, $this->suspended);
+    }
+
+    /**
+     * Several people reported together each have their link by a verified
+     * domain in the other tenant's connection suspended.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testSeveralPeopleReportedTogetherAreEachSuspended(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $person = $this->person();
+        $second = $this->createPerson();
+        $linkId = $this->linkInOtherTenant($second);
+
+        self::assertSame(2, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$second, $person], self::TENANT, self::client())));
+        self::assertSame(LinkState::SUSPENDED, $this->link()->state);
+        self::assertSame(LinkState::SUSPENDED, Link::query()->findOrFail($linkId)->state);
     }
 
     /**
@@ -160,7 +186,7 @@ final class ScopeWideningsTest extends TestCase
         $person = $this->person();
         $client = new ClientContext('198.51.100.7', 'platform-console');
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen($person, null, $client)));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], null, $client)));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         $this->assertSuspendedFor('198.51.100.7', 'platform-console');
     }
@@ -181,7 +207,7 @@ final class ScopeWideningsTest extends TestCase
 
         $person = $this->person();
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen($person, self::TENANT, new ClientContext(null, null))));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, new ClientContext(null, null))));
         $this->assertSuspendedFor(null, null);
     }
 
@@ -202,7 +228,7 @@ final class ScopeWideningsTest extends TestCase
         $person  = $this->person();
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
-        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen($person, self::OTHER_TENANT, self::client())));
+        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::OTHER_TENANT, self::client())));
         self::assertSame(LinkState::ACTIVE, $this->link()->state);
         self::assertNull($this->stored($session)->getRevokedAt());
     }
@@ -222,7 +248,7 @@ final class ScopeWideningsTest extends TestCase
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
         try {
-            Iam::scopeWidenings()->widen($person, self::TENANT, self::client());
+            Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
 
             self::fail('A widened scope was reported outside a transaction.');
         } catch (\LogicException $exception) {
@@ -254,7 +280,7 @@ final class ScopeWideningsTest extends TestCase
 
         try {
             Iam::transaction(function () use ($person, $rollback): never {
-                Iam::scopeWidenings()->widen($person, self::TENANT, self::client());
+                Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
 
                 throw $rollback;
             });
@@ -315,7 +341,7 @@ final class ScopeWideningsTest extends TestCase
         $person = $this->person();
         $caught = Iam::transaction(static function () use ($person): ?\Throwable {
             try {
-                Iam::scopeWidenings()->widen($person, self::TENANT, self::client());
+                Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
             } catch (\RuntimeException $exception) {
                 return $exception;
             }
@@ -340,7 +366,7 @@ final class ScopeWideningsTest extends TestCase
     {
         $this->expectException(UnresolvedReferenceException::class);
 
-        Iam::transaction(static fn (): int => Iam::scopeWidenings()->widen(new PlainIdentity(['id' => 1]), self::TENANT, self::client()));
+        Iam::transaction(static fn (): int => Iam::scopeWidenings()->widen([new PlainIdentity(['id' => 1])], self::TENANT, self::client()));
     }
 
     /**
@@ -360,6 +386,30 @@ final class ScopeWideningsTest extends TestCase
         self::assertSame($this->otherConnectionId, $context->connectionId);
         self::assertSame($ip, $context->ip, 'The suspension was reported for another IP address than the caller\'s client.');
         self::assertSame($userAgent, $context->userAgent, 'The suspension was reported for another user agent than the caller\'s client.');
+    }
+
+    /**
+     * Link the person by a verified domain in the other tenant's connection, to
+     * a subject of their own; answer the link's id.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @return string
+     *
+     * @throws \Random\RandomException
+     */
+    private function linkInOtherTenant(Person $person): string
+    {
+        $tenantConnection   = $this->connectionId;
+        $this->connectionId = $this->otherConnectionId;
+        $handoff            = $this->handoff(Purpose::LINK, $person, tailor: static fn (FakeIdToken $token): FakeIdToken => $token->with('sub', 'second-subject'));
+        $linked             = Iam::links()->redeem($this->otherConnectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
+        $this->connectionId = $tenantConnection;
+
+        self::assertTrue($linked->isRedeemed(), 'The second person was not linked.');
+
+        Link::query()->whereKey($linked->linkId)->update(['provenance' => LinkOrigin::VERIFIED_DOMAIN->value]);
+
+        return (string) $linked->linkId;
     }
 
     /**

@@ -202,14 +202,15 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Facades\Iam;
 
 Iam::transaction(function () use ($identity, $tenantId, $request): void {
-    Iam::scopeWidenings()->widen($identity, $tenantId, ClientContext::fromRequest($request));
+    Iam::scopeWidenings()->widen([$identity], $tenantId, ClientContext::fromRequest($request));
 
     // ...take your own guard of the person's principals, then write the membership
 });
 ```
 
-Pass `null` as the tenant for a platform principal, and `new ClientContext(null, null)` from a console command or a
-job. SSO suspends the person's links by a verified domain in every other tenant's connection, and revokes the sessions
+Pass `null` as the tenant for a platform principal, and `new ClientContext(null, null)` from a console command or a job.
+A change that gives several people a principal in the same tenant passes them together, so SSO takes their guards in its
+order. SSO suspends the person's links by a verified domain in every other tenant's connection, and revokes the sessions
 established through each, in the same transaction. Called with no transaction open it is SSO's `LogicException`, with
 nothing written. See SSO's [linking by domain guide][sso-linking-by-domain].
 

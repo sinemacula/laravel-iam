@@ -192,7 +192,7 @@ use App\Models\Member;
 use SineMacula\Laravel\Iam\Facades\Iam;
 
 $member = Iam::transaction(function () use ($identity, $tenantId, $client): Member {
-    Iam::scopeWidenings()->widen($identity, $tenantId, $client);
+    Iam::scopeWidenings()->widen([$identity], $tenantId, $client);
 
     return Member::create(['user_id' => $identity->getAuthIdentifier(), 'tenant_id' => $tenantId]);
 });
