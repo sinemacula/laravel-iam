@@ -232,8 +232,7 @@ run through are in `storage-and-transactions.md`.
 - Records for one request (IAM-8.1): `AdmittedRedemptions` holds at most one admitted redemption, with the identity and
   the link SSO resolved and the client SSO was handed for it (which the tenant authentication policy hands SSO's
   exemption gate while that sign-in or re-authentication is judged, `tenant-authentication-policy.md`),
-  `RenewalRecorder` at most one renewal, and `Transactions\CommittedWork` the work held until a connection's commit has
-  finished (an enforcement change's second pass, and a reported policy change's). All three are bound scoped under
+  and `RenewalRecorder` at most one renewal. Both are bound scoped under
   `BindingRule::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
   the worker reset forgets them, and every adapter, listener and redemption resolves them from the container on each
   call. Each commit listener, and the `iam` manager (`IamManager`), resolves what it calls from the application
@@ -379,28 +378,18 @@ run through are in `storage-and-transactions.md`.
   transaction. Those are the sessions committed when it reads them: a password or passkey sign-in, a switch into the
   tenant, or a sign-in through another tenant's connection takes no lock of SSO's rule, so one that judged the policy
   before the change and commits its session while the change runs is not among them (on MySQL at REPEATABLE READ the
-  first pass's gap lock holds its write until the change commits). So the adapter, through
-  `Tenancy\SubtreePolicyChanges`, holds a second `tenantPolicyChanged()` for the storage connection
-  (`Transactions\AfterConnectionCommits`, for that connection's own innermost transaction, never another
-  connection's), which runs once the outermost transaction there commits, for the tenant resolved anew, skips
-  every session the first pass recorded at the version it answered, and revokes the sessions that entered the tenant
-  meanwhile; a rollback callback of the transaction it was queued in drops it when the change rolls back. It runs only
-  once every callback queued on that transaction has run: SSO queues its report of the change (`EnforcementChanged`)
-  after the revocation, and drops an event whose callback finds an outermost transaction begun after the one it was
-  queued in (its `TransactionGenerations`), so a second pass run from a commit callback, which opens a transaction,
-  would leave every enforcement change unreported. It is held instead (`Transactions\CommittedWork`), from the moment
-  it is queued, for Laravel's `TransactionCommitted` event, which the connection fires once every callback has run, and
-  is released only by a commit that leaves no transaction open on the connection, never a savepoint's (a connection
-  with no events dispatcher fires none, and there a commit callback releases it). A commit callback that fails, queued
-  before it (the first pass's own revocation reports) or after it (a synchronous listener of `EnforcementChanged`),
-  stops Laravel running the rest, and the connection then fires no `TransactionCommitted`: the change is durable, the
-  callback's failure propagates from `EnforcementService::update()`, and the second pass stays held until the unit of
-  work ends, where it runs (`AfterConnectionCommits::settle()`: the application's termination, at the end of a request
-  or a console command, a queued job's end, `JobProcessed` or `JobExceptionOccurred`, and `Iam::resetWorkerState()`),
-  or until the connection's next outermost commit in the same unit of work, whichever comes first; what it throws there
-  is reported, the caller's own work being over. A session that entered the tenant meanwhile acts on its access tokens
-  until then. What it throws from the commit propagates, out of `EnforcementService::update()`, once the change is
-  durable and SSO has reported it: the rule stays changed, the first pass's revocations stand, and the sessions only the
+  first pass's gap lock holds its write until the change commits). So `laravel-authentication`'s
+  `tenantPolicyChanged()` judges each tenant again once the change commits, and the adapter, through
+  `Tenancy\SubtreePolicyChanges`, lists the subtree again then and judges every tenant that entered it meanwhile
+  (`Transactions\ConnectionTransactions::afterCommit()`, a callback of the storage connection's own innermost
+  transaction, never another connection's, dropped with it on rollback). That pass opens a transaction from a commit
+  callback, which laravel-sso allows: it keeps its own after-commit events, its report of the change
+  (`EnforcementChanged`) among them, when a commit callback begins a transaction. A commit callback that fails before
+  it stops Laravel running the rest, so the second pass is dropped: the change is durable, the callback's failure
+  propagates from `EnforcementService::update()`, and a session that entered the tenant meanwhile acts on its access
+  tokens until its first refresh. What it throws from the commit propagates, out of `EnforcementService::update()`,
+  once the change is durable, and Laravel runs no later callback of that commit: the rule stays changed, the first
+  pass's revocations stand, and the sessions only the
   second pass would have judged wait for the next `tenantPolicyChanged()` or their first refresh. Each pass asks the
   policy for an exempt identity's session, so its exemption is reported once by each. A sign-in that judged the policy
   before the change committed and writes its session only after the second pass has run is judged at its first refresh
@@ -475,7 +464,7 @@ run through are in `storage-and-transactions.md`.
 - `src/Sso/SsoSeams.php`: `seams()`, `isOn()`, `isEvidenceOn()`, `SWITCH`, `EVIDENCE_SWITCH`;
   `config/iam.php`: `adapters.sso`, `sso.evidence`;
   `src/IamServiceProvider.php`: `registerRedemptionRecords()`, `registerContextContributors()`,
-  `registerContributor()`, `registerCommitListeners()`, `seamProviders()`;
+  `registerContributor()`, `seamProviders()`;
 - `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`, `src/Sso/LinkRedemption.php`: `redeem()`;
   `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`, forgetting the request's decisions once it renews;
   `src/IamManager.php`: `signIns()`, `reauthentications()`, `links()`; `src/Facades/Iam.php`.
@@ -492,10 +481,8 @@ run through are in `storage-and-transactions.md`.
 - `src/Sso/ReauthenticationSessionsAdapter.php`: `standing()`, `lockedStanding()`, `renewAuthentication()`;
   `src/Mfa/CurrentSession.php`: `sessions()`, `sessionGuards()`, `identitySessions()`, `isInTransaction()`.
 - `src/Sso/ExternalIdentityLinksAdapter.php`: `find()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`;
-  `src/Transactions/AfterConnectionCommits.php`: `run()`, `committed()`, `settle()`, the second pass held for the
-  storage connection's own transaction; `src/Tenancy/TenantPolicyChanges.php`: `changed()`;
-  `src/Transactions/CommittedWork.php`: `hold()`, `drop()`, `release()`, `connections()`, the second pass held until
-  every callback of the commit has run; `src/IamServiceProvider.php`: `registerCommitListeners()`.
+  `src/Transactions/ConnectionTransactions.php`: `afterCommit()`, the second pass queued on the storage connection's
+  own transaction; `src/Tenancy/TenantPolicyChanges.php`: `changed()`.
 - `src/Sso/IdentityReferences.php`: `identity()`, `reference()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
 - `src/Exceptions/UnlinkedSignInException.php`, `src/Exceptions/ExternalSignInRefusedException.php`,
   `src/Exceptions/ExternalReauthenticationRefusedException.php`; `src/Exceptions/UnresolvedReferenceException.php`:
@@ -617,16 +604,8 @@ run through are in `storage-and-transactions.md`.
 - `tests/Integration/Tenancy/EnforcementSecondPassTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
   READ, the session written on another connection once the change's first pass has read)
   `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`;
-  `tests/Integration/Transactions/AfterConnectionCommitsTest.php` `testWithNoTransactionOpenTheWorkRunsAtOnce`,
-  `testTheWorkRunsOnceTheOutermostTransactionCommits`, `testTheWorkRunsOnceEveryCallbackOfTheCommitHasRun`,
-  `testWhatTheWorkThrowsPropagatesOnceTheCommitHasFinished`, `testTheWorkIsDroppedWhenItsTransactionRollsBack`,
-  `testAnotherConnectionsTransactionNeitherDelaysNorTakesTheWork`, `testWithoutATransactionsManagerTheWorkRunsAtOnce`,
-  `testWithoutAnEventsDispatcherTheCallbackRunsTheWork`, `testAFailingCallbackLeavesTheWorkForTheEndOfTheUnitOfWork`,
-  `testLeftoverWorkWaitsForTheNextOutermostCommit`, `testTheEndOfTheUnitOfWorkLeavesAConnectionWithATransactionOpen`,
-  `testTheEndOfTheUnitOfWorkRunsNothingRolledBack`, `testTheEndOfTheUnitOfWorkReportsWhatTheWorkThrows`;
-  `tests/Unit/Transactions/CommittedWorkTest.php` `testAReleaseRunsItsOwnConnectionsWorkInOrder`,
-  `testWorkIsReleasedOnce`, `testADroppedPieceIsDroppedAlone`, `testDroppingEveryPieceForgetsTheConnection`,
-  `testTheFirstFailureIsRethrownOnceEveryPieceHasRun`
+  `tests/Integration/Transactions/ConnectionTransactionsTest.php` `testWithNoTransactionOpenTheWorkRunsAtOnce`,
+  `testTheWorkRunsOnceTheConnectionsOutermostTransactionCommits`, `testARollbackDropsTheWork`
 - `tests/Integration/Sso/RevocationThroughSsoTest.php` `testAConnectionsChangeEndsItsSessions`,
   `testAConnectionsChangeFollowsAuthenticationsSwitch`, `testRemovingALinkEndsExactlyItsSessions`,
   `testARevocationThatThrowsRollsSsosChangeBack`

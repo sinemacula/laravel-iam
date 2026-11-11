@@ -4,10 +4,9 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
-use Illuminate\Database\DatabaseManager;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
+use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 
 /**
  * Applies a change that may reach a whole subtree of the application's tenant
@@ -32,7 +31,7 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  * (IAM-4.5), which judges it again once the change's transaction commits. A
  * move into the subtree that commits while this change is open judged the moved
  * tenant against the rule as it was, so once the transaction open on the
- * storage connection commits (`AfterConnectionCommits`) the subtree is listed
+ * storage connection commits (`ConnectionTransactions`) the subtree is listed
  * again and every tenant the first listing missed is judged too. A rollback
  * drops that pass; with no transaction open it runs at once. Whatever the tree,
  * the resolver or a pass throws propagates.
@@ -50,8 +49,6 @@ final readonly class SubtreePolicyChanges
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenancyContracts  $contracts
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenantReferences  $tenants
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \Illuminate\Database\DatabaseManager  $database
-     * @param  \SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits  $afterCommit
      */
     public function __construct(
 
@@ -63,12 +60,6 @@ final readonly class SubtreePolicyChanges
 
         /** Resolves the session service both passes go through. */
         private CurrentSession $sessions,
-
-        /** Resolves the storage connection whose commit the second pass waits for. */
-        private DatabaseManager $database,
-
-        /** Holds the second pass for that connection's own transaction. */
-        private AfterConnectionCommits $afterCommit,
     ) {}
 
     /**
@@ -91,7 +82,7 @@ final readonly class SubtreePolicyChanges
         $listed  = $this->subtree($tenantId);
         $revoked = $this->judge($listed);
 
-        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId, $listed): void {
+        ConnectionTransactions::afterCommit(StorageConnection::name(), function () use ($tenantId, $listed): void {
 
             $this->judge(array_diff($this->subtree($tenantId), $listed));
         });

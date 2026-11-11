@@ -106,7 +106,7 @@ final class RedemptionSecretsTest extends TestCase
             new Container,
             $transaction,
             $sessions,
-            new DecisionCacheInvalidation(new Container, \Mockery::mock(DatabaseManager::class)),
+            new DecisionCacheInvalidation(new Container),
         ))->redeem('api', 'connection-1', self::CODE, self::VERIFIER, $client)];
     }
 

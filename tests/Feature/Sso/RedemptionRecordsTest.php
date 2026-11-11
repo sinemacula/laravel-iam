@@ -11,7 +11,6 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
-use SineMacula\Laravel\Iam\Transactions\CommittedWork;
 use Tests\TestCase;
 
 /**
@@ -38,8 +37,6 @@ final class RedemptionRecordsTest extends TestCase
         yield 'the admitted redemption' => [AdmittedRedemptions::class];
 
         yield 'the renewal recorder' => [RenewalRecorder::class];
-
-        yield 'the committed work' => [CommittedWork::class];
     }
 
     /**

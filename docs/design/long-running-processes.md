@@ -8,13 +8,8 @@ process calls it.
 
 ## Invariants
 
-- Before `reset()` (or `Iam::resetWorkerState()`) forgets anything, it releases the work this package held for a
-  commit that finished without running it, a commit callback having failed
-  (`Transactions\AfterConnectionCommits::settle()`, a policy change's second pass among it), on every connection with
-  no transaction open, reporting what it throws; the request's or the command's termination and a queued job's end
-  release it the same way (`sso-redemption-and-revocation.md`).
-- The `iam` manager, and this package's commit listeners, resolve every service and record from the application
-  current when they run, never from a container kept since, so a manager resolved in the worker's application before
+- The `iam` manager resolves every service and record from the application
+  current when it runs, never from a container kept since, so a manager resolved in the worker's application before
   Octane clones it, and the events dispatcher Octane keeps on the worker's application, still reach each request's
   sandbox and its scoped records.
 - One reset flushes every member's request state, `Workers\WorkerReset::reset()` (or `Iam::resetWorkerState()`), in
@@ -182,7 +177,7 @@ process calls it.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
-  `src/IamManager.php`: `resetWorkerState()`; `src/Transactions/AfterConnectionCommits.php`: `settle()`;
+  `src/IamManager.php`: `resetWorkerState()`;
   `config/iam.php`: `workers`.
 
 ## Authoritative Tests

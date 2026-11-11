@@ -262,9 +262,6 @@ it.
   }
   ```
 
-  It also releases any work this package held for a commit that finished without running it, such as the second pass
-  of a tenant policy change.
-
 Turn `iam.workers.reset` off only when the application performs the same reset itself. How the reset is built is in
 the [long-running processes design note](../design/long-running-processes.md).
 

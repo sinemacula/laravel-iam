@@ -211,8 +211,7 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
 - `src/Tenancy/TenancySeams.php`: `seams()`, `ENFORCEMENT`; `src/Mfa/MfaSeams.php`: the tenant requirement row;
   `src/IamServiceProvider.php`: `seamProviders()`.
 - `src/Mfa/TenantRequirementAdapter.php`: `requirementFor()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
-- `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`;
-  `src/Transactions/AfterConnectionCommits.php`: `run()`, `committed()`, `settle()`.
+- `src/Tenancy/TenantPolicyChanges.php`: `changed()`; `src/IamManager.php`: `tenantPolicies()`; `src/Facades/Iam.php`.
 - `src/Exceptions/TenantMfaRequirementMisconfiguredException.php`: `forClass()`, `forValue()`, `forBinding()`;
   `src/Exceptions/UnresolvedReferenceException.php`: `forTenantIdentifier()`.
 - `src/Testing/FakeTenantMfaRequirement.php`: `fake()`, `require()`, `requireNothing()`, `failFor()`, `asked()`;

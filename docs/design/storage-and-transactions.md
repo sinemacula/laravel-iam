@@ -28,9 +28,8 @@ behaviour for every transaction; the package adds nothing over them.
 
 ## After commit
 
-Laravel's `afterCommit()` waits on whichever connection opened a transaction last. `Transactions\AfterConnectionCommits`
-holds work for one connection's commit and runs it on `TransactionCommitted`, once every callback of that commit has
-run, since laravel-sso drops its own after-commit events once an earlier callback of the same commit begins a
-transaction. The tenant policy's second pass and the deferred audit refusals use it; `Transactions\OpenTransactions`
-lists the transactions open on one connection, for a rollback callback on each, as Laravel 12 does not tell a committed
-savepoint of its parent's rollback.
+Laravel's `afterCommit()` waits on whichever connection opened a transaction last. `Transactions\ConnectionTransactions`
+waits on one connection's: `afterCommit()` queues the work on its innermost open transaction (at once when none is
+open, dropped on rollback), and `open()` lists the open transactions, so a caller can wait on each one's rollback, as
+Laravel 12 does not tell a committed savepoint of its parent's rollback. The tenant policy's second pass, the deferred
+audit refusals and the decision cache's rollback pass use it.
