@@ -269,10 +269,7 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testBothSwitchesOffBindNothing`,
   `testMfaOnWithSsoOffBindsNothing`, `testTheBindingIsOnWhileTheSsoSwitchIs`, `testTheBindingIsTransientOverTheDefault`,
   `testTheBindingIsMandatoryWhileEnforcementOrARequirementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
-  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`;
-  `tests/Feature/Bindings/AdaptersDocumentationTest.php` `testTheAdaptersSectionNamesEverySeamTheSwitchesBind`,
-  `testTheAdaptersSectionSaysWhenTheTenantPolicyIsTheApplicationsToBind`,
-  `testTheTenancySectionSaysWhichSwitchesTheRequirementReachesThrough`, `testTheTenancySectionAsksForTheStrictCutOff`
+  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`
 - `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
   `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`,
   `testAnUnversionedRequirementMakesTheVersionNone`; `tests/Unit/Tenancy/TenantMfaRuleTest.php`

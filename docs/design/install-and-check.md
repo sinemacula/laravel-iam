@@ -133,15 +133,14 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   exits `1` and fails the run. One that throws is its
   member's defect and stops the run with that exception, which fails closed. Every one is required (IAM-1.3): one that
   is not registered fails the run.
-- This package's own checks follow, each behind the internal `Checks\Contracts\Check` contract, which mirrors SSO's
-  `ConfigurationCheck` (`applies()`, `checks()`, plus the `subject()` it is reported under): each closure throws for a
-  problem, returns a note for something worth knowing that is no failure, and returns nothing otherwise; every closure
+- This package's own checks follow, and run only there (IAM-10.3, amended): no member's command reports them. Each is
+  behind the internal `Checks\Contracts\Check` contract (`subject()`, `applies()`, `checks()`): each closure throws for
+  a problem, returns a note for something worth knowing that is no failure, and returns nothing otherwise; every closure
   runs, so one run reports every problem. Each of this package's checks reads configuration and the container only,
   never a guard's caller, a request or the database (the members' checks read what their own notes say, audit-log's the
   schema of its tables, so `iam:check` runs after `migrate`), and names keys, seams, guards, connections and classes in
   its messages, never a secret or credential (a connection's or a model's name may appear):
-  - `StorageCheck` (IAM-2.3): every member whose storage key the alignment reads (`laravel-authentication`, MFA and
-    SSO) registered, every member key on the shared connection, the shared connection configured in
+  - `StorageCheck` (IAM-2.3): every member key on the shared connection, the shared connection configured in
     `database.connections`, and the model of each user provider a `jwt` or `api_key` guard uses on it, read from the
     model's own connection without a query. A guard naming no provider uses the default one (`auth.defaults.provider`),
     as `laravel-authentication` hands its provider to Laravel, so that provider's model is read for it. No setting names
@@ -152,8 +151,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     read again from the configuration and the container as they stand) is bound, and its live binding (`Checks\SeamHolders`,
     never building anything new) names neither one of the row's member defaults nor any other class of a member's own,
     the row's adapter apart (SSO's own `LinkStore` is the linker's) and the member classes the row accepts
-    (`SeamBinding::$accepted`): SSO's `LinkStore` on the link storage, which SSO's guide binds it to, is SSO's real
-    store, not a permissive default, so it is accepted there (decision recorded here). A row is checked whatever this
+    (`SeamBinding::$accepted`). A row is checked whatever this
     package's capability switch says, as the tenant policy's note has it: with the switch off the application binds the
     seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept with the application's
     binding. A binding whose implementation cannot be read without building it (a closure of the application's own,
@@ -165,42 +163,30 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     behaviour it inherits, so an anonymous subclass of a member's default still fails; one extending nothing is the
     application's own, named by the file and line it is declared at, and passes. No member declares an anonymous
     default, so where the class is declared is not read. While SSO is in use, the rows of
-    `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, which `sso:check` or
-    `SsoBridgeFallbackCheck` runs, so `iam:check` reports each mandatory seam once; while SSO is not in use, the bridge
+    `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, so `iam:check` reports each
+    mandatory seam once; while SSO is not in use, the bridge
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
-    passkey factor gate always; the external identity links, the linker and the link storage while SSO is in use; the
+    passkey factor gate always; the external identity links and the linker while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
     enforcement is on or a tenant MFA requirement is named or bound; the enforcement inheritance while a tenant tree is
     named or bound and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
     `api_key` or `client_credentials`, as the bound application policy says (asked only as the check reads the
     mandate), and its application access while `authorization.application_access` maps an application
     (`Authorization\AccessMandates`).
-  - `SsoBridgeFallbackCheck` (IAM-2.5, IAM-10.2): while SSO is in use and `sso:check` does not run the bridge
-    (`SsoCheckRegistration::isInForce()` is false: the application keeps a check of its own under `iam`, which the
-    registration leaves in place, binds a checker of its own, SSO's class built from a list of its own included, or
-    SSO's checks are unbound), every one of the bridge's checks, reported under `sso`: each SSO application's guard
-    allowing `external_provider`, no application's `unlinked_handoffs` on, and the bridge's mandatory seams. While the
-    bridge is in force, or SSO is not in use, it does not apply, so each bullet is checked exactly once. Whether the
-    bridge is in force is read from the live checker, resolved as `sso:check` resolves it: it is SSO's own class and
-    holds the bridge under `iam` among the checks it was built with, which SSO keeps to itself and which are read from
-    its properties as `get_mangled_object_vars()` lists them. The binding's holder and SSO's registry are not enough,
-    since an instance, a closure or an `extend()` of the application's can build SSO's class from a list without the
-    bridge. It fails closed: a checker that cannot be resolved, or whose checks cannot be read, is taken as not running
-    the bridge, so it runs here.
+  - `Sso\SsoBridgeCheck` (IAM-2.5, IAM-10.2): while SSO is in use, read as SSO's `Features::isInUse()` reads it, and
+    reported under `sso`: each SSO application's guard allowing `external_provider`, no application's
+    `unlinked_handoffs` on, and the mandatory seams of `SsoSeams` and `TenancySeams` (`SsoBridgeCheck::CAPABILITIES`).
+    The base URL is SSO's own `EndpointsCheck`'s and the storage connection the storage alignment's.
   - `ContextNamespacesCheck`: the `mfa` namespace has a contributor in every application (MFA is always installed),
     and the `sso` namespace while SSO is in use, so the check always applies; each namespace nobody holds is reported
     on its own, naming the switch (`iam.adapters.mfa` or `iam.adapters.sso`) that registers this package's
     contributor there.
-  - `AuditCheck` (IAM-9, IAM-2.5): `OperationalAlerts::validate()`, every `jwt` and `api_key` guard excluded
+  - `AuditCheck` (IAM-9, IAM-2.5): every `jwt` and `api_key` guard excluded
     (`CaptureExclusions::unexcludedGuards()`), Gate capture off (`laravel-authorization` is always installed) and
     `require_registered` on, the values `iam:install` writes (decision Q5 (a)), whatever the mappers say: with them
     off, whatever maps the members' events still records a sign-in beside audit-log's own capture, and the bullets
-    stand unconditionally in IAM-2.5. Audit-log's provider registered, whatever the mappers say: boot refuses an
-    application without it but stands aside for `iam:check`, so this is the one way `iam:check` meets this package's
-    part unregistered (a provider of this package's registered after boot fails its boot instead), and it is reported
-    as audit-log's provider missing, never as a late registration; `laravel-authorization`'s registration is reported
-    through its check command. Only the mappers' registration with a registered audit-log
-    (`AuditRegistrations::REGISTERED`) follows their switch.
+    stand unconditionally in IAM-2.5. Only the mappers' registration with audit-log (`AuditRegistrations::REGISTERED`)
+    follows their switch.
   - `SendersCheck`: the routes name channels; every code sign-in method a `jwt` guard allows has its identifier type
     routed to a channel while `laravel-authentication`'s sender is this package's or unbound, since a code of a type
     the routes leave out can be delivered by no gateway and `authentication:check` sees a sender bound and passes; a
@@ -223,7 +209,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     grant that widens and the tree adapter every tenant it is asked about (`Tenancy\TenantReferences`), while
     `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
     read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
-    `Sso\SsoBridgeCheck` (or `SsoBridgeFallbackCheck` while SSO's check does not run it), `sso.endpoints.base_url` by
+    `Sso\SsoBridgeCheck`, `sso.endpoints.base_url` by
     SSO's own `EndpointsCheck` (which `sso:check` runs while SSO is in use, refusing more than an unset value), and
     `sso.storage.connection` by the storage alignment, at boot and in `StorageCheck`; audit-log's are `AuditCheck`'s, so
     nothing is reported twice; `laravel-authorization`'s seams are bound through the container, so none of its resolver
@@ -237,82 +223,13 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     attribute beyond SSO's standard mapping depends on each connection's mapping, a database row, so it stays with the
     guides (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
     (`docs/guides/example-application.md`).
-  - `PlatformCheck` (IAM-2.8): every extension `composer.json` declares is loaded in the PHP running the check, and
-    SSO's Composer plugin is installed with the registry of every installed `simplesamlphp-xmlprovider` package linked
-    into its directory, compared by content. It fails closed: a provider Composer lists without an install path, without
-    a readable registry, or whose registry cannot be digested is refused, never passed as having nothing to link.
-  - `SchedulesCheck` (IAM-2.6): notes, never failures, for a run left off the schedule, since a run may be started by
-    something no check can see. The one failure is a schedule that cannot be built at all: `Iam::schedule()`, hooked
-    into the schedule's resolution by the application's `withSchedule()`, registers SSO's operations, which throw on a
-    malformed cadence as the schedule is built, and the scheduler would not start either. The schedule is built once,
-    by the check's first closure, and that failure is reported as one problem naming the cause, but only when the
-    schedule is first built inside `iam:check`. Where it is resolved while the console bootstraps (Laravel's
-    `Schedule` facade used from `routes/console.php`, which the console kernel loads before any command runs), the
-    `withSchedule()` callback runs as the console starts, SSO's exception stops every console command, `iam:check`
-    included, before any check runs, and the command exits 1 with SSO's message and no report (see the gaps below).
-    Where it is reported, the container keeps
-    the schedule as it stood when the building threw, so no run is then noted missing from it, nor is a call to
-    `Iam::schedule()` the application already makes asked for. The notes:
-    audit-log's sealing, sweep and verification with no event on the application's schedule running them (switched
-    off with nothing else running them), and each run `IamSchedule` registers (`mfa:prune` and `authorization:prune`;
-    `sso:prune` while SSO is in use; `audit-log:drain --until-empty` while delivery is through the outbox) missing
-    from it. Each of those is noted with the call to `Iam::schedule()`, except `sso:prune` with
-    `sso.operations.cadence.prune` switched off (`null` or empty, read as SSO's `OperationsSettings::cadence()` reads
-    it): SSO's operations schedule then hands the command to the application, so the note gives that cause (set the
-    cadence, or schedule `sso:prune` itself), and a second call to `Iam::schedule()`, which would change nothing and
-    duplicate the rest, is never asked for.
-    Audit-log's prune is noted the same way, naming `audit-log.retention.schedule`, but only while its retention can
-    delete entries, as audit-log's own `Console\IntegritySchedule::prunes()` judges it (audit-log schedules the prune
-    only then, and its own check notes no prune switched off): a configured retention keeping anything for a number of
-    days, or a bound retention policy other than the configured one. Where audit-log cannot judge it (a malformed
-    retention setting, or a bound policy that cannot be resolved), the prune missing from the schedule is noted with
-    that cause, by the exception's class and never its message, rather than failing the check.
+  - `SchedulesCheck` (IAM-2.6): a note, never a failure, naming each run `IamSchedule` registers (`mfa:prune` and
+    `authorization:prune`; `audit-log:drain --until-empty` while delivery is through the outbox) that no event on the
+    application's schedule runs, since a run may be started by something no check can see. A schedule that cannot be
+    built (a malformed SSO cadence) fails the run with its cause. Audit-log's own schedules are `audit-log:check`'s.
 - Boot's refusal of a storage mismatch or a member that has not registered stands aside while `iam:check` runs (it is
-  one of `IamServiceProvider`'s unchecked commands), so `StorageCheck` reports either instead.
-- `Checks\SsoCheckRegistration` adds `Checks\Sso\SsoBridgeCheck` to SSO's own checks under the subject `iam`, through
-  SSO's registration point (`Config\ConfigurationChecks::add()`, IAM-13.12), never by rebinding SSO's checker, which
-  stays SSO's own. The addition is queued from this package's `register()` as a `booted()` callback, so it is made once
-  every provider has booted, and, from a `beforeResolving()` callback on SSO's checker, made again just before the
-  checker is built once the application has booted. The `booted()` callback lands before SSO's boot check (queued as a
-  `booted()` callback from SSO's `boot()` outside the console) whenever this package's provider registers before SSO's
-  boots; where it does not (this package's provider registered from another provider's `boot()` after SSO's has booted,
-  which queues SSO's boot check first, or SSO's registered once the application has booted, when the callback finds no
-  checks of SSO's to add to), the second addition lands as SSO's boot check, a worker command or `sso:check` resolves
-  the checker, so each finds the check in every provider order. A resolution before boot adds nothing, and neither
-  addition adds to a subject already taken. It is made that late, rather than as SSO's checks are first resolved,
-  because Laravel registers the application's providers after the packages': a check the application registers under
-  `iam` itself, as SSO recommends (`callAfterResolving()` from its provider's `register()`, or from its `boot()`), lands
-  first, and is kept, as an application's binding is (IAM-8.4), where an earlier addition of this package's would make
-  SSO refuse the application's with a `LogicException` as SSO's checks are first resolved (decision recorded here).
-  `iam:check` then runs the bridge through `SsoBridgeFallbackCheck`. Nothing is added while SSO's provider has not
-  registered. SSO runs it after its own checks at boot, as each worker command starts and in `sso:check`, which reports
-  it as `[iam]` (IAM-10.3). It applies only while SSO is in use, read as SSO's `Features::isInUse()` reads it, so it
-  fails SSO's boot only then (decision Q12), and checks every SSO application's guard allowing `external_provider`, no
-  application's `unlinked_handoffs` on, and the mandatory seams of `SsoSeams` and `TenancySeams`
-  (`SsoBridgeCheck::CAPABILITIES`). The base URL is SSO's own `EndpointsCheck`'s and the storage connection the storage
-  alignment's, which refuses boot on a mismatch already, so the bridge repeats neither. SSO's freshness operations are
-  left to `iam:check`, so an application that has not declared them yet is told at deploy rather than refused at boot.
-- `Checks\AuthenticationConfigurationCheck` reports this package's checks of `laravel-authentication`'s side in
-  `authentication:check` too (IAM-10.3), through `laravel-authentication`'s registration point
-  (`Console\ConfigurationChecks::register()`), so the command run at deploy on its own reports them. It copies no
-  check: each check with a side of `laravel-authentication`'s implements `Checks\Contracts\AuthenticationCheck`, which
-  hands over the closures of its own `checks()` that concern it, about no one guard (`authenticationChecks()`) and about
-  a guard by name (`guardChecks()`). They are `StorageCheck`'s identity model of each guard; `MandatorySeamsCheck`'s
-  seams that are `laravel-authentication`'s own contracts, and the notes of those the binding rule kept, the seams the
-  SSO bridge holds left to it while SSO is in use; every namespace `ContextNamespacesCheck` requires; and
-  `CrossMemberConfigurationCheck`'s tenant resolver, and the MFA and SSO applications named after each guard. The
-  members' storage keys and the shared connection stay `iam:check`'s alone, as does an MFA or SSO application naming no
-  guard `authentication:check` checks (a `session` guard, or none). The adapter asks for the guards
-  `authentication:check` checks (those named with `--guard`, otherwise every `jwt` and `api_key` guard), so `--guard`
-  limits it, and grades each closure as `Checker` does: one that throws is an error, its message prefixed
-  `[iam:<subject>]`, and a note a warning. A check that cannot be resolved, or whose closures cannot be built, is an
-  error naming its class and the exception's class, never its message (which `laravel-authentication` asks of a
-  registered check), and the checks after it still run. It is registered from `IamServiceProvider::boot()` through
-  `callAfterResolving()` on `laravel-authentication`'s checks, which registers it on every instance built and never
-  where `laravel-authentication` offers no registration point; `register()` keeps one of each, so it is registered
-  once. `Checker::run()` binds `Checker::RUNNING` to `true` while it runs the members' commands, and to `false` once
-  they have, thrown or not, and the adapter answers nothing while it is `true`, so `iam:check` reports each problem
-  once, under `iam` (decision recorded here).
+  one of `IamServiceProvider`'s unchecked commands), so `StorageCheck` reports a mismatch, and a member that has not
+  registered fails the run as its check command is not registered.
 
 ### What the authorization glue adds
 
@@ -406,14 +323,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
     (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
     public constant would let it read them.
-  - SSO's `ConfigurationChecker` keeps the checks it was built with to itself, so
-    `SsoCheckRegistration::isInForce()` reads them from its mangled properties (`get_mangled_object_vars()`) to know
-    whether `sso:check` runs the bridge, failing closed if they cannot be read; a public reader of the checker's
-    subjects would let it ask.
-  - Audit-log's judgement of whether its retention can delete anything is `IntegritySchedule::prunes()`, a public
-    method of a class marked `@internal`, which `SchedulesCheck` resolves from the container to note a prune switched
-    off; audit-log's own `audit-log:check` notes the sealing, sweep and verification switched off but not the prune.
-    A note of audit-log's own, or a public contract for the judgement, would let this package stop reading it.
   - No member publishes its migrations through `publishesMigrations()`, and `vendor:publish` compares only a whole file
     name, so recognising a migration by its base name lives in `MigrationLedger`. That is no member's defect: a member
     that moves to `publishesMigrations()`, which renames each file with the time it is published, is still recognised.
@@ -433,14 +342,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `holderOf()`,
   `isMemberDefault()`), `src/Bindings/SeamBinding.php` (`$accepted`), `src/Checks/SeamHolders.php` (`of()`,
   `isMembersOwn()`),
-  `src/Checks/SsoBridgeFallbackCheck.php`, `src/Checks/ContextNamespacesCheck.php`, `src/Checks/AuditCheck.php`,
-  `src/Checks/SendersCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`, `src/Checks/PlatformCheck.php`,
+  `src/Checks/Sso/SsoBridgeCheck.php` (`CAPABILITIES`), `src/Checks/ContextNamespacesCheck.php`,
+  `src/Checks/AuditCheck.php`, `src/Checks/SendersCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`,
   `src/Checks/SchedulesCheck.php`.
-- `src/Checks/SsoCheckRegistration.php`: `register()`, `isInForce()`; `src/Checks/Sso/SsoBridgeCheck.php`:
-  `CAPABILITIES`.
-- `src/Checks/AuthenticationConfigurationCheck.php`: `findings()`, `CHECKS`;
-  `src/Checks/Contracts/AuthenticationCheck.php`; `src/Checks/Checker.php`: `RUNNING`; `src/IamServiceProvider.php`:
-  `boot()`.
 - The mandates: `src/Sso/SsoSeams.php` (`isInUse()`), `src/Mfa/ContextSeams.php`, `src/Tenancy/TenancySeams.php`
   (`isEnforcedOrRequired()`); `src/IamServiceProvider.php`: `seamProviders()`, `UNCHECKED_COMMANDS`,
   `registerConsole()`.
@@ -485,21 +389,18 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 - `tests/Feature/Console/CheckCommandTest.php` `testAConfiguredApplicationPasses`,
   `testAProblemOfThePackagesOwnFailsTheRun`, `testAMembersFailureFailsTheRun`,
   `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`,
-  `testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot`,
-  `testSsosSideIsCheckedWhenSsosCheckDoesNotRunIt`
+  `testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot`, `testAMemberThatNeverRegisteredFailsTheRun`,
+  `testSsosSideIsChecked`
 - `tests/Unit/Checks/CheckerTest.php` `testEveryCheckRunsAndTheRunPasses`, `testAMemberCommandFailingFailsTheRun`,
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
-  `testEachCheckIsReported`, `testTheMembersCommandsRunMarked`
-- `tests/Feature/Checks/AuthenticationConfigurationCheckTest.php` `testAnErrorFailsAuthenticationCheck`,
-  `testTheGuardOptionLimitsIt`, `testEachClosureIsGradedAsIamCheckGradesIt`, `testAThrowingCheckIsContained`,
-  `testNothingIsRegisteredTwice`, `testIamCheckReportsEachProblemOnce`
+  `testEachCheckIsReported`
 - `tests/Feature/Authorization/AuthorizationSeamsTest.php`
   `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
 - `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testASeamLeftOnItsMembersDefaultFails`,
   `testAMandatorySeamIsCheckedWithItsCapabilityOff`, `testAResolvedMemberDefaultFails`,
   `testAnyClassOfAMembersOwnFails`, `testAnApplicationsClosureFails`, `testAnUnboundMandatorySeamFails`,
   `testAnAnonymousImplementationOfTheApplicationsOwnPasses`, `testAnAnonymousSubclassOfAMembersDefaultFails`,
-  `testTheSeamsSsosCheckHoldsAreLeftToIt`, `testSsosOwnLinkStoreIsAcceptedOnTheLinkStorage`,
+  `testTheSeamsSsosCheckHoldsAreLeftToIt`,
   `testTheLinksAreMandatoryWhileSsoIsInUse`,
   `testASeamIsMandatoryWhileATenantsRuleIsOn`, `testTheInheritanceIsMandatoryWhileATreeAndEnforcementAreOn`,
   `testEachSeamTheRuleKeptIsNoted`
@@ -509,18 +410,14 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAnApplicationsClosureNamesNothing`, `testAClosureUsingTheContainersNamesNamesItsDeclarer`,
   `testAnAnonymousImplementationIsTheApplicationsOwn`, `testAnAnonymousSubclassNamesTheClassItExtends`
 - `tests/Feature/IamServiceProviderTest.php` `testTheCommandsAreRegisteredInTheConsole`,
-  `testThePackagesChecksOfSsosSideAreRegisteredWithSsosOwn`, `testEveryCapabilitysSeamsAreProvided`
+  `testEveryCapabilitysSeamsAreProvided`
 - `tests/Feature/Checks/StorageCheckTest.php` `testAMemberKeyOnAnotherConnectionFails`,
-  `testAMemberThatNeverRegisteredIsReported`, `testEveryIdentityModelMustLiveOnTheSharedConnection`,
+  `testEveryIdentityModelMustLiveOnTheSharedConnection`,
   `testAGuardNamingNoProviderReadsTheDefaultProvidersModel`, `testAuditLogOnAnotherConnectionIsNoted`
 - `tests/Feature/Checks/ContextNamespacesCheckTest.php` `testItRequiresSsoOnlyWhileSsoIsInUse`,
   `testANamespaceNobodyRegisteredFails`, `testAnMfaNamespaceNobodyRegisteredFails`
 - `tests/Feature/Checks/AuditCheckTest.php` `testAuditLogAsItShipsFails`, `testWhatTheInstallWritesPasses`,
-  `testWithTheMappersOffAuditLogsValuesAreStillEnforced`, `testGateCaptureOnFails`,
-  `testAnAuditLogThatNeverRegisteredIsReportedAsMissing`
-- `tests/Feature/Checks/SsoBridgeFallbackCheckTest.php` `testTheWholeBridgeRunsHereWhenSsosCheckDoesNotRunIt`,
-  `testItDoesNotApplyWhileSsosCheckRunsTheBridge`, `testItDoesNotApplyWhileSsoIsNotInUse`,
-  `testItAppliesWhereSsosCheckCannotBeRead`, `testACheckerOfSsosClassHoldingTheBridgeRunsIt`
+  `testWithTheMappersOffAuditLogsValuesAreStillEnforced`, `testGateCaptureOnFails`
 - `tests/Feature/Checks/SendersCheckTest.php` `testACodeMethodNeedsAGatewayOnItsChannel`,
   `testACodeMethodWhoseTypeIsUnroutedIsRefused`,
   `testACodeFactorNeedsAGatewayOnItsChannel`, `testANamedGatewayMustImplementTheContract`
@@ -532,18 +429,8 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testNoTenantsRuleRequiresNoResolver`,
   `testTheResourceTenantResolverIsNotedWhilePeopleActInTenants`,
   `testAResourceTenantResolverTheApplicationNamesIsNotNoted`
-- `tests/Unit/Checks/PlatformCheckTest.php` `testAMissingExtensionIsReported`,
-  `testAProviderWhoseRegistryIsNotLinkedIsReported`, `testAProviderWhoseRegistryCannotBeReadIsReported`
-- `tests/Feature/Checks/SchedulesCheckTest.php` `testAuditLogsRunsSwitchedOffAreNotedUntilSomethingRunsThem`,
-  `testThePrunesAreNotedUntilThePackageSchedulesThem`, `testSsosPruneSwitchedOffIsNotedWithItsCause`,
-  `testAuditLogsPruneSwitchedOffIsNotedWhileItsRetentionCanDelete`,
-  `testAuditLogsPruneIsNotedWithItsCauseWhenRetentionCannotBeJudged`,
-  `testAScheduleThatCannotBeBuiltIsOneProblemNamingItsCause`
-- `tests/Feature/Checks/SsoCheckRegistrationTest.php` `testTheCheckIsRegisteredAfterSsosOwnInEveryProviderOrder`,
-  `testARegistrationOnceResolvedAddsAtOnceAndKeepsTheApplicationsCheck`,
-  `testACheckTheApplicationRegistersAfterThePackagesIsKept`, `testNothingIsAddedWhileSsosProviderHasNotRegistered`,
-  `testSsosBootCheckRunsTheBridgeOutsideTheConsoleInEveryOrder`, `testSsoRegisteredOnceBootedStillRunsTheBridge`,
-  `testResolvingSsosCheckerAddsTheCheckOnlyOnceBooted`, `testSsosCheckReportsIt`
+- `tests/Feature/Checks/SchedulesCheckTest.php` `testThePrunesAreNotedUntilThePackageSchedulesThem`,
+  `testTheDrainIsNotedWhileTheOutboxIsOn`, `testAScheduleThatCannotBeBuiltIsAProblem`
 - `tests/Unit/Checks/Sso/SsoBridgeCheckTest.php` `testItAppliesOnlyWhileSsoIsInUse`, `testEachApplicationIsChecked`,
   `testTheBaseUrlAndTheStorageConnectionAreLeftToTheirOwners`, `testTheMandatorySeamsAreChecked`
 
@@ -553,22 +440,17 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `MigrationLedger`'s recognition of a copy by the namespace it names.
 - A member reshaping the defaults `AuditLogConfiguration` and `AuthorizationTablePrefix` write over, or
   `laravel-authorization` adding a table or a longer derived name: `MAX_LENGTH` follows.
-- A member scheduling work of its own, or leaving more to the application: `IamSchedule` follows, and so does
-  `iam:check`'s report of schedules switched off.
+- A member scheduling work of its own, or leaving more to the application: `IamSchedule` and `SchedulesCheck`
+  follow.
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.
 - A member adding a check command, a check of its own that covers one of this package's (glue, not policy), or a
   public way to add a check: `Checker` and the checks follow.
-- `laravel-authentication` changing `ConfigurationChecks`, `ConfigurationCheck` or `ConfigurationFinding`, or a check
-  gaining or losing a part of `laravel-authentication`'s side: `AuthenticationConfigurationCheck` and the
-  `AuthenticationCheck` methods follow.
 - A member renaming a mandatory seam's default, a mandate changing (`AccessMandates`' application access and scope
   registry among them), or
   MFA or `laravel-authorization` standing their boot validation aside for `iam:check`: `MandatorySeamsCheck`,
   `ContextNamespacesCheck` and `CheckCommand` follow.
-- SSO changing `ConfigurationChecks::add()`, `Features::isInUse()` or the meaning of `FreshnessOperation`:
-  `SsoCheckRegistration`, `SsoBridgeFallbackCheck`, `SsoSeams::isInUse()` and `CrossMemberConfigurationCheck` follow.
-- SSO binding a link storage default of its own, or its guide binding the link storage to another class: the link
-  storage row's `accepted` list follows.
+- SSO changing `Features::isInUse()` or the meaning of `FreshnessOperation`: `SsoBridgeCheck`, `SsoSeams::isInUse()`
+  and `CrossMemberConfigurationCheck` follow.
 - `laravel-authorization` binding its resource tenant resolver so the configured class can be read from its binding:
   `CrossMemberConfigurationCheck` follows. `authorization:check` exiting `0` on a refusal or an incomplete report, or
   throwing out of the console kernel's `call()` rather than ending with its exit code: `Checker` follows.

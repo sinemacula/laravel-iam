@@ -9,18 +9,17 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Checks\Checker;
-use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
+use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 use SineMacula\Laravel\Mfa\Enums\Operation;
-use SineMacula\Laravel\Sso\Config\Checks\FeaturesCheck;
-use SineMacula\Laravel\Sso\Config\ConfigurationChecker;
-use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
+use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
@@ -63,12 +62,11 @@ final class CheckCommandTest extends TestCase
             self::assertMatchesRegularExpression('/^' . preg_quote($header, '/') . '$/m', $output);
         }
 
-        foreach (['storage', 'seams', 'context', 'audit', 'senders', 'configuration', 'platform', 'schedule'] as $subject) {
+        foreach (['storage', 'seams', 'context', 'audit', 'senders', 'configuration', 'schedule'] as $subject) {
             self::assertStringContainsString("[{$subject}] OK", $output);
         }
 
         self::assertStringContainsString('[sso] not applied', $output);
-        self::assertStringContainsString('[iam] not enabled', $output);
         self::assertStringEndsWith('Every check passed.' . PHP_EOL, $output);
     }
 
@@ -92,35 +90,12 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * Rows of how `sso:check` comes not to run this package's check of SSO's
-     * side: the application keeps a check of its own under its subject, or
-     * binds a checker of its own that runs SSO's checks alone.
+     * While SSO is in use, `iam:check` reports this package's check of SSO's
+     * side under `sso`, each problem once.
      *
-     * @return iterable<string, array{\Closure(\Illuminate\Contracts\Foundation\Application): void}>
-     */
-    public static function bridgeNotInForce(): iterable
-    {
-        yield 'the application\'s own check under the subject' => [static function (Application $app): void {
-            $checks = [...SsoServiceProvider::CONFIGURATION_CHECKS, SsoCheckRegistration::SUBJECT => FeaturesCheck::class];
-
-            $app->instance(ConfigurationChecks::class, new ConfigurationChecks($checks));
-        }];
-        yield 'a checker of the application\'s' => [static function (Application $app): void {
-            $app->bind(ConfigurationChecker::class, static fn (Application $app): ConfigurationChecker => new ConfigurationChecker($app, SsoServiceProvider::CONFIGURATION_CHECKS));
-        }];
-    }
-
-    /**
-     * While SSO is in use and `sso:check` does not run this package's check of
-     * SSO's side, `iam:check` runs it itself: an application handing off
-     * unlinked results, and one whose guard does not allow an external sign-in,
-     * fail the run, each reported once.
-     *
-     * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $takeOut
      * @return void
      */
-    #[DataProvider('bridgeNotInForce')]
-    public function testSsosSideIsCheckedWhenSsosCheckDoesNotRunIt(\Closure $takeOut): void
+    public function testSsosSideIsChecked(): void
     {
         $this->configure();
 
@@ -128,12 +103,6 @@ final class CheckCommandTest extends TestCase
 
         $config?->set('sso.features.saml2', true);
         $config?->set('sso.applications.api.unlinked_handoffs', true);
-
-        $app = $this->app;
-
-        assert($app !== null);
-
-        $takeOut($app);
 
         [$code, $output] = $this->check();
 
@@ -172,6 +141,29 @@ final class CheckCommandTest extends TestCase
         self::assertSame(1, $code, $output);
         self::assertStringContainsString('[storage] note: `audit-log.storage.connection` names another connection', $output);
         self::assertStringEndsWith('A check failed.' . PHP_EOL, $output);
+    }
+
+    /**
+     * A member that never registered does not stop `iam:check` at boot: its
+     * check command is reported missing, and the run fails.
+     *
+     * @return void
+     */
+    public function testAMemberThatNeverRegisteredFailsTheRun(): void
+    {
+        $this->withArguments(['artisan', CheckCommand::NAME]);
+        $this->reorderProviders([
+            AuthenticationServiceProvider::class,
+            AuthorizationServiceProvider::class,
+            MfaServiceProvider::class,
+            SsoServiceProvider::class,
+            IamServiceProvider::class,
+        ]);
+
+        [$code, $output] = $this->check();
+
+        self::assertSame(1, $code, $output);
+        self::assertStringContainsString('audit-log:check is not registered.', $output);
     }
 
     /**
