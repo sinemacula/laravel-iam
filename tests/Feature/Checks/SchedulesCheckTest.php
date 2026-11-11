@@ -30,8 +30,9 @@ final class SchedulesCheckTest extends TestCase
     private const string MISSING = 'Runs [%s] are not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
     /**
-     * MFA's prune and `laravel-authorization`'s are noted until
-     * `Iam::schedule()` registers them. Nothing fails.
+     * MFA's prune and `laravel-authorization`'s are noted until something on
+     * the schedule runs them, a closure event read as running nothing. Nothing
+     * fails.
      *
      * @return void
      */
@@ -45,6 +46,7 @@ final class SchedulesCheckTest extends TestCase
         self::assertSame('schedule', $this->check()->subject());
 
         $this->schedule()->command('mfa:prune --hours=1')->daily();
+        $this->schedule()->call(static fn (): null => null)->daily();
 
         self::assertSame([sprintf(self::MISSING, 'authorization:prune')], self::notes($this->check()->checks()));
 
