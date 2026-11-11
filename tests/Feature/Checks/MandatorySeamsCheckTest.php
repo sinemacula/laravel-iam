@@ -47,6 +47,7 @@ use Tests\Fixtures\Bindings\Adapter;
 use Tests\Fixtures\Bindings\Contracts\PlainSeam;
 use Tests\Fixtures\Bindings\Contracts\SharedSeam;
 use Tests\Fixtures\Bindings\DeclaredSeams;
+use Tests\Fixtures\Bindings\MemberDefault;
 use Tests\Fixtures\Checks\ExtensibleDefault;
 use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
@@ -207,8 +208,8 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $subclass = new class extends ExtensibleDefault {};
         $checks   = $this->check()->checksFor(new DeclaredSeams(
-            new SeamBinding(PlainSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true),
-            new SeamBinding(SharedSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true),
+            new SeamBinding(PlainSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true, holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(SharedSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true, holdsDefault: MemberDefault::isPackageDefault(...)),
         ));
 
         $this->app?->instance(PlainSeam::class, $subclass);
@@ -242,22 +243,6 @@ final class MandatorySeamsCheckTest extends TestCase
         $this->app?->make(SessionRevoker::class);
 
         self::assertSame([], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * A seam of SSO's, which gives no answer of its own, bound to a class of a
-     * member's own that is not among the row's defaults fails all the same, as
-     * a renamed default would: SSO's session revocation bound to its `NoLinks`.
-     *
-     * @return void
-     */
-    public function testAnyClassOfAMembersOwnFails(): void
-    {
-        $this->useSso();
-
-        $this->app?->bind(SessionRevocation::class, NoLinks::class);
-
-        self::assertStringContainsString(SessionRevocation::class . ' is still bound to ' . NoLinks::class, self::problems($this->mandates())[0]);
     }
 
     /**

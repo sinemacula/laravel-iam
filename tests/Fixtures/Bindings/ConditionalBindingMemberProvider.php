@@ -11,7 +11,7 @@ use Tests\Fixtures\Bindings\Contracts\SharedSeam;
 /**
  * A member's provider that binds its defaults only where nothing is bound yet,
  * as laravel-authentication and laravel-audit-log do: one with `singletonIf()`
- * of a class name, and one with `bindIf()` of a closure the provider declares.
+ * and one with `bindIf()`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -28,7 +28,7 @@ final class ConditionalBindingMemberProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->singletonIf(SharedSeam::class, MemberDefault::class);
-        $this->app->bindIf(ClosureSeam::class, static fn (): MemberDefault => new MemberDefault);
+        $this->app->singletonIf(SharedSeam::class, MemberDefault::build(...));
+        $this->app->bindIf(ClosureSeam::class, MemberDefault::build(...));
     }
 }

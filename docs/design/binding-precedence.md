@@ -20,33 +20,24 @@ before that member has merged it, and why the storage connection alone still wai
 - The rule runs over every row once, in `IamServiceProvider::register()` (`registerSeams()`), whenever the provider
   registers: with the other package providers, while the application boots, or after it has booted. Only the tenancy
   rows that pass left open are applied once more, from the booting phase (below).
-- Every member binds its defaults only where nothing is bound yet, with `bindIf()`, `singletonIf()` or `scopedIf()`
-  (`laravel-mfa` since laravel-mfa#92, IAM-13.11), so the order the providers register in decides nothing:
-  - A member that registers before this package has bound its default by then; the rule recognises it from the
-    container's binding table and binds the adapter over it.
+- Every member binds its defaults only where nothing is bound yet, with `bindIf()` or `singletonIf()` (`laravel-mfa`
+  since laravel-mfa#92, IAM-13.11), so the order the providers register in decides nothing:
+  - A member that registers before this package has bound its default by then; the rule asks the member and binds
+    the adapter over it.
   - A member that registers after this package finds the adapter bound and leaves it in place.
   - Composer discovers providers sorted by package name, so this package registers after `laravel-audit-log`,
     `laravel-authentication` and `laravel-authorization` and before `laravel-mfa` and `laravel-sso`; both cases occur
     in a default installation.
-- A seam is bound only where `Bindings\MemberDefaults::isReplaceable()` allows it: the seam is unbound, or the
-  member's default holds it. A member that says itself whether a contract holds its default is asked: the rows over
-  `laravel-authorization`'s contracts carry `AuthorizationServiceProvider::isPackageDefault()` as
-  `SeamBinding::$holdsDefault`, asked only while the table has a binding of the seam to read (an instance over the
-  member's default leaves that default in the table, and the member's answer would count it). No other member exposes
-  its defaults, so for them the container's binding table (`Container::getBindings()`) is the only public source,
-  read against the defaults the row declares:
-  - "Unbound" is `bound()`, which also counts instances, aliases and, on the application, deferred services, so none
-    of them looks unbound because it is missing from the table.
-  - A class-string binding is held as the closure Laravel's `getClosure()` builds around it, which carries the class
-    it was given as its `concrete` used variable; that class is compared with the declared defaults.
-  - A closure binding carries the class that lexically declares it as its scope class, static or not; that class is
-    compared instead. Members declare closures outside their providers too (`laravel-mfa`'s `ProofStore` default is
-    declared in `Mfa\Proofs\ProofBindings`), so a row names the declaring class, never the provider by assumption.
+- A seam is bound only where `Bindings\MemberDefaults::isReplaceable()` allows it: the seam is unbound, or its member
+  says its default holds it. Every row carries its member's `isPackageDefault()` as `SeamBinding::$holdsDefault`
+  (`MemberDefaults::answerOf()`), asked only while the table has a binding of the seam to read (an instance over the
+  member's default leaves that default in the table, and the member's answer would count it). "Unbound" is
+  `bound()`, which also counts instances, aliases and, on the application, deferred services.
 - Anything else is the application's and is kept: an instance or an alias (Laravel's `instance()` and `alias()` leave
   the binding beneath them in the table, and binding over either would drop the application's, so `isAlias()` is
   checked before the table is read), a shared default something has already resolved (whatever resolved it holds that
-  instance, which a new binding would not replace), a closure the application declares, a class-string binding to any
-  class the row does not name, and every binding in a container without a table to read.
+  instance, which a new binding would not replace), any binding its member does not call its default, and every
+  binding in a container without a table to read.
 - An application binding made after the rule runs, in a later `register()` or in any `boot()`, replaces the adapter as
   any later binding does. So the application's binding wins whether it is made before this package registers (kept)
   or after (replacing).
@@ -63,16 +54,9 @@ before that member has merged it, and why the storage connection alone still wai
     The adapter is still built once per request or job, and a binding the application makes over the seam later is
     never on the scoped list (`testAnInstanceMadeOverAScopedAdapterOutlivesTheScopedInstances`,
     `testASingletonMadeOverAScopedAdapterStaysShared`).
-  - A member that registers before this package and binds its default with `scopedIf()`, as `laravel-sso` does, has
-    put the seam on that list already, and binding over it leaves it there. So, whatever the row's lifetime, the rule
-    takes the seam off the list before binding over it (`BindingRule::unscope()`, which reads the container's protected
-    `scopedInstances` as `WorkerReset` does). Otherwise a shared adapter would be built again for every request and
-    job, and an application instance made later would still be dropped in that provider order
-    (`testASharedAdapterBoundOverAScopedDefaultStaysShared`). The list is filtered by strict comparison, never with
-    `array_diff()`: for a binding scoped by its closure's return type (`scoped(fn (): Foo => ...)`), Laravel lists the
-    closure itself, which `array_diff()` cannot convert to a string, and any provider that registers before this
-    package can make one. Such an entry is kept on the list
-    (`testAScopedBindingKeyedByItsClosureStaysScoped`).
+  - No member scopes a contract itself: `laravel-sso` and `laravel-authorization` scope each default under a private
+    key and bind the contract to a transient closure that resolves it, so a seam the rule binds over is never on the
+    scoped list.
 - A row may say how its adapter is declared to its member once bound (`SeamBinding::$declare`). The rule calls it in
   one place, at once after binding (`BindingRule::bind()`), with the container and the closure the container now holds
   for the seam (`MemberDefaults::bindingOf()`): the closure `getClosure()` wrapped the adapter's class in, the row's
@@ -231,7 +215,6 @@ before that member has merged it, and why the storage connection alone still wai
   `testAPlainDefaultBoundBeforeThisPackageRegistersIsReplaced`,
   `testAPlainDefaultBoundAfterThisPackageRegistersReplacesTheAdapter`,
   `testAPlainDefaultReplacesAnApplicationBindingMadeBeforeIt`, `testEachAdapterIsBoundWithItsLifetime`,
-  `testASharedAdapterBoundOverAScopedDefaultStaysShared`, `testAScopedBindingKeyedByItsClosureStaysScoped`,
   `testTheRuleAppliesAtOnceWhenRegisteredAfterBoot`, `testTheRuleKeepsASharedDefaultResolvedBeforeItApplies`,
   `testABindingWhoseSwitchIsOffBindsNothing`, `testTheOutcomeListsTheSeamsBoundAndKeptInOrder`,
   `testAMembersSwitchItsPackagedConfigurationTurnsOnBindsInEveryProviderOrder`,

@@ -27,14 +27,14 @@ use Tests\Fixtures\Bindings\MemberDefault;
 final class SeamBindingTest extends TestCase
 {
     /**
-     * Declared with only its seam, adapter and defaults, a binding is
-     * transient, always on, not mandatory, and asks its member nothing.
+     * Declared with only its seam, adapter, defaults and member's answer, a
+     * binding is transient, always on, not mandatory, and declares nothing.
      *
      * @return void
      */
     public function testABindingIsTransientAlwaysOnAndOptionalByDefault(): void
     {
-        $binding = new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class]);
+        $binding = new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...));
 
         self::assertSame(PlainSeam::class, $binding->abstract);
         self::assertSame(Adapter::class, $binding->adapter);
@@ -43,7 +43,6 @@ final class SeamBindingTest extends TestCase
         self::assertNull($binding->appliesWhen);
         self::assertFalse($binding->mandatory);
         self::assertFalse($binding->isMandatory());
-        self::assertNull($binding->holdsDefault);
         self::assertNull($binding->factory);
         self::assertNull($binding->declare);
     }
@@ -82,7 +81,7 @@ final class SeamBindingTest extends TestCase
     {
         $asked        = new SeamBinding(TenantResolver::class, Adapter::class, []);
         $holdsDefault = static fn (): bool => true;
-        $answer       = new \ReflectionFunction($asked->holdsDefault ?? self::fail('The member is not asked.'));
+        $answer       = new \ReflectionFunction($asked->holdsDefault);
 
         self::assertSame(AuthenticationServiceProvider::class, $answer->getClosureScopeClass()?->getName());
         self::assertSame($holdsDefault, (new SeamBinding(TenantResolver::class, Adapter::class, [], holdsDefault: $holdsDefault))->holdsDefault);
@@ -103,7 +102,7 @@ final class SeamBindingTest extends TestCase
             $asked->append(true);
 
             return (bool) $answers[count($asked) - 1];
-        });
+        }, holdsDefault: MemberDefault::isPackageDefault(...));
 
         self::assertCount(0, $asked);
         self::assertTrue($binding->isMandatory());
