@@ -19,16 +19,15 @@ use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Sso\Contracts\Linker;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use Tests\Concerns\RunsChecks;
 
 /**
- * Unit tests for this package's checks of SSO's side (IAM-10.3, IAM-2.5): they
- * apply only while SSO is in use, so they fail SSO's boot only then (decision
- * Q12), and check each application's sign-in method and unlinked handoffs and
- * the mandatory seams of SSO's flows, leaving the base URL to SSO's own check
- * and the storage connection to the storage alignment.
+ * Unit tests for this package's checks of SSO's side (IAM-2.5): they apply only
+ * while SSO is in use, are reported under `sso`, and check each application's
+ * sign-in method and unlinked handoffs and the mandatory seams of SSO's flows,
+ * leaving the base URL to SSO's own check and the storage connection to the
+ * storage alignment.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,7 +79,7 @@ final class SsoBridgeCheckTest extends TestCase
         $this->container->instance(ContainerContract::class, $this->container);
         $this->container->instance(ApplicationPolicy::class, $policy);
 
-        foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class, LinkStorage::class] as $seam) {
+        foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class] as $seam) {
             $this->container->instance($seam, \Mockery::mock($seam));
         }
     }
@@ -128,6 +127,7 @@ final class SsoBridgeCheckTest extends TestCase
         $this->config->set('sso.features', $features);
 
         self::assertSame($inUse, $this->check()->applies());
+        self::assertSame('sso', $this->check()->subject());
         self::assertSame($inUse, SsoSeams::isInUse($this->config));
     }
 
@@ -197,13 +197,13 @@ final class SsoBridgeCheckTest extends TestCase
     public function testTheMandatorySeamsAreChecked(): void
     {
         $this->container->offsetUnset(SessionRevocation::class);
-        $this->container->offsetUnset(LinkStorage::class);
+        $this->container->offsetUnset(Linker::class);
 
         $problems = self::problems($this->check()->checks());
 
         self::assertCount(2, $problems);
         self::assertStringStartsWith(SessionRevocation::class . ' is unbound', $problems[0]);
-        self::assertStringStartsWith(LinkStorage::class . ' is unbound', $problems[1]);
+        self::assertStringStartsWith(Linker::class . ' is unbound', $problems[1]);
     }
 
     /**
@@ -222,7 +222,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * The check, built as SSO's checker builds it.
+     * The check, built as `iam:check` builds it.
      *
      * @return \SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck
      */

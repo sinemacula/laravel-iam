@@ -4,30 +4,20 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Checks;
 
-use Illuminate\Support\Facades\Artisan;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
-use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
-use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
-use SineMacula\Laravel\Iam\IamServiceProvider;
-use SineMacula\Laravel\Mfa\MfaServiceProvider;
-use SineMacula\Laravel\Sso\SsoServiceProvider;
-use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Concerns\RunsChecks;
-use Tests\Fixtures\Audit\HearsNoAlerts;
 use Tests\TestCase;
 
 /**
  * Feature tests for the audit trail's checks (IAM-9, IAM-2.5): the mappers
  * registered while they are on; every `jwt` and `api_key` guard excluded from
  * audit-log's own capture, its Gate capture off, its refusal of unregistered
- * codes on and the operational alerts whatever they say (decision Q5 (a)).
+ * codes on whatever they say (decision Q5 (a)).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,10 +32,6 @@ final class AuditCheckTest extends TestCase
     /** @var string Why the guard the tests sign in on is refused while audit-log still captures it. */
     private const string UNEXCLUDED = 'Guards [api] are missing from `audit-log.capture.laravel.except_guards`, '
         . 'so each of their sign-ins is recorded twice; `iam:install` writes them.';
-
-    /** @var string Why an application without audit-log's provider is refused. */
-    private const string NO_AUDIT_LOG = 'laravel-audit-log\'s provider (' . AuditLogServiceProvider::class . ') is not registered, '
-        . 'so no member event is recorded: register it, or stop package discovery leaving it out.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
     private const string GATE_CAPTURE_ON = '`audit-log.capture.gate.enabled` must be false, so no authorization decision is recorded twice:'
@@ -127,42 +113,6 @@ final class AuditCheckTest extends TestCase
     }
 
     /**
-     * An application whose audit-log provider never registered, the one way
-     * `iam:check` meets mappers unregistered (boot refuses a provider of this
-     * package's registered late), is told that audit-log's provider is missing,
-     * whatever the mappers' switch says, and not that this package's was
-     * registered late.
-     *
-     * @return void
-     */
-    public function testAnAuditLogThatNeverRegisteredIsReportedAsMissing(): void
-    {
-        $this->withArguments(['artisan', 'iam:check']);
-        $this->reorderProviders([
-            AuthenticationServiceProvider::class,
-            AuthorizationServiceProvider::class,
-            MfaServiceProvider::class,
-            SsoServiceProvider::class,
-            IamServiceProvider::class,
-        ]);
-
-        $problems = self::problems($this->check()->checks());
-
-        self::assertContains(self::NO_AUDIT_LOG, $problems);
-        self::assertSame([], preg_grep('/registered with laravel-audit-log/', $problems));
-
-        $output = new BufferedOutput;
-
-        Artisan::call('iam:check', [], $output);
-
-        self::assertStringContainsString('[audit] ' . self::NO_AUDIT_LOG, $output->fetch());
-
-        $this->app?->make('config')->set(AuditSettings::MAPPERS, false);
-
-        self::assertContains(self::NO_AUDIT_LOG, self::problems($this->check()->checks()));
-    }
-
-    /**
      * Rows of values the mappers' switch reads as off from.
      *
      * @return iterable<string, array{mixed}>
@@ -178,8 +128,7 @@ final class AuditCheckTest extends TestCase
     /**
      * With the mappers off, audit-log is still held to IAM-2.5 (decision Q5
      * (a)): every guard excluded, Gate capture off and unregistered codes
-     * refused; only the mappers' registration is no longer required, and the
-     * alerts are still checked.
+     * refused; only the mappers' registration is no longer required.
      *
      * @param  mixed  $off
      * @return void
@@ -201,43 +150,6 @@ final class AuditCheckTest extends TestCase
         $config?->set(CaptureExclusions::GATE_KEY, false);
 
         self::assertSame([], self::problems($this->check()->checks()));
-
-        $config?->set(OperationalAlerts::KEY, ['nobody_told' => []]);
-
-        self::assertCount(1, self::problems($this->check()->checks()));
-    }
-
-    /**
-     * An alert that does not exist, or a listener that is neither bound nor a
-     * class, is refused.
-     *
-     * @return void
-     */
-    public function testAMalformedAlertFails(): void
-    {
-        $this->install();
-
-        $this->app?->make('config')->set(OperationalAlerts::KEY . '.audit_write_failed', 'App\Listeners\Nowhere');
-
-        self::assertSame(['A listener named in `iam.audit.alerts.audit_write_failed` is neither bound nor a class.'], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * A listener class that could not be handed the event, with neither
-     * `handle()` nor `__invoke()`, fails the check before the event it alerts
-     * on is ever dispatched.
-     *
-     * @return void
-     */
-    public function testAListenerThatCannotBeHandedTheEventFails(): void
-    {
-        $this->install();
-
-        $this->app?->make('config')->set(OperationalAlerts::KEY . '.integrity_check_failed', [HearsNoAlerts::class]);
-
-        $refusal = 'The listener named in `iam.audit.alerts.integrity_check_failed` has neither a handle() method nor __invoke().';
-
-        self::assertSame([$refusal], self::problems($this->check()->checks()));
     }
 
     /**

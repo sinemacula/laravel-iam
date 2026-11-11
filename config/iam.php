@@ -239,7 +239,7 @@ return [
     | Any other change that gives a person a principal (a membership created
     | or accepted, a platform principal created) reports it first, inside its
     | own transaction on the storage connection, before it writes the
-    | principal: `Iam::scopeWidenings()->widen($identity, $tenantId, $client)`,
+    | principal: `Iam::scopeWidenings()->widen([$identity], $tenantId, $client)`,
     | with `null` for a platform principal.
     |
     | `groups` maps the groups a provider reports (SSO's `groups` attribute) to
@@ -372,35 +372,10 @@ return [
     | (Gate capture already ships off), and `iam:check` refuses a
     | configuration without any of the three.
     |
-    | `alerts` offers the suite's operational events to the application's
-    | alerting: `audit_write_failed` (audit-log's `AuditWriteFailed`, a record
-    | that could not be written), `audit_capture_failed` (`AuditCaptureFailed`,
-    | an event a mapper could not describe), `integrity_check_failed`
-    | (`IntegrityCheckFailed`, sealing or verification finding the log altered
-    | or unverifiable) and `key_nearing_expiry` (SSO's `KeyNearingExpiry`, a key
-    | or certificate within a configured threshold of its end). Name a listener
-    | class, or a list of them, for each: it is resolved from the container and
-    | handed the event through its `handle()` method, or invoked, synchronously,
-    | in the order named, as the event is dispatched. The package sends nothing
-    | itself, so with none named nobody is told. The values are read at each
-    | dispatch: one that names no listener is refused then, and by `iam:check`.
-    | Audit-log dispatches `AuditWriteFailed` and `AuditCaptureFailed` inside
-    | its write guard, so a record their listener makes is refused; it does not
-    | guard `IntegrityCheckFailed` (from `audit-log:seal` and `audit-log:verify`)
-    | or SSO's `KeyNearingExpiry`, so their listener could record one, into the
-    | very log just found altered or unverifiable for an integrity failure.
-    | Alert by other means (a notification, a log channel) in every case.
-    |
     */
 
     'audit' => [
         'mappers' => env('IAM_AUDIT_MAPPERS', true),
-        'alerts'  => [
-            'audit_write_failed'     => [],
-            'audit_capture_failed'   => [],
-            'integrity_check_failed' => [],
-            'key_nearing_expiry'     => [],
-        ],
     ],
 
     /*

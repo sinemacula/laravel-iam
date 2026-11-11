@@ -135,10 +135,9 @@ Every lifetime is in audit-log's [keys and their lifetimes][audit-keys].
 
 SSO's service provider keys and certificates are generated, published, made current and retired through SSO's key
 service, without downtime, in four steps (see SSO's [keys guide][sso-keys]); `sso.keys.*` sets their size, validity and
-overlap. A key or certificate nearing its end is reported by `sso:keys:expiring`, which `Iam::schedule()` runs, and
-reaches your alerting through `iam.audit.alerts.key_nearing_expiry` (see
-[The audit trail](audit-trail.md#operational-alerts)). Their private keys, like every connection's client secret, are
-stored encrypted under `APP_KEY` by default.
+overlap. A key or certificate nearing its end is reported by `sso:keys:expiring`, which `Iam::schedule()` runs, as
+SSO's `KeyNearingExpiry` event, which you listen to (see [The audit trail](audit-trail.md#operational-alerts)). Their
+private keys, like every connection's client secret, are stored encrypted under `APP_KEY` by default.
 
 ### Rotating `APP_KEY`
 
@@ -192,7 +191,7 @@ use App\Models\Member;
 use SineMacula\Laravel\Iam\Facades\Iam;
 
 $member = Iam::transaction(function () use ($identity, $tenantId, $client): Member {
-    Iam::scopeWidenings()->widen($identity, $tenantId, $client);
+    Iam::scopeWidenings()->widen([$identity], $tenantId, $client);
 
     return Member::create(['user_id' => $identity->getAuthIdentifier(), 'tenant_id' => $tenantId]);
 });

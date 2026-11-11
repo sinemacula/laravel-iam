@@ -324,9 +324,10 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
      * A second pass that throws, here because the tenant's MFA requirement can
      * no longer answer once the change has committed, propagates from the
      * change, which stays durable: the rule is stored as changed, the first
-     * pass's revocation stands, the session through the rule's connection
-     * stands too, and SSO has reported the change once, before the second pass
-     * ran.
+     * pass's revocation stands, and the session through the rule's connection
+     * stands too. `laravel-authentication` runs the second pass as a commit
+     * callback queued before SSO's report of the change, so the report is not
+     * sent.
      *
      * @param  ?string  $level
      * @return void
@@ -334,7 +335,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testASecondPassThatThrowsLeavesTheChangeDurableAndReported(?string $level): void
+    public function testASecondPassThatThrowsLeavesTheChangeDurable(?string $level): void
     {
         self::runAtIsolationLevel($level);
 
@@ -364,8 +365,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         self::assertSame([$this->connectionId], $policy->connectionIds);
         self::assertNotNull($this->stored($password)->getRevokedAt());
         self::assertNull($this->stored($external)->getRevokedAt());
-        Event::assertDispatchedTimes(EnforcementChanged::class, 1);
-        Event::assertDispatched(EnforcementChanged::class, static fn (EnforcementChanged $event): bool => $event->enabled && $event->version === $policy->version);
+        Event::assertNotDispatched(EnforcementChanged::class);
     }
 
     /**

@@ -15,13 +15,11 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
-use SineMacula\Laravel\Authentication\Console\ConfigurationChecks;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -29,8 +27,6 @@ use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
-use SineMacula\Laravel\Iam\Checks\AuthenticationConfigurationCheck;
-use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
@@ -60,19 +56,17 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * records SSO's redemptions keep for one request, the callers queued jobs
- * carried, the grant half of SSO's principal scope, the storage connection's
- * alignment, the seam bindings, this package's checks of SSO's side with SSO's
- * own, the authentication context's keys on `laravel-authorization`'s key
- * catalogue, the storage check's booting and booted callbacks, the audit
- * trail's mappers and codes, the `mfa` and `sso` authentication context
- * contributors, the rendering of `laravel-authorization`'s
- * insufficient-authentication exception as MFA's step-up, the listeners
- * counting outermost commits and releasing the work held for a commit to
- * finish, the listener provisioning SSO's unlinked results, the listeners
- * handing the operational events to the application's alerting, the listeners
- * carrying the caller into each queued job, the worker reset listeners, the
- * publishing tag and the `iam:install` and `iam:check` commands.
+ * records SSO's redemptions keep for one request, the held actor reader
+ * audit-log asks, the grant half of SSO's principal scope, the storage
+ * connection's alignment, the seam bindings, the authentication context's keys
+ * on `laravel-authorization`'s key catalogue, the storage check's booting and
+ * booted callbacks, the audit trail's mappers and codes, the `mfa` and `sso`
+ * authentication context contributors, the rendering of
+ * `laravel-authorization`'s insufficient-authentication exception as MFA's
+ * step-up, the listeners counting outermost commits and releasing the work held
+ * for a commit to finish, the listener provisioning SSO's unlinked results, the
+ * worker reset listeners, the publishing tag and the `iam:install` and
+ * `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -166,8 +160,7 @@ final class IamServiceProvider extends ServiceProvider
      * actor reader audit-log asks and the grant half of SSO's principal scope,
      * write the shared storage connection into every member key that is unset
      * and whose member has registered, apply the binding rule to every seam
-     * binding, register this package's checks of SSO's side with SSO's own and
-     * the declaration of the authentication context's keys on
+     * binding, register the declaration of the authentication context's keys on
      * `laravel-authorization`'s key catalogue, and register the callback that
      * aligns and checks the storage connections once every provider has
      * registered.
@@ -192,7 +185,6 @@ final class IamServiceProvider extends ServiceProvider
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
         $this->registerSeams();
-        SsoCheckRegistration::register($this->app);
         AuthenticationContextKeys::register($this->app);
         $this->registerStorageCheck();
 
@@ -213,13 +205,9 @@ final class IamServiceProvider extends ServiceProvider
      * registration for when every provider has booted, and bootstrap the
      * listeners counting outermost commits and releasing the work held for a
      * commit to finish, the listener provisioning SSO's unlinked results, the
-     * listeners handing the operational events to the application's alerting,
-     * the rendering of `laravel-authorization`'s insufficient-authentication
+     * rendering of `laravel-authorization`'s insufficient-authentication
      * exception as MFA's step-up, the worker reset listeners, the publishing
-     * tag and the console commands, and register this package's checks of
-     * `laravel-authentication`'s side with `authentication:check` as its checks
-     * are resolved (IAM-10.3), which never happens where it offers no
-     * registration point.
+     * tag and the console commands.
      *
      * @return void
      *
@@ -237,13 +225,9 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerContextContributors();
         $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
-        OperationalAlerts::listen();
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();
-        $this->callAfterResolving(ConfigurationChecks::class, static function (ConfigurationChecks $checks): void {
-            $checks->register(AuthenticationConfigurationCheck::class);
-        });
     }
 
     /**

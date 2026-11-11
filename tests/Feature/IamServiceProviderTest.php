@@ -40,8 +40,6 @@ use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
-use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
-use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
@@ -69,7 +67,6 @@ use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
-use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
@@ -1218,20 +1215,6 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertInstanceOf(InstallCommand::class, $commands[InstallCommand::NAME] ?? null);
         self::assertInstanceOf(CheckCommand::class, $commands[CheckCommand::NAME] ?? null);
-    }
-
-    /**
-     * This package's checks of SSO's side are registered with SSO's own, under
-     * `iam`, after every check of SSO's.
-     *
-     * @return void
-     */
-    public function testThePackagesChecksOfSsosSideAreRegisteredWithSsosOwn(): void
-    {
-        self::assertSame(
-            [...SsoServiceProvider::CONFIGURATION_CHECKS, SsoCheckRegistration::SUBJECT => SsoBridgeCheck::class],
-            $this->application()->make(ConfigurationChecks::class)->all(),
-        );
     }
 
     /**

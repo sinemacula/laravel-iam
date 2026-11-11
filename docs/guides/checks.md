@@ -2,7 +2,8 @@
 
 `php artisan iam:check` checks the whole suite's configuration: every member's own check, then this package's. Run it
 on every deploy, after `migrate` and before traffic reaches the new release. It exits `0` only when every check passes;
-a note tells you something worth knowing and never fails the run.
+a note tells you something worth knowing and never fails the run. This package's checks appear only under `iam:check`:
+no member's own command reports them.
 
 Each of this package's checks reads configuration and the container only: never a request, a guard's caller or the
 database. The members' checks, which `iam:check` runs first, read what their own guides say: audit-log's reads the
@@ -12,7 +13,6 @@ connection's or a model's name may appear in it.
 
 - [Reading the output](#reading-the-output)
 - [The members' checks](#the-members-checks)
-- [In laravel-authentication's check](#in-laravel-authentications-check)
 - [storage](#storage)
 - [seams](#seams)
 - [sso](#sso)
@@ -20,7 +20,6 @@ connection's or a model's name may appear in it.
 - [audit](#audit)
 - [senders](#senders)
 - [configuration](#configuration)
-- [platform](#platform)
 - [schedule](#schedule)
 
 ## Reading the output
@@ -61,42 +60,12 @@ that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 
-## In laravel-authentication's check
-
-This package adds its checks of `laravel-authentication`'s side to `authentication:check`, so running that command on
-its own reports them too, after `laravel-authentication`'s own:
-
-- from [storage](#storage), the identity model of each guard;
-- from [seams](#seams), the mandatory seams that are `laravel-authentication`'s contracts (its scope registry,
-  application access, passkey factor gate and the like), and the note of each one the rule kept with your binding;
-- from [context](#context), every namespace;
-- from [configuration](#configuration), the tenant resolver, and the MFA and SSO applications named after each guard.
-
-Each is reported with its subject, as `[iam:<subject>]`, and, when it is about one guard, after that guard's name:
-
-```text
-[api] [iam:configuration] MFA's freshness operations [mfa.add_factor] are not declared for guard [api] under ...
-```
-
-A problem fails `authentication:check`, as it fails `iam:check`, and a note is shown as a warning. `--guard` limits
-what is about a guard to the guards it names; the rest is reported whatever `--guard` says. Fix each as its section
-below says. A check of this package's that cannot run is reported as *The check [...] failed: ...*, naming the check
-and the class of what went wrong; `iam:check` reports the cause.
-
-`iam:check` runs `authentication:check` too, but reports these under `iam` alone, so each problem appears once. The
-members' storage keys, the shared connection, and an MFA or SSO application that names no guard
-`authentication:check` checks are left to `iam:check`.
-
 ## storage
 
 The storage connection is one connection (see [Configuration](configuration.md#storage)). Boot refuses a mismatch,
 but stands aside while `iam:check` runs, so this check can report it. Each message is shown in italics, with what it
 names elided.
 
-- `laravel-authentication`, `laravel-mfa`, `laravel-sso` or `laravel-authorization` has not registered
-  (`MemberNotRegisteredException`):
-  register every member's service provider before the application finishes booting, or let package discovery register
-  them.
 - *... names [...], but iam.storage.connection names [...]* (`StorageConnectionMismatchException`): a member's own
   storage key names another connection, `laravel-authorization`'s `authorization.connection`
   (`AUTHORIZATION_DB_CONNECTION`) included. Unset the member's key, or set it to the same connection.
@@ -144,10 +113,7 @@ is reported once.
 
 ## sso
 
-This package adds a check of SSO's side to SSO's own checks, under `iam`, so SSO runs it at boot, as each worker command
-starts and in `sso:check`, which reports it as `[iam]`. It applies only while SSO is in use (`sso.features.saml2` or
-`sso.features.oidc` on), so it can fail SSO's boot only then. Where your application keeps a check of its own under
-`iam`, or SSO's checks do not run the bridge for another reason, `iam:check` runs the same tests itself, under `[sso]`.
+Applies only while SSO is in use (`sso.features.saml2` or `sso.features.oidc` on).
 
 - *`sso.applications.<name>` is served by SSO, but its guard does not list `external_provider` among
   laravel-authentication's sign-in methods.*: add `external_provider` to the methods of the guard of the same name
@@ -172,8 +138,6 @@ Always applies: the `mfa` namespace is required in every application, the `sso` 
 
 Always applies, whatever `iam.audit.mappers` says, except where noted.
 
-- *laravel-audit-log's provider (...) is not registered, so no member event is recorded: ...*: register audit-log's
-  service provider, or stop package discovery leaving it out.
 - *The audit mappers are not registered with laravel-audit-log; ...*: register this package's provider before the
   application boots, or turn `iam.audit.mappers` off to map the members' events yourself. Only this one follows the
   switch.
@@ -185,10 +149,6 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
   rather than recorded unchecked. `iam:install` writes it.
-- Any value of `iam.audit.alerts` that names no alert, or no listener class, or a listener class with neither `handle()`
-  nor `__invoke()`: name a listener class, or a list of them, for each alert ([Configuration](configuration.md#audit)).
-  The check builds nothing, so a name you bound in the container yourself passes it, and its shape is checked only when
-  its event is dispatched; name the class rather than a binding to have it checked here.
 
 ## senders
 
@@ -242,40 +202,15 @@ A provider attribute beyond SSO's standard mapping (`sso.mapping.custom_attribut
 mapping, which lives in the database, so no check can see it; nor can one see your routes. See
 [An example application](example-application.md).
 
-## platform
-
-The PHP extensions and the Composer plugin SSO needs are in place.
-
-- *The PHP extension ext-... is not loaded.*: install or enable the extension in the PHP that runs the application.
-  The suite needs `bcmath`, `curl`, `dom`, `hash`, `libxml`, `mbstring`, `openssl` and `zlib`.
-- *The Composer plugin simplesamlphp/composer-xmlprovider-installer is not installed.*: require it, as SSO does.
-- *The Composer plugin ... has not registered the XML elements of ...; allow it under `config.allow-plugins` ...*:
-  allow the plugin in your application's `composer.json` and run `composer install` again
-  ([Installation](installation.md)).
-- *The XML element registry of ... cannot be read, ...; install it again.*: reinstall the package named.
-
 ## schedule
 
-Reports notes only, since something no check can see may start a run; the one failure is a schedule that cannot be
-built.
+Reports a note only, since something no check can see may start a run.
 
-- *The application's schedule cannot be built, so no run on it is checked: ...*: fix the cause named, usually a
-  malformed `sso.operations.cadence.*` value, which stops the scheduler too.
-- Note: *`mfa:prune` is not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*
-  (and the same for `authorization:prune`, for `sso:prune` while SSO is in use, and for `audit-log:drain --until-empty` while
-  `audit-log.delivery.mode` is `outbox`): register the scheduled work ([Operations](operations.md)).
-- Note: *SSO's operations schedule runs `sso:prune` only while `sso.operations.cadence.prune` gives a cron expression,
-  ...*: set the cadence, or schedule `sso:prune` yourself.
-- Note: *audit-log schedules its own `audit-log:seal` only while its setting gives a cron expression, ...* (and the
-  same for `audit-log:seal --sweep` and `audit-log:verify`): turn audit-log's own schedule for it on, or schedule the
-  command yourself. See [laravel-audit-log: operations][audit-log-operations].
-- Note: *audit-log schedules its own `audit-log:prune` only while `audit-log.retention.schedule` gives a cron
-  expression, and no event on the schedule runs it, though its retention can delete entries.*: shown only while
-  audit-log's retention can delete entries, so a retention that keeps everything is never noted. Turn
-  `audit-log.retention.schedule` on, or schedule `audit-log:prune` yourself.
-- Note: *audit-log cannot judge whether its retention can delete entries (...), and no event on the schedule runs
-  `audit-log:prune`; ...*: audit-log refused to answer, and the brackets name the class of its cause. Settle
-  `audit-log.retention.*` as audit-log's guide says, or schedule `audit-log:prune` yourself.
+- Note: *Runs [...] are not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*:
+  `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
+  `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
 
-[audit-log-operations]: https://github.com/sinemacula/laravel-audit-log/blob/master/docs/guides/operations.md
+A schedule that cannot be built, usually through a malformed `sso.operations.cadence.*` value, fails the run with its
+cause.
+
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md

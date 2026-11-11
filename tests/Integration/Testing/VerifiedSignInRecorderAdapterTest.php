@@ -23,7 +23,7 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Testing\CallerCompletion;
 use SineMacula\Laravel\Iam\Testing\CallerSignIn;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
-use SineMacula\Laravel\Iam\Testing\LevelEvidence;
+use SineMacula\Laravel\Iam\Testing\FixtureFactors;
 use SineMacula\Laravel\Iam\Testing\VerifiedSession;
 use SineMacula\Laravel\Iam\Testing\VerifiedSignInRecorderAdapter;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
@@ -44,6 +44,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Concerns\InteractsWithMfa;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
+use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
@@ -65,7 +66,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(VerifiedSignInRecorderAdapter::class)]
-#[CoversClass(LevelEvidence::class)]
+#[CoversClass(FixtureFactors::class)]
 #[CoversClass(VerifiedSession::class)]
 #[CoversClass(CallerCompletion::class)]
 #[CoversClass(CallerSignIn::class)]
@@ -351,15 +352,18 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     public function testAFurtherProofThatLeavesTheSignInPendingIsRefusedAndRolledBack(): void
     {
         $person = $this->createPerson();
+        $held   = $this->holdFactor($person, 'totp');
 
-        $this->holdFactor($person, 'totp');
         $this->app?->instance(CombinationPolicy::class, self::firstFactorOnly());
 
         $recorder = $this->recorder();
         $signIn   = $recorder->begin($person, self::GUARD, CarbonImmutable::now());
+        $factor   = $recorder->factorReference($person, self::GUARD, AssuranceLevel::AAL2);
+
+        self::assertSame($held->id, $factor);
 
         try {
-            $recorder->record($person, self::totp($this->bindingOf($person, $signIn)));
+            $recorder->record($person, self::totp($this->bindingOf($person, $signIn), $factor));
 
             self::fail('The further proof was not refused.');
         } catch (\LogicException $exception) {
@@ -370,10 +374,34 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
 
         $this->app?->instance(CombinationPolicy::class, new LeveledCombinationPolicy);
 
-        $recorder->record($person, self::totp($this->bindingOf($person, $signIn)));
+        $recorder->record($person, self::totp($this->bindingOf($person, $signIn), $factor));
 
         self::assertSame(SessionStatus::ACTIVE, $this->boundSession()->getStatus());
         self::assertCount(2, $this->proofsOf($this->boundSession()));
+    }
+
+    /**
+     * A pending sign-in that is gone by the time the further proof arrives
+     * cannot be read back, so the proof is refused.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPendingSignInThatIsGoneIsRefused(): void
+    {
+        $person = $this->createPerson();
+        $held   = $this->holdFactor($person, 'totp');
+
+        $recorder = $this->recorder();
+        $signIn   = $recorder->begin($person, self::GUARD, CarbonImmutable::now());
+
+        $person->sessions()->delete();
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('The pending sign-in on guard [api] could not be read back.');
+
+        $recorder->record($person, self::totp($this->bindingOf($person, $signIn), $held->id));
     }
 
     /**
@@ -390,13 +418,13 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
         $recorder = $this->recorder();
         $binding  = $this->bindingOf($person, $recorder->begin($person, self::GUARD, CarbonImmutable::now()));
 
-        $recorder->record($person, self::proof(ProofKind::FIRST_FACTOR, 'password', new Channel(ChannelKind::PASSWORD), $binding));
+        $recorder->record($person, self::firstFactor('password', new Channel(ChannelKind::PASSWORD), $binding));
 
         self::assertCount(1, $this->proofsOf($this->boundSession()));
 
         $this->expectException(ProofRefusedException::class);
 
-        $recorder->record($person, self::proof(ProofKind::FIRST_FACTOR, 'email', new Channel(ChannelKind::EMAIL, LevelEvidence::EMAIL_ADDRESS), $binding));
+        $recorder->record($person, self::firstFactor('email', new Channel(ChannelKind::EMAIL, 'verified@example.test'), $binding));
     }
 
     /**
@@ -417,11 +445,11 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
         $binding = $this->bindingOf($person, $recorder->begin($person, self::GUARD, CarbonImmutable::now()));
         $refused = 0;
 
-        $recorder->record($person, self::proof(ProofKind::FIRST_FACTOR, 'password', new Channel(ChannelKind::PASSWORD), $binding));
+        $recorder->record($person, self::firstFactor('password', new Channel(ChannelKind::PASSWORD), $binding));
 
-        foreach ([['email', new Channel(ChannelKind::PASSWORD)], ['password', new Channel(ChannelKind::EMAIL, LevelEvidence::EMAIL_ADDRESS)]] as [$method, $channel]) {
+        foreach ([['email', new Channel(ChannelKind::PASSWORD)], ['password', new Channel(ChannelKind::EMAIL, 'verified@example.test')]] as [$method, $channel]) {
             try {
-                $recorder->record($person, self::proof(ProofKind::FIRST_FACTOR, $method, $channel, $binding));
+                $recorder->record($person, self::firstFactor($method, $channel, $binding));
             } catch (ProofRefusedException $exception) {
                 self::assertSame('Only the sign-in\'s own first factor, the password it was started with, is kept.', $exception->getMessage());
 
@@ -430,33 +458,6 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
         }
 
         self::assertSame(2, $refused);
-    }
-
-    /**
-     * A further proof that is no level's evidence MFA's helper makes is
-     * refused, and nothing is recorded.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAProofOfNoLevelsEvidenceIsRefused(): void
-    {
-        $person   = $this->createPerson();
-        $recorder = $this->recorder();
-        $signIn   = $recorder->begin($person, self::GUARD, CarbonImmutable::now());
-        $sms      = new Channel(ChannelKind::SMS, '+447700900000');
-
-        try {
-            $recorder->record($person, self::proof(ProofKind::ADDITIONAL_FACTOR, 'sms', $sms, $this->bindingOf($person, $signIn)));
-
-            self::fail('The proof was not refused.');
-        } catch (ProofRefusedException $exception) {
-            self::assertStringStartsWith('Only the further proof of a level actingAsVerified() makes is recorded', $exception->getMessage());
-        }
-
-        self::assertCount(1, $this->proofsOf($this->boundSession()));
-        self::assertSame(0, $person->authFactors()->count());
     }
 
     /**
@@ -501,26 +502,6 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
         self::assertSame(2, $this->refusedUnbound($recorder, $other, [$this->bindingOf($person, $later), $this->bindingOf($person, $earlier)]));
         self::assertSame(1, $this->refusedUnbound($recorder, $person, [$this->bindingOf($person, $earlier)]));
         self::assertSame(2, $person->sessions()->where('status', SessionStatus::PENDING->value)->count());
-    }
-
-    /**
-     * The evidence of a further proof is a level's only when every part of it
-     * is: its kind, its method, its kind of channel and what it observed.
-     *
-     * @return void
-     */
-    public function testOnlyALevelsWholeEvidenceMatches(): void
-    {
-        $binding = new ProofBinding('person', '1', self::GUARD, 'sign-in', Purpose::SIGN_IN);
-        $totp    = new Channel(ChannelKind::AUTHENTICATOR_APP, 'factor');
-        $email   = new Channel(ChannelKind::EMAIL, LevelEvidence::EMAIL_ADDRESS);
-
-        self::assertEquals(LevelEvidence::of(AssuranceLevel::AAL2), LevelEvidence::matching(self::totp($binding)));
-        self::assertSame('email', LevelEvidence::matching(self::proof(ProofKind::ADDITIONAL_FACTOR, 'email', $email, $binding))?->type);
-        self::assertNull(LevelEvidence::matching(self::proof(ProofKind::FIRST_FACTOR, 'totp', $totp, $binding)));
-        self::assertNull(LevelEvidence::matching(self::proof(ProofKind::ADDITIONAL_FACTOR, 'email', $totp, $binding)));
-        self::assertNull(LevelEvidence::matching(self::proof(ProofKind::ADDITIONAL_FACTOR, 'totp', new Channel(ChannelKind::SMS, '+447700900000'), $binding)));
-        self::assertNull(LevelEvidence::matching(self::proof(ProofKind::ADDITIONAL_FACTOR, 'totp', $totp, $binding, new ObservedProperties(userPresence: true))));
     }
 
     /**
@@ -693,31 +674,29 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A proof made now, bound as given.
+     * A first factor made now, bound as given.
      *
-     * @param  \SineMacula\Laravel\Mfa\Enums\ProofKind  $kind
      * @param  string  $method
-     * @param  ?\SineMacula\Laravel\Mfa\Assurance\Channel  $channel
+     * @param  \SineMacula\Laravel\Mfa\Assurance\Channel  $channel
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
-     * @param  ?\SineMacula\Laravel\Mfa\Assurance\ObservedProperties  $properties
      * @return \SineMacula\Laravel\Mfa\Proofs\Proof
      */
-    private static function proof(ProofKind $kind, string $method, ?Channel $channel, ProofBinding $binding, ?ObservedProperties $properties = null): Proof
+    private static function firstFactor(string $method, Channel $channel, ProofBinding $binding): Proof
     {
-        $reference = $kind === ProofKind::FIRST_FACTOR ? null : 'verified-factor';
-
-        return new Proof($kind, $method, $channel, $reference, $properties ?? ObservedProperties::none(), CarbonImmutable::now(), $binding, 0);
+        return new Proof(ProofKind::FIRST_FACTOR, $method, $channel, null, ObservedProperties::none(), CarbonImmutable::now(), $binding, 0);
     }
 
     /**
-     * An authenticator app's further proof, made now, bound as given.
+     * MFA's AAL2 further proof, made now with the factor (a synthetic one when
+     * none is given), bound as given.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @param  ?string  $factor
      * @return \SineMacula\Laravel\Mfa\Proofs\Proof
      */
-    private static function totp(ProofBinding $binding): Proof
+    private static function totp(ProofBinding $binding, ?string $factor = null): Proof
     {
-        return self::proof(ProofKind::ADDITIONAL_FACTOR, 'totp', new Channel(ChannelKind::AUTHENTICATOR_APP, 'verified-totp-factor'), $binding);
+        return LevelEvidence::furtherProof(AssuranceLevel::AAL2, CarbonImmutable::now(), $binding, 0, $factor);
     }
 
     /**

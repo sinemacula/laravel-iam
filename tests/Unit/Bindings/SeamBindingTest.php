@@ -7,6 +7,8 @@ namespace Tests\Unit\Bindings;
 use Illuminate\Contracts\Config\Repository;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use Tests\Fixtures\Bindings\Adapter;
@@ -66,6 +68,24 @@ final class SeamBindingTest extends TestCase
         self::assertTrue($binding->isMandatory());
         self::assertSame($holdsDefault, $binding->holdsDefault);
         self::assertSame($declare, $binding->declare);
+    }
+
+    /**
+     * A binding over a member's contract asks that member whether it holds its
+     * default, unless it is declared with an answer of its own.
+     *
+     * @return void
+     *
+     * @throws \ReflectionException
+     */
+    public function testABindingOverAMembersContractAsksTheMember(): void
+    {
+        $asked        = new SeamBinding(TenantResolver::class, Adapter::class, []);
+        $holdsDefault = static fn (): bool => true;
+        $answer       = new \ReflectionFunction($asked->holdsDefault ?? self::fail('The member is not asked.'));
+
+        self::assertSame(AuthenticationServiceProvider::class, $answer->getClosureScopeClass()?->getName());
+        self::assertSame($holdsDefault, (new SeamBinding(TenantResolver::class, Adapter::class, [], holdsDefault: $holdsDefault))->holdsDefault);
     }
 
     /**

@@ -132,12 +132,11 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * The credential ids of the identity's registered passkeys, as
-     * `laravel-authentication` holds them on the relying party of each of its
-     * guards of the `jwt` driver whose MFA application offers passkeys, each
-     * listed once.
+     * The identity's passkey credential ids on the application's guard, or none
+     * where it offers no passkeys.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
      * @return list<string>
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -146,21 +145,13 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
-    public function credentialIds(MultiFactorAuthenticatable $identity): array
+    public function credentialIds(MultiFactorAuthenticatable $identity, string $application): array
     {
-        $owner       = $this->sessions->identity($identity);
-        $credentials = [];
-
-        foreach ($this->sessions->sessionGuards() as $guard) {
-
-            if (!PasskeySeams::isOfferedBy($this->config, $guard)) {
-                continue;
-            }
-
-            $credentials = [...$credentials, ...$this->passkeys($guard)->credentialIds($owner)];
+        if (!PasskeySeams::isOfferedBy($this->config, $application)) {
+            return [];
         }
 
-        return array_values(array_unique($credentials));
+        return $this->passkeys($application)->credentialIds($this->sessions->identity($identity));
     }
 
     /**
