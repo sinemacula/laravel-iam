@@ -4,8 +4,8 @@
 
 This note describes how the package records `laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s
 events in `laravel-audit-log` (section 9 of the requirements), and what surrounds that mapping: the registrations made
-while the application boots, the one context contributor that fills a record's gaps from `laravel-authentication`'s
-caller (IAM-9.7), the exclusions from audit-log's own capture that keep a suite event from being recorded twice
+while the application boots, the reader that hands audit-log the caller a `laravel-authentication` guard holds
+(IAM-9.7), the exclusions from audit-log's own capture that keep a suite event from being recorded twice
 (IAM-9.6), the operational events offered to the application's alerting (IAM-9.8), the refusal of a trail read inside a
 change that spans members (IAM-9.9), audit-log's access policy answered from `laravel-authorization`'s grants
 (IAM-6.10) with the catalogue of the members' administrative permissions it reads (IAM-6.9), and the gaps in the
@@ -34,10 +34,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - A provider booted again once the application has booted finds its part registered (`AuditRegistrations::REGISTERED`)
   and registers nothing more; a provider whose first registration comes only then is refused (`\LogicException`),
   failing its boot, rather than leave an application that seems to record the members' events and records none.
-- It registers `Audit\CallerContextContributor` with `AuditLog::contribute()` whatever `iam.audit.mappers` says: the
-  contributor fills only gaps, of any record, the application's own and those of mappers the application binds itself
-  included. Audit-log runs its own contributors first (the origin, the request, the actor), then this one, then any an
-  application registers from a later provider's `boot()`.
 - While `iam.audit.mappers` is on (read leniently by `Audit\AuditSettings`: only `false`, `0`, `off` or `no` turns it
   off), it maps each member's marker interface to one mapper (`AuditRegistrations::MAPPERS`): `AuthenticationEvent` to
   `Audit\Mappers\AuthenticationEventMapper`, `MfaEvent` to `MfaEventMapper`, `SsoEvent` to `SsoEventMapper`. No
@@ -211,66 +207,16 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 
 ### The caller's context (IAM-9.7)
 
-- `CallerContextContributor` is the one place an ambient read is the contract: audit-log hands it a `Contribution` at
-  record time, and it reads only what a package guard already holds. It never calls `Auth::caller()` (which reads the
-  request and may prove, and so revoke, a refresh token), never asks for the guard's authentication context (which
-  reads proofs and runs contributors), and reads no request, cookie or header.
-- It walks the guards audit-log walks for its own actor: `audit-log.actor.guards`, in order, or the default guard. A
-  guard name `auth.guards` does not configure is no caller. The first guard that holds a user decides: it is asked
-  `hasUser()` alone, which says only whether an identity is bound; when it is no package guard (`AbstractGuard`) it is
-  audit-log's to read, or a `ContextualGuard` whose accessors promise nothing about resolving, and nothing is filled, so
-  a later guard, which could name another person, is never read. Only once an identity is bound are a package guard's
-  identity, principal, session and active tenant asked, which then answer what is bound without resolving anything
-  (`AbstractGuard::user()` returns the bound identity first); a tenant the guard cannot load
-  (`TenantUnavailableException`) is left open.
-- Audit-log's actor contributor reads a user only from a guard using Laravel's `GuardHelpers`, which
-  `laravel-authentication`'s guards do not, so on a `jwt` or `api_key` guard it leaves the actor open, and this
-  contributor fills it.
-- What it fills follows who the record is about. An open actor is the caller's: the actor, the guard, the principal,
-  the tenant and the session are filled. An actor already the caller (a mapper's) gets the rest. An actor that is
-  someone else, or explicitly no one (`by(null)`, as a mapper sets it for a failed sign-in or a sweep), gets nothing.
-  Every filler fills only a field the record has not got, so an explicit value is never replaced.
-- The caller is snapshotted as `laravel-authentication` snapshots it for its own events (its `EventContext`), and its
-  references are made as the mappers make theirs (`Audit\References`): each type read through the application's morph
-  map, and the tenant named by its tenant identifier under `References::TENANT_TYPE`, so the records a mapper
-  describes and the ones this contributor fills name the same people. A caller audit-log cannot refer to (a type or
-  identifier beyond its 191 characters) is no caller, and a guard name or session reference it cannot store is left
-  open: audit-log loses a record whose contributor throws, and a gap is better than no record.
-- In a queued job no guard holds the dispatcher's caller: the worker reset forgets every package guard's binding
-  before each job (IAM-11.3), so a guard holding a caller there holds one the job bound itself. Audit-log carries no
-  actor of a package guard's into the job either: its `CarryContextIntoJobs` takes the actor from its ambient actor,
-  which reads a user only through `GuardHelpers`, and finds none on a `jwt` or `api_key` guard. So this package
-  carries the caller itself (`Audit\CarryCallerIntoJobs`). As a job's payload is made (`ContextDehydrating`), the
-  caller a guard holds (`Audit\HeldCaller`, the same read the contributor makes), or else, inside a job, the caller
-  that job carried, so a chain of jobs keeps naming who started it, is carried as scalars under one hidden Context key
-  (`Audit\CallerSnapshot::KEY`: the guard, the identity's and the principal's types and identifiers, the tenant
-  identifier and the session identifier, never a secret), on the copy of Context the payload is made from; with none,
-  the key is dropped, so a caller a sync job left in Context is not sent on, and guards that cannot be read (a driver
-  that cannot be built) carry none rather than stop the dispatch, since audit-log's own carrying walks the same guards
-  and reports the failure. It sits beside audit-log's envelope, whatever order the two listeners run in: audit-log
-  carries an actor only from a guard this never reads.
-- As the job starts (`JobProcessing`, once Laravel has hydrated Context from the payload) it enters a frame of
-  `Audit\JobCallers` with the caller it carried, read back without trusting the payload (a missing, partial or
-  malformed envelope is no caller); it leaves it as it ends (`JobProcessed`, `JobFailed`, `JobExceptionOccurred`), with
-  any frame inside it. The frame is left from a listener registered once the application has booted, after every
-  listener any provider's `boot()` adds, as audit-log leaves its own job frame: a record an application makes of a
-  job's end, its failure or its retry is still inside both frames, with the job's origin and the caller it carried
-  alike. While no guard holds a caller, the contributor fills from the innermost job's carried caller, under the same
-  rules as a guard's, so audit-log's carried actor, when it is someone else, keeps the record. Outside a job none is
-  read, so a request or command never takes a caller a sync job left in Context.
-- `Audit\JobCallers` is frame state, as audit-log's execution frames are, not a unit of work's request state: it is
-  scoped under its own class, outside the binding rule's `iam.scoped:` prefix, so the queue worker and Octane forget
-  it at their own boundaries, while `Iam::resetWorkerState()`, which a long-lived loop calls between its units of
-  work, even inside a job, keeps it, as it keeps audit-log's job frame, and the job's later records and the jobs it
-  dispatches still name the caller it carried (`long-running-processes.md`).
-- The credential IAM-9.7 lists is the mappers' alone (`usingCredential()`): audit-log offers a contributor no
-  credential filler, and the guard exposes no credential's id.
-- Decision this note records, beyond the plan's: the contributor is the one place an ambient read is the contract, and
-  the one-core-method rule bounds it: it reads only `laravel-authentication`'s already-resolved caller, never a request
-  and never anything that authenticates, and in a job only what the job's own payload carried. The carrying is this
-  package's rather than a wait for audit-log, since every record a job leaves to a suite caller would otherwise name no
-  one; audit-log reading a guard that hands its held identity would let its own carried actor name the caller, and is
-  listed among the gaps below.
+- `Audit\AuthenticationActorReader` is bound as audit-log's `HeldActorReader`. Audit-log's own guard walk asks it about
+  the first guard holding a user, which on a `jwt` or `api_key` guard audit-log cannot read through `GuardHelpers`.
+- It reads only what an `AbstractGuard` has bound (identity, principal, active tenant, session), snapshotted through
+  `laravel-authentication`'s `EventContext` and referred to as the mappers refer (`Audit\References`). It returns
+  `null` for any other guard or one holding no one, and leaves out a tenant the guard cannot load. It never resolves a
+  request, calls `Auth::caller()` or authenticates.
+- Audit-log fills the record and carries the actor, principal, tenant and session into queued jobs: an open actor gets
+  all of them and the guard, the same actor set by a mapper gets the principal, tenant and session, and anyone else
+  gets nothing.
+- The credential IAM-9.7 lists is the mappers' alone (`usingCredential()`).
 
 ### No double records (IAM-9.6)
 
@@ -484,8 +430,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `authentication.external_result_redeemed`, correlated with SSO's halves and naming the session: one sign-in, each
   half recorded once.
 - A bearer request's guard holds the caller, and the application records `AuditLog::record('orders.shipped')`:
-  audit-log's actor contributor finds no actor it can read, and this package's contributor fills the actor, the guard,
-  the principal and the session from the guard.
+  audit-log reads the guard through this package's reader and fills the actor, the guard, the principal, the tenant and
+  the session.
 - An integrity check fails: audit-log dispatches `IntegrityCheckFailed`, and the listener named in
   `iam.audit.alerts.integrity_check_failed` pages the operator.
 - A role created, assigned to two people and deleted is `authorization.role_created`, two
@@ -527,14 +473,13 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - Audit-log registered only from a later provider's `boot()` is registered with once the application has booted,
   before it freezes; audit-log never registered refuses the boot, naming its provider, except while a configuration
   command runs.
-- A job dispatched by a caller on a `jwt` or `api_key` guard carries the caller in its payload, so a record it leaves to
-  the caller (SSO's queued metadata refresh, a queued listener revoking sessions) names who dispatched it; a guest's
-  job carries none, and its records name no one.
+- A job dispatched by a caller on a `jwt` or `api_key` guard carries audit-log's actor, principal, tenant and session,
+  so a record it leaves to the caller names who dispatched it; a guest's job carries none.
 - Audit-log names each record with a UUIDv7 of the time the record says it occurred, which resets the process's one
   monotonic UUIDv7 state to that time, an earlier one included; a later id another member makes in the same
   millisecond can then sort before one it made just before. `laravel-authentication` orders proofs of one second by
   id, so the test suite starts each test from the present (`Tests\TestCase::setUp()`); the gap is audit-log's.
-- A request carrying a bearer token the guard has not read yet fills nothing: the contributor never resolves it.
+- A request carrying a bearer token the guard has not read yet fills nothing: the reader never resolves it.
 - A record whose actor is set explicitly to no one keeps no caller's principal, tenant or session.
 - A denial made inside a transaction on the storage connection that rolls back is recorded once, after the rollback;
   one inside a transaction that commits, once, after the commit.
@@ -564,12 +509,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
     a transaction to end whichever way it ends (`afterCommit` drops a record on rollback); either would let a refusal
     reported inside a transaction be recorded once it has ended without `DeferredRefusals`.
   - Audit-log's `Contribution` has no credential filler, so the credential IAM-9.7 lists comes from the mappers alone
-    (`usingCredential()`); a `fillCredential()` with `usingCredential()`'s rule would let the contributor fill it.
-  - Audit-log's `CachedUser` reads only a guard using Laravel's `GuardHelpers`, which `laravel-authentication`'s guards
-    do not, so its actor contributor, and its check of a user left over in a job, cannot read a `jwt` or `api_key`
-    guard, and its `CarryContextIntoJobs` carries no actor into a job such a caller dispatches; a small contract a
-    guard could implement to hand its held user would remove the contributor's reason to fill the actor, and this
-    package's reason to carry the caller into jobs itself.
+    (`usingCredential()`); a `fillCredential()` with `usingCredential()`'s rule would let audit-log fill it.
+  - Audit-log's check of a user left over on a guard in a job reads only a guard using Laravel's `GuardHelpers`, so
+    this package still resets `laravel-authentication`'s guards before each job (IAM-11.3).
   - MFA's `EnrollmentAbandoned` names neither why the enrolment was abandoned (replaced, cancelled, an operator's reset,
     its confirmation attempts run out) nor the operator of a reset, so the mapper leaves its actor to the contributors;
     a cause and the reset's `Actor` on the event would let a reset name its operator from the event and the attempt
@@ -583,11 +525,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
     capture, as IAM-9.6 asks, nothing records them; an `AuthenticationEvent` for an API key caller's sign-out (and
     sign-in) would let the mapper record it as `authentication.signed_out` (and `authentication.signed_in`).
   - `laravel-authentication`'s `ContextualGuard` exposes no bound credential's id, does not say that `identity()`,
-    `principal()`, `session()`, `scopes()` and `tenant()` resolve nothing once `hasUser()` is true (the contributor
-    therefore reads only a package guard, `AbstractGuard`, whose `user()` returns early, and no other `ContextualGuard`;
-    a bound-only snapshot of the caller would let it read any), and `AuthManager::resolvedGuard()`, which gives a guard
-    without building one, is `@internal`, so the contributor builds the guards audit-log's actor contributor already
-    builds.
+    `principal()`, `session()`, `scopes()` and `tenant()` resolve nothing once `hasUser()` is true, so the reader reads
+    only a package guard, `AbstractGuard`, whose `user()` returns early; a bound-only snapshot of the caller would let
+    it read any `ContextualGuard`.
   - `laravel-authorization` dispatches `usedBreakGlass` false on every decision until break-glass grants arrive
     (BL-70), so `authorization.break_glass_used` is defined and mapped but never recorded yet; and it dispatches
     `DecisionEvaluated` for every check, allows included, until configurable firing arrives (BL-72), so the mapper
@@ -618,10 +558,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `committed()`, `settle()`; `src/IamServiceProvider.php`: `registerRedemptionRecords()`.
 - `src/Audit/Correlation.php`: `ssoSignIn()`, `mfaChallenge()`, `authenticationChallenge()`, `session()`,
   `authorizationOperation()`, `first()`, `MAX_BYTES`; `src/Audit/References.php`: `type()`.
-- `src/Audit/CallerContextContributor.php`: `contribute()`; `src/Audit/HeldCaller.php`: `current()`;
-  `src/Audit/References.php`: `of()`, `tenant()`, `TENANT_TYPE`.
-- `src/Audit/CarryCallerIntoJobs.php`: `listen()`; `src/Audit/JobCallers.php`;
-  `src/Audit/CallerSnapshot.php`: `of()`, `carriedIn()`, `carryInto()`, `forgetIn()`, `KEY`;
+- `src/Audit/AuthenticationActorReader.php`: `read()`; `src/Audit/References.php`: `of()`, `tenant()`, `TENANT_TYPE`;
   `src/IamServiceProvider.php`: `register()`.
 - `src/Audit/CaptureExclusions.php`: `guards()`, `unexcludedGuards()`, `exceptGuards()`, `isGateCaptureOff()`,
   `holds()`, `DRIVERS`, `EXCEPT_GUARDS_KEY`, `GATE_KEY`.
@@ -699,28 +636,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testATransactionOnAnotherConnectionHoldsNothing`, `testTheTransactionATestIsWrappedInHoldsNothing`,
   `testWithNoTransactionsManagerNothingIsHeld`,
   `testARecordedRefusalIsHeldNoMore`
-- `tests/Feature/Audit/CallerContextContributorTest.php` `testAnOpenRecordIsFilledFromTheCaller`,
-  `testTheReferencesFollowTheMorphMap`, `testNothingTheRecordHoldsIsReplaced`, `testARecordAboutTheCallerGetsTheRest`,
-  `testARecordAboutNoOneGetsNothing`, `testARecordAboutSomeoneElseGetsNothing`, `testAGuestFillsNothing`,
-  `testItNeverTriggersAuthentication`, `testTheConfiguredGuardsAreWalkedInOrder`,
-  `testTheWalkStopsAtAForeignGuardHoldingAUser`, `testAContextualGuardThatIsNoPackageGuardIsNeverRead`,
-  `testAGuardNotConfiguredIsNoCaller`,
-  `testADefaultThatIsNoNameIsNoCaller`, `testTheTenantIsNamedByItsIdentifierAndLeftOpenWhenUnavailable`,
-  `testWhatCannotBeRecordedIsLeftOpen`, `testItFillsARecordThroughAuditLog`, `testItIsRegisteredWithTheMappersOff`
-- `tests/Feature/Audit/CarryCallerIntoJobsTest.php`, each job run from its payload as a queue worker runs it,
-  `testACallerRecordInAQueuedJobIsTheDispatchingCallers`, `testAJobDispatchedFromAJobCarriesTheCallerOn`,
-  `testAGuestsJobCarriesNoCaller`, `testTheCarriedCallerEndsWithItsJob`, `testACallerLeftInContextIsNotSentOn`,
-  `testThePayloadCarriesTheCallerBesideAuditLogsEnvelope`, `testAGuardThatCannotBeBuiltStillQueuesTheJob`,
-  `testACallerTheJobBindsItselfBeatsTheCarriedOne`,
-  `testAJobsFrameIsLeftHoweverItEnds`, `testARecordOfAQueuedJobsEndIsTheDispatchingCallers`,
-  `testARecordOfAJobsEndIsTheCarriedCallersHoweverItEnds`, `testAResetInsideAJobKeepsTheCarriedCaller`,
-  `testTheJobCallersAreScopedAndKeptByTheExplicitReset`
-- `tests/Unit/Audit/JobCallersTest.php` `testOutsideAJobThereIsNoCaller`, `testTheInnermostJobsCallerIsInForce`,
-  `testLeavingAJobLeavesTheJobsInsideIt`, `testTheInnermostFrameOfAJobIsLeft`, `testLeavingAgainChangesNothing`
-- `tests/Unit/Audit/CallerSnapshotTest.php` `testTheCallerIsTheEventContexts`,
-  `testAContextNamingNoGuardOrIdentityIsNoCaller`, `testACarriedCallerIsReadBackExactly`,
-  `testAContextCarryingNoCallerCarriesNone`, `testAMalformedEnvelopeIsNoCaller`, `testTheOptionalPartsMayBeLeftOut`,
-  `testForgettingTheCallerLeavesTheRest`
+- `tests/Feature/Audit/AuthenticationActorReaderTest.php` `testARequestsRecordNamesTheCaller`,
+  `testAQueuedJobRecordsTheDispatchingCaller`, `testAMappersActorForTheCallerGainsTheRest`,
+  `testAGuestsRecordNamesNoOne`, `testAGuardHoldingNoOneIsNeverResolved`, `testATenantThatCannotBeLoadedIsLeftOut`
 - `tests/Unit/Audit/CaptureExclusionsTest.php` `testEveryJwtAndApiKeyGuardIsFoundInOrder`,
   `testNoPackageGuardLeavesNothingToExclude`, `testWithNothingExcludedEveryPackageGuardIsMissing`,
   `testTheExclusionsKeepTheApplicationsAndAddTheMissing`, `testEveryGuardExcludedLeavesNoneMissing`,
@@ -782,9 +700,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - Audit-log ships a new code that means what a suite event means: the mapper reuses it, and this package's code goes.
 - MFA or SSO gives its tenant a type, or audit-log offers a mapper an explicit guard, session or client: `References`
   and `Snapshot` follow.
-- Audit-log adds a credential filler to `Contribution`, or a way to read a guard's user that `laravel-authentication`'s
-  guards satisfy: the contributor's credential gap, or its reason to exist for the actor, changes, and with the latter
-  `CarryCallerIntoJobs` may leave the actor to audit-log's own carried envelope.
+- Audit-log lets a `HeldActor` carry a credential: the reader fills it from the guard, and the mappers' gap closes.
 - `laravel-authentication` adds a driver whose guards dispatch Laravel's authentication events: `DRIVERS` gains it.
 - `laravel-authentication` reports an `attempt()` or `login()` sign-in with an event of its own: the mapper records it
   as `authentication.signed_in`, and `testAnAttemptsSignInIsRecordedOnlyByAuditLogsCapture` expects one record either

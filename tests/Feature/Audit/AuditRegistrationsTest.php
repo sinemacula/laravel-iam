@@ -16,7 +16,6 @@ use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\AuditLog\Capture\Enums\CapturedActivity;
 use SineMacula\Laravel\AuditLog\Capture\MapperRegistry;
 use SineMacula\Laravel\AuditLog\Contracts\AuditLogEvent;
-use SineMacula\Laravel\AuditLog\Contributors\ContributorRegistry;
 use SineMacula\Laravel\AuditLog\Definitions\EventCatalogue;
 use SineMacula\Laravel\AuditLog\Events\AuditCaptureFailed;
 use SineMacula\Laravel\AuditLog\Facades\AuditLog;
@@ -31,7 +30,6 @@ use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
 use SineMacula\Laravel\Authorization\Events\Identity\RoleAssigned;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
-use SineMacula\Laravel\Iam\Audit\CallerContextContributor;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper;
@@ -255,7 +253,6 @@ final class AuditRegistrationsTest extends TestCase
         self::assertTrue($this->catalogue()->isFrozen());
         self::assertTrue($this->registry()->hasMappings());
         self::assertSame(1, $this->captureListeners());
-        self::assertContains(CallerContextContributor::class, $this->contributors());
 
         $fake = AuditLog::fake();
 
@@ -403,16 +400,6 @@ final class AuditRegistrationsTest extends TestCase
         $listeners = $wildcards['*'] ?? [];
 
         return count(array_filter($listeners, static fn (mixed $listener): bool => $listener === CaptureMappedEvent::class));
-    }
-
-    /**
-     * The contributors audit-log's registry holds.
-     *
-     * @return list<class-string<\SineMacula\Laravel\AuditLog\Contracts\ContextContributor>>
-     */
-    private function contributors(): array
-    {
-        return $this->application()->make(ContributorRegistry::class)->classes();
     }
 
     /**

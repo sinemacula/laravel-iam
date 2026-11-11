@@ -728,11 +728,10 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'the worker reset keeps the caller a queued job carried' => [
+        yield 'the worker reset keeps the actor a queued job carried' => [
             'docs/guides/operations.md',
             [
-                'audit-log\'s execution frames and the caller a queued job carried (`Iam\Audit\JobCallers`)',
-                'a reset called by hand inside a job keeps it',
+                'audit-log\'s execution frames, so a reset called by hand inside a job keeps the actor the job carried',
                 'this package\'s own scoped adapters and records (those scoped under the `iam.scoped:` prefix)',
             ],
             [],

@@ -101,7 +101,6 @@ final class BindingsGuideTest extends TestCase
         '`Iam\Tenancy\Contracts\GrantScope`',
         'The `sso` context namespace',
         'SSO\'s `iam` check',
-        '`Iam\Audit\CallerContextContributor`, audit-log\'s context contributor',
     ];
 
     /** @var string How the table of other bindings names a context namespace the package registers with `laravel-authentication`. */
@@ -307,7 +306,7 @@ final class BindingsGuideTest extends TestCase
     public function testAnOtherBindingSilentOnReplacingItIsReported(): void
     {
         $guide = self::guide();
-        $row   = self::rowOf($guide, 'Iam\Audit\JobCallers');
+        $row   = self::rowOf($guide, 'AuditLog\Contracts\HeldActorReader');
         $kept  = self::rowOf($guide, 'Iam\Tenancy\Contracts\GrantScope');
         $cells = self::cells($kept);
 
@@ -317,7 +316,7 @@ final class BindingsGuideTest extends TestCase
         $unwarned = str_replace($kept, '| ' . implode(' | ', $cells) . ' |', $guide);
         $headless = (string) preg_replace('/^\| Binding (.*)\| Replacing it\s*\|$/m', '| Binding $1|', $guide);
 
-        self::assertSame(['`Iam\Audit\JobCallers` does not say whether replacing it is safe.'], self::otherBindingProblems($silent));
+        self::assertSame(['`AuditLog\Contracts\HeldActorReader` does not say whether replacing it is safe.'], self::otherBindingProblems($silent));
         self::assertSame(['`Iam\Tenancy\Contracts\GrantScope` is kept when replaced, but does not say what replacing it risks.'], self::otherBindingProblems($unwarned));
         self::assertSame(['The table of other bindings has no `Replacing it` column.'], self::otherBindingProblems($headless));
         self::assertSame(['The guide has no table of other bindings.'], self::otherBindingProblems('# Bindings'));
@@ -343,7 +342,7 @@ final class BindingsGuideTest extends TestCase
 
         self::assertArrayHasKey('Iam\Bindings\BindingOutcome', $made);
         self::assertArrayHasKey('iam.audit.registered', $made);
-        self::assertArrayHasKey('Iam\Audit\CallerContextContributor', $made);
+        self::assertArrayHasKey('AuditLog\Contracts\HeldActorReader', $made);
         self::assertArrayHasKey(sprintf(self::CONTEXT_NAMESPACE, 'sso'), $made);
         self::assertArrayHasKey(sprintf(self::SSO_CHECK, 'iam'), $made);
         self::assertSame([], self::undocumented(self::guide(), $made));
@@ -360,7 +359,7 @@ final class BindingsGuideTest extends TestCase
         $made = [
             'Iam\Bindings\BindingOutcome'        => ['`Iam\Bindings\BindingOutcome`'],
             'iam.audit.registered'               => ['`iam.audit.registered`', '`\'iam.audit.registered\'`'],
-            'Iam\Audit\CallerContextContributor' => ['`Iam\Audit\CallerContextContributor`'],
+            'AuditLog\Contracts\HeldActorReader' => ['`AuditLog\Contracts\HeldActorReader`'],
         ];
 
         $guide = self::withoutRow(self::guide(), 'Iam\Bindings\BindingOutcome');

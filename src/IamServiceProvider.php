@@ -14,13 +14,13 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Console\ConfigurationChecks;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
-use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
+use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
-use SineMacula\Laravel\Iam\Audit\JobCallers;
 use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
@@ -162,12 +162,12 @@ final class IamServiceProvider extends ServiceProvider
     private bool $authorizationOn = false;
 
     /**
-     * Register the configuration, the manager, the request's records, the
-     * frames of the queued jobs running and the grant half of SSO's principal
-     * scope, write the shared storage connection into every member key that is
-     * unset and whose member has registered, apply the binding rule to every
-     * seam binding, register this package's checks of SSO's side with SSO's own
-     * and the declaration of the authentication context's keys on
+     * Register the configuration, the manager, the request's records, the held
+     * actor reader audit-log asks and the grant half of SSO's principal scope,
+     * write the shared storage connection into every member key that is unset
+     * and whose member has registered, apply the binding rule to every seam
+     * binding, register this package's checks of SSO's side with SSO's own and
+     * the declaration of the authentication context's keys on
      * `laravel-authorization`'s key catalogue, and register the callback that
      * aligns and checks the storage connections once every provider has
      * registered.
@@ -187,12 +187,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerFactorCodeCallers();
         $this->registerRedemptionRecords();
 
-        // The frames of the queued jobs running are frame state, as audit-log's
-        // own job frames are: scoped, so the queue worker and Octane forget
-        // them between jobs and requests, but outside this package's key for
-        // scoped adapters, so the explicit reset a job calls between its own
-        // units of work keeps the caller it carried (IAM-9.7)
-        $this->app->scoped(JobCallers::class, static fn (): JobCallers => new JobCallers);
+        $this->app->singleton(HeldActorReader::class, AuthenticationActorReader::class);
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
@@ -219,10 +214,9 @@ final class IamServiceProvider extends ServiceProvider
      * listeners counting outermost commits and releasing the work held for a
      * commit to finish, the listener provisioning SSO's unlinked results, the
      * listeners handing the operational events to the application's alerting,
-     * the listeners carrying the caller into each queued job, the rendering of
-     * `laravel-authorization`'s insufficient-authentication exception as MFA's
-     * step-up, the worker reset listeners, the publishing tag and the console
-     * commands, and register this package's checks of
+     * the rendering of `laravel-authorization`'s insufficient-authentication
+     * exception as MFA's step-up, the worker reset listeners, the publishing
+     * tag and the console commands, and register this package's checks of
      * `laravel-authentication`'s side with `authentication:check` as its checks
      * are resolved (IAM-10.3), which never happens where it offers no
      * registration point.
@@ -244,7 +238,6 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
         OperationalAlerts::listen();
-        CarryCallerIntoJobs::listen($this->app);
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();

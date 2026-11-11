@@ -2,7 +2,7 @@
 
 `laravel-audit-log` records security-relevant activity and decides how it is stored, sealed, kept and read. This
 package describes the other members' events to it: one mapper per member, a definition for every code they record, a
-contributor that fills a record's gaps from the caller, and the settings that keep anything from being recorded twice.
+reader that hands audit-log the caller a guard holds, and the settings that keep anything from being recorded twice.
 It records nothing of its own, and enforces nothing through events.
 
 How audit-log stores, reads and keeps records is in its guides: [events][audit-events],
@@ -126,9 +126,10 @@ the session.
 - A record of what a person did for themselves (a sign-in, a verification) names them as the actor.
 - A refusal, whose author was never proven, and what a member did by itself (a lockout applied, a key nearing expiry)
   name explicitly no one.
-- What the event does not say who did (a revocation, a passkey removed) is left to the caller: the package's context
-  contributor fills the actor, guard, principal, tenant and session from what a `jwt` or `api_key` guard already holds,
-  never authenticating anything to find out.
+- What the event does not say who did (a revocation, a passkey removed) is left to the caller: the package binds
+  audit-log's `HeldActorReader`, so audit-log fills the actor, guard, principal, tenant and session from what a `jwt` or
+  `api_key` guard already holds, never authenticating anything to find out. A record a mapper already gave that actor
+  gains the principal, tenant and session; a record about someone else gains nothing.
 - An operator the event names (MFA's actor, SSO's acting identity) is the actor.
 - A `laravel-authorization` change is the call's: the identity behind the acting principal, as that principal; the
   reference a trusted console command names; or explicitly no one for system work (a grant the pruner found expired,
@@ -136,8 +137,8 @@ the session.
   about, and a preview the previewer's, about the principal previewed.
 
 Your own records get the same: `AuditLog::record('orders.shipped')`, its code defined as [Codes](#codes) shows, on a
-bearer request names the caller the guard holds. A queued job carries the caller who dispatched it, so the records it
-leaves to the caller name that person.
+bearer request names the caller the guard holds. Audit-log carries that actor, principal, tenant and session into the
+queued jobs the request dispatches, so the records they leave to the caller name that person.
 
 ## Refusals inside a transaction
 

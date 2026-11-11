@@ -24,6 +24,7 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use Orchestra\Testbench\Foundation\Env;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
@@ -32,6 +33,7 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
+use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -260,6 +262,19 @@ final class IamServiceProviderTest extends TestCase
         self::assertInstanceOf(IamManager::class, $manager);
         self::assertSame($manager, $app->make('iam'));
         self::assertSame($manager, $app->make(IamManager::class));
+    }
+
+    /**
+     * Audit-log reads `laravel-authentication`'s guards through this package's
+     * reader.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testAuditLogReadsTheGuardsThroughTheReader(): void
+    {
+        self::assertInstanceOf(AuthenticationActorReader::class, $this->application()->make(HeldActorReader::class));
     }
 
     /**
