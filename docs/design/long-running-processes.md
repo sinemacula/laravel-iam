@@ -45,27 +45,22 @@ process calls it.
   - The members' scoped request state is forgotten: the scoped bindings `laravel-authentication` (`Rehashing`, and the
     `KeptSessions`, `RequiredWork` and `WatchedSessions` that hold a unit of work's kept sessions, the work due at its
     commit, such as a sign-in's admission recheck, and the sessions checked at that commit), `laravel-sso` (its scoped
-    stores, resolvers and fetcher, and the `DriverScope` that tells its protocol manager a scope has ended) and
-    `laravel-authorization` keep request state in, listed in `WorkerReset::SCOPED_STATE`. Authorization is installed
-    and active from M1, binding its request state with `scoped()`: its `ResolvedTenant` holder, `ResolutionCache`,
-    `LastDecisionStore`, the `DecisionMemory` that counts the generations of what a request remembers, `PolicyEvaluator`,
-    `SessionScopes`, `CheckContextFactory`, the `DeclaredAbilities` its Gate
-    hook answers, the `SchemaInspector` that reads, once a request or job, the tables and connections its
-    `whereAuthorized()` query scope reads, the `Previewing` that holds whether a preview is being evaluated and the
-    subjects its previews are about, and its `authorization` manager, and
-    every default behind its contracts (its subject resolver, policy store and policy resolver, its tenant tree, its
-    check contexts among them) under its own `authorization.default:` keys, which `WorkerReset::isSuiteState()` finds
-    by that prefix, so a default authorization adds is forgotten with the rest (the contracts themselves resolve
-    through those keys with a plain `bind()`, so an application's own binding of a contract is never scoped, and is
-    kept). `laravel-audit-log`'s scoped execution frames, request identity and capture state are left out on purpose,
-    as below. `tests/Feature/Workers/WorkerResetTest.php` compares the reset against every scoped binding the
-    installed members make, so a member's next scoped binding cannot be missed.
-    Forgetting them needs no authorization API; without it a long-running command that resets between tenants would
-    keep the first tenant's `ResolvedTenant`, decision and resolutions, and an
-    Octane worker would clone what its boot resolved into its first request. This package's scoped adapters are never
-    listed there: the binding rule scopes each under its own key, `BindingRule::SCOPED_PREFIX` (`iam.scoped:`) followed
-    by the seam, and takes the seam itself off the container's scoped list (see `binding-precedence.md`), so
-    `WorkerReset::isSuiteState()` finds them by that prefix and the list never changes for them; listing the seam in
+    stores, resolvers and fetcher, and the `DriverScope` that tells its protocol manager a scope has ended) keep
+    request state in, listed in `WorkerReset::SCOPED_STATE`, and every scoped instance `laravel-authorization` holds
+    under its own names, which it forgets itself through its published `Support\RequestState::forget()`: its class
+    names, its `authorization` manager and every `authorization.` key, the scoped defaults behind its contracts under
+    `authorization.default:` included, so whatever it scopes later is forgotten with the rest and this package keeps no
+    copy of its list (it never touches Laravel's or another package's scoped state, nor its own post-boot state). The
+    contracts themselves resolve through those keys with a plain `bind()`, so an application's own binding of a
+    contract is never scoped, and is kept. `laravel-audit-log`'s scoped execution frames, request identity and
+    capture state are left out on purpose, as below. `tests/Feature/Workers/WorkerResetTest.php` compares the reset
+    against every scoped binding the installed members make, so a member's next scoped binding cannot be missed.
+    Without it a long-running command that resets between tenants would keep the first tenant's `ResolvedTenant`,
+    decision and resolutions, and an Octane worker would clone what its boot resolved into its first request. This
+    package's scoped adapters are never listed there: the binding rule scopes each under its own key,
+    `BindingRule::SCOPED_PREFIX` (`iam.scoped:`) followed by the seam, and takes the seam itself off the container's
+    scoped list (see `binding-precedence.md`), so `WorkerReset::isSuiteState()` finds them by that prefix and the list
+    never changes for them; listing the seam in
     `SCOPED_STATE` would do nothing. Each is forgotten with `forgetInstance()`, so the next unit of work builds its own,
     but only while the container still keeps it as scoped, as Laravel's own `forgetScopedInstances()` does. An instance
     or a singleton the application bound over one of those seams before the member registered, which the member's
@@ -181,7 +176,7 @@ process calls it.
 
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `forgetCallers()`,
   `flushSession()`, `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`,
-  `AUTHORIZATION_DEFAULT`, `CALLER_MEMO`.
+  `CALLER_MEMO`.
 - `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
   scoped adapters by, `bindScoped()` and `unscope()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
@@ -200,7 +195,7 @@ process calls it.
   `testResetKeepsASingletonOverAMembersScopedSeam`, `testResetFlushesTheSession`,
   `testForgettingTheMemberStateFlushesTheSession`, `testAnUnresolvedSessionIsNotBuilt`,
   `testAnotherSessionStoreIsLeftAlone`, `testForgettingTheMemberStateDropsTheRequestsCallers`,
-  `testAnUnresolvedOrAnotherRequestIsLeftAlone`
+  `testAnUnresolvedOrAnotherRequestIsLeftAlone`, `testForgettingTheScopedStateForgetsAuthorizationsOwn`
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` `testEachJobInAWorkerIsDecidedAboutItsOwnCaller`
 - `tests/Feature/Workers/WorkerResetTest.php` `testResetForgetsEveryScopedInstanceTheMembersBind` (every scoped
   binding of `laravel-authentication`, `laravel-authorization`, `laravel-mfa`, `laravel-sso` and this package, as the
@@ -239,9 +234,9 @@ process calls it.
   application can keep it.
 - A change to the protected `Container::$scopedInstances` the reset reads, or a public way to ask whether an abstract
   is scoped, which the reset then uses instead.
-- A member adding, renaming or removing a scoped binding that keeps request state (`laravel-authorization` changing
-  its `authorization.default:` prefix, or moving a binding off `scoped()`, among them): `WorkerReset::SCOPED_STATE`
-  and `AUTHORIZATION_DEFAULT` follow, as `tests/Feature/Workers/WorkerResetTest.php` reports.
+- `laravel-authentication` or `laravel-sso` adding, renaming or removing a scoped binding that keeps request state:
+  `WorkerReset::SCOPED_STATE` follows, as `tests/Feature/Workers/WorkerResetTest.php` reports. `laravel-authorization`
+  changing what its `RequestState::forget()` forgets, or its signature: `WorkerReset::forgetScopedState()` follows.
 - A change to `BindingRule::SCOPED_PREFIX` or `bindScoped()`: `WorkerReset::isSuiteState()` follows. This package
   binding a new scoped adapter changes neither.
 - Laravel changing what its container lists among its scoped instances (the closure it lists for a binding scoped by

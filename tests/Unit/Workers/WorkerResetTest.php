@@ -313,6 +313,31 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
+     * Forgetting the scoped state on its own, as a process does between its own
+     * units of work, forgets what `laravel-authorization` holds under its
+     * names, through its own reset, and keeps any other scoped instance.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testForgettingTheScopedStateForgetsAuthorizationsOwn(): void
+    {
+        $container = new Container;
+
+        $container->scoped(DecisionMemory::class, static fn (): \stdClass => new \stdClass);
+        $container->scoped('another', static fn (): \stdClass => new \stdClass);
+
+        $authorizations = $container->make(DecisionMemory::class);
+        $another        = $container->make('another');
+
+        (new WorkerReset($container))->forgetScopedState();
+
+        self::assertNotSame($authorizations, $container->make(DecisionMemory::class));
+        self::assertSame($another, $container->make('another'));
+    }
+
+    /**
      * The reset clears the root a facade resolved from a member's scoped
      * instance, so the facade resolves the next unit of work's own, as
      * `laravel-authorization`'s `Authorization` facade resolves its manager.
