@@ -29,13 +29,12 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * from `laravel-authentication`'s record of the session, the newest
  * `RequirementSubject::MAX_LIMIT` of them, oldest first, with the session's
  * first factor ahead of them when it is older than all of them, since MFA
- * reports no evidence without exactly one; they are translated and filtered as
- * the proof store's are (`SignInProofs`), so a proof made with a factor the
- * identity no longer holds is left out, read on the write connection. A session
- * that is pending, revoked, ended or of another guard has no proofs through
- * those readers, and gets the neutral context without MFA being asked; so does
- * a subject with no session, and an identity that cannot hold factors. MFA
- * itself gives a machine and an inactive identity the neutral context.
+ * reports no evidence without exactly one; they are translated as the proof
+ * store's are (`SignInProofs`). A session that is pending, revoked, ended or of
+ * another guard has no proofs through those readers, and gets the neutral
+ * context without MFA being asked; so does a subject with no session, and an
+ * identity that cannot hold factors. MFA itself gives a machine and an inactive
+ * identity the neutral context.
  *
  * The proofs are read as of the call: plainly outside a transaction, and
  * current, under the session row's lock, inside one on the session model's
