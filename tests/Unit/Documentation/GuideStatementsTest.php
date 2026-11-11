@@ -354,8 +354,8 @@ final class GuideStatementsTest extends TestCase
         yield 'nothing of laravel-authorization\'s glue waits any more' => [
             'docs/guides/authorization.md',
             [
-                'this package forgets that last decision if it read an authentication requirement in that session',
-                'There is nothing else to invalidate: no decision is cached',
+                'this package calls `Authorization::forgetDecisionsFor()`, naming the session and the person',
+                'and never the persistent resolution cache, since no grant changed',
                 'aligns with the other members\' keys',
                 '`Iam::schedule()` registers `authorization:prune` daily',
             ],
