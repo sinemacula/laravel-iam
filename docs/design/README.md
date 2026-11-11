@@ -51,9 +51,9 @@ The current note set is:
   evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
   link e-mail matching on verified identifiers, link confirmation from how the caller's session signed in, and the
   `sso` context namespace; SSO's lock order; and the gaps in the members the adapters work around.
-- `tenant-authentication-policy.md`: the application's one tenant MFA requirement and its rule, routed to MFA's
-  tenant requirement and into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's
-  enforcement, SSO's exemption gate and that requirement together; the version that changes whenever any of them does;
+- `tenant-authentication-policy.md`: the application's implementation of laravel-mfa's `TenantRequirement`, read
+  into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's enforcement, SSO's
+  exemption gate and that requirement together; the version that changes whenever any of them does;
   when the exemption gate is asked; the reads it makes and the lock it never takes; how an enforcement change and a
   changed requirement reach existing sessions; the testing kit and fake for the application's requirement; and the gaps
   in the members the adapters work around.

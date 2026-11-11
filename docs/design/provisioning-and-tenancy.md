@@ -210,7 +210,7 @@ storage connection and the retry helper in `storage-and-transactions.md`.
   tenant, as `Iam::treeChanges()->changed($tenantId)`, inside the move's transaction and after the write, so the first
   pass judges the tree as moved before it commits. A removal is reported the same way: each child moved out from under
   the removed tenant, listed before the removal, is reported as moved once the restructure is written. While SSO's
-  `enforcement` feature is on or a tenant MFA requirement is named or bound, it judges the tenant and its whole subtree
+  `enforcement` feature is on or MFA's tenant requirement is bound, it judges the tenant and its whole subtree
   (Q7); with neither it reads and judges nothing. It takes a plain id, reads no request, and keeps nothing (IAM-8.1).
   While `iam.adapters.authorization` is on and the application names or binds a tree, it first passes the change on to
   `laravel-authorization`, whatever enforcement says. While the SSO adapters are on too

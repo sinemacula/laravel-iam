@@ -18,6 +18,8 @@ use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
@@ -79,6 +81,7 @@ final class SsoBridgeCheckTest extends TestCase
 
         $this->container->instance(ContainerContract::class, $this->container);
         $this->container->instance(ApplicationPolicy::class, $policy);
+        $this->container->bind(TenantRequirement::class, NoTenantRequirement::class);
 
         foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class, LinkStorage::class] as $seam) {
             $this->container->instance($seam, \Mockery::mock($seam));
@@ -208,7 +211,7 @@ final class SsoBridgeCheckTest extends TestCase
 
     /**
      * With no container to read, a tenant's rule is on only by the
-     * configuration: SSO's enforcement, or a requirement named.
+     * configuration: SSO's enforcement.
      *
      * @return void
      */

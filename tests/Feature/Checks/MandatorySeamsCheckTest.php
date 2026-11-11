@@ -19,7 +19,6 @@ use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
@@ -28,10 +27,10 @@ use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Requirements\NoActiveTenant;
 use SineMacula\Laravel\Sso\Config\ConfigurationChecker;
@@ -52,6 +51,7 @@ use Tests\Fixtures\Bindings\Contracts\PlainSeam;
 use Tests\Fixtures\Bindings\Contracts\SharedSeam;
 use Tests\Fixtures\Bindings\DeclaredSeams;
 use Tests\Fixtures\Checks\ExtensibleDefault;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
@@ -370,8 +370,8 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * Rows of how a tenant's rule is turned on: SSO's enforcement, a tenant MFA
-     * requirement named, or one bound.
+     * Rows of how a tenant's rule is turned on: SSO's enforcement, or MFA's
+     * tenant requirement bound.
      *
      * @return iterable<string, array{\Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
@@ -380,11 +380,8 @@ final class MandatorySeamsCheckTest extends TestCase
         yield 'enforcement' => [static function (Application $app): void {
             $app->make('config')->set(TenancySeams::ENFORCEMENT, true);
         }];
-        yield 'a requirement named' => [static function (Application $app): void {
-            $app->make('config')->set('iam.tenancy.mfa_requirement', FakeTenantMfaRequirement::class);
-        }];
         yield 'a requirement bound' => [static function (Application $app): void {
-            $app->bind(TenantMfaRequirement::class, FakeTenantMfaRequirement::class);
+            $app->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
         }];
     }
 

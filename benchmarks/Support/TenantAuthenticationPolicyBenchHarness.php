@@ -9,20 +9,19 @@ use Orchestra\Testbench\Foundation\Application as Testbench;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Sso\Redemptions;
 use Tests\Fixtures\Tenancy\ScriptedEnforcement;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 
 /**
  * Tenant authentication policy benchmark fixtures: an application with every
@@ -103,7 +102,7 @@ final readonly class TenantAuthenticationPolicyBenchHarness
     {
         $this->app->instance(Enforcement::class, (new ScriptedEnforcement)->requireThrough([Redemptions::CONNECTION, 'connection-2']));
 
-        FakeTenantMfaRequirement::fake($this->app)->require(Redemptions::TENANT, new Requirement(multifactor: new RequirementPart(300)));
+        ScriptedTenantRequirement::bind($this->app)->require(Redemptions::TENANT, MfaRequirement::none()->withMultifactor(300));
     }
 
     /**

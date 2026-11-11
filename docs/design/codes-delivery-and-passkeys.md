@@ -45,8 +45,8 @@ and the binding rule that applies every row is in `binding-precedence.md`.
   passkeys, and MFA's `removing()` answers `null` after one plain read when the credential has no association. So a
   passkey that is still a factor is either removed with its factor or the removal is refused and rolls back. Only the
   passkey gateway, which runs MFA's ceremonies, waits for the type to be offered.
-- MFA's active tenant resolver is mandatory while SSO's enforcement is on or the application names or binds a tenant
-  MFA requirement (IAM-10.2, `Tenancy\TenancySeams::isEnforcedOrRequired()`): left on `NoActiveTenant` then, no
+- MFA's active tenant resolver is mandatory while SSO's enforcement is on or the application binds MFA's tenant
+  requirement (IAM-10.2, `Tenancy\TenancySeams::isEnforcedOrRequired()`): left on `NoActiveTenant` then, no
   tenant's requirement would reach MFA. `iam:check` reads both mandates from the rows (`install-and-check.md`).
 - Code challenges (IAM-3.9):
   - The challenge gateway adapter decides on every call which path a factor's code takes, against the container as it

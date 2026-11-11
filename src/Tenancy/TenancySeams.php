@@ -10,7 +10,6 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
@@ -25,12 +24,11 @@ use SineMacula\Laravel\Sso\Linking\RefusingPrincipalScope;
  * The seams SSO and `laravel-authentication` answer from the application's
  * tenancy. First, the seam the tenants' authentication policy is answered
  * through (IAM-4.5): `laravel-authentication`'s tenant authentication policy,
- * composed of SSO's enforcement and exemption gate and the application's tenant
- * MFA requirement (`TenantAuthenticationPolicyAdapter`), over
+ * composed of SSO's enforcement and exemption gate and the application's MFA
+ * tenant requirement (`TenantAuthenticationPolicyAdapter`), over
  * `laravel-authentication`'s default, `RequireNothingOfTenants`.
  *
- * It is the one answer for both of its sources, SSO's enforcement and the
- * tenant MFA requirement MFA is given the same answer of, so it is declared
+ * It composes SSO's enforcement and MFA's tenant requirement, so it is declared
  * apart from either capability. It is bound while the SSO capability's switch
  * is on (`iam.adapters.sso`), whatever MFA's: it composes SSO's enforcement and
  * exemption gate, and hands the gate the client of the redemption this
@@ -40,9 +38,9 @@ use SineMacula\Laravel\Sso\Linking\RefusingPrincipalScope;
  * whatever SSO's enforcement and the requirement say, since either may be
  * turned on while the application runs, and with neither on it requires nothing
  * and reads nothing, as the default does, answering a version of its own. It is
- * mandatory while SSO's `enforcement` feature is on or the application names or
- * binds a tenant MFA requirement, whoever binds it: left on the default then,
- * no tenant's enforcement or requirement would reach a session.
+ * mandatory while SSO's `enforcement` feature is on or the application binds
+ * MFA's tenant requirement, whoever binds it: left on the default then, no
+ * tenant's enforcement or requirement would reach a session.
  *
  * The seams SSO answers from the application's memberships and tenant tree
  * (IAM-6.8, IAM-7.4, IAM-7.5) are declared here too, each on while the SSO
@@ -110,7 +108,7 @@ final readonly class TenancySeams implements ProvidesSeams
      */
     public function __construct(
 
-        /** Tells whether the application has bound a tenant MFA requirement, memberships or a tenant tree. */
+        /** Tells whether the application has bound MFA's tenant requirement, memberships or a tenant tree. */
         private Container $container,
 
         /** The SSO capability's switch as it read when this package registered, which the rows answered from the memberships and the tree follow; `null` reads it from the switches each row is given. */
@@ -119,8 +117,8 @@ final readonly class TenancySeams implements ProvidesSeams
 
     /**
      * Return the tenant authentication policy's binding, on while the SSO
-     * capability's switch is, and mandatory while SSO's enforcement or a tenant
-     * MFA requirement is; and the bindings answered from the application's
+     * capability's switch is, and mandatory while SSO's enforcement or MFA's
+     * tenant requirement is; and the bindings answered from the application's
      * memberships and tenant tree, each on while the switch is and the
      * application has the one it answers from, the tree's mandatory while the
      * application has one and SSO's enforcement is on.
@@ -132,7 +130,7 @@ final readonly class TenancySeams implements ProvidesSeams
     public function seams(Repository $config): array
     {
         $on          = SsoSeams::isOn(...);
-        $mandatory   = self::isEnforcedOrRequired($config, $this->container);
+        $mandatory   = fn (): bool => self::isEnforcedOrRequired($config, $this->container);
         $inherited   = self::isEnforced($config) && TenancyContracts::hasTree($this->container, $config);
         $memberships = fn (Repository $switches): bool => $this->isSsoOn($switches) && TenancyContracts::hasMemberships($this->container, $switches);
         $tree        = fn (Repository $switches): bool => $this->isSsoOn($switches) && TenancyContracts::hasTree($this->container, $switches);
@@ -147,22 +145,18 @@ final readonly class TenancySeams implements ProvidesSeams
     }
 
     /**
-     * Whether SSO's enforcement is on or the application names or binds a
-     * tenant MFA requirement: while either is, the seams a tenant's rule
-     * reaches a session through are mandatory (IAM-10.2), the tenant
-     * authentication policy's among them, whoever binds them. SSO's switch is
-     * read as SSO would read it to turn its enforcement on. With no container
-     * given, only the configuration is read.
+     * Whether SSO's enforcement is on or MFA's tenant requirement is bound off
+     * MFA's default; with no container, only the former.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  ?\Illuminate\Contracts\Container\Container  $container
      * @return bool
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     public static function isEnforcedOrRequired(Repository $config, ?Container $container): bool
     {
-        return self::isEnforced($config)
-            || TenantMfaRequirements::isNamed($config)
-            || ($container?->bound(TenantMfaRequirement::class) ?? false);
+        return self::isEnforced($config) || ($container?->make(TenantMfaRequirements::class)->isConfigured() ?? false);
     }
 
     /**

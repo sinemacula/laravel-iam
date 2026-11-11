@@ -58,8 +58,8 @@ use Tests\TestCase;
  * the adapters' switches, which it may turn off only to bind every seam they
  * bind itself: the `adapters` section names every seam a capability that either
  * switch governs binds, the tenant authentication policy among them, and the
- * `tenancy` section says which switches the tenant MFA requirement reaches the
- * members through.
+ * `tenancy` section says the tenant MFA requirement is laravel-mfa's
+ * `TenantRequirement`, read into the tenant policy while `adapters.sso` is on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -162,7 +162,7 @@ final class AdaptersDocumentationTest extends TestCase
     /**
      * The `adapters` section says the tenant authentication policy is bound
      * while `sso` is on, whatever `mfa` says, and is the application's to bind,
-     * a mandatory one while SSO's enforcement is on or a requirement is named,
+     * a mandatory one while SSO's enforcement is on or a requirement is bound,
      * once `sso` is off.
      *
      * @return void
@@ -174,24 +174,22 @@ final class AdaptersDocumentationTest extends TestCase
         self::assertStringContainsString('While `sso` is on, the package also binds `laravel-authentication`\'s tenant authentication policy', $section);
         self::assertStringContainsString('whatever `mfa` says', $section);
         self::assertStringContainsString('With `sso` off, bind it yourself: it is mandatory while `sso.features.enforcement` is on', $section);
-        self::assertStringContainsString('or a tenant MFA requirement is named or bound', $section);
+        self::assertStringContainsString('or MFA\'s tenant requirement is bound', $section);
     }
 
     /**
-     * The `tenancy` section says the requirement reaches MFA only while
-     * `adapters.mfa` is on, and the tenant authentication policy only while
-     * `adapters.sso` is.
+     * The `tenancy` section says the requirement is laravel-mfa's
+     * `TenantRequirement`, read into the tenant policy while `adapters.sso` is
+     * on.
      *
      * @return void
      */
-    public function testTheTenancySectionSaysWhichSwitchesTheRequirementReachesThrough(): void
+    public function testTheTenancySectionSaysTheRequirementIsMfasTenantRequirement(): void
     {
         $section = self::section('Tenancy');
 
-        self::assertStringContainsString('to MFA\'s tenant requirement while `adapters.mfa` is on', $section);
-        self::assertStringContainsString('tenant authentication policy while `adapters.sso` is on', $section);
-        self::assertStringContainsString('With `adapters.sso` off, bind that policy yourself', $section);
-        self::assertStringContainsString('with both off nothing of the package\'s reads it', $section);
+        self::assertStringContainsString('implement laravel-mfa\'s `TenantRequirement` and bind it', $section);
+        self::assertStringContainsString('while `adapters.sso` is on the package reads it', $section);
     }
 
     /**

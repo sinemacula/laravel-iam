@@ -81,7 +81,7 @@ so a policy statement's `max_age` is renewed by it wherever a route's is (see
 
 ## Tenants that require a factor
 
-A tenant's requirement comes from your tenant MFA requirement (see
+A tenant's requirement comes from your implementation of laravel-mfa's `TenantRequirement` (see
 [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), and is folded into the tenant
 policy with SSO's enforcement. A tenant that enforces SSO and requires a further factor is met by a session through one
 of the connections its rule accepts, once both gates accept that session's evidence for the requirement or the person

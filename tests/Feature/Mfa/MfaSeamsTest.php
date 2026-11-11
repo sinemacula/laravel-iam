@@ -36,7 +36,6 @@ use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionTransitionAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\TenantRequirementAdapter;
 use SineMacula\Laravel\Iam\Testing\VerifiedSignInRecorderAdapter;
 use SineMacula\Laravel\Mfa\Applications\DeclaredFirstFactorResolver;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
@@ -54,7 +53,6 @@ use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Contracts\SmsSender;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
-use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Http\MiddlewareSessionTransition;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Proofs\ProofBindings;
@@ -62,7 +60,6 @@ use SineMacula\Laravel\Mfa\Proofs\ProofStoreCompletion;
 use SineMacula\Laravel\Mfa\Proofs\SessionProofStore;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
-use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 use Tests\Concerns\PermutesProviderOrder;
@@ -107,7 +104,6 @@ final class MfaSeamsTest extends TestCase
         VerifiedSignInRecorder::class         => VerifiedSignInRecorderAdapter::class,
         ChallengeGateway::class               => ChallengeGatewayAdapter::class,
         FactorCodeCounters::class             => FactorCodeCountersAdapter::class,
-        TenantRequirement::class              => TenantRequirementAdapter::class,
     ];
 
     /** @var string A class name the application names a gateway by; the switches read only that one is named. */
@@ -129,7 +125,6 @@ final class MfaSeamsTest extends TestCase
         FirstFactorResolver::class            => DeclaredFirstFactorResolver::class,
         ChallengeGateway::class               => PackageChallengeGateway::class,
         FactorCodeCounters::class             => RefuseFactorCodes::class,
-        TenantRequirement::class              => NoTenantRequirement::class,
     ];
 
     /** @var array<string, mixed> The delivery configuration the application holds before any provider registers: both gateways named, unless a test names fewer. */

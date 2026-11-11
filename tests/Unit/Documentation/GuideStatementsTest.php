@@ -754,13 +754,13 @@ final class GuideStatementsTest extends TestCase
             ['to let anyone read it'],
         ];
 
-        yield 'a tenant MFA requirement or SSO\'s enforcement owes a tenant resolver' => [
+        yield 'MFA\'s tenant requirement or SSO\'s enforcement owes a tenant resolver' => [
             'docs/guides/provisioning-and-tenancy.md',
             [
                 '## The tenant resolver',
                 'requires binding a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is exactly that id',
                 'This applies even when your principals only ever act in their own tenant',
-                'every MFA-gated request from a session in a tenant throws `UnresolvedReferenceException`, even when the session acts in its principal\'s own tenant',
+                'A bound requirement needs your [tenant resolver](#the-tenant-resolver)',
             ],
             [],
         ];
@@ -769,14 +769,14 @@ final class GuideStatementsTest extends TestCase
             'docs/guides/installation.md',
             [
                 '| Bind `laravel-authentication`\'s `TenantResolver` before you grant in a tenant while the authorization and SSO adapters are on'
-                    . ' (the default), name a tenant MFA requirement or turn SSO\'s enforcement on, even if your principals act only in their own tenant |',
+                    . ' (the default), bind MFA\'s tenant requirement or turn SSO\'s enforcement on, even if your principals act only in their own tenant |',
             ],
             [],
         ];
 
         yield 'iam:check refuses a tenant resolver left on its default' => [
             'docs/guides/checks.md',
-            ['SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, a tenant MFA requirement is'],
+            ['SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, MFA\'s tenant requirement is'],
             [],
         ];
 

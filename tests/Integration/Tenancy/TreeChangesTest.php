@@ -14,8 +14,6 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
@@ -26,8 +24,8 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -36,6 +34,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
@@ -334,13 +333,13 @@ final class TreeChangesTest extends TestCase
         $person      = $this->createPerson();
         $session     = $this->signInIn($person, self::CHILD);
         $kept        = $this->signInIn($person, self::STILL);
-        $requirement = FakeTenantMfaRequirement::fake($this->app);
+        $requirement = ScriptedTenantRequirement::bind($this->app);
 
         DB::transaction(function () use ($requirement): void {
 
             $this->tree()->place(self::MOVED, self::ROOT);
 
-            $requirement->require(self::CHILD, new Requirement(multifactor: new RequirementPart(300)));
+            $requirement->require(self::CHILD, MfaRequirement::none()->withMultifactor(300));
 
             $this->changes()->changed(self::MOVED);
         });
@@ -367,15 +366,15 @@ final class TreeChangesTest extends TestCase
         $person      = $this->createPerson();
         $moved       = $this->signInIn($person, self::MOVED);
         $child       = $this->signInIn($person, self::CHILD);
-        $requirement = FakeTenantMfaRequirement::fake($this->app);
+        $requirement = ScriptedTenantRequirement::bind($this->app);
 
         $this->app?->forgetInstance(TenantTree::class);
         $this->app?->offsetUnset(TenantTree::class);
 
         Config::set(TenancyContracts::TREE, null);
 
-        $requirement->require(self::MOVED, new Requirement(multifactor: new RequirementPart(300)));
-        $requirement->require(self::CHILD, new Requirement(multifactor: new RequirementPart(300)));
+        $requirement->require(self::MOVED, MfaRequirement::none()->withMultifactor(300));
+        $requirement->require(self::CHILD, MfaRequirement::none()->withMultifactor(300));
 
         DB::transaction(fn (): int => $this->changes()->changed(self::MOVED));
 
