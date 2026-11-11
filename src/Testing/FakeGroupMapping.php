@@ -11,20 +11,8 @@ use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 
 /**
  * A group mapping for tests (IAM-7.2): each group maps to the grants the test
- * told it to (`map()`), and any other group to nothing, whatever the connection
- * or the tenant; once told to refuse (`refuse()`), every question throws, as an
- * application's mapping that declines a result does.
- *
- * Each grant is answered once, in the order the groups first name it, so a role
- * two groups map to is granted once. Each question is kept (`asked()`): the
- * connection, the tenant and the groups, so a test can see what the
- * provisioning or a re-sync asked about.
- *
- * Call `FakeGroupMapping::fake()`, which binds a fresh instance as the
- * application's group mapping and returns it; a mapping bound in the container
- * counts as named in `iam.provisioning.groups.mapping`, whenever it is bound.
- * It satisfies this package's own `Seams\Concerns\GroupMappingTests` kit. Not
- * for production use.
+ * gave it (`map()`), any other to nothing, and every question throws once told
+ * to `refuse()`. `fake()` binds a fresh instance.
  *
  * @api
  *

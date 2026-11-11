@@ -406,41 +406,6 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * The second pass runs only once every callback queued on the caller's
-     * transaction has run, one queued after the revocation included, as SSO
-     * queues its report of the change: a session that entered the tenant once
-     * the first pass had run still stands when that callback runs, and is
-     * revoked once the commit has finished.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheSecondPassRunsOnceEveryCallbackOfTheCommitHasRun(): void
-    {
-        $this->bindTenancy();
-
-        $late       = $this->signInThrough($this->createPerson());
-        $connection = DB::connection(StorageConnection::name());
-        /** @var \ArrayObject<int, bool> $standing */
-        $standing = new \ArrayObject;
-
-        $connection->transaction(function () use ($late, $connection, $standing): void {
-
-            $this->adapter()->revoke(RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7')));
-
-            $this->inTenant($late, self::SSO_TENANT);
-
-            $connection->afterCommit(function () use ($late, $standing): void {
-                $standing->append($this->stored($late)->getRevokedAt() === null);
-            });
-        });
-
-        self::assertSame([true], $standing->getArrayCopy(), 'The second pass ran before a callback queued after it.');
-        $this->assertRevoked([$late]);
-    }
-
-    /**
      * The second pass waits for the caller's transaction on the storage
      * connection alone: a transaction open on another connection when the
      * change is made, and rolled back before the change commits, does not take
@@ -474,35 +439,15 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[before]`: whether the commit callback that fails is queued
-     * before the revocation, as the first pass's reports and an earlier change
-     * of the caller's are, or after it, as SSO's report of the change and a
-     * listener of it are.
+     * The second pass runs in turn with the caller's commit callbacks, so a
+     * session that entered the tenant once the first pass had run is revoked by
+     * the time a callback queued after the revocation fails.
      *
-     * @return iterable<string, array{0: bool}>
-     */
-    public static function provideFailingCallbacks(): iterable
-    {
-        yield 'a callback queued before the revocation' => [true];
-
-        yield 'a callback queued after the revocation' => [false];
-    }
-
-    /**
-     * A commit callback of the caller's transaction that fails, before the
-     * revocation or after it, stops Laravel running the rest and firing the
-     * commit event, so the change commits with the second pass still held: the
-     * failure propagates, and a session that entered the tenant once the first
-     * pass had run still stands until the unit of work ends, and is revoked
-     * then.
-     *
-     * @param  bool  $before
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideFailingCallbacks')]
-    public function testTheSecondPassStillRunsWhenAnotherCommitCallbackFails(bool $before): void
+    public function testTheSecondPassRunsBeforeALaterCommitCallbackFails(): void
     {
         $this->bindTenancy();
 
@@ -511,19 +456,11 @@ final class SessionRevocationAdapterTest extends TestCase
         $failure    = new \RuntimeException('A listener of the change failed.');
 
         try {
-            $connection->transaction(function () use ($late, $connection, $failure, $before): void {
-
-                if ($before) {
-                    $connection->afterCommit(static fn () => throw $failure);
-                }
+            $connection->transaction(function () use ($late, $connection, $failure): void {
 
                 $this->adapter()->revoke(RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7')));
 
                 $this->inTenant($late, self::SSO_TENANT);
-
-                if ($before) {
-                    return;
-                }
 
                 $connection->afterCommit(static fn () => throw $failure);
             });
@@ -533,7 +470,41 @@ final class SessionRevocationAdapterTest extends TestCase
             self::assertSame($failure, $exception);
         }
 
-        $this->assertStanding([$late]);
+        $this->assertRevoked([$late]);
+    }
+
+    /**
+     * A commit callback queued before the revocation that fails stops Laravel
+     * running the rest, so the change commits with the second pass still held:
+     * the failure propagates, and a session that entered the tenant once the
+     * first pass had run is revoked once the unit of work ends.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheSecondPassStillRunsWhenAnEarlierCommitCallbackFails(): void
+    {
+        $this->bindTenancy();
+
+        $late       = $this->signInThrough($this->createPerson());
+        $connection = DB::connection(StorageConnection::name());
+        $failure    = new \RuntimeException('An earlier change of the caller\'s failed.');
+
+        try {
+            $connection->transaction(function () use ($late, $connection, $failure): void {
+
+                $connection->afterCommit(static fn () => throw $failure);
+
+                $this->adapter()->revoke(RevocationScope::tenant(EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::OTHER_CONNECTION], '7')));
+
+                $this->inTenant($late, self::SSO_TENANT);
+            });
+
+            self::fail('The callback\'s failure did not propagate.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame($failure, $exception);
+        }
 
         $this->app?->terminate();
 

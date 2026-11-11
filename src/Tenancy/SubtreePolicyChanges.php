@@ -11,9 +11,9 @@ use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 
 /**
- * Judges the sessions of a tenant and every tenant below it in place, and once
- * more, from the subtree as it then stands, once the storage connection's
- * transaction commits (IAM-7.5).
+ * Judges the sessions of a tenant and every tenant below it, and of every
+ * tenant the subtree gains before the storage connection's transaction commits
+ * (IAM-7.5).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,10 +54,9 @@ final readonly class SubtreePolicyChanges
     ) {}
 
     /**
-     * Judge the sessions of the tenant and of every tenant below it, in place,
-     * and once more, from the subtree as it then stands, once the transaction
-     * open on the storage connection commits; answer how many sessions the
-     * first pass revoked.
+     * Judge the sessions of the tenant and of every tenant below it, and of
+     * every tenant the subtree has gained once the storage connection's
+     * transaction commits; answer how many sessions the first pass revoked.
      *
      * @param  string  $tenantId
      * @return int
@@ -68,30 +67,31 @@ final readonly class SubtreePolicyChanges
      */
     public function changed(string $tenantId): int
     {
-        $revoked = $this->judge($tenantId);
+        $listed  = $this->subtree($tenantId);
+        $revoked = $this->judge($listed);
 
-        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId): void {
+        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId, $listed): void {
 
-            $this->judge($tenantId);
+            $this->judge(array_diff($this->subtree($tenantId), $listed));
         });
 
         return $revoked;
     }
 
     /**
-     * List and resolve the subtree as the tree now answers it, then judge the
-     * sessions of each tenant in it; answer how many sessions were revoked.
+     * Resolve every tenant given, then judge the sessions of each; answer how
+     * many sessions were revoked.
      *
-     * @param  string  $tenantId
+     * @param  array<int, string>  $tenantIds
      * @return int
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
-    private function judge(string $tenantId): int
+    private function judge(array $tenantIds): int
     {
-        $tenants  = array_map($this->tenants->tenant(...), $this->subtree($tenantId));
+        $tenants  = array_map($this->tenants->tenant(...), $tenantIds);
         $sessions = $this->sessions->identitySessions();
         $revoked  = 0;
 

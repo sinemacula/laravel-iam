@@ -19,7 +19,6 @@ use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\ApplicationPolicyAdapter;
-use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
 use SineMacula\Laravel\Iam\Sso\ExternalEvidencePolicyAdapter;
 use SineMacula\Laravel\Iam\Sso\ExternalIdentityLinksAdapter;
 use SineMacula\Laravel\Iam\Sso\FreshnessAdapter;
@@ -36,7 +35,6 @@ use SineMacula\Laravel\Sso\Contracts\HandoffIssuer;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy;
@@ -44,7 +42,6 @@ use SineMacula\Laravel\Sso\Evidence\InsufficientEvidence;
 use SineMacula\Laravel\Sso\Flows\NoReauthenticationSessions;
 use SineMacula\Laravel\Sso\Freshness\RefusingFreshness;
 use SineMacula\Laravel\Sso\Handoffs\DatabaseHandoffStore;
-use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Linking\NoEmailMatches;
 use SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation;
 use SineMacula\Laravel\Sso\Links\LinkStore;
@@ -55,14 +52,13 @@ use Tests\TestCase;
 
 /**
  * Feature tests for the seams `laravel-authentication`, SSO and MFA join
- * through for SSO: every adapter, SSO's own link store as its linker, and its
- * link storage as whatever linker is bound, replaces its member's default in
- * every provider order; an application's own binding is kept or wins as the
- * binding rule says (IAM-8.4); SSO's handoff issuer is never touched; the link
- * store is scoped, so a long-lived worker never reaches one request's store
- * from another; SSO's per-connection evidence policy is bound, scoped, only
- * while the evidence switch is on as well, read strictly; and the capability's
- * switch turns every binding off at once.
+ * through for SSO: every adapter, and SSO's own link store as its linker,
+ * replaces its member's default in every provider order; an application's own
+ * binding is kept or wins as the binding rule says (IAM-8.4); SSO's handoff
+ * issuer is never touched; the link store is scoped, so a long-lived worker
+ * never reaches one request's store from another; SSO's per-connection evidence
+ * policy is bound, scoped, only while the evidence switch is on as well, read
+ * strictly; and the capability's switch turns every binding off at once.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,7 +76,6 @@ final class SsoSeamsTest extends TestCase
         SessionRevocation::class        => SessionRevocationAdapter::class,
         ExternalIdentityLinks::class    => ExternalIdentityLinksAdapter::class,
         Linker::class                   => LinkStore::class,
-        LinkStorage::class              => BoundLinkStorage::class,
         ExternalEvidencePolicy::class   => ExternalEvidencePolicyAdapter::class,
         Freshness::class                => FreshnessAdapter::class,
         ApplicationPolicy::class        => ApplicationPolicyAdapter::class,
@@ -103,7 +98,7 @@ final class SsoSeamsTest extends TestCase
     ];
 
     /** @var list<class-string> The members' own classes bound scoped over a seam. */
-    private const array SCOPED = [LinkStore::class, BoundLinkStorage::class, ConnectionEvidencePolicy::class];
+    private const array SCOPED = [LinkStore::class, ConnectionEvidencePolicy::class];
 
     /** @var array<string, mixed> The switches the application sets before any provider registers. */
     private array $switches = [];
@@ -292,8 +287,7 @@ final class SsoSeamsTest extends TestCase
 
     /**
      * An application binding made before any provider registers is kept over
-     * every seam, the link storage SSO binds no default for included, in every
-     * provider order.
+     * every seam, in every provider order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -332,11 +326,9 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * The link store and the link storage are scoped under this package's own
-     * key for each seam: the same instance within one request or job, a new one
-     * once the worker resets, and the seams themselves never on the container's
-     * scoped instances, so a binding the application makes over them later is
-     * never forgotten.
+     * The link store is scoped under this package's own key for the linker: the
+     * same instance within one request or job, a new one once the worker
+     * resets, and the seam itself never on the container's scoped instances.
      *
      * @return void
      *
@@ -348,47 +340,19 @@ final class SsoSeamsTest extends TestCase
 
         self::assertNotNull($app);
 
-        foreach ([Linker::class, LinkStorage::class] as $seam) {
+        $store = $app->make(Linker::class);
 
-            $store = $app->make($seam);
+        self::assertSame($store, $app->make(Linker::class));
+        self::assertTrue($app->isShared(BindingRule::SCOPED_PREFIX . Linker::class));
+        self::assertFalse($app->isShared(Linker::class));
 
-            self::assertSame($store, $app->make($seam), $seam);
-            self::assertTrue($app->isShared(BindingRule::SCOPED_PREFIX . $seam), $seam);
-            self::assertFalse($app->isShared($seam), $seam);
+        Iam::resetWorkerState();
 
-            Iam::resetWorkerState();
-
-            self::assertNotSame($store, $app->make($seam), $seam);
-        }
+        self::assertNotSame($store, $app->make(Linker::class));
     }
 
     /**
-     * The link storage answers from the bound linker: SSO's link store with
-     * this package's binding, and an application's own linker once it is bound
-     * over it, never a store of its own that linker would not see.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testTheLinkStorageIsTheBoundLinkersOwn(): void
-    {
-        $app = $this->app;
-
-        self::assertNotNull($app);
-
-        $linker = \Mockery::mock(LinkStorage::class);
-
-        $linker->expects('holdings')->with('connection', \Mockery::any())->andReturn(3);
-
-        $app->instance(Linker::class, $linker);
-
-        self::assertSame(3, $app->make(LinkStorage::class)->holdings('connection', new IdentityReference('person', '1')));
-    }
-
-    /**
-     * With the switch off nothing is bound: each member keeps its own default,
-     * and SSO's link storage stays unbound.
+     * With the switch off nothing is bound: each member keeps its own default.
      *
      * @return void
      *
@@ -403,7 +367,6 @@ final class SsoSeamsTest extends TestCase
         $app = $this->app;
 
         self::assertNotNull($app);
-        self::assertFalse($app->bound(LinkStorage::class));
         self::assertInstanceOf(DatabaseHandoffStore::class, $app->make(HandoffIssuer::class));
     }
 
@@ -475,10 +438,9 @@ final class SsoSeamsTest extends TestCase
 
     /**
      * Each adapter is transient over its member's own default; SSO's link store
-     * is scoped over the linker's default, the bound linker's link storage over
-     * a link storage SSO binds no default for, and SSO's per-connection
-     * evidence policy over its default, as SSO binds it; and only session
-     * revocation is mandatory (IAM-4.4).
+     * is scoped over the linker's default, and SSO's per-connection evidence
+     * policy over its default, as SSO binds it; and only session revocation is
+     * mandatory (IAM-4.4).
      *
      * @return void
      */

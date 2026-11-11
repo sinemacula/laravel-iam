@@ -10,8 +10,10 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
@@ -35,7 +37,9 @@ use Tests\TestCase;
 /**
  * Integration tests for judging a subtree's sessions against the tenant policy
  * (IAM-7.5): every session in the tenant and the tenants below it, of whatever
- * type, is judged, every other left alone; with a flat tree only the tenant is.
+ * type, is judged, every other left alone; with a flat tree only the tenant is;
+ * and once the change commits, only the tenants the subtree has gained are
+ * judged again here.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -128,6 +132,46 @@ final class SubtreePolicyChangesTest extends TestCase
         self::assertSame(1, DB::transaction(fn (): int => $this->changes()->changed(self::ORGANISATION)));
         self::assertNotNull($this->stored($organisation)->getRevokedAt());
         self::assertNull($this->stored($account)->getRevokedAt());
+    }
+
+    /**
+     * Once the change commits, the subtree is listed again and only the tenant
+     * it gained meanwhile is resolved and judged; the tenants first listed are
+     * left to `laravel-authentication`'s own second pass.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOnlyTheTenantsTheSubtreeGainedAreJudgedOnceItCommits(): void
+    {
+        /** @var \ArrayObject<int, string> $resolved */
+        $resolved = new \ArrayObject;
+        $resolver = \Mockery::mock(TenantResolver::class);
+        $tenancy  = new AccountTenancy;
+        $gained   = Account::PREFIX . '2';
+
+        $resolver->allows('resolve')->andReturnUsing(static function (string $tenantId) use ($resolved, $tenancy): Tenant {
+            $resolved->append($tenantId);
+
+            return $tenancy->resolve($tenantId);
+        });
+
+        $this->app?->instance(TenantResolver::class, $resolver);
+
+        DB::connection(StorageConnection::name())->transaction(function () use ($resolved, $gained): void {
+
+            $this->changes()->changed(self::ORGANISATION);
+
+            StoredTenantTree::place(new Reference(Account::TYPE, $gained), new Reference(Organisation::TYPE, self::ORGANISATION));
+
+            $resolved->exchangeArray([]);
+        });
+
+        $counts = array_count_values($resolved->getArrayCopy());
+
+        self::assertSame(1, $counts[self::ACCOUNT] ?? 0, 'Only laravel-authentication\'s own second pass resolves a tenant first listed.');
+        self::assertArrayHasKey($gained, $counts);
     }
 
     /**

@@ -302,7 +302,7 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   recipient and every grant to it widens, is one SSO never links, so it has nothing to suspend: its widening is not
   reported to SSO, its tenants are not resolved, and only the listed hooks run, as `SubtreeGrantees` passes the same
   grantee over on a move. Decision this note records: SSO's `widened()` would take such a reference as it is, but
-  `ScopeWidenings::widen()`, the one core path every widening goes through, takes `laravel-authentication`'s identity,
+  `ScopeWidenings::widen()`, the one core path every widening goes through, takes `laravel-authentication`'s identities,
   and a widening of something SSO cannot hold is no widening to SSO, so the hook passes it over rather than add a second
   path for references.
 - The lock order of a grant is SSO's first, then `laravel-authorization`'s: SSO's widening takes the identity's guard
@@ -603,13 +603,9 @@ Part (b) follows the manifest's remaining rows, with these departures:
   grant below a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant
   written, and no grant hook runs. The package sees only where a tenant ends up, so this is broader than needed, never
   narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again. A boundary
-  only narrows, and a grant to a role widens nobody, so neither is read. Every grantee's identity guard is taken first,
-  in SSO's order, ascending by SSO's digest, before any widening locks a connection (`Sso\IdentityGuards`, which the
-  manifest does not list either): SSO's widening reports one identity, its guard then its connections, so one widening
-  after another would take a guard after a connection and deadlock with a grant, reservation or activation of a later
-  grantee holding its guard and waiting for that connection. SSO offers neither a widening of several identities nor a
-  public way to take the guard, so this reaches SSO's internal `Linking\IdentityLock` (`acquire()`, `digest()`); each
-  widening then takes its guard again, held already, and waits for nothing.
+  only narrows, and a grant to a role widens nobody, so neither is read. Every grantee is reported in one widening, so
+  SSO takes all their guards in its order before it locks any connection, and the move cannot deadlock with a grant,
+  reservation or activation of one of them.
 - The group re-sync runs once the sign-in's transaction has committed, in a transaction of its own, rather than inside
   it: a re-synced grant that widens reports to SSO's scope widening, which takes the identity's guard, and SSO's lock
   order puts the guard before every connection, which the redemption had already locked, so the re-sync under its locks
@@ -684,7 +680,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
   `src/Authorization/GrantScopeAdapter.php`: `judge()`; `src/Authorization/SubtreeGrantees.php`: `of()`,
   `tableNamed()`;
-  `src/Sso/IdentityGuards.php`: `acquire()`; `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
+  `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `src/IamServiceProvider.php`:
   `registerSeams()`; `src/Tenancy/ScopeWidenings.php`: `widen()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:

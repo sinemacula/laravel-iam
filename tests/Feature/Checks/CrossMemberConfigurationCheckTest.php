@@ -8,6 +8,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
@@ -19,7 +20,6 @@ use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
-use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
@@ -41,10 +41,10 @@ use Tests\TestCase;
  * Feature tests for the configuration that crosses the members (IAM-2.5),
  * bullet by bullet: the ones this check holds (MFA's applications, the members'
  * freshness operations and the tenant resolver a tenant's rule needs), and the
- * ones held where they belong, SSO's by the check SSO's own runs and
- * audit-log's by the audit check, so every bullet is pinned here. The
- * authorization capability is off unless a test turns it on, so only the test's
- * own rule asks for a tenant resolver.
+ * ones held where they belong, SSO's by the SSO bridge check and audit-log's by
+ * the audit check, so every bullet is pinned here. The authorization capability
+ * is off unless a test turns it on, so only the test's own rule asks for a
+ * tenant resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -208,10 +208,11 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     /**
      * While a tenant's rule reaches a session, or a grant is reported to SSO's
      * scope widening, `laravel-authentication`'s tenant resolver left on its
-     * `ResolveNoTenant` is refused, since MFA's tenant requirement, the tree's
-     * changes and SSO's revocation resolve the session's tenant through it, and
-     * the grant hook the tenant of every grant that widens; a resolver of the
-     * application's own, as an instance, a class name or a closure, passes.
+     * default, resolved or not, or bound to `ResolveNoTenant` by name, is
+     * refused, since MFA's tenant requirement, the tree's changes and SSO's
+     * revocation resolve the session's tenant through it, and the grant hook
+     * the tenant of every grant that widens; a resolver of the application's
+     * own, as an instance, a class name or a closure, passes.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
      * @return void
@@ -226,6 +227,14 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $this->declare(array_column(Operation::cases(), 'value'));
 
         $rule($app);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->make(TenantResolver::class);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->singleton(TenantResolver::class, ResolveNoTenant::class);
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
 
@@ -303,7 +312,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         $app = $this->app ?? self::fail('The application has not booted.');
 
-        self::assertSame(ResolveNoTenant::class, $app->make(SeamHolders::class)->of($app, TenantResolver::class));
+        self::assertTrue(AuthenticationServiceProvider::isPackageDefault($app, TenantResolver::class));
         self::assertSame([], self::problems($this->check()->checks()));
     }
 
@@ -388,35 +397,6 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $this->declare([...array_column(Operation::cases(), 'value'), ...array_column(FreshnessOperation::cases(), 'value')]);
 
         self::assertSame([], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * `laravel-authentication`'s side is the tenant resolver, about no one
-     * guard, and the MFA and SSO applications named after a guard, about that
-     * guard, the SSO application's only while SSO is in use.
-     *
-     * @return void
-     */
-    public function testLaravelAuthenticationsSideIsTheTenantResolverAndEachGuardsApplications(): void
-    {
-        $config = $this->app?->make('config');
-
-        $config?->set('sso.applications', ['api' => [], 'portal' => []]);
-
-        self::assertSame([], $this->check()->authenticationChecks());
-        $undeclared = 'mfa.add_factor, mfa.replace_factor, mfa.remove_factor, mfa.generate_recovery_codes';
-
-        self::assertSame([sprintf(self::UNDECLARED, $undeclared)], self::problems($this->check()->guardChecks('api')));
-        self::assertCount(2, $this->check()->guardChecks('api'));
-        self::assertSame([], $this->check()->guardChecks('portal'));
-
-        $config?->set('sso.features.saml2', true);
-        $this->app?->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
-
-        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->authenticationChecks()));
-        self::assertCount(3, $this->check()->guardChecks('api'));
-        self::assertCount(1, $this->check()->guardChecks('portal'));
-        self::assertSame([], $this->check()->guardChecks('other'));
     }
 
     /**

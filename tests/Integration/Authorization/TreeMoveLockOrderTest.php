@@ -15,7 +15,6 @@ use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Iam\Sso\IdentityGuards;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Linking\IdentityLock;
@@ -58,7 +57,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(TreeChanges::class)]
-#[CoversClass(IdentityGuards::class)]
 #[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TreeMoveLockOrderTest extends TestCase
 {

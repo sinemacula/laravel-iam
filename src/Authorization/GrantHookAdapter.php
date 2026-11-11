@@ -179,7 +179,7 @@ final readonly class GrantHookAdapter implements GrantHook
     private function widen(Identity $identity, ?string $tenantId, ClientContext $client): void
     {
         try {
-            $this->widenings->widen($identity, $tenantId, $client);
+            $this->widenings->widen([$identity], $tenantId, $client);
         } catch (LinkCandidatesChanged $changed) {
             throw self::concurrencyError($changed);
         }

@@ -4,8 +4,10 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Checks;
 
+use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
@@ -13,7 +15,7 @@ use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
 use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
-use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
+use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -49,10 +51,9 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   in (`Tenancy\TenantReferences`), while `laravel-authentication` admits a
  *   principal's own tenant without one, so an application that never needed a
  *   resolver would otherwise refuse every grant to an identity, or a
- *   principal's first, in a tenant, and every move of a tenant, at runtime. Its
- *   live binding (`SeamHolders`) still naming `laravel-authentication`'s
- *   `ResolveNoTenant` is refused; a resolver bound through a closure is not
- *   built, so it is the application's to answer.
+ *   principal's first, in a tenant, and every move of a tenant, at runtime. A
+ *   resolver still on `laravel-authentication`'s default, as it says, or bound
+ *   to its `ResolveNoTenant` by name, is refused.
  * - While the application has memberships, so its people act in tenants,
  *   `laravel-authorization`'s resource tenant resolver still on its default is
  *   noted, never failed: the shipped `NoResourceTenant` knows no model's
@@ -68,9 +69,8 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   package reads no key to tell.
  *
  * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
- * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`, which SSO's
- * own check runs (IAM-10.3), or `SsoBridgeFallbackCheck` while SSO's check does
- * not; `sso.endpoints.base_url` by SSO's own `EndpointsCheck`;
+ * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`;
+ * `sso.endpoints.base_url` by SSO's own `EndpointsCheck`;
  * `sso.storage.connection` by the storage alignment, at boot and in
  * `StorageCheck`; audit-log's exclusions, Gate capture and `require_registered`
  * by `AuditCheck`. `laravel-authorization`'s seams are bound through the
@@ -80,18 +80,12 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  * each connection's mapping, which is a database row, so it is left to the
  * guide, as SSO's routes are.
  *
- * Every part of it is `laravel-authentication`'s side too, so
- * `authentication:check` reports it as well: the tenant resolver about no one
- * guard, and each MFA or SSO application's checks about the guard of the same
- * name, so an application naming no guard `authentication:check` checks is left
- * to `iam:check`.
- *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class CrossMemberConfigurationCheck implements AuthenticationCheck
+final readonly class CrossMemberConfigurationCheck implements Check
 {
     /** @var string The key of the application's guards. */
     private const string GUARDS = 'auth.guards';
@@ -188,86 +182,24 @@ final readonly class CrossMemberConfigurationCheck implements AuthenticationChec
     #[\Override]
     public function checks(): array
     {
-        $checks = $this->authenticationChecks();
+        $checks = $this->resolvesTenants() ? [fn () => $this->assertTenantsResolve()] : [];
 
         if (TenancyContracts::hasMemberships($this->container, $this->config)) {
             $checks[] = fn (): ?string => $this->resourceTenantsNote();
         }
 
         foreach (self::names($this->config->get(self::MFA_APPLICATIONS)) as $application) {
-            $checks = [...$checks, ...$this->mfaChecks($application)];
+            $checks[] = fn () => $this->assertGuard($application);
+            $checks[] = fn () => $this->assertDeclared($application, array_column(Operation::cases(), 'value'), 'MFA');
         }
 
-        foreach ($this->ssoApplications() as $application) {
-            $checks[] = $this->ssoCheck($application);
+        $ssoApplications = SsoSeams::isInUse($this->config) ? self::names($this->config->get(self::SSO_APPLICATIONS)) : [];
+
+        foreach ($ssoApplications as $application) {
+            $checks[] = fn () => $this->assertDeclared($application, array_column(FreshnessOperation::cases(), 'value'), 'SSO');
         }
 
         return $checks;
-    }
-
-    /**
-     * The tenant resolver while a tenant's rule reaches a session, a grant is
-     * reported to SSO's scope widening or `laravel-authorization` reads the
-     * application's tenant tree.
-     *
-     * @return list<\Closure(): mixed>
-     */
-    #[\Override]
-    public function authenticationChecks(): array
-    {
-        return $this->resolvesTenants() ? [fn () => $this->assertTenantsResolve()] : [];
-    }
-
-    /**
-     * The checks of the MFA application named after the guard, then of the SSO
-     * application named after it while SSO is in use.
-     *
-     * @param  string  $guard
-     * @return list<\Closure(): mixed>
-     */
-    #[\Override]
-    public function guardChecks(string $guard): array
-    {
-        $mfa = in_array($guard, self::names($this->config->get(self::MFA_APPLICATIONS)), true) ? $this->mfaChecks($guard) : [];
-        $sso = in_array($guard, $this->ssoApplications(), true) ? [$this->ssoCheck($guard)] : [];
-
-        return [...$mfa, ...$sso];
-    }
-
-    /**
-     * The MFA application names a guard that holds sessions, and that guard
-     * declares MFA's freshness operations.
-     *
-     * @param  string  $application
-     * @return list<\Closure(): mixed>
-     */
-    private function mfaChecks(string $application): array
-    {
-        return [
-            fn () => $this->assertGuard($application),
-            fn () => $this->assertDeclared($application, array_column(Operation::cases(), 'value'), 'MFA'),
-        ];
-    }
-
-    /**
-     * The SSO application's guard declares SSO's freshness operations.
-     *
-     * @param  string  $application
-     * @return \Closure(): mixed
-     */
-    private function ssoCheck(string $application): \Closure
-    {
-        return fn () => $this->assertDeclared($application, array_column(FreshnessOperation::cases(), 'value'), 'SSO');
-    }
-
-    /**
-     * SSO's applications while SSO is in use; none while it is not.
-     *
-     * @return list<string>
-     */
-    private function ssoApplications(): array
-    {
-        return SsoSeams::isInUse($this->config) ? self::names($this->config->get(self::SSO_APPLICATIONS)) : [];
     }
 
     /**
@@ -286,16 +218,19 @@ final readonly class CrossMemberConfigurationCheck implements AuthenticationChec
     }
 
     /**
-     * Refuse a tenant resolver whose live binding is still
-     * `laravel-authentication`'s `ResolveNoTenant`, which resolves no tenant.
+     * Refuse a tenant resolver still on `laravel-authentication`'s default, or
+     * bound to its `ResolveNoTenant`, which resolves no tenant.
      *
      * @return void
      *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
      */
     private function assertTenantsResolve(): void
     {
-        if ($this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
+        $isDefault = $this->container instanceof IlluminateContainer && AuthenticationServiceProvider::isPackageDefault($this->container, TenantResolver::class);
+
+        if (!$isDefault && $this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
             return;
         }
 

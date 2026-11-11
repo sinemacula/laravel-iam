@@ -13,25 +13,10 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 
 /**
- * Memberships for tests: each identity holds the memberships the test granted
- * it (`grant()`), none until then, its set is complete unless the test marked
- * it incomplete (`incomplete()`), and an identity the test told it to fail for
- * throws (`failFor()`), as an application's memberships that cannot be read do.
- *
- * An identity is known by its class and its identifier, so the same person read
- * again is the same identity. A grant of a tenant the identity already holds
- * replaces that membership, so a test can accept an invitation by granting the
- * membership again with the person's acceptance time. Each question is kept
- * (`asked()`). It holds nothing in a database, so it takes no membership guard,
- * and a revocation (`revoke()`) never waits: a race between a revocation and a
- * redemption needs the application's own memberships.
- *
- * Call `FakeMemberships::fake()`, which binds a fresh instance as the
- * application's memberships and returns it. A binding made once the package has
- * registered is the one asked, but binds none of SSO's membership adapters:
- * name the class in `iam.tenancy.memberships` as well, before the application
- * boots, for the adapters to be bound over SSO's defaults. It satisfies this
- * package's own `Seams\Concerns\MembershipsTests` kit. Not for production use.
+ * Memberships for tests: each identity holds what the test granted it
+ * (`grant()`), complete unless marked `incomplete()`, and throws once told to
+ * `failFor()` it. `fake()` binds a fresh instance; name the class in
+ * `iam.tenancy.memberships` before boot for SSO's membership adapters to bind.
  *
  * @api
  *

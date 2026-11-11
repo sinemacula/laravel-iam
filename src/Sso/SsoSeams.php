@@ -21,7 +21,6 @@ use SineMacula\Laravel\Sso\Contracts\Freshness;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy;
@@ -56,22 +55,8 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
  *   (`ExternalIdentityLinksAdapter`). It is mandatory while SSO is in use, a
  *   protocol switched on (IAM-10.2): left on the default, no sign-in through
  *   SSO would find its identity.
- * - SSO's `Linker` is SSO's own `Links\LinkStore`, which implements
- *   `LinkStorage` too: links are SSO's, and `laravel-authentication` stores
- *   none. SSO finds its link storage only as the linker bound, so `LinkStorage`
- *   is answered from whatever linker is bound (`BoundLinkStorage`), the store
- *   by default, and never from a store of its own that an application's own
- *   linker would not see. SSO binds no link storage of its own, so that seam is
- *   bound only while unbound. Neither keeps anything of one request for the
- *   next, but each holds the container (the store resolves its link limit and
- *   its reporter from it), so both are scoped, as SSO's own guide binds the
- *   store, and a long-lived worker never reaches one request's container from
- *   another (IAM-8.1). Both are mandatory while SSO is in use (IAM-10.2): left
- *   on SSO's `NoLinks`, or unbound, no link could be made or found. SSO's own
- *   `LinkStore` is accepted on the link storage as well
- *   (`SeamBinding::$accepted`), since SSO's guide binds both seams to it: it is
- *   SSO's real store, not a permissive default.
- *
+ * - SSO's `Linker` is SSO's own `Links\LinkStore`, scoped, which SSO also reads
+ *   as its link storage. It is mandatory while SSO is in use.
  * - `laravel-authentication`'s `ExternalEvidencePolicy` is answered from the
  *   evidence SSO accepted, with MFA's `CombinationPolicy` as the second gate
  *   (`ExternalEvidencePolicyAdapter`), so a provider's `amr` is not multifactor
@@ -145,7 +130,7 @@ final readonly class SsoSeams implements ProvidesSeams
     /**
      * Return the bindings between `laravel-authentication` and SSO, each on
      * while the capability's switch is; session revocation always mandatory,
-     * the links and the link stores while SSO is in use, and the
+     * the links and the link store while SSO is in use, and the
      * re-authentication sessions while SSO's enforcement or a tenant MFA
      * requirement is on.
      *
@@ -165,7 +150,6 @@ final readonly class SsoSeams implements ProvidesSeams
             new SeamBinding(SessionRevocation::class, SessionRevocationAdapter::class, [NoSessionRevocation::class], appliesWhen: $on, mandatory: true),
             new SeamBinding(ExternalIdentityLinks::class, ExternalIdentityLinksAdapter::class, [NoExternalLinks::class], appliesWhen: $on, mandatory: $inUse),
             new SeamBinding(Linker::class, LinkStore::class, [NoLinks::class], Lifetime::SCOPED, $on, $inUse),
-            new SeamBinding(LinkStorage::class, BoundLinkStorage::class, [], Lifetime::SCOPED, $on, $inUse, [LinkStore::class]),
             new SeamBinding(ExternalEvidencePolicy::class, ExternalEvidencePolicyAdapter::class, [InsufficientExternalEvidence::class], appliesWhen: $on),
             new SeamBinding(Freshness::class, FreshnessAdapter::class, [RefusingFreshness::class], appliesWhen: $on),
             new SeamBinding(ApplicationPolicy::class, ApplicationPolicyAdapter::class, [ConfiguredApplicationPolicy::class], appliesWhen: $on),

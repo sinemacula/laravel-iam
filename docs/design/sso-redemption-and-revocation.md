@@ -27,7 +27,6 @@ run through are in `storage-and-transactions.md`.
   | SSO `SessionRevocation` (mandatory) | `SessionRevocationAdapter`        | `NoSessionRevocation`         | transient |
   | AUTH `ExternalIdentityLinks`        | `ExternalIdentityLinksAdapter`    | `NoExternalLinks`             | transient |
   | SSO `Linker`                        | SSO's `Links\LinkStore`           | `NoLinks`                     | scoped    |
-  | SSO `LinkStorage`                   | `BoundLinkStorage`                | none (while unbound)          | scoped    |
   | AUTH `ExternalEvidencePolicy`       | `ExternalEvidencePolicyAdapter`   | `InsufficientEvidence`        | transient |
   | SSO `Freshness`                     | `FreshnessAdapter`                | `RefusingFreshness`           | transient |
   | SSO `ApplicationPolicy`             | `ApplicationPolicyAdapter`        | `ConfiguredApplicationPolicy` | transient |
@@ -43,7 +42,7 @@ run through are in `storage-and-transactions.md`.
 
 - Session revocation is mandatory always (IAM-4.4): left on SSO's default, an enforcement change, a disabled or
   deleted connection, a removed link or a widened scope would leave every session it concerns standing. The external
-  identity links, the linker and the link storage are mandatory while SSO is in use (a protocol switched on, or its
+  identity links and the linker are mandatory while SSO is in use (a protocol switched on, or its
   switch malformed, `SsoSeams::isInUse()`, as SSO's `Features::isInUse()` reads it): left on their defaults, or
   unbound, no sign-in through SSO finds its identity and no link is made. The re-authentication sessions are mandatory
   while SSO's enforcement is on or the application binds MFA's tenant requirement (IAM-10.2): left on SSO's
@@ -54,16 +53,9 @@ run through are in `storage-and-transactions.md`.
   missing or empty value included, leaves it on. Off, nothing here is bound and each member keeps its own default.
 - SSO's `HandoffIssuer` is never declared: SSO issues and redeems its own handoff codes, so it stays on
   `Handoffs\DatabaseHandoffStore` in every provider order and with the switch off, and no `HandoffRecheck` is used.
-- Links are SSO's: `laravel-authentication` stores none. SSO finds its link storage only as the bound `Linker` that
-  implements `LinkStorage`, so `Linker` is bound to SSO's own `Links\LinkStore`, and `LinkStorage`, which SSO never
-  binds, only while it is unbound, to `BoundLinkStorage`, which answers every call from whatever `Linker` is bound at
-  that moment: the store by default, and an application's own linker once it binds one. Whatever resolves
-  `LinkStorage` then reads and writes exactly the links SSO resolves, never past a linker the application put in front
-  of the store or bound to link nothing; a bound linker that is no link storage (SSO's `NoLinks` among them) is a
-  `LogicException` before anything is read or written. Neither keeps anything of one request for the next, but each
-  holds the container (the store and its event dispatcher resolve from it), so both are scoped under this package's
-  scoped prefix (as SSO's own guide binds the store), forgotten by `Iam::resetWorkerState()`, and a long-lived worker
-  never reaches one request's container from another (IAM-8.1), as it would through a shared instance.
+- Links are SSO's: `laravel-authentication` stores none. `Linker` is bound to SSO's own `Links\LinkStore`, which SSO
+  also reads as its link storage (SSO's `LinkStorageBinding`). It is scoped under this package's scoped prefix,
+  forgotten by `Iam::resetWorkerState()` (IAM-8.1).
 - The provider's evidence passes two gates, and neither is the other (IAM-4.6, IAM-5.1, SSO-8.7):
   - The first is SSO's evidence contract, asked at redemption. It stays on SSO's default, which accepts nothing, unless
     `iam.sso.evidence` (`IAM_SSO_EVIDENCE`) is on as well as the capability, read strictly (only `true`, `1`, `on` and
@@ -323,14 +315,12 @@ run through are in `storage-and-transactions.md`.
 
   Each helper runs as a savepoint of SSO's transaction on the shared connection, throws on failure, and reports a
   revocation only once SSO's change commits, so nothing is reported that was not done. A connection scope with any
-  other reason, and a scope missing what its kind names, throws a `LogicException`. The tenant scope's helper runs a
-  second time once SSO's transaction commits, as `laravel-authentication` asks for a strict cut-off (Decision, M5:
-  the second pass is held for the storage connection's own transaction and runs once every callback queued on it has
-  run, SSO's report of the change among them, or, when one of those callbacks fails, as the unit of work ends; see
-  Failure / Edge Cases). Both passes go through `laravel-authentication`'s `tenantPolicyChanged()` as
-  `Tenancy\TenantPolicyChanges::changed()` makes them, the application's own reports included
-  (`tenant-authentication-policy.md`); for the enforcement change they are made for the enforcing tenant's subtree by
-  `Tenancy\SubtreePolicyChanges`, whose pass after the commit lists the subtree again (`provisioning-and-tenancy.md`).
+  other reason, and a scope missing what its kind names, throws a `LogicException`. The tenant scope's helper calls
+  `laravel-authentication`'s `tenantPolicyChanged()`, which judges the tenant again once SSO's transaction commits,
+  for a strict cut-off, as `Tenancy\TenantPolicyChanges::changed()` does for the application's own reports
+  (`tenant-authentication-policy.md`); for the enforcement change it is called for the enforcing tenant's subtree by
+  `Tenancy\SubtreePolicyChanges`, which lists the subtree again after the commit and judges any tenant it has gained
+  (`provisioning-and-tenancy.md`).
 - References (IAM-8.2):
   - `IdentityReferences::identity()` maps SSO's `IdentityReference` through the morph map
     (`Relation::getMorphedModel($type) ?? $type`) to an Eloquent model implementing `laravel-authentication`'s
@@ -514,7 +504,7 @@ run through are in `storage-and-transactions.md`.
 ## Implementation Anchors
 
 - `src/Sso/SsoSeams.php`: `seams()`, `isOn()`, `isEvidenceOn()`, `SWITCH`, `EVIDENCE_SWITCH`;
-  `src/Sso/BoundLinkStorage.php`; `config/iam.php`: `adapters.sso`, `sso.evidence`;
+  `config/iam.php`: `adapters.sso`, `sso.evidence`;
   `src/IamServiceProvider.php`: `registerRedemptionRecords()`, `registerContextContributors()`,
   `registerContributor()`, `registerCommitListeners()`, `seamProviders()`;
   `src/Transactions/OutermostCommits.php`: `committing()`, `count()`;
@@ -602,7 +592,7 @@ run through are in `storage-and-transactions.md`.
   `testTheHandoffIssuerKeepsSsosOwnStoreInEveryProviderOrder`,
   `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`,
-  `testTheLinkStoreIsScopedAndForgottenWhenTheWorkerResets`, `testTheLinkStorageIsTheBoundLinkersOwn`,
+  `testTheLinkStoreIsScopedAndForgottenWhenTheWorkerResets`,
   `testTheSwitchOffBindsNothing`,
   `testTheSwitchIsReadLeniently`, `testEachBindingsLifetimeDefaultsAndMandate`
 - `tests/Feature/Sso/RedemptionRecordsTest.php` `testTheRecordIsOneInstanceForTheUnitOfWork`,
@@ -696,8 +686,7 @@ run through are in `storage-and-transactions.md`.
   `tests/Unit/Sso/AdmittedRedemptionsTest.php` `testOnlyAnAdmittedLinkedRedemptionIsRecorded`,
   `testASecondRedemptionIsRefused`; `tests/Unit/Sso/RenewalRecorderTest.php` `testASecondRenewalIsALogicException`,
   `testARenewalWhileClosedIsALogicException`;
-  `tests/Unit/Sso/BoundLinkStorageTest.php` `testTheLinkerBoundAtTheCallAnswers`,
-  `testALinkerThatIsNoStorageIsALogicException`; `tests/Unit/Sso/RedemptionSecretsTest.php`
+  `tests/Unit/Sso/RedemptionSecretsTest.php`
   `testNoFrameOfAThrownTraceHoldsTheSecretsInTheClear`
 - `tests/Integration/Sso/LinkConfirmationAdapterTest.php` (every isolation level where a redemption or a judgement
   reads inside a transaction) `testTheAdapterIsSsosLinkConfirmation`,

@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Applications\AdmitAnyPrincipal;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
 use SineMacula\Laravel\Authentication\Contracts\ScopeRegistry;
 use SineMacula\Laravel\Authentication\Scopes\AcceptAnyScope;
-use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Authorization\Context\GuardAuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
@@ -242,7 +241,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             $lifetime,
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
-            holdsDefault: AuthorizationServiceProvider::isPackageDefault(...),
             declare: $declare,
         );
     }
