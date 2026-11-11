@@ -388,37 +388,47 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   re-sync (IAM-7.2) are there too, the re-sync run once the sign-in has committed.
 - The permission catalogue, the administrative check and the audit access policy (IAM-6.9, IAM-6.10), and the mapping
   of `laravel-authorization`'s events to the `authorization.*` codes (IAM-9.2), are in `audit-mapping.md`.
-- Forgetting the decisions that depended on authentication (IAM-6.11). `laravel-authorization` caches grant
-  resolutions, never decisions: each check decides afresh on the session's proofs as they are, through the requirement
-  checker (`RequirementCheck` builds a new context for every check). The one decision it keeps is the request's or the
-  job's last (`Authorization::lastDecision()`, in its scoped `LastDecisionStore`), which an application's error handler
-  reads to explain a refusal, and which it drops once a met requirement it read lapses (`metUntil`) or for another
-  session, but not when the proofs it read change within the same request or job. So
-  `Authorization\DecisionCacheInvalidation::authenticationChanged()`, the one core method, taking the identity and the
-  session key as plain values, forgets the last decision when it read an authentication requirement (it carries a
-  `RequirementFreshness`) and either was made in that session, compared by `laravel-authorization`'s own fingerprint
-  (`Decision::isFreshFor()`), or was about that identity, by morph class and key (`DecisionProvenance::$identity`): a
-  change to an identity's factors can change the requirement each of its sessions meets. A decision that read no
-  requirement, or one about another identity in another session, is kept. It is called by the MFA adapters, never
-  from a listener, after the member call they make succeeded:
+- Forgetting the decisions that depended on authentication (IAM-6.11). `laravel-authorization` decides each check
+  afresh on the session's proofs as they are, through the requirement checker (`RequirementCheck` builds a new context
+  for every check), and caches grant resolutions, never decisions. What it does keep for the request or job is the last
+  decision (`Authorization::lastDecision()`), which an application's error handler reads to explain a refusal, the
+  subject and tenant it resolved, its resolution memo, and what a running batch of checks has read ahead, none of which
+  it drops when the proofs they read change within the request or job. Its `forgetDecisionsFor($session, $identity)`
+  (BL-77, N112) forgets all of it, whatever the arguments name, leaves the persistent resolution cache alone, since no
+  grant changed, and never refuses; a batch still running reads ahead again from its next chunk, and a scoped manager
+  keeps its subject. `Authorization\DecisionCacheInvalidation::authenticationChanged()`, the one core method, taking
+  the identity and the session key as plain values, calls it on the request's or job's manager, naming the two. It is
+  called, never from a listener, after the member call that changed the authentication succeeded:
   - `SessionRevokerAdapter::factorRemoved()`, with the sign-in MFA names (a factor removed, the session judged again,
     perhaps returned to pending);
   - `SessionRevokerAdapter::revokeAll()`, with no session (the identity's factors reset; every session ends);
   - `SessionTransitionAdapter::factorChanged()`, with the change's session (a factor confirmed, a passkey registered,
     a removal the revoker did not judge; the session kept, returned to pending or revoked);
   - `PendingCompletionAdapter::complete()`, with the pending session's key, and `StepUpAdapter::stepUp()`, with the
-    session the proof is bound to (a verification passed).
+    session the proof is bound to (a verification passed);
+  - `Sso\ReauthenticationRedemption::redeem()`, with the session the code names and SSO's reference to the identity
+    (the session's authentication renewed at the provider), once `laravel-authentication` has issued the token.
 
-  Each runs inside MFA's transaction. The last decision is forgotten at once, so a check later in the transaction reads
-  the new proofs, and again should any transaction open on the storage connection roll back, since a check made between
-  the change and the rollback read proofs that were never committed. The second pass is a rollback callback of every
-  transaction open there that callbacks apply to (`Transactions\OpenTransactions`), not only the innermost, as
-  `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing transaction's
-  rollback, so MFA's transaction, a savepoint of the caller's, would otherwise leave the decision standing once the
-  caller's rolls back. A commit needs no second pass: what was checked after the change read what committed. The store,
-  the connection and the transactions open are resolved on every call, so the request's or the job's own store, an
-  Octane sandbox's included, is the one emptied. Nothing else can be invalidated, since nothing else is kept: this is
-  not a member gap.
+  Each runs inside the transaction the change is made in, MFA's or the redemption's. The decisions are forgotten at
+  once, so a check later in the transaction reads the new proofs, and again should any transaction open on the storage
+  connection roll back, since a check made between the change and the rollback read proofs that were never committed.
+  `forgetDecisionsFor()` knows nothing of the transaction, so the second pass is this package's: a rollback callback of
+  every transaction open there that callbacks apply to (`Transactions\OpenTransactions`), not only the innermost, as
+  `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
+  transaction's rollback, so MFA's transaction, a savepoint of the caller's, would otherwise leave the decisions
+  standing once the caller's rolls back. A commit needs no second pass: what was checked after the change read what
+  committed. The manager, the connection and the transactions open are resolved on every call, so the request's or the
+  job's own manager, an Octane sandbox's included, is the one that forgets.
+
+  Nowhere else does the package make a change `laravel-authorization` asks to be told of at a point it can tell it
+  from. `ProofStoreAdapter::record()` records nothing (the session already holds the first factor it keeps), and
+  `forgetFactor()` reports a factor still held to `laravel-authentication` only outside MFA's own removal and reset,
+  each of which the session revoker reports next. An SSO sign-in (`SignInRedemption`) is bound to the guard by
+  `laravel-authentication` only once the outermost transaction commits. SSO's revocations (`SessionRevocationAdapter`)
+  and a tenant's policy change (`TenantPolicyChanges`, `SubtreePolicyChanges`) end sessions named by a tenant, a
+  connection or a link rather than by session, the tenant's second pass after the commit. The package switches no
+  tenant. After those, and after its own sign-ins and sign-outs, the application calls `forgetDecisionsFor()` where the
+  request or job goes on to check.
 - `laravel-authorization`'s connection (IAM-2.3). Its key is `authorization.connection` (`AUTHORIZATION_DB_CONNECTION`),
   read on every query, migration and transaction of its own (`Database\AuthorizationConnection`), not a
   `storage.connection` like the other members'. It joins `Storage\StorageConnection::MEMBER_KEYS`, and
@@ -482,8 +492,9 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
    role's assignment is recorded as `authorization.role_assigned`. Had an application hook listed in
    `authorization.grant_hooks` refused, nothing would have been written or suspended.
 9. The member removes a factor in a request that has already checked an action guarded by an authentication
-   requirement. MFA's removal reaches `SessionRevokerAdapter::factorRemoved()`, which forgets that last decision, so
-   the request's error handler never explains a later refusal by an allow the session's proofs no longer support.
+   requirement. MFA's removal reaches `SessionRevokerAdapter::factorRemoved()`, which has `laravel-authorization`
+   forget the request's decisions, that last one among them, so the request's error handler never explains a later
+   refusal by an allow the session's proofs no longer support, and the next check resolves the subject afresh.
 
 ## Failure / Edge Cases
 
@@ -547,11 +558,6 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   - `laravel-mfa` builds its step-up exception only in its middleware, and the confirmed-factor read it uses
     (`ConfirmedFactors`) is `@internal`, so the mapping derives whether a confirmed factor is held from `Mfa::factors()`.
     A public factory for the step-up exception from a caller and a requirement would close it.
-  - `laravel-authorization` keeps the request's last decision (`LastDecisionStore`) past a change to the proofs it
-    read, until its requirement's `metUntil` passes, and offers no way to forget the decisions of one session or
-    identity, only `forgetLastDecision()`. `DecisionCacheInvalidation` forgets it through the store, judged by its
-    `RequirementFreshness` and its provenance (above). A `sessionChanged()` of its own, or dropping the last decision
-    whose session's proofs changed, would close it.
   - `laravel-authorization` names a tenant by its morph type and key alone (`Support\Reference`), the key being the only
     identifier it knows (`AuthorizableTenant`), never by `laravel-authentication`'s identifier, so the package equates
     the key with the identifier (`TenantTranslator`), refusing a tenant keyed otherwise wherever it names one, the
@@ -656,11 +662,14 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `RecordSequencesTest`; the administrative operations are `Authorization\Enums\AdministrativeOperation`, and the
   check takes the subject as a plain value, which the plan's signature did not (`audit-mapping.md`).
 
-- `Authorization\DecisionCacheInvalidation` forgets `laravel-authorization`'s last decision, the one decision it keeps,
-  rather than invalidating a decision cache: `laravel-authorization` has none (above). Its tests are
-  `tests/Feature/Authorization/DecisionCacheInvalidationTest.php`, for the rule, and the manifest's integration test,
-  through MFA's real removal and step-up; each MFA adapter's own test shows it calls it, the step-up adapter's
-  included (`StepUpAdapterTest`).
+- `Authorization\DecisionCacheInvalidation` has `laravel-authorization` forget what it remembers for the request or
+  job (`forgetDecisionsFor()`, BL-77), rather than invalidating a decision cache: `laravel-authorization` has none
+  (above). It forgets everything the request or job remembers, whatever session and identity it names, so a decision
+  that read no authentication requirement, or was about someone else in another session, is forgotten too, where the
+  plan's invalidation kept it. Its tests are `tests/Feature/Authorization/DecisionCacheInvalidationTest.php`, for the
+  rule, and the manifest's integration test, through MFA's real removal and step-up; each MFA adapter's own test shows
+  it calls it, the step-up adapter's included (`StepUpAdapterTest`), as does the SSO reauthentication's
+  (`ReauthenticationRedemptionTest`), which the plan does not list.
 - `src/Console/CheckCommand.php` is unchanged: `authorization:check` already ran inside `iam:check`
   (`Checker::MEMBER_COMMANDS`); its test now binds a tenant resolver, which the grant hook makes mandatory.
   `src/Workers/WorkerReset.php` changes only its docblock, which names the tenant tree among the scoped instances it
@@ -720,10 +729,11 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
   `permissions()`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
   `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`.
-- `src/Authorization/DecisionCacheInvalidation.php`: `authenticationChanged()`, `forget()`, `isAbout()`;
+- `src/Authorization/DecisionCacheInvalidation.php`: `authenticationChanged()`, `forget()`;
   `src/Transactions/OpenTransactions.php`: `manager()`, `on()`;
   `src/Mfa/SessionRevokerAdapter.php`: `factorRemoved()`, `revokeAll()`; `src/Mfa/SessionTransitionAdapter.php`:
-  `factorChanged()`; `src/Mfa/PendingCompletionAdapter.php`: `complete()`; `src/Mfa/StepUpAdapter.php`: `stepUp()`.
+  `factorChanged()`; `src/Mfa/PendingCompletionAdapter.php`: `complete()`; `src/Mfa/StepUpAdapter.php`: `stepUp()`;
+  `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`.
 - `src/Storage/StorageConnection.php`: `MEMBER_KEYS`; `src/Storage/ConnectionAlignment.php`: `align()`,
   `assertAligned()`, `assertRegistered()`, `MEMBER_PROVIDERS`.
 - `src/Scheduling/IamSchedule.php`: `register()`, `AUTHORIZATION_PRUNE`; `src/Checks/SchedulesCheck.php`: `checks()`;
@@ -893,8 +903,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `tests/Integration/Audit/AuthorizationRecordsTest.php`
   `testARolesLifeIsRecordedCallByCall`
 - `tests/Feature/Authorization/DecisionCacheInvalidationTest.php`
-  `testTheLastDecisionIsForgottenWhenItDependedOnTheChange`, `testWithNoSessionNamedOnlyTheIdentityIsMatched`,
-  `testAnIdentityThatIsNoModelIsMatchedByTheSessionAlone`, `testADecisionRecordedBeforeARollbackIsForgottenAgain`,
+  `testTheRequestsDecisionsAreForgottenWhateverTheChangeNames`, `testADecisionRecordedBeforeARollbackIsForgottenAgain`,
   `testADecisionRecordedBeforeACommitIsKept`,
   `testADecisionRecordedAfterACommittedSavepointIsForgottenWhenTheEnclosingTransactionRollsBack` (run on Laravel 12 and
   13), `testWithNoTransactionsManagerTheChangeForgetsAtOnce`, `testOutsideATransactionTheChangeWaitsOnNothing`
@@ -905,8 +914,12 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testTheDecisionThatReadTheSessionsAuthenticationIsForgotten`; `tests/Integration/Mfa/PendingCompletionAdapterTest.php`
   `testTheDecisionThatReadThePendingSessionsAuthenticationIsForgotten`;
   `tests/Integration/Mfa/SessionRevokerAdapterTest.php`
-  `testRevokingAllForgetsTheDecisionThatReadTheIdentitysAuthentication`; `tests/Integration/Mfa/StepUpAdapterTest.php`
-  `testTheDecisionThatReadTheSessionsAuthenticationIsForgotten`
+  `testRevokingAllForgetsTheDecisionThatReadTheIdentitysAuthentication`,
+  `testRemovingAFactorForgetsTheDecisionThatReadTheSessionsAuthentication`;
+  `tests/Integration/Mfa/StepUpAdapterTest.php` `testTheDecisionThatReadTheSessionsAuthenticationIsForgotten`,
+  `testARefusedStepUpKeepsTheDecision`
+- `tests/Integration/Sso/ReauthenticationRedemptionTest.php` `testARenewalForgetsTheRequestsDecisions` (every isolation
+  level), `testARefusalBySsoKeepsTheRequestsDecisions`
 - `tests/Feature/Storage/ConnectionAlignmentTest.php` `testAlignWritesTheSharedConnectionIntoEveryUnsetMemberKey`,
   `testAssertAlignedRefusesAMemberKeyNamingAnotherConnection`,
   `testAssertRegisteredRefusesAMemberWhoseProviderHasNotRegistered`,
@@ -926,9 +939,11 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `laravel-authorization` changes how it matches an assurance key, or reads the context's types itself.
 - `laravel-authentication`, MFA or SSO adds a key that says how strongly or how recently the session was authenticated:
   it joins `ASSURANCE_KEYS`.
-- `laravel-authorization` caches decisions across checks, or drops the last decision on a change to its session's
-  proofs, or offers a way to forget the decisions of a session or identity: `DecisionCacheInvalidation` calls that
-  instead.
+- `laravel-authorization` caches decisions across checks, forgets selectively by the session and identity named,
+  handles a rollback after `forgetDecisionsFor()` itself, or forgets on a change to a session's proofs without being
+  told: `DecisionCacheInvalidation` names what it must, or drops its second pass, or is removed.
+- The package comes to sign a session in or out, or switch a tenant, at a point inside the request or job it can
+  tell `laravel-authorization` from: it calls `DecisionCacheInvalidation` there too.
 - `laravel-authorization` renames `authorization.connection`, changes `authorization:check`'s exit codes, or changes
   how a sibling declares its adapters (`Diagnostics\Declarations`, `Diagnostics\Enums\Lifetime`) or how the report
   compares a declaration with the binding: the rows' declarations and `Lifetime::reported()` change with it.

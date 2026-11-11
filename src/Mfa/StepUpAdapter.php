@@ -39,10 +39,10 @@ use SineMacula\Laravel\Mfa\Verification\VerificationResult;
  * session a new access token, handed the caller's client (`ClientTranslator`)
  * as the client it was served to. The access token result is MFA's completion,
  * so it reaches the caller as `VerificationResult::$completion`. Once the token
- * is issued, the decision `laravel-authorization` keeps that read an
- * authentication requirement in the session stepped up or about the caller is
- * forgotten (`DecisionCacheInvalidation`, IAM-6.11): the verification passed
- * changed the proofs it read.
+ * is issued, the decisions `laravel-authorization` keeps for the request or job
+ * are forgotten, naming the session stepped up and the caller
+ * (`DecisionCacheInvalidation`, IAM-6.11): the verification passed changed the
+ * proofs they read.
  *
  * MFA hands over only a proof it accepted after the session's first factor, so
  * nothing here judges the proof again. A failed result, a caller that is
@@ -81,13 +81,13 @@ final readonly class StepUpAdapter implements StepUp
         /** Translates the verified proof into `laravel-authentication`'s proof result. */
         private ProofTranslator $proofs,
 
-        /** Forgets the decision that read the caller's authentication. */
+        /** Forgets the decisions that read the caller's authentication. */
         private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
      * Step the caller's session up with the verified proof, then forget the
-     * decision that read its authentication, returning
+     * decisions that read its authentication, returning
      * `laravel-authentication`'s access token result as MFA's completion.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller

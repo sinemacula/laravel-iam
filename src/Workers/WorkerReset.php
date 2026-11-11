@@ -17,6 +17,7 @@ use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\CheckContextFactory;
+use SineMacula\Laravel\Authorization\Evaluation\DecisionMemory;
 use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
 use SineMacula\Laravel\Authorization\Evaluation\PolicyEvaluator;
 use SineMacula\Laravel\Authorization\Preview\Previewing;
@@ -48,23 +49,23 @@ use SineMacula\Laravel\Sso\Protocols\DriverScope;
  * instances the members keep their request state in: `laravel-authentication`'s
  * rehashing, kept sessions, required work and watched sessions, `laravel-sso`'s
  * scoped seams, and `laravel-authorization`'s resolved tenant, resolution
- * cache, last decision, policy evaluator, session scopes, check context
- * factory, the abilities its Gate hook answers, the schema its query scope
- * reads and its manager, and every scoped default behind its contracts, held
- * under its own `authorization.default:` keys, and this package's scoped
- * adapters, held under its own `iam.scoped:` keys, what its previews know and
- * the console subject resolver its explanations resolve through among them.
- * Authorization's own resets (its last decision store, its resolution cache and
- * its tenant scope) are not called: every one of them clears state held in a
- * scoped instance this forgets, and its explanations keep nothing beyond the
- * check that asks for one. The adapters this package binds over its seams keep
- * nothing at all; the subject resolver, application access and the tenant tree
- * are scoped all the same, under `iam.scoped:`, the resolver so that
- * `laravel-authorization` keeps the tenant it resolved for one unit of work and
- * the tree so that it keeps the tenant chain it read, since it keys that memo
- * by the tree instance, and forgotten with the rest. It then clears the roots
- * Laravel's facades keep, as the queue worker does once it forgets its scoped
- * instances and Octane does as it switches application:
+ * cache, last decision, decision memory, policy evaluator, session scopes,
+ * check context factory, the abilities its Gate hook answers, the schema its
+ * query scope reads and its manager, and every scoped default behind its
+ * contracts, held under its own `authorization.default:` keys, and this
+ * package's scoped adapters, held under its own `iam.scoped:` keys, what its
+ * previews know and the console subject resolver its explanations resolve
+ * through among them. Authorization's own resets (its last decision store, its
+ * resolution cache and its tenant scope) are not called: every one of them
+ * clears state held in a scoped instance this forgets, and its explanations
+ * keep nothing beyond the check that asks for one. The adapters this package
+ * binds over its seams keep nothing at all; the subject resolver, application
+ * access and the tenant tree are scoped all the same, under `iam.scoped:`, the
+ * resolver so that `laravel-authorization` keeps the tenant it resolved for one
+ * unit of work and the tree so that it keeps the tenant chain it read, since it
+ * keys that memo by the tree instance, and forgotten with the rest. It then
+ * clears the roots Laravel's facades keep, as the queue worker does once it
+ * forgets its scoped instances and Octane does as it switches application:
  * `laravel-authorization`'s `Authorization` facade keeps the manager it first
  * resolved, and the manager holds its last decision, evaluator and resolvers,
  * so through the facade a later unit of work would otherwise keep reading the
@@ -116,6 +117,7 @@ final readonly class WorkerReset
         ResolvedTenant::class,
         ResolutionCache::class,
         LastDecisionStore::class,
+        DecisionMemory::class,
         PolicyEvaluator::class,
         SessionScopes::class,
         CheckContextFactory::class,

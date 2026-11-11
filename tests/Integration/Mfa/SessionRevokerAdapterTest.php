@@ -164,9 +164,8 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A reset names no sign-in, so the decision `laravel-authorization` keeps
-     * that read an authentication requirement about the identity is forgotten,
-     * whichever session it was made in (IAM-6.11).
+     * A reset names no sign-in, and the decisions `laravel-authorization` keeps
+     * for the request are forgotten all the same (IAM-6.11).
      *
      * @return void
      *
@@ -176,7 +175,7 @@ final class SessionRevokerAdapterTest extends TestCase
     {
         $person = $this->revokedPerson();
 
-        $this->recordRequirementDecision('another-sign-in', $person);
+        $this->recordDecision();
 
         $this->revoker()->revokeAll($person);
 
@@ -184,10 +183,8 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal forgets the decision `laravel-authorization` keeps that read an
-     * authentication requirement in the sign-in it is made from, whoever it was
-     * about, or about the identity, whichever session it was made in; one about
-     * another identity made in another session is kept (IAM-6.11).
+     * A removal forgets the decisions `laravel-authorization` keeps for the
+     * request, whatever session and identity the last was about (IAM-6.11).
      *
      * @return void
      *
@@ -195,25 +192,11 @@ final class SessionRevokerAdapterTest extends TestCase
      */
     public function testRemovingAFactorForgetsTheDecisionThatReadTheSessionsAuthentication(): void
     {
-        $person   = $this->revokedPerson();
-        $stranger = $this->createPerson();
-        $signIn   = $this->currentSessionOf($person);
+        $person = $this->revokedPerson();
+        $signIn = $this->currentSessionOf($person);
 
         $this->verifyAnotherSession($person);
-
-        $kept = $this->recordRequirementDecision('another-sign-in', $stranger);
-
-        $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
-
-        self::assertSame($kept, $this->lastDecision());
-
-        $this->recordRequirementDecision($signIn, $stranger);
-
-        $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
-
-        self::assertNull($this->lastDecision());
-
-        $this->recordRequirementDecision('another-sign-in', $person);
+        $this->recordDecision();
 
         $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $signIn);
 

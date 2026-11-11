@@ -328,15 +328,20 @@ on too (see [Bindings](bindings.md#authorization)).
 
 ## Decisions after authentication changes
 
-`laravel-authorization` decides every check afresh, on the session's proofs as they are, so a check made after a step-up
-or a removed factor reads the change. The one decision it keeps is the request's last, which
-`Authorization::lastDecision()` returns and an exception handler reads to explain a refusal. When MFA confirms or
-removes a factor, registers a passkey, resets a person's factors, passes a verification or returns a session to
-pending, this package forgets that last decision if it read an authentication requirement in that session or about
-that person, so it never explains a refusal, or an allow, the session's proofs no longer support. A decision made in a
-transaction that rolls back afterwards is forgotten again, including when MFA's change was made in a savepoint of a
-transaction of yours that rolls back once the savepoint has committed. There is nothing else to invalidate: no decision
-is cached across checks.
+`laravel-authorization` decides every check afresh, on the session's proofs as they are, but for the rest of the
+request or job it remembers the last decision, which `Authorization::lastDecision()` returns and an exception handler
+reads to explain a refusal, along with the subject and tenant it resolved, its resolution memo and what a running batch
+of checks has read ahead. When MFA confirms or removes a factor, registers a passkey, resets a person's factors, passes
+a verification or returns a session to pending, or an SSO reauthentication renews a session, this package calls
+`Authorization::forgetDecisionsFor()`, naming the session and the person, so the rest of the request or job decides
+afresh and never explains a refusal, or an allow, by proofs that no longer hold. It forgets everything the request or
+job remembers, whoever it was about, and never the persistent resolution cache, since no grant changed. A decision made
+in a transaction that rolls back afterwards is forgotten again, including when the change was made in a savepoint of a
+transaction of yours that rolls back once the savepoint has committed.
+
+This package does not call it when a session signs in or out, an SSO sign-in and the sessions SSO or a tenant's
+policy change revokes included, or when a tenant is switched. Where the request or job goes on to check after one of
+those, call `Authorization::forgetDecisionsFor($sessionId, $user)` yourself once it has happened.
 
 ## Administrative operations and the trail
 

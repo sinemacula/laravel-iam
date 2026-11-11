@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
@@ -43,7 +44,11 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *    later of the session's and the provider's under the session's lock, and
  *    the only token issued. It takes no lock after that. A failed access token
  *    result throws `ExternalReauthenticationRefusedException`, rolling the
- *    consumption back, so nothing reports a renewal that did not happen;
+ *    consumption back, so nothing reports a renewal that did not happen; an
+ *    issued one has `laravel-authorization` forget the decisions of the request
+ *    or job (`DecisionCacheInvalidation`, IAM-6.11), since the session's
+ *    authentication they read has been renewed, and again should
+ *    the transaction roll back;
  * 6. a renewal still recorded when the transaction is about to commit, one SSO
  *    asked for and the redemption never wrote, is a `LogicException`, and rolls
  *    back.
@@ -90,6 +95,7 @@ final readonly class ReauthenticationRedemption
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
+     * @param  \SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation  $decisions
      */
     public function __construct(
 
@@ -101,6 +107,9 @@ final readonly class ReauthenticationRedemption
 
         /** Finds the session service of the guard the application is. */
         private CurrentSession $sessions,
+
+        /** Forgets the decisions that read the renewed session's authentication. */
+        private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
@@ -155,8 +164,9 @@ final readonly class ReauthenticationRedemption
     }
 
     /**
-     * Admit the code, then renew the session the renewal recorded, inside the
-     * redemption's transaction.
+     * Admit the code, then renew the session the renewal recorded, and forget
+     * the decisions that read its authentication, inside the redemption's
+     * transaction.
      *
      * @param  \SineMacula\Laravel\Iam\Sso\AdmittedRedemptions  $admitted
      * @param  \SineMacula\Laravel\Iam\Sso\RenewalRecorder  $recorder
@@ -167,6 +177,8 @@ final readonly class ReauthenticationRedemption
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
      * @return \SineMacula\Laravel\Authentication\Sessions\AccessTokenResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException
      *
@@ -200,6 +212,12 @@ final readonly class ReauthenticationRedemption
 
         $token = $sessions->reauthenticateExternally($renewal->sessionId, ExternalResults::renewing($redemption, $renewal), $client);
 
-        return $token->isFailed() ? throw ExternalReauthenticationRefusedException::for($token) : $token;
+        if ($token->isFailed()) {
+            throw ExternalReauthenticationRefusedException::for($token);
+        }
+
+        $this->decisions->authenticationChanged($renewal->identity, $renewal->sessionId);
+
+        return $token;
     }
 }

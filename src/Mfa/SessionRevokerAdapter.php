@@ -40,10 +40,10 @@ use SineMacula\Laravel\Mfa\Proofs\RemovalRevocation;
  * which ends every session of the identity on every guard, the current one
  * included, and forgets the binding of the guard it went through. Both run as
  * savepoints of MFA's transaction, after its locks, so they commit or roll back
- * with the change. Either then forgets the decision `laravel-authorization`
- * keeps that read an authentication requirement in the sign-in named or about
- * the identity (`DecisionCacheInvalidation`, IAM-6.11), since the proofs it
- * read have changed or gone.
+ * with the change. Either then has the decisions `laravel-authorization` keeps
+ * for the request or job forgotten, naming the sign-in, if any, and the
+ * identity (`DecisionCacheInvalidation`, IAM-6.11), since the proofs they read
+ * have changed or gone.
  *
  * Stateless: the guard and the session are read on every call (IAM-8.1).
  *
@@ -65,13 +65,13 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
         /** Resolves the guard, its session service and the sign-in a removal is made from. */
         private CurrentSession $sessions,
 
-        /** Forgets the decision that read the identity's authentication. */
+        /** Forgets the decisions that read the identity's authentication. */
         private DecisionCacheInvalidation $decisions,
     ) {}
 
     /**
      * End the identity's other sessions, void the current session's proofs made
-     * with the factor and judge it again, then forget the decision that read
+     * with the factor and judge it again, then forget the decisions that read
      * its authentication.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -99,7 +99,7 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
     /**
      * End every session of the identity, the current one included, through the
      * default guard when it holds sessions and otherwise through the first
-     * guard declared that does, then forget the decision that read its
+     * guard declared that does, then forget the decisions that read its
      * authentication.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity

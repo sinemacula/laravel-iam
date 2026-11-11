@@ -48,7 +48,8 @@ process calls it.
     stores, resolvers and fetcher, and the `DriverScope` that tells its protocol manager a scope has ended) and
     `laravel-authorization` keep request state in, listed in `WorkerReset::SCOPED_STATE`. Authorization is installed
     and active from M1, binding its request state with `scoped()`: its `ResolvedTenant` holder, `ResolutionCache`,
-    `LastDecisionStore`, `PolicyEvaluator`, `SessionScopes`, `CheckContextFactory`, the `DeclaredAbilities` its Gate
+    `LastDecisionStore`, the `DecisionMemory` that counts the generations of what a request remembers, `PolicyEvaluator`,
+    `SessionScopes`, `CheckContextFactory`, the `DeclaredAbilities` its Gate
     hook answers, the `SchemaInspector` that reads, once a request or job, the tables and connections its
     `whereAuthorized()` query scope reads, the `Previewing` that holds whether a preview is being evaluated and the
     subjects its previews are about, and its `authorization` manager, and

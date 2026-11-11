@@ -121,9 +121,9 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Once the session is stepped up, the decision `laravel-authorization`
-     * keeps that read an authentication requirement in it is forgotten
-     * (IAM-6.11), so the next check reads the step-up.
+     * Once the session is stepped up, the decisions `laravel-authorization`
+     * keeps for the request are forgotten (IAM-6.11), so the next check reads
+     * the step-up.
      *
      * @return void
      *
@@ -135,7 +135,7 @@ final class StepUpAdapterTest extends TestCase
         $session   = $this->signInAndActOnSession($person);
         $reference = $this->signInReference($session);
 
-        $this->recordRequirementDecision($reference);
+        $this->recordDecision();
 
         $this->adapter()->stepUp(self::callerOf($person), $this->verifiedResult($person, $reference));
 
@@ -152,10 +152,11 @@ final class StepUpAdapterTest extends TestCase
      */
     public function testARefusedStepUpKeepsTheDecision(): void
     {
-        $person    = $this->createPerson();
-        $session   = $this->signInAndActOnSession($person);
-        $reference = $this->signInReference($session);
-        $decision  = $this->recordRequirementDecision($reference);
+        $person = $this->createPerson();
+
+        $this->signInAndActOnSession($person);
+
+        $decision = $this->recordDecision();
 
         try {
             $this->adapter()->stepUp(self::callerOf($person), VerificationResult::failed(FailureReason::NOT_ACCEPTED, 'The code did not match.'));

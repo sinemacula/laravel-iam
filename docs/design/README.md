@@ -111,9 +111,10 @@ The current note set is:
   application names in `laravel-authorization`'s configuration, in whatever order the providers register; when the
   scope registry and application access are mandatory; the second part: the grant hook, answered by SSO's scope
   widening first inside the grant's own transaction, its lock order and its retries, the identity directory, the grant
-  scope and the tree, the permission catalogue and the audit access policy, forgetting the request's last decision when
-  the authentication it read changes, from the MFA adapters, and `laravel-authorization`'s connection, prune, check,
-  request state and resource tenants; and the gaps in the members the adapters work around.
+  scope and the tree, the permission catalogue and the audit access policy, having `laravel-authorization` forget the
+  request's decisions when the authentication they read changes, from the MFA adapters and the SSO reauthentication,
+  and `laravel-authorization`'s connection, prune, check, request state and resource tenants; and the gaps in the
+  members the adapters work around.
 
 A note is added here with the code it describes.
 
