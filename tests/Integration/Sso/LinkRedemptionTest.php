@@ -6,6 +6,7 @@ namespace Tests\Integration\Sso;
 
 use Illuminate\Auth\GenericUser;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -251,19 +252,22 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A standalone redemption's concurrency failure is not retried here: it
-     * reaches the caller from the one attempt with the code unspent and nothing
-     * reported, so the request retried links the caller.
+     * A standalone redemption's concurrency failure is retried by SSO alone,
+     * three times in all whatever this package's attempts say, then reaches the
+     * caller with the code unspent and nothing reported, so the request retried
+     * links the caller.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAStandaloneConcurrencyFailureReachesTheCaller(): void
+    public function testAStandaloneConcurrencyFailureReachesTheCallerAfterSsosOwnAttempts(): void
     {
+        Config::set('iam.transactions.attempts', 2);
+
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
-        $store   = $this->failingStore(self::serialisationFailure(...), 1);
+        $store   = $this->failingStore(self::serialisationFailure(...), 3);
 
         try {
             $this->redeem($handoff, $person);
@@ -273,7 +277,7 @@ final class LinkRedemptionTest extends TestCase
             self::assertSame('40001', $exception->getCode());
         }
 
-        self::assertSame(1, $store->calls);
+        self::assertSame(3, $store->calls);
         self::assertSame([], $this->reportedEvents());
         self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
     }

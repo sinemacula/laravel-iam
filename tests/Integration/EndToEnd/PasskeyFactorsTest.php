@@ -130,7 +130,7 @@ final class PasskeyFactorsTest extends TestCase
         self::assertFalse(Passkey::query()->whereKey($passkeyId)->exists());
         self::assertNull(Factor::query()->find($factor->id));
         self::assertSame(0, PasskeyAssociation::query()->count());
-        self::assertSame([], $this->gateway()->credentialIds($person));
+        self::assertSame([], $this->gateway()->credentialIds($person, self::GUARD));
         self::assertFalse(Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP)->hasStarted());
         self::assertSame(0, DB::connection()->transactionLevel());
 
@@ -168,13 +168,13 @@ final class PasskeyFactorsTest extends TestCase
         self::assertNull(Factor::query()->find($factor->id));
         self::assertSame(0, PasskeyAssociation::query()->count());
         self::assertTrue(Passkey::query()->whereKey($passkeyId)->exists(), 'The passkey stays, for signing in.');
-        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person, self::GUARD));
 
         $removal = $this->passkeys()->remove($person, $passkeyId, self::client());
 
         self::assertTrue($removal->isRemoved());
         self::assertNull($removal->completion);
-        self::assertSame([], $this->gateway()->credentialIds($person));
+        self::assertSame([], $this->gateway()->credentialIds($person, self::GUARD));
         self::assertSame(0, Factor::query()->where('type', 'passkey')->count());
 
         $this->assertEventsCarryTheirSignIn($person, $session, [PasskeyAssociated::class, FactorRemoved::class]);
@@ -228,7 +228,7 @@ final class PasskeyFactorsTest extends TestCase
         self::assertSame('passkey', $factor->getType());
         self::assertSame(FactorStatus::CONFIRMED, $factor->getStatus());
         self::assertSame(self::CREDENTIAL, $factor->getCredentialReference());
-        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person, self::GUARD));
 
         return [$factor, $registration->passkey->id];
     }
