@@ -94,9 +94,9 @@ The current note set is:
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
   the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
   and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
-  the platform and the schedule, with this package's checks of SSO's side registered with SSO's own, reported as
-  `[iam]` and failing SSO's boot only while SSO is in use; what `laravel-authorization`'s glue adds, its prune and its
-  resource tenant resolver's note among them; and the gaps in the members installation and the checks work around.
+  SSO's side while SSO is in use and the schedule, every one reported under `iam:check` alone; what
+  `laravel-authorization`'s glue adds, its prune and its resource tenant resolver's note among them; and the gaps in
+  the members installation and the checks work around.
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the

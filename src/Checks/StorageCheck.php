@@ -8,46 +8,20 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
+use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * The storage connections are one (IAM-2.3), at deploy.
- *
- * Boot already aligns and refuses a mismatch, but `iam:check` stands that
- * refusal aside so it can report it: every member whose storage key
- * `ConnectionAlignment` aligns (`laravel-authentication`, MFA, SSO and
- * `laravel-authorization`, whose `authorization.connection` is aligned) has
- * registered, every member key names the shared connection, and the shared
- * connection is one `database.connections` configures. The member without one,
- * `laravel-audit-log`, is left to `AuditCheck`, and every member's provider to
- * its own check command, which `iam:check` reports unregistered. The identity
- * models live on the shared connection too: the model of each user provider a
- * `jwt` or `api_key` guard signs people in through, read from the model's own
- * connection without touching the database, which boot cannot do. No setting
- * names the principal models (an identity reaches its principals through its
- * own relation), so they are left to the guide. A guard naming no provider
- * signs people in through the default one (`auth.defaults.provider`), as
- * `laravel-authentication` and Laravel resolve it, so that provider's model is
- * read for it.
- *
- * `laravel-audit-log`'s storage connection is no member key this package
- * aligns, and the application may put the trail on a connection of its own;
- * one other than the shared connection is reported as a note, since audit-log's
- * refusal of a read of the trail inside a change (IAM-9.9) then does not cover
- * it.
- *
- * The identity model of a guard is `laravel-authentication`'s side, about that
- * guard, so `authentication:check` reports it too; the members' keys and the
- * shared connection are this package's, and stay with `iam:check`.
+ * Every member key and identity model is on the shared connection (IAM-2.3),
+ * and audit-log on another connection is noted.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class StorageCheck implements AuthenticationCheck
+final readonly class StorageCheck implements Check
 {
     /** @var string The key naming the default connection. */
     private const string DEFAULT_KEY = 'database.default';
@@ -76,7 +50,7 @@ final readonly class StorageCheck implements AuthenticationCheck
      */
     public function __construct(
 
-        /** The application whose members' registration is read. */
+        /** The application whose members' providers are read. */
         private Application $app,
 
         /** The configuration the connections are read from. */
@@ -109,9 +83,9 @@ final readonly class StorageCheck implements AuthenticationCheck
     }
 
     /**
-     * Every member with a storage key registered, every member key aligned, the
-     * shared connection configured, every identity model on it, and audit-log's
-     * connection noted when it is another.
+     * Every member key aligned, the shared connection configured, every
+     * identity model on it, and audit-log's connection noted when it is
+     * another.
      *
      * @return list<\Closure(): mixed>
      */
@@ -119,39 +93,11 @@ final readonly class StorageCheck implements AuthenticationCheck
     public function checks(): array
     {
         return [
-            fn () => $this->alignment->assertRegistered($this->app),
             fn () => $this->alignment->assertAligned($this->config, $this->app),
             fn () => $this->assertConfigured(),
             ...array_map(fn (string $model): \Closure => fn () => $this->assertOnStorage($model), $this->identityModels()),
             fn (): ?string => $this->auditConnectionNote(),
         ];
-    }
-
-    /**
-     * None: the members' keys and the shared connection are this package's.
-     *
-     * @return list<\Closure(): mixed>
-     */
-    #[\Override]
-    public function authenticationChecks(): array
-    {
-        return [];
-    }
-
-    /**
-     * The identity model the guard signs people in through is on the shared
-     * connection; none when it is no `jwt` or `api_key` guard, or names no
-     * model.
-     *
-     * @param  string  $guard
-     * @return list<\Closure(): mixed>
-     */
-    #[\Override]
-    public function guardChecks(string $guard): array
-    {
-        $model = $this->modelOfGuard($this->config->get(self::GUARDS_KEY . '.' . $guard));
-
-        return $model === null ? [] : [fn () => $this->assertOnStorage($model)];
     }
 
     /**

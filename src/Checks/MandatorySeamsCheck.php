@@ -10,7 +10,7 @@ use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
-use SineMacula\Laravel\Iam\Checks\Contracts\AuthenticationCheck;
+use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
@@ -48,25 +48,20 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * or as an instance.
  *
  * While SSO is in use, the seams of the capabilities this package's check of
- * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check,
- * which `sso:check` runs while it is the check SSO's checker runs under `iam`
- * (`SsoCheckRegistration::isInForce()`), and `SsoBridgeFallbackCheck` runs in
- * `iam:check` otherwise, so each mandatory seam is reported once; while SSO is
- * not in use, the bridge does not apply, and they are checked here.
+ * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check, so
+ * each mandatory seam is reported once; while SSO is not in use, the bridge
+ * does not apply, and they are checked here.
  *
  * The binding rule's outcome (`BindingOutcome`), the seams it bound and kept as
  * the application registered, is reported as a note for every seam it kept with
  * the application's binding, so the application sees which of its bindings won.
- *
- * The seams that are `laravel-authentication`'s own contracts, and their notes,
- * are about no one guard, and `authentication:check` reports them too.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-final readonly class MandatorySeamsCheck implements AuthenticationCheck
+final readonly class MandatorySeamsCheck implements Check
 {
     /** @var string Why an unbound mandatory seam is refused. */
     private const string UNBOUND = '%s is unbound; bind %s, or an implementation of your own, to it.';
@@ -81,9 +76,6 @@ final readonly class MandatorySeamsCheck implements AuthenticationCheck
 
     /** @var string The note of a seam the binding rule kept with the application's binding. */
     private const string KEPT = '%s keeps the application\'s binding, not this package\'s adapter.';
-
-    /** @var string The namespace of `laravel-authentication`'s own seams. */
-    private const string AUTHENTICATION_NAMESPACE = 'SineMacula\Laravel\Authentication\\';
 
     /**
      * Constructor.
@@ -147,36 +139,6 @@ final readonly class MandatorySeamsCheck implements AuthenticationCheck
     }
 
     /**
-     * The checks of the mandatory seams that are `laravel-authentication`'s
-     * own, then the notes of its seams the binding rule kept with the
-     * application's binding.
-     *
-     * @return list<\Closure(): mixed>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    #[\Override]
-    public function authenticationChecks(): array
-    {
-        $bindings = array_filter($this->mandatory(...$this->capabilities()), static fn (SeamBinding $binding): bool => self::isAuthentications($binding->abstract));
-        $kept     = array_filter($this->kept(), self::isAuthentications(...));
-
-        return [...$this->assertions($bindings), ...$this->keptNotes($kept)];
-    }
-
-    /**
-     * None: no seam is about one guard.
-     *
-     * @param  string  $guard
-     * @return list<\Closure(): mixed>
-     */
-    #[\Override]
-    public function guardChecks(string $guard): array
-    {
-        return [];
-    }
-
-    /**
      * One check for each mandatory seam the capabilities declare now, each
      * refusing a seam left unbound or on a member's default.
      *
@@ -236,8 +198,7 @@ final readonly class MandatorySeamsCheck implements AuthenticationCheck
 
     /**
      * The capabilities whose mandatory seams this package's check of SSO's side
-     * reports, through `sso:check` or `SsoBridgeFallbackCheck`, which applies
-     * while SSO is in use; none while it is not.
+     * reports while SSO is in use; none while it is not.
      *
      * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
      */
@@ -329,17 +290,6 @@ final readonly class MandatorySeamsCheck implements AuthenticationCheck
     private function keptNotes(array $kept): array
     {
         return array_values(array_map(static fn (string $abstract): \Closure => static fn (): string => sprintf(self::KEPT, $abstract), $kept));
-    }
-
-    /**
-     * Whether the seam is one of `laravel-authentication`'s own contracts.
-     *
-     * @param  string  $abstract
-     * @return bool
-     */
-    private static function isAuthentications(string $abstract): bool
-    {
-        return str_starts_with($abstract, self::AUTHENTICATION_NAMESPACE);
     }
 
     /**

@@ -26,8 +26,7 @@ use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
  * it.
  *
  * Audit-log schedules its own seal, sweep, verify and prune as the console
- * resolves the schedule, so none of them is registered again here; `iam:check`
- * reports one switched off with nothing else running it.
+ * resolves the schedule, so none of them is registered again here.
  *
  * No task is given a cache mutex (`withoutOverlapping()`, `onOneServer()`):
  * each command is safe to run on several servers at once, by what it does in
