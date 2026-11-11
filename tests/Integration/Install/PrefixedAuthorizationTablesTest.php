@@ -9,28 +9,24 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversClass;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
-use SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix;
-use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
 /**
- * Integration tests for the prefixed names `iam:install` writes for
- * `laravel-authorization`'s tables (IAM-2.4): with the longest prefix allowed,
- * every one of `laravel-authorization`'s published migrations creates its table
- * under the prefixed name, and every table, index and foreign key name it
- * derives stays within MySQL's and PostgreSQL's limits.
+ * Integration tests for the `laravel-authorization` table prefix `iam:install`
+ * writes (IAM-2.4).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-#[CoversClass(AuthorizationTablePrefix::class)]
+#[CoversClass(InstallCommand::class)]
 final class PrefixedAuthorizationTablesTest extends TestCase
 {
-    use NamesAuthorizationTables, UsesScratchDirectory;
+    use UsesScratchDirectory;
 
     /**
      * Destroy the application, then delete the test's directory.
@@ -53,7 +49,7 @@ final class PrefixedAuthorizationTablesTest extends TestCase
      */
     public function testTheLongestPrefixMigratesEveryTable(): void
     {
-        $prefix = str_repeat('p', AuthorizationTablePrefix::MAX_LENGTH - 1) . '_';
+        $prefix = str_repeat('p', 15) . '_';
 
         self::assertSame(0, Artisan::call(InstallCommand::NAME, ['--no-interaction' => true, '--prefix' => $prefix]));
 
@@ -66,7 +62,9 @@ final class PrefixedAuthorizationTablesTest extends TestCase
 
         $config->set('authorization.tables', $configuration['tables']);
 
-        $migrations = array_map(fn (string $name): string => $this->scratch('database/migrations/' . $name), self::authorizationMigrations());
+        $shipped    = glob(dirname((string) (new \ReflectionClass(AuthorizationServiceProvider::class))->getFileName(), 2) . '/database/migrations/*.php') ?: [];
+        $migrations = array_map(fn (string $file): string => $this->scratch('database/migrations/' . basename($file)), $shipped);
+        $tables     = array_keys(array_diff_key($configuration['tables'], ['prefix' => '']));
         $ran        = [];
 
         self::assertNotSame([], $migrations);
@@ -82,11 +80,11 @@ final class PrefixedAuthorizationTablesTest extends TestCase
                 $ran[] = $migration;
             }
 
-            self::assertSame(self::prefixedAuthorizationTables($prefix), $configuration['tables']);
+            self::assertSame($prefix, $configuration['tables']['prefix']);
 
-            foreach ($configuration['tables'] as $key => $table) {
-                self::assertTrue(Schema::hasTable($table), $table);
-                self::assertFalse(Schema::hasTable($key), $key);
+            foreach ($tables as $table) {
+                self::assertTrue(Schema::hasTable($prefix . $table), $prefix . $table);
+                self::assertFalse(Schema::hasTable($table), $table);
             }
         } finally {
             foreach (array_reverse($ran) as $migration) {
@@ -96,8 +94,8 @@ final class PrefixedAuthorizationTablesTest extends TestCase
             }
         }
 
-        foreach ($configuration['tables'] as $table) {
-            self::assertFalse(Schema::hasTable($table), $table);
+        foreach ($tables as $table) {
+            self::assertFalse(Schema::hasTable($prefix . $table), $prefix . $table);
         }
     }
 
