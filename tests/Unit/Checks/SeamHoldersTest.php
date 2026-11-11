@@ -107,8 +107,6 @@ final class SeamHoldersTest extends TestCase
         $this->container->bind(SharedSeam::class, self::declaredBy(static fn (): object => new ApplicationImplementation, SsoServiceProvider::class));
 
         self::assertSame(SsoServiceProvider::class, $this->holders()->of($this->container, SharedSeam::class));
-        self::assertTrue(SeamHolders::isMembersOwn(SsoServiceProvider::class));
-        self::assertFalse(SeamHolders::isMembersOwn(self::class));
     }
 
     /**
@@ -197,7 +195,6 @@ final class SeamHoldersTest extends TestCase
 
         self::assertSame($name, $this->holders()->of($this->container, SessionRevocation::class));
         self::assertSame($name, $this->holders()->of($this->container, PlainSeam::class));
-        self::assertFalse(SeamHolders::isMembersOwn($name));
     }
 
     /**
@@ -227,7 +224,13 @@ final class SeamHoldersTest extends TestCase
     {
         $app = new Application;
 
-        (new \ReflectionMethod(BindingRule::class, 'bindScoped'))->invoke(null, $app, new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED));
+        (new \ReflectionMethod(BindingRule::class, 'bindScoped'))->invoke(null, $app, new SeamBinding(
+            PlainSeam::class,
+            Adapter::class,
+            [MemberDefault::class],
+            Lifetime::SCOPED,
+            holdsDefault: MemberDefault::isPackageDefault(...),
+        ));
 
         self::assertTrue($app->bound(BindingRule::SCOPED_PREFIX . PlainSeam::class));
         self::assertSame(Adapter::class, $this->holders()->of($app, PlainSeam::class));
@@ -302,7 +305,13 @@ final class SeamHoldersTest extends TestCase
     {
         $app = new Application;
 
-        (new \ReflectionMethod(BindingRule::class, 'bindScoped'))->invoke(null, $app, new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED));
+        (new \ReflectionMethod(BindingRule::class, 'bindScoped'))->invoke(null, $app, new SeamBinding(
+            PlainSeam::class,
+            Adapter::class,
+            [MemberDefault::class],
+            Lifetime::SCOPED,
+            holdsDefault: MemberDefault::isPackageDefault(...),
+        ));
 
         $app->bind(Adapter::class, 'chain.0');
         $this->chain($app, 5);

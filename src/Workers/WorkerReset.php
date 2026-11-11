@@ -15,18 +15,10 @@ use SineMacula\Laravel\Authentication\Database\RequiredWork;
 use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
-use SineMacula\Laravel\Authorization\Support\RequestState;
+use SineMacula\Laravel\Authorization\Support\RequestState as AuthorizationRequestState;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
-use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
-use SineMacula\Laravel\Sso\Contracts\DnsResolver;
-use SineMacula\Laravel\Sso\Contracts\EndpointResolver;
-use SineMacula\Laravel\Sso\Contracts\Enforcement;
-use SineMacula\Laravel\Sso\Contracts\Fetcher;
-use SineMacula\Laravel\Sso\Contracts\HandoffIssuer;
-use SineMacula\Laravel\Sso\Contracts\SecretEncrypter;
-use SineMacula\Laravel\Sso\Contracts\SingleUseStore;
-use SineMacula\Laravel\Sso\Protocols\DriverScope;
+use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
 
 /**
  * Flushes every member's request state, so nothing one request or job bound
@@ -38,11 +30,11 @@ use SineMacula\Laravel\Sso\Protocols\DriverScope;
  * request (`Auth::caller()`), flushes the session already resolved, where
  * `laravel-mfa`'s default proof store keeps its proofs, and forgets the scoped
  * instances the members keep their request state in: `laravel-authentication`'s
- * rehashing, kept sessions, required work and watched sessions, `laravel-sso`'s
- * scoped seams, every scoped instance `laravel-authorization` holds under its
- * own names, which it forgets itself (`RequestState::forget()`, so what it adds
- * later is forgotten with the rest), and this package's scoped adapters, held
- * under its own `iam.scoped:` keys. Authorization's other resets (its last
+ * rehashing, kept sessions, required work and watched sessions, every scoped
+ * instance `laravel-sso` and `laravel-authorization` hold under their own
+ * names, which each forgets itself (its `RequestState::forget()`, so what it
+ * adds later is forgotten with the rest), and this package's scoped adapters,
+ * held under its own `iam.scoped:` keys. Authorization's other resets (its last
  * decision store, its resolution cache and its tenant scope) are not called:
  * every one of them clears state held in a scoped instance its `RequestState`
  * forgets, and its explanations keep nothing beyond the check that asks for
@@ -82,21 +74,12 @@ final readonly class WorkerReset
     /** @var string The pattern of the request attributes `laravel-authentication` keeps each request's callers under (`CallerCredentials`): its prefix, followed by the credential, the guard and the action. */
     private const string CALLER_MEMO = '/^authentication\.caller\./';
 
-    /** @var list<string> The scoped bindings `laravel-authentication` and `laravel-sso` keep request state in; `laravel-authorization` forgets its own (`RequestState`), and this package's scoped adapters are found by the prefix of their keys. */
+    /** @var list<string> The scoped bindings `laravel-authentication` keeps request state in; `laravel-sso` and `laravel-authorization` forget their own (`RequestState`), and this package's scoped adapters are found by the prefix of their keys. */
     private const array SCOPED_STATE = [
         Rehashing::class,
         KeptSessions::class,
         RequiredWork::class,
         WatchedSessions::class,
-        SingleUseStore::class,
-        SecretEncrypter::class,
-        Fetcher::class,
-        AttemptLimiter::class,
-        DnsResolver::class,
-        Enforcement::class,
-        EndpointResolver::class,
-        HandoffIssuer::class,
-        DriverScope::class,
     ];
 
     /**
@@ -206,7 +189,8 @@ final readonly class WorkerReset
             return;
         }
 
-        RequestState::forget($this->container);
+        SsoRequestState::forget($this->container);
+        AuthorizationRequestState::forget($this->container);
 
         foreach (self::scopedAbstracts($this->container) as $abstract) {
 
@@ -333,8 +317,9 @@ final readonly class WorkerReset
     /**
      * Whether the scoped abstract holds the suite's request state: a member's,
      * as listed, or one of this package's scoped adapters, under the keys the
-     * binding rule scopes them under. `laravel-authorization`'s own is
-     * forgotten by its `RequestState` before these.
+     * binding rule scopes them under. `laravel-sso`'s and
+     * `laravel-authorization`'s own are forgotten by their `RequestState`
+     * before these.
      *
      * @param  string  $abstract
      * @return bool

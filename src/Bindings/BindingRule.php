@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Bindings;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
@@ -49,27 +48,15 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  * binding of the member's own default class, which by its class alone could not
  * be told from the member's.
  *
- * A member that says itself whether a seam holds its default
- * (`laravel-authorization`'s `isPackageDefault()`,
- * `SeamBinding::$holdsDefault`) is asked rather than its binding read, so a
- * class the application names in that member's configuration, which the member
- * binds through a closure of its own, is kept. Registering after this package,
- * the member binds that class over the adapter itself, so the application's
- * class stands whichever registers first.
+ * Each member says itself whether a seam holds its default
+ * (`isPackageDefault()`, `SeamBinding::$holdsDefault`), so a class the
+ * application names in a member's configuration, which the member binds through
+ * a closure of its own, is kept.
  *
- * A scoped adapter is never scoped under the member's seam itself: Laravel
- * keeps a scoped abstract on its list of scoped instances for good, and forgets
- * whatever instance is held under it between requests and jobs, so an instance
- * or a singleton the application bound over the seam later would be dropped,
- * and the adapter would resolve again from the next request or job on. The
- * adapter is scoped under a key this package owns instead, and the seam
- * resolves that key through a transient binding, as `laravel-authorization`
- * scopes its own defaults. For the same reason a seam the rule binds over is
- * taken off that list first, whatever the adapter's lifetime: a member that
- * registered earlier and bound its default with `scopedIf()`, as `laravel-sso`
- * does, left the seam on it, and a binding over the seam leaves it there, so a
- * shared adapter would be built again for every request and job, and an
- * instance the application bound later would be dropped.
+ * A scoped adapter is scoped under a key this package owns, and the seam
+ * resolves that key through a transient binding, so the seam never joins the
+ * container's scoped instances and a binding the application makes over it
+ * later survives between requests and jobs.
  *
  * A binding that says how its adapter is declared to its member
  * (`SeamBinding::$declare`, `laravel-authorization`'s configuration report
@@ -131,7 +118,7 @@ final readonly class BindingRule
     {
         $switches    = self::switches($app);
         $bindings    = self::bindingsOf($switches, $capabilities);
-        $replaceable = fn (SeamBinding $binding): bool => $this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->holdsDefault);
+        $replaceable = fn (SeamBinding $binding): bool => $this->defaults->isReplaceable($app, $binding->abstract, $binding->holdsDefault);
 
         return $this->applied($app, $switches, $bindings, new BindingOutcome([], []), $replaceable);
     }
@@ -213,7 +200,7 @@ final readonly class BindingRule
     {
         $default = $binding->memberDefaults[0] ?? null;
 
-        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->memberDefaults, $binding->holdsDefault)) {
+        if ($default === null || !$this->defaults->isReplaceable($app, $binding->abstract, $binding->holdsDefault)) {
             return null;
         }
 
@@ -385,12 +372,9 @@ final readonly class BindingRule
     }
 
     /**
-     * Bind the adapter over the seam with the binding's lifetime, once the seam
-     * is off the container's scoped instances, then declare it to the member,
-     * where the binding says how, with the closure the container now holds for
-     * the seam: the one it was bound with, whether the container wrapped the
-     * adapter's class in it or it forwards to this package's key for a scoped
-     * adapter, never another made to stand for it.
+     * Bind the adapter over the seam with the binding's lifetime, then declare
+     * it to the member, where the binding says how, with the closure the
+     * container now holds for the seam.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
@@ -398,8 +382,6 @@ final readonly class BindingRule
      */
     private function bind(Application $app, SeamBinding $binding): void
     {
-        self::unscope($app, $binding->abstract);
-
         match ($binding->lifetime) {
             Lifetime::TRANSIENT => $app->bind($binding->abstract, $binding->factory ?? $binding->adapter),
             Lifetime::SHARED    => $app->singleton($binding->abstract, $binding->factory ?? $binding->adapter),
@@ -414,37 +396,8 @@ final readonly class BindingRule
     }
 
     /**
-     * Take the seam off the container's scoped instances, where a member's
-     * `scopedIf()` default puts it and where nothing else ever takes it off, so
-     * neither the adapter bound over it nor a binding the application makes
-     * over it later is forgotten between requests or jobs. The container lists
-     * its scoped abstracts only in a protected property, the one Laravel's own
-     * `forgetScopedInstances()` reads, and a container without one keeps none.
-     * The list is filtered by strict comparison, never with `array_diff()`: it
-     * holds the closure itself for a binding scoped by its closure's return
-     * type, which `array_diff()` cannot convert to a string.
-     *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
-     * @param  string  $abstract
-     * @return void
-     */
-    private static function unscope(Application $app, string $abstract): void
-    {
-        if (!$app instanceof IlluminateContainer) {
-            return;
-        }
-
-        \Closure::bind(static function (IlluminateContainer $container) use ($abstract): void {
-            $container->scopedInstances = array_filter($container->scopedInstances, static fn (mixed $scoped): bool => $scoped !== $abstract);
-        }, null, IlluminateContainer::class)($app);
-    }
-
-    /**
      * Scope the adapter under this package's own key for the seam, and resolve
-     * the seam through that key with a transient binding, so the seam itself
-     * never joins the container's scoped instances: a binding the application
-     * makes over the seam later (an instance or a singleton among them) is then
-     * never forgotten between requests or jobs, while the adapter still is.
+     * the seam through that key with a transient binding.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
