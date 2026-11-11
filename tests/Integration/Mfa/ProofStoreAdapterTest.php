@@ -29,6 +29,7 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
+use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
@@ -791,6 +792,28 @@ final class ProofStoreAdapterTest extends TestCase
         self::assertInstanceOf(Person::class, $identity);
 
         return ProofStoreAdapter::factorReference($this->factorOf($identity));
+    }
+
+    /**
+     * Forget the deleted factor as MFA's removal does: through the store, then
+     * the session revoker, which voids its proofs.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
+     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
+     * @param  string  $application
+     * @param  string  $session
+     * @param  string  $factor
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function forgetProofStoreFactor(ProofStore $store, MultiFactorAuthenticatable $identity, string $application, string $session, string $factor): void
+    {
+        $store->forgetFactor($identity, $factor);
+
+        $revoker = $this->app?->make(SessionRevokerAdapter::class) ?? self::fail('The application has not booted.');
+
+        $revoker->factorRemoved($identity, $factor, $application, $session);
     }
 
     /**
