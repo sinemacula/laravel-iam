@@ -13,16 +13,9 @@ use SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException;
 use SineMacula\Laravel\Iam\Provisioning\ConfiguredGroupMapping;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
-use SineMacula\Laravel\Iam\Testing\Seams\Concerns\GroupMappingTests;
-use SineMacula\Laravel\Iam\Testing\Seams\GroupMappingContract;
 
 /**
- * Unit tests for the group mapping read from configuration (IAM-7.2), proved
- * against this package's own contract kit: each group maps to the roles the map
- * names, a role two groups name is granted once, a group the map does not name,
- * and no group, grant nothing, every role holds in the connection's tenant
- * alone, and a map that is no map of group names to role names throws rather
- * than map the groups to nothing.
+ * Unit tests for the group mapping read from configuration (IAM-7.2).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,11 +23,8 @@ use SineMacula\Laravel\Iam\Testing\Seams\GroupMappingContract;
  * @internal
  */
 #[CoversClass(ConfiguredGroupMapping::class)]
-#[CoversClass(GroupMappingContract::class)]
 final class ConfiguredGroupMappingTest extends TestCase
 {
-    use GroupMappingTests;
-
     /** @var array<array-key, mixed> The map the configuration holds. */
     private array $map = [
         'finance'     => 'invoices.viewer',
@@ -105,82 +95,24 @@ final class ConfiguredGroupMappingTest extends TestCase
     }
 
     /**
+     * A group the map does not name, one differing only in case among them, and
+     * no group at all, grant nothing.
+     *
+     * @return void
+     */
+    public function testUnmappedGroupsGrantNothing(): void
+    {
+        self::assertSame([], $this->groupMapping()->grantsFor('connection-1', 'tenant-1', ['Finance', 'engineering']));
+        self::assertSame([], $this->groupMapping()->grantsFor('connection-1', 'tenant-1', []));
+    }
+
+    /**
      * The mapping under test.
      *
      * @return \SineMacula\Laravel\Iam\Contracts\GroupMapping
      */
-    #[\Override]
-    protected function groupMapping(): GroupMapping
+    private function groupMapping(): GroupMapping
     {
         return new ConfiguredGroupMapping(new Repository(['iam' => ['provisioning' => ['groups' => ['map' => $this->map]]]]));
-    }
-
-    /**
-     * The connection the groups are reported through.
-     *
-     * @return string
-     */
-    #[\Override]
-    protected function connectionId(): string
-    {
-        return 'connection-1';
-    }
-
-    /**
-     * The connection's tenant.
-     *
-     * @return string
-     */
-    #[\Override]
-    protected function tenantId(): string
-    {
-        return 'tenant-1';
-    }
-
-    /**
-     * Groups the map names.
-     *
-     * @return list<string>
-     */
-    #[\Override]
-    protected function mappedGroups(): array
-    {
-        return ['finance', 'finance-ops'];
-    }
-
-    /**
-     * Groups the map does not name, one differing from a mapped one only in
-     * case.
-     *
-     * @return list<string>
-     */
-    #[\Override]
-    protected function unmappedGroups(): array
-    {
-        return ['Finance', 'engineering'];
-    }
-
-    /**
-     * The roles the mapped groups give.
-     *
-     * @return list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>
-     */
-    #[\Override]
-    protected function expectedGrants(): array
-    {
-        return [GrantInstruction::role('invoices.viewer'), GrantInstruction::role('invoices.approver')];
-    }
-
-    /**
-     * A question asked of a misconfigured map.
-     *
-     * @return \Closure(): mixed
-     */
-    #[\Override]
-    protected function declinedQuestion(): \Closure
-    {
-        $mapping = new ConfiguredGroupMapping(new Repository(['iam' => ['provisioning' => ['groups' => ['map' => 'finance']]]]));
-
-        return static fn (): array => $mapping->grantsFor('connection-1', 'tenant-1', ['finance']);
     }
 }

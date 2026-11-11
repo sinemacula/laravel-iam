@@ -152,8 +152,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     read again from the configuration and the container as they stand) is bound, and its live binding (`Checks\SeamHolders`,
     never building anything new) names neither one of the row's member defaults nor any other class of a member's own,
     the row's adapter apart (SSO's own `LinkStore` is the linker's) and the member classes the row accepts
-    (`SeamBinding::$accepted`): SSO's `LinkStore` on the link storage, which SSO's guide binds it to, is SSO's real
-    store, not a permissive default, so it is accepted there (decision recorded here). A row is checked whatever this
+    (`SeamBinding::$accepted`). A row is checked whatever this
     package's capability switch says, as the tenant policy's note has it: with the switch off the application binds the
     seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept with the application's
     binding. A binding whose implementation cannot be read without building it (a closure of the application's own,
@@ -168,7 +167,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, which `sso:check` or
     `SsoBridgeFallbackCheck` runs, so `iam:check` reports each mandatory seam once; while SSO is not in use, the bridge
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
-    passkey factor gate always; the external identity links, the linker and the link storage while SSO is in use; the
+    passkey factor gate always; the external identity links and the linker while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
     enforcement is on or a tenant MFA requirement is named or bound; the enforcement inheritance while a tenant tree is
     named or bound and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
@@ -191,7 +190,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     and the `sso` namespace while SSO is in use, so the check always applies; each namespace nobody holds is reported
     on its own, naming the switch (`iam.adapters.mfa` or `iam.adapters.sso`) that registers this package's
     contributor there.
-  - `AuditCheck` (IAM-9, IAM-2.5): `OperationalAlerts::validate()`, every `jwt` and `api_key` guard excluded
+  - `AuditCheck` (IAM-9, IAM-2.5): every `jwt` and `api_key` guard excluded
     (`CaptureExclusions::unexcludedGuards()`), Gate capture off (`laravel-authorization` is always installed) and
     `require_registered` on, the values `iam:install` writes (decision Q5 (a)), whatever the mappers say: with them
     off, whatever maps the members' events still records a sign-in beside audit-log's own capture, and the bullets
@@ -499,7 +498,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAMandatorySeamIsCheckedWithItsCapabilityOff`, `testAResolvedMemberDefaultFails`,
   `testAnyClassOfAMembersOwnFails`, `testAnApplicationsClosureFails`, `testAnUnboundMandatorySeamFails`,
   `testAnAnonymousImplementationOfTheApplicationsOwnPasses`, `testAnAnonymousSubclassOfAMembersDefaultFails`,
-  `testTheSeamsSsosCheckHoldsAreLeftToIt`, `testSsosOwnLinkStoreIsAcceptedOnTheLinkStorage`,
+  `testTheSeamsSsosCheckHoldsAreLeftToIt`,
   `testTheLinksAreMandatoryWhileSsoIsInUse`,
   `testASeamIsMandatoryWhileATenantsRuleIsOn`, `testTheInheritanceIsMandatoryWhileATreeAndEnforcementAreOn`,
   `testEachSeamTheRuleKeptIsNoted`
@@ -567,8 +566,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `ContextNamespacesCheck` and `CheckCommand` follow.
 - SSO changing `ConfigurationChecks::add()`, `Features::isInUse()` or the meaning of `FreshnessOperation`:
   `SsoCheckRegistration`, `SsoBridgeFallbackCheck`, `SsoSeams::isInUse()` and `CrossMemberConfigurationCheck` follow.
-- SSO binding a link storage default of its own, or its guide binding the link storage to another class: the link
-  storage row's `accepted` list follows.
 - `laravel-authorization` binding its resource tenant resolver so the configured class can be read from its binding:
   `CrossMemberConfigurationCheck` follows. `authorization:check` exiting `0` on a refusal or an incomplete report, or
   throwing out of the console kernel's `call()` rather than ending with its exit code: `Checker` follows.
