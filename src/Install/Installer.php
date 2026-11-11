@@ -55,7 +55,7 @@ final readonly class Installer
         'Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s, laravel-sso\'s and laravel-authorization\'s tables are'
             . ' created on `iam.storage.connection`, and laravel-audit-log\'s on `audit-log.storage.connection`, each the default'
             . ' connection when unset.',
-        'Bind your email and SMS gateways (`EmailGateway`, `SmsGateway`) or name them in `iam.delivery.email` and `iam.delivery.sms`'
+        'Bind laravel-authentication\'s `OneTimeCodeSender`, which delivers every email and SMS code, laravel-mfa\'s included,'
             . ' before you allow a code sign-in method or an `email` or `sms` factor.',
         'Name your tenant MFA requirement, memberships and tenant tree in `iam.tenancy`, or bind them, if your application has tenants.',
         'Bind laravel-authentication\'s `TenantResolver`, resolving every tenant id to the tenant whose `getTenantIdentifier()` is that id,'
@@ -70,7 +70,7 @@ final readonly class Installer
             . ' laravel-authentication\'s, laravel-mfa\'s and laravel-sso\'s guides list their own routes.',
         'Call `Iam::schedule($schedule)` from `withSchedule()` and run the scheduler.',
         'Run a queue worker for laravel-authentication\'s delivery of one-time codes (`authentication.delivery.queue.connection`'
-            . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through once the gateways are named,'
+            . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through too,'
             . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
             . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
         'Allow the `simplesamlphp/composer-xmlprovider-installer` plugin in your application\'s `composer.json` (`config.allow-plugins`).',

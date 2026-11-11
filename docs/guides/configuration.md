@@ -12,7 +12,6 @@ next boot: a deploy, or a restart of every worker (see [Operations](operations.m
 - [Adapters](#adapters)
 - [Tenancy](#tenancy)
 - [Provisioning](#provisioning)
-- [Delivery](#delivery)
 - [SSO](#sso)
 - [Audit](#audit)
 - [Transactions](#transactions)
@@ -112,33 +111,6 @@ new identity in the provisioning's transaction, never beyond the connection's te
 mapping that throws, rolls the provisioning back. A value that is no class name, or a map that is no map of group names
 to role names, fails closed. Mapping and re-syncing groups is in
 [Provisioning and tenancy](provisioning-and-tenancy.md#group-mapping).
-
-## Delivery
-
-| Key                        | Default   | Environment | What it does                                                                       |
-|----------------------------|-----------|-------------|------------------------------------------------------------------------------------|
-| `iam.delivery.email`       | `null`    | None        | Your email gateway, a class implementing `Iam\Contracts\EmailGateway`.             |
-| `iam.delivery.sms`         | `null`    | None        | Your SMS gateway, a class implementing `Iam\Contracts\SmsGateway`.                 |
-| `iam.delivery.types.email` | `'email'` | None        | The gateway `laravel-authentication`'s `email` identifier type's codes go through. |
-| `iam.delivery.types.phone` | `'sms'`   | None        | The gateway `laravel-authentication`'s `phone` identifier type's codes go through. |
-
-Both gateways are handed the same `Iam\Delivery\CodeMessage`, whichever member issued the code, and your application
-writes every message's wording and template. A gateway bound in the container before this package registers counts as
-named; one bound after comes too late, so name the gateway here.
-
-- Naming a gateway points MFA's sender of that channel at it.
-- `laravel-authentication`'s one-time code sender is pointed at the gateways once every gateway `iam.delivery.types`
-  routes to is named. Each entry maps one of `laravel-authentication`'s identifier types to `email` or `sms`.
-- Name none and MFA keeps its own senders, which refuse to send (MFA refuses to boot while an application offers `sms`
-  or `email` factors with them), and `laravel-authentication`'s one-time code sender stays unbound.
-
-Setting `iam.delivery` in your own file without a `types` key replaces the shipped block one level deep, so it is read
-with the shipped `types` (`email` and `phone`). A code for one of MFA's own `email` or `sms` factors goes through
-`laravel-authentication` only while its one-time code sender is bound (see
-[Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)); otherwise MFA sends it itself. A code MFA
-sends itself is delivered inside MFA's transaction; one `laravel-authentication` issues is delivered from its queued
-job once the code has committed, and your queue retries it. This package never queues or retries a delivery itself.
-See [Testing](testing.md#fakes) for the fake gateways.
 
 ## SSO
 

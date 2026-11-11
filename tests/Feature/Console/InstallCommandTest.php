@@ -426,7 +426,7 @@ final class InstallCommandTest extends TestCase
             self::assertStringContainsString(' - ' . $item, $owed);
         }
 
-        self::assertStringContainsString('iam.delivery.email', $owed);
+        self::assertStringContainsString('Bind laravel-authentication\'s `OneTimeCodeSender`', $owed);
         self::assertStringContainsString('iam.tenancy', $owed);
         self::assertStringContainsString('Bind laravel-authentication\'s `TenantResolver`', $owed);
         self::assertStringContainsString('even if your principals act only in their own tenant', $owed);
@@ -461,7 +461,7 @@ final class InstallCommandTest extends TestCase
 
         self::assertStringContainsString(
             ' - Run a queue worker for laravel-authentication\'s delivery of one-time codes (`authentication.delivery.queue.connection`'
-                . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through once the gateways are named,'
+                . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through too,'
                 . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
                 . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
             $owed,

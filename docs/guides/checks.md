@@ -18,7 +18,6 @@ connection's or a model's name may appear in it.
 - [sso](#sso)
 - [context](#context)
 - [audit](#audit)
-- [senders](#senders)
 - [configuration](#configuration)
 - [schedule](#schedule)
 
@@ -149,20 +148,6 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
   rather than recorded unchecked. `iam:install` writes it.
-
-## senders
-
-Every code the suite sends has a gateway to go through.
-
-- *`iam.delivery.types` must map identifier types to channels.* or *`iam.delivery.types.<type>` must name a channel:
-  ...*: map each identifier type to `email` or `sms`.
-- *`iam.delivery.email` must name a class implementing ...* (or `sms`): name your gateway's class, which must implement
-  `SineMacula\Laravel\Iam\Contracts\EmailGateway` (or `SmsGateway`).
-- *Guards [...] allow `email_code`, but `iam.delivery.types` routes no `email` type to a channel.* (or `phone_code` and
-  `phone`): route the identifier type to a channel in `iam.delivery.types`.
-- *... send on sms with no gateway: name one in `iam.delivery.sms`, or bind ...* (or email): a guard allowing a code
-  sign-in method, or an MFA application enabling the factor type, sends on the channel, and no gateway takes it. Name
-  your gateway in `iam.delivery.sms` or `iam.delivery.email`, or bind it.
 
 ## configuration
 

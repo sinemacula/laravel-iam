@@ -15,7 +15,6 @@ or call an adapter.
 - [Authentication and MFA](#authentication-and-mfa)
 - [Passkeys](#passkeys)
 - [MFA's context](#mfas-context)
-- [Code delivery](#code-delivery)
 - [Authentication and SSO](#authentication-and-sso)
 - [Tenancy](#tenancy)
 - [Authorization](#authorization)
@@ -30,8 +29,7 @@ or call an adapter.
   providers register in changes nothing.
 - The rule runs in `register()`. Three switches turn whole groups of bindings off: `iam.adapters.mfa` (authentication
   and MFA, passkeys, MFA's context), `iam.adapters.sso` (authentication and SSO, tenancy) and
-  `iam.adapters.authorization` (authorization). Code delivery follows `iam.delivery`. See
-  [Configuration](configuration.md).
+  `iam.adapters.authorization` (authorization). See [Configuration](configuration.md).
 - Adapters are transient: each reads what it needs afresh on every call. An adapter that keeps request state is bound
   scoped, under a key of this package's own (`iam.scoped:` followed by the seam), with the seam itself bound to a
   closure that resolves that key. Laravel's queue worker and Octane forget scoped instances between jobs and requests,
@@ -81,9 +79,8 @@ mandatory ones.
 
 ## Authentication and MFA
 
-Bound while `iam.adapters.mfa` is on. MFA's challenge gateway is bound only while `laravel-authentication`'s one-time
-code sender is bound too (see [Code delivery](#code-delivery)); otherwise MFA keeps its own challenges. Every adapter
-here is transient. The joins are described in [Authentication and MFA](authentication-and-mfa.md).
+Bound while `iam.adapters.mfa` is on. Every adapter here is transient. The joins are described in
+[Authentication and MFA](authentication-and-mfa.md).
 
 | Contract                                          | Bound to                                    | Replaces                                              | Mandatory | Replacing it                                                                                                                                                                                                                                                                              |
 |---------------------------------------------------|---------------------------------------------|-------------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -100,7 +97,9 @@ here is transient. The joins are described in [Authentication and MFA](authentic
 | `Mfa\Contracts\ProofStore`                        | `Iam\Mfa\ProofStoreAdapter`                 | `Mfa\Proofs\ProofBindings`                            | No        | Serves MFA the proofs `laravel-authentication` recorded, each counted only while it names one of the identity's factors. A store of your own lets MFA count evidence `laravel-authentication` never saw.                                                                                  |
 | `Mfa\Contracts\FirstFactorResolver`               | `Iam\Mfa\FirstFactorResolverAdapter`        | `Mfa\Applications\DeclaredFirstFactorResolver`        | No        | Answers the first factor the session recorded, and none it cannot express. A resolver that declares one lets MFA trust a first factor it was never given.                                                                                                                                 |
 | `Mfa\Testing\Contracts\VerifiedSignInRecorder`    | `Iam\Testing\VerifiedSignInRecorderAdapter` | None: MFA binds no default                            | No        | Begins the sign-in of MFA's `actingAsVerified()` test helper and records its proofs through `laravel-authentication`, since the proof store refuses the helper's own. MFA reads it from that helper alone, so a recorder of your own changes only what the helper arranges in your tests. |
-| `Mfa\Contracts\ChallengeGateway`                  | `Iam\Mfa\ChallengeGatewayAdapter`           | `Mfa\Codes\PackageChallengeGateway`                   | No        | Sends MFA's `email` and `sms` codes through `laravel-authentication`'s factor codes, and every other through MFA's own gateway. A gateway of your own must count attempts as MFA does.                                                                                                    |
+| `Mfa\Contracts\ChallengeGateway`                  | `Iam\Mfa\ChallengeGatewayAdapter`           | `Mfa\Codes\PackageChallengeGateway`                   | No        | Sends and checks the codes of every factor whose driver delivers by SMS or email through `laravel-authentication`'s factor codes, and refuses any other. A gateway of your own must count attempts as MFA does.                                                                           |
+| `Mfa\Contracts\SmsSender`                         | `Iam\Mfa\CodeSenderAdapter`                 | `Mfa\Codes\NullSmsSender`                             | No        | Forwards MFA's SMS codes to your `OneTimeCodeSender`. A sender of your own must deliver only to the destination it is handed.                                                                                                                                                             |
+| `Mfa\Contracts\EmailSender`                       | `Iam\Mfa\CodeSenderAdapter`                 | `Mfa\Codes\NullEmailSender`                           | No        | Forwards MFA's email codes to your `OneTimeCodeSender`. A sender of your own must deliver only to the destination it is handed.                                                                                                                                                           |
 | `Authentication\Contracts\FactorCodeCounters`     | `Iam\Mfa\FactorCodeCountersAdapter`         | `Authentication\Codes\RefuseFactorCodes`              | No        | Counts every factor code attempt against MFA's challenge counters. Counters that do not count let a code be guessed past MFA's limits.                                                                                                                                                    |
 
 MFA's `TenantRequirement` is yours to bind: implement laravel-mfa's `TenantRequirement` (see
@@ -131,20 +130,6 @@ Bound while `iam.adapters.mfa` is on; every adapter is transient. MFA asks these
 | `Mfa\Contracts\SubjectTypeResolver`  | `Iam\Mfa\SubjectTypeResolverAdapter`  | `Mfa\Context\IdentityContractSubjectType` | No                                                                 | Treats every `Authentication\Contracts\MachineIdentity` as a machine. A resolver that takes a machine for a person lets MFA's operations run for an API client.                                                     |
 | `Mfa\Contracts\ActiveStateResolver`  | `Iam\Mfa\ActiveStateResolverAdapter`  | `Mfa\Context\IdentityContractActiveState` | No                                                                 | Reads `laravel-authentication`'s active state on the write connection. A resolver that reads a replica can serve an identity just deactivated.                                                                      |
 | `Mfa\Contracts\ApplicationResolver`  | `Iam\Mfa\ApplicationResolverAdapter`  | None: MFA binds no default                | No                                                                 | Names MFA's application after the guard that serves the request. A resolver that names another lets MFA judge a caller under another application than its session's.                                                |
-
-## Code delivery
-
-Each row is bound only while the gateway it delivers through is available: the one-time code sender while every
-identifier type `iam.delivery.types` routes reaches a named or bound gateway, and each MFA sender while its gateway is
-named or bound. A gateway bound after this package registers comes too late to bind these: name it in
-`iam.delivery.email` or `iam.delivery.sms` instead. All are transient and none is mandatory; your gateways write the
-messages ([Configuration](configuration.md#delivery)).
-
-| Contract                                     | Bound to                                | Replaces                                        | Mandatory | Replacing it                                                                                                                                                 |
-|----------------------------------------------|-----------------------------------------|-------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Authentication\Contracts\OneTimeCodeSender` | `Iam\Delivery\OneTimeCodeSenderAdapter` | None: `laravel-authentication` binds no default | No        | Sends `laravel-authentication`'s codes, and MFA's through it, through your gateways. A sender of your own must deliver only to the destination it is handed. |
-| `Mfa\Contracts\SmsSender`                    | `Iam\Delivery\SmsSenderAdapter`         | `Mfa\Codes\NullSmsSender`                       | No        | Sends MFA's SMS codes through your SMS gateway. A sender of your own must deliver only to the destination it is handed.                                      |
-| `Mfa\Contracts\EmailSender`                  | `Iam\Delivery\EmailSenderAdapter`       | `Mfa\Codes\NullEmailSender`                     | No        | Sends MFA's email codes through your email gateway. A sender of your own must deliver only to the destination it is handed.                                  |
 
 ## Authentication and SSO
 

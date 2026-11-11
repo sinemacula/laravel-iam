@@ -29,7 +29,6 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
-use SineMacula\Laravel\Iam\Delivery\DeliverySeams;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
@@ -252,7 +251,6 @@ final class IamServiceProvider extends ServiceProvider
             MfaSeams::class,
             PasskeySeams::class,
             ContextSeams::class,
-            DeliverySeams::class,
             SsoSeams::class,
             TenancySeams::class,
             AuthorizationSeams::class,
