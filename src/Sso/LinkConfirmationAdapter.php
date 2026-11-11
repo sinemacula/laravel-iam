@@ -88,10 +88,10 @@ use SineMacula\Laravel\Sso\Sessions\Provenance as SsoProvenance;
  * removal voiding its proofs) takes first: the guard SSO's contract asks for.
  * The session's row is the last lock in SSO's order, so taking it there inverts
  * nothing; at PostgreSQL's REPEATABLE READ, a session changed since the
- * transaction's snapshot fails to serialise instead, and the redemption is
- * retried (`LinkRedemption`). Outside a transaction no such guard can be held,
- * so the answer is `dependent` without reading anything. It reads on the write
- * connection, as the reader does, and writes nothing.
+ * transaction's snapshot fails to serialise instead, and the caller retries the
+ * request. Outside a transaction no such guard can be held, so the answer is
+ * `dependent` without reading anything. It reads on the write connection, as
+ * the reader does, and writes nothing.
  *
  * What a password, a passkey or a recovery proves is the application's to keep
  * true: a password or passkey enrolled from a session a verified domain link

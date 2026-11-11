@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
-use SineMacula\Laravel\Iam\Transactions\OpenTransactions;
+use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
@@ -31,7 +31,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(DecisionCacheInvalidation::class)]
-#[CoversClass(OpenTransactions::class)]
+#[CoversClass(ConnectionTransactions::class)]
 final class DecisionCacheInvalidationTest extends TestCase
 {
     use RecordsRequirementDecisions;
@@ -138,37 +138,6 @@ final class DecisionCacheInvalidationTest extends TestCase
         DB::rollBack();
 
         self::assertNull($this->lastDecision());
-    }
-
-    /**
-     * An application holding no transactions manager, or one that is not
-     * Laravel's, has no transaction's end to wait on: the change forgets the
-     * decision at once, and waits on nothing.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testWithNoTransactionsManagerTheChangeForgetsAtOnce(): void
-    {
-        $app      = $this->app ?? self::fail('The application has not booted.');
-        $identity = self::identity(7);
-
-        DB::beginTransaction();
-
-        $this->recordDecision();
-
-        $app->instance('db.transactions', new \stdClass);
-
-        try {
-            $this->invalidation()->authenticationChanged($identity, self::SESSION);
-        } finally {
-            unset($app['db.transactions']);
-        }
-
-        self::assertNull($this->lastDecision());
-
-        DB::rollBack();
     }
 
     /**

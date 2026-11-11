@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactionsManager as TestingTransact
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Facade;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\Facades\AuditLog;
 use SineMacula\Laravel\AuditLog\Records\AuditRecord;
@@ -20,7 +21,7 @@ use SineMacula\Laravel\Authentication\Events\SessionCreated;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
-use SineMacula\Laravel\Iam\Transactions\OpenTransactions;
+use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 use Tests\TestCase;
 
 /**
@@ -31,10 +32,10 @@ use Tests\TestCase;
  * reported inside one is recorded once the outermost has committed, or once it,
  * or one enclosing it, has rolled back, in the order reported, once each; a
  * savepoint's end waits for the transaction enclosing it; a transaction on
- * another connection, the transaction a testing trait wraps a test in and an
- * application holding no transactions manager hold nothing; and a refusal
- * recorded is held no more. The refusals reach audit-log's fake store through
- * its whole capture pipeline, the authentication mapper included.
+ * another connection and the transaction a testing trait wraps a test in hold
+ * nothing; and a refusal recorded is held no more. The refusals reach
+ * audit-log's fake store through its whole capture pipeline, the authentication
+ * mapper included.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,7 +43,7 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(DeferredRefusals::class)]
-#[CoversClass(OpenTransactions::class)]
+#[CoversClass(ConnectionTransactions::class)]
 #[CoversClass(AuthenticationEventMapper::class)]
 final class DeferredRefusalsTest extends TestCase
 {
@@ -74,7 +75,7 @@ final class DeferredRefusalsTest extends TestCase
 
     /**
      * A refusal reported inside a transaction is recorded only once it has
-     * committed, after every callback queued on it has run, once.
+     * committed, once.
      *
      * @return void
      *
@@ -84,15 +85,10 @@ final class DeferredRefusalsTest extends TestCase
     {
         $fake   = AuditLog::fake();
         $inside = [];
-        $queued = null;
 
-        $answer = DB::transaction(static function () use ($fake, &$inside, &$queued): string {
+        $answer = DB::transaction(static function () use ($fake, &$inside): string {
 
             Event::dispatch(self::refusal(FailureReason::METHOD_NOT_ALLOWED));
-
-            DB::afterCommit(static function () use ($fake, &$queued): void {
-                $queued = self::recorded($fake);
-            });
 
             $inside = self::recorded($fake);
 
@@ -101,7 +97,6 @@ final class DeferredRefusalsTest extends TestCase
 
         self::assertSame('committed', $answer);
         self::assertSame([], $inside);
-        self::assertSame([], $queued);
         self::assertSame([[self::SIGN_IN_FAILED, 'method_not_allowed']], self::recorded($fake));
     }
 
@@ -167,6 +162,30 @@ final class DeferredRefusalsTest extends TestCase
         self::assertFalse($held);
         self::assertSame([['session.created', null]], $inside);
         self::assertSame([['session.created', null]], self::recorded($fake));
+    }
+
+    /**
+     * Without a transactions manager, as where no application has booted, no
+     * refusal is held and no configuration is read.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWithoutATransactionsManagerNothingIsHeld(): void
+    {
+        $refusals = $this->refusals();
+        $app      = $this->app ?? self::fail('The application has not booted.');
+
+        $app->offsetUnset('db.transactions');
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication(null);
+
+        try {
+            self::assertFalse($refusals->defers(self::refusal(FailureReason::INVALID_CREDENTIALS)));
+        } finally {
+            Facade::setFacadeApplication($app);
+        }
     }
 
     /**
@@ -351,41 +370,6 @@ final class DeferredRefusalsTest extends TestCase
             [self::SIGN_IN_FAILED, 'method_not_allowed'],
             [self::SIGN_IN_FAILED, 'sso_required'],
         ], $committed);
-    }
-
-    /**
-     * An application holding no transactions manager, or one that is not
-     * Laravel's, cannot wait for a transaction to end, so a refusal reported
-     * inside one is recorded at once.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testWithNoTransactionsManagerNothingIsHeld(): void
-    {
-        $app    = $this->app ?? self::fail('The application has not booted.');
-        $fake   = AuditLog::fake();
-        $inside = [];
-
-        DB::transaction(static function () use ($app, $fake, &$inside): void {
-
-            $app->instance('db.transactions', new \stdClass);
-
-            Event::dispatch(self::refusal(FailureReason::METHOD_NOT_ALLOWED));
-
-            unset($app['db.transactions']);
-
-            Event::dispatch(self::refusal(FailureReason::SSO_REQUIRED));
-
-            $inside = self::recorded($fake);
-        });
-
-        self::assertSame([
-            [self::SIGN_IN_FAILED, 'method_not_allowed'],
-            [self::SIGN_IN_FAILED, 'sso_required'],
-        ], $inside);
-        self::assertCount(2, self::recorded($fake));
     }
 
     /**

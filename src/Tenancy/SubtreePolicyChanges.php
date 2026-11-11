@@ -4,11 +4,10 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
-use Illuminate\Database\DatabaseManager;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
+use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 
 /**
  * Judges the sessions of a tenant and every tenant below it, and of every
@@ -29,8 +28,6 @@ final readonly class SubtreePolicyChanges
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenantReferences  $tenants
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $translator
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
-     * @param  \Illuminate\Database\DatabaseManager  $database
-     * @param  \SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits  $afterCommit
      */
     public function __construct(
 
@@ -45,12 +42,6 @@ final readonly class SubtreePolicyChanges
 
         /** Resolves the session service both passes go through. */
         private CurrentSession $sessions,
-
-        /** Resolves the storage connection whose commit the second pass waits for. */
-        private DatabaseManager $database,
-
-        /** Holds the second pass for that connection's own transaction. */
-        private AfterConnectionCommits $afterCommit,
     ) {}
 
     /**
@@ -70,7 +61,7 @@ final readonly class SubtreePolicyChanges
         $listed  = $this->subtree($tenantId);
         $revoked = $this->judge($listed);
 
-        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId, $listed): void {
+        ConnectionTransactions::afterCommit(StorageConnection::name(), function () use ($tenantId, $listed): void {
 
             $this->judge(array_diff($this->subtree($tenantId), $listed));
         });

@@ -109,8 +109,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   holds nothing and the refusal is recorded at once; otherwise it holds the refusal and the mapper returns `null`, so
   audit-log neither writes nor claims the event. The refusal waits for the transactions open there: a rollback of any
   of them releases it at once (each is asked, since Laravel 12 does not tell a savepoint that has committed of its
-  enclosing transaction's rollback), and a commit once the outermost transaction has committed and every callback
-  queued on it has run (`Transactions\AfterConnectionCommits`); a release while a transaction is still open there (a
+  enclosing transaction's rollback), and a commit once the outermost transaction has committed, as a callback of the
+  innermost one open there (`Transactions\ConnectionTransactions::afterCommit()`); a release while a transaction is
+  still open there (a
   savepoint rolled back inside another) waits again for those still open. Once none is, each refusal held, the same
   object, is handed in the order reported back to audit-log's capture (`Recorder::capture()`), where the mapper
   describes it from the event alone, as any other refusal. The record is written once, after the transactions have
@@ -501,9 +502,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `laravel-authentication` refuses inside MFA's transaction is `session.step_up_failed` or
   `authentication.sign_in_failed` under `laravel-authentication`'s own reason, before MFA's `mfa.verification_failed`.
   A transaction that never ends inside the unit of work (one a long-running process leaves open) holds its refusals
-  unrecorded, and a commit whose callback fails releases them only as the unit of work ends, as it releases the rest
-  of the work held for that commit (`AfterConnectionCommits::settle()`). Every other mapped record is still written at
-  once, and is lost when a transaction around its event rolls back.
+  unrecorded, and a commit whose earlier callback throws drops them, as Laravel drops every callback after it. Every
+  other mapped record is still written at once, and is lost when a transaction around its event rolls back.
 - A mapper that throws (a reference over audit-log's 191 characters) writes nothing for that event, and audit-log
   dispatches `AuditCaptureFailed`, which the application can listen to; the flow that dispatched
   the event goes on.
@@ -598,9 +598,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `src/Audit/Mappers/Enums/Attribution.php`.
 - `src/Audit/Enums/AuthenticationActivity.php`, `SessionActivity.php`, `MfaActivity.php`, `SsoActivity.php`:
   `definition()`, `properties()`; `src/Audit/Contracts/ListsProperties.php`.
-- `src/Audit/DeferredRefusals.php`: `defers()`; `src/Transactions/OpenTransactions.php`: `manager()`, `on()`, `MANAGER`;
-  `src/Transactions/AfterConnectionCommits.php`: `run()`,
-  `committed()`, `settle()`; `src/IamServiceProvider.php`: `registerRedemptionRecords()`.
+- `src/Audit/DeferredRefusals.php`: `defers()`; `src/Transactions/ConnectionTransactions.php`: `afterCommit()`,
+  `open()`; `src/IamServiceProvider.php`: `registerRedemptionRecords()`.
 - `src/Audit/Correlation.php`: `ssoSignIn()`, `mfaChallenge()`, `authenticationChallenge()`, `session()`,
   `authorizationOperation()`, `first()`, `MAX_BYTES`; `src/Audit/References.php`: `type()`.
 - `src/Audit/CallerContextContributor.php`: `contribute()`; `src/Audit/HeldCaller.php`: `current()`;

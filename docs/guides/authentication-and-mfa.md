@@ -189,8 +189,8 @@ adapters run inside it, so those flows cannot be wrapped:
 - when one fails to serialise or deadlocks, retry the request: MFA never retries, and only the outermost transaction
   can be.
 
-Tell a concurrency failure by asking Laravel's detector, rather than by catching one exception class, since what
-reaches you depends on where the statement ran:
+Tell a concurrency failure by asking Laravel's detector, rather than by catching one exception class, and walk the
+exception's previous ones too, since a nested transaction wraps it:
 
 ```php
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
@@ -198,7 +198,7 @@ use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 $retryable = app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception);
 ```
 
-Walk the exception's previous ones too, as `Iam::transaction()` does. See [Operations](operations.md#retries).
+See [Operations](operations.md#retries).
 
 ## Testing
 

@@ -17,7 +17,6 @@ use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Support\RequestState as AuthorizationRequestState;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
 
 /**
@@ -50,11 +49,6 @@ use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
  * first one's. It registers itself for Octane's workers and requests and the
  * queue's jobs, and is safe to call by hand in any other long-lived process,
  * between its units of work.
- *
- * Before it forgets anything, `reset()` releases the work this package held for
- * a commit that finished without running it, a commit callback having failed
- * (`AfterConnectionCommits::settle()`), on every connection with no transaction
- * open, which forgetting its record would otherwise drop.
  *
  * Only the suite's own scoped instances are forgotten, never every one the
  * container holds: Laravel keeps a command's or a job's `Context` and its
@@ -94,9 +88,9 @@ final readonly class WorkerReset
     ) {}
 
     /**
-     * Release the work held for a commit that has finished, then flush every
-     * member's request state: the guards, the session, the scoped instances the
-     * members keep it in and the facades' roots resolved from them.
+     * Flush every member's request state: the guards, the session, the scoped
+     * instances the members keep it in and the facades' roots resolved from
+     * them.
      *
      * @return void
      *
@@ -104,7 +98,6 @@ final readonly class WorkerReset
      */
     public function reset(): void
     {
-        $this->container->make(AfterConnectionCommits::class)->settle();
         $this->forgetMemberState();
         $this->forgetScopedState();
     }
