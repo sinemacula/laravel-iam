@@ -86,7 +86,7 @@ final readonly class SeamBinding
         /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
         public array $accepted = [],
 
-        /** The answer given in place of the member's own `isPackageDefault()`. */
+        // The answer given in place of the member's own `isPackageDefault()`.
         ?\Closure $holdsDefault = null,
 
         /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */

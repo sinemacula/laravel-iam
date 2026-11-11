@@ -124,7 +124,9 @@ final class AuditAccessSeamTest extends TestCase
         self::assertSame(AuditAccessPolicyAdapter::class, $row->adapter);
         self::assertSame(Lifetime::SHARED, $row->lifetime);
         self::assertSame([DenyAllPolicy::class], $row->memberDefaults);
-        self::assertSame(AuditLogServiceProvider::class, (new \ReflectionFunction($row->holdsDefault ?? self::fail('The row asks no member.')))->getClosureScopeClass()?->getName());
+        $holdsDefault = new \ReflectionFunction($row->holdsDefault ?? self::fail('The row asks no member.'));
+
+        self::assertSame(AuditLogServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
         self::assertFalse($row->isMandatory());
     }
 

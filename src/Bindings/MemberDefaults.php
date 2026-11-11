@@ -64,11 +64,11 @@ final readonly class MemberDefaults
     public static function answerOf(string $abstract): ?\Closure
     {
         return match (true) {
-            str_starts_with($abstract, 'SineMacula\\Laravel\\Authentication\\') => AuthenticationServiceProvider::isPackageDefault(...),
-            str_starts_with($abstract, 'SineMacula\\Laravel\\Authorization\\')  => AuthorizationServiceProvider::isPackageDefault(...),
-            str_starts_with($abstract, 'SineMacula\\Laravel\\Mfa\\')            => MfaServiceProvider::isPackageDefault(...),
-            str_starts_with($abstract, 'SineMacula\\Laravel\\AuditLog\\')       => AuditLogServiceProvider::isPackageDefault(...),
-            default                                                       => null,
+            str_starts_with($abstract, 'SineMacula\Laravel\Authentication\\') => AuthenticationServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\Authorization\\')  => AuthorizationServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\Mfa\\')            => MfaServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\AuditLog\\')       => AuditLogServiceProvider::isPackageDefault(...),
+            default                                                           => null,
         };
     }
 

@@ -28,24 +28,14 @@ use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
  * throws `UnresolvedReferenceException` (IAM-8.2) with nothing judged, and the
  * change rolls back rather than leave a subtree judged in part.
  *
- * Each is then judged with the strict cut-off of `laravel-authentication`'s
- * `tenantPolicyChanged()` (IAM-4.5), as `TenantPolicyChanges` judges one
- * tenant: once in place, as a savepoint of the transaction open on the storage
- * connection, and once more once that transaction commits. The pass after the
- * commit lists and resolves the subtree again, from the tree as it is then,
- * rather than judge the tenants the first pass listed: a move into the subtree
- * that commits while this change is open has judged the moved tenant's sessions
- * against the rule as it was before this change, so only a pass that reads the
- * tree once this change has committed finds that tenant. Of a change and a move
- * racing, whichever commits last judges the moved tenant against both. Every
- * session already recorded at the version it answers is skipped, so judging a
- * tenant again costs a read. The pass after the commit is held for the commit
- * of the innermost transaction open on the storage connection
- * (`AfterConnectionCommits`), never another connection's, and dropped by a
- * rollback; with no transaction open both passes run at once. Whatever the
- * tree, the resolver or a pass throws propagates: from this call, inside the
- * change's transaction, so it rolls back; from the commit, the change already
- * durable. Stateless (IAM-8.1): the tree is found on every pass.
+ * Each is judged through `laravel-authentication`'s `tenantPolicyChanged()`
+ * (IAM-4.5), which judges it again once the change's transaction commits. A
+ * move into the subtree that commits while this change is open judged the moved
+ * tenant against the rule as it was, so once the transaction open on the
+ * storage connection commits (`AfterConnectionCommits`) the subtree is listed
+ * again and every tenant the first listing missed is judged too. A rollback
+ * drops that pass; with no transaction open it runs at once. Whatever the tree,
+ * the resolver or a pass throws propagates.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -82,10 +72,9 @@ final readonly class SubtreePolicyChanges
     ) {}
 
     /**
-     * Judge the sessions of the tenant and of every tenant below it, in place,
-     * and once more, from the subtree as it then stands, once the transaction
-     * open on the storage connection commits; answer how many sessions the
-     * first pass revoked.
+     * Judge the sessions of the tenant and of every tenant below it, and of
+     * every tenant the subtree has gained once the storage connection's
+     * transaction commits; answer how many sessions the first pass revoked.
      *
      * @param  string  $tenantId
      * @return int
@@ -99,33 +88,32 @@ final readonly class SubtreePolicyChanges
      */
     public function changed(string $tenantId): int
     {
-        $revoked = $this->judge($tenantId);
+        $listed  = $this->subtree($tenantId);
+        $revoked = $this->judge($listed);
 
-        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId): void {
+        $this->afterCommit->run($this->database->connection(StorageConnection::name()), function () use ($tenantId, $listed): void {
 
-            $this->judge($tenantId);
+            $this->judge(array_diff($this->subtree($tenantId), $listed));
         });
 
         return $revoked;
     }
 
     /**
-     * List and resolve the subtree as the tree now answers it, then judge the
-     * sessions of each tenant in it; answer how many sessions were revoked.
+     * Resolve every tenant given, then judge the sessions of each; answer how
+     * many sessions were revoked.
      *
-     * @param  string  $tenantId
+     * @param  array<int, string>  $tenantIds
      * @return int
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
-     * @throws \LogicException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
-    private function judge(string $tenantId): int
+    private function judge(array $tenantIds): int
     {
-        $tenants  = array_map($this->tenants->tenant(...), $this->subtree($tenantId));
+        $tenants  = array_map($this->tenants->tenant(...), $tenantIds);
         $sessions = $this->sessions->identitySessions();
         $revoked  = 0;
 

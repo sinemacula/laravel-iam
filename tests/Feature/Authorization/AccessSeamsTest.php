@@ -9,8 +9,8 @@ use Illuminate\Container\Container;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Applications\AdmitAnyPrincipal;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\ScopeRegistry;
@@ -203,6 +203,7 @@ final class AccessSeamsTest extends TestCase
 
         self::assertSame('isPackageDefault', $holdsDefault->getName());
         self::assertSame(AuthorizationServiceProvider::class, $holdsDefault->getClosureScopeClass()?->getName());
+
         foreach ([ScopeRegistry::class, ApplicationAccess::class] as $contract) {
             $holdsDefault = new \ReflectionFunction($bindings[$contract]->holdsDefault ?? self::fail($contract . ' asks no member.'));
 

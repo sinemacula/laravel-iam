@@ -28,7 +28,7 @@ use Tests\TestCase;
  * transaction that publishes it, the tenant's sessions are judged at once and
  * once more when that transaction commits, so a session that entered the tenant
  * once the first pass had run is revoked then; a change rolled back runs no
- * second pass; with no transaction open both passes run at once; and the
+ * second pass; with no transaction open the tenant is judged once; and the
  * service is the one the facade answers.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -112,22 +112,21 @@ final class TenantPolicyChangesTest extends TestCase
     }
 
     /**
-     * With no transaction open on the storage connection, both passes run at
-     * once: the session the first pass recorded at the version answered is
-     * judged again by the second, and kept.
+     * With no transaction open, the tenant is judged once, and a session that
+     * meets the policy is kept at the version answered.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testWithNoTransactionOpenBothPassesRunAtOnce(): void
+    public function testWithNoTransactionOpenTheTenantIsJudgedOnce(): void
     {
         $this->bindPolicy(new TenantRequirement('7'));
 
         $session = $this->inTenant($this->signIn($this->createPerson())->record);
 
         self::assertSame(0, Iam::tenantPolicies()->changed(new ClaimedTenant(self::TENANT)));
-        self::assertSame(2, $this->asked);
+        self::assertSame(1, $this->asked);
         self::assertNull($this->stored($session)->getRevokedAt());
         self::assertSame('7', $this->stored($session)->getTenantPolicyVersion());
     }
