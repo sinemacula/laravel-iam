@@ -425,22 +425,29 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   so no session key equals it), and this package's requirement checker refuses a subject naming no guard by throwing,
   so `laravel-authorization` reads each requirement as undecidable: an allow it guards does not apply, and a deny it
   guards does. A subject with no session would be judged unmet without the checker being asked, and a deny the
-  requirement guards would not apply to it, listing an action the reader's own session could be refused.
+  requirement guards would not apply to it, listing an action the reader's own session could be refused. Nor is the
+  policy told the scopes of the reader's credential, so the subject says them as those of a subject naming no
+  credential (`SessionPolicySourceAdapter::withoutCredential()`): no cap for a person, none granted for a machine. Left
+  unsaid, the session policy source would take the session key for a session to look up, find none, and allow every
+  reader nothing.
 - The adapter keeps nothing and resolves `laravel-authorization`'s manager, the memberships and the
   tenants from the application current on every call, so the singleton audit-log expects holds no request state.
 - Administrative operations (IAM-6.9). The catalogue also declares SSO's and MFA's administrative operations
   (`Authorization\Enums\AdministrativeOperation`), reusing SSO's own names where it has them
   (`Freshness\Enums\FreshnessOperation`), and `Authorization\AdministrativeCheck::authorize()` checks one through
   `laravel-authorization` for the subject handed in, with the member's object (type, id or none for the type, tenant
-  identifier) as the resource. The subject must be a resolved `Subject`: a bare principal or model is not taken,
-  since `laravel-authorization`'s `for()` would complete it from the request's current subject, its session and its
-  scope, an ambient read. The `Subject` is decided in the scope it names, put in place of the request's for the check
-  alone (`AuthorizationScope::within()`), since `laravel-authorization` otherwise decides in the request's scope
-  whatever subject is named: a subject built for a job is decided where it acts, and the request's own where the
-  request is. Removing another identity's link is its own permission (`sso.link.remove_others`, AUTHZ-14.5).
-  Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s `Mfa::enableFactor()`, IAM-6.9's re-enable, recorded
-  as `mfa.factor_enabled`) is `mfa.factor.enable`; requirement management is the application's own over its
-  requirement contracts, declared as `mfa.requirements.manage` so it can be granted with the rest.
+  identifier) as the resource. The subject must be a resolved `Subject`: a bare principal or model is not taken, since
+  `laravel-authorization`'s `for()` would complete it from the request's current subject, its session and its scope, an
+  ambient read. The `Subject` is decided in the scope it names, and the request's scope is in place again afterwards:
+  `laravel-authorization`'s `for()` decides a `Subject` naming a tenant in that tenant, and one naming none is handed to
+  it marked as acting on the platform (`Subject::$platform`), which `for()` decides on the platform whatever tenant the
+  request is in, so a subject built for a job or a command is decided where it acts, never in the request's tenant, and
+  the request's own where the request is. A subject naming a tenant `laravel-authorization` cannot read is refused
+  (`UnresolvedReferenceException`), never decided on the platform. Removing another identity's link is its own
+  permission (`sso.link.remove_others`, AUTHZ-14.5). Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s
+  `Mfa::enableFactor()`, IAM-6.9's re-enable, recorded as `mfa.factor_enabled`) is `mfa.factor.enable`; requirement
+  management is the application's own over its requirement contracts, declared as `mfa.requirements.manage` so it can be
+  granted with the rest.
 
 ### Trail reads (IAM-9.9)
 
@@ -621,10 +628,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `src/Audit/OperationalAlerts.php`: `listen()`, `validate()`, `KEY`, `EVENTS`; `config/iam.php`: `audit.alerts`.
 - `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Mappers/AuthorizationChange.php`: `of()`;
   `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
-- `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
-  `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`, `CATEGORIES`;
-  `src/Authorization/AdministrativeCheck.php`: `authorize()`; `src/Authorization/Enums/AdministrativeOperation.php`:
-  `member()`; `src/Authorization/AuthorizationSeams.php`: `seams()`.
+- `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`, `subjectOf()`, `UNJUDGED_SESSION`;
+  `src/Authorization/SessionPolicySourceAdapter.php`: `withoutCredential()`;
+  `src/Authorization/PermissionCatalogue.php`: `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`,
+  `CATEGORIES`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
+  `src/Authorization/Enums/AdministrativeOperation.php`: `member()`; `src/Authorization/AuthorizationSeams.php`:
+  `seams()`.
 
 ## Authoritative Tests
 
@@ -758,8 +767,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testTheApplicationsPolicyBoundLastWins`, `testTheSwitchOffKeepsDenyAll`
 - `tests/Integration/Authorization/AdministrativeCheckTest.php` `testAGrantInTheObjectsTenantAllowsTheOperationThere`,
   `testADenialThrowsAndIsRecordedOnce`, `testARefusalForWantOfAProofOnNoSessionIsRecorded`,
-  `testASubjectWithNoTenantIsDecidedOnThePlatform`,
-  `testATenantThatResolvesToNothingIsRefused`
+  `testASubjectWithNoTenantIsDecidedOnThePlatform`, `testASubjectInATenantIsDecidedThereWhateverTheRequestsTenant`,
+  `testASubjectInATenantThatCannotBeReadIsRefused`, `testATenantThatResolvesToNothingIsRefused`
 - `tests/Unit/Authorization/PermissionCatalogueTest.php` `testEveryPermissionIsDeclaredOnceUnderItsMember`,
   `testSsosOwnNamesAreReused`, `testEachReadPurposeHasItsOwnPermissions`
 - `tests/Integration/Audit/TrailReadsTest.php` `testAReadInsideACrossMemberTransactionIsRefused`,
