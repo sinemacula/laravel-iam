@@ -3,98 +3,35 @@
 ## Purpose
 
 This note describes how `iam:install` publishes every member's files and this package's configuration into an
-application, recognising what is already there, and writes the few member values this package needs (IAM-2.1, IAM-2.4,
-IAM-2.5); how `Iam::schedule()` registers the members' scheduled work they leave to the application (IAM-2.6); the PHP
-extensions this package declares (IAM-2.8); how `iam:check` runs every member's check and this package's own
-(IAM-10); what `laravel-authorization`'s glue adds to both; and the gaps in the members it works around.
+application, recognising what is already there (IAM-2.1, IAM-2.4); how `Iam::schedule()` registers the members'
+scheduled work they leave to the application (IAM-2.6); the PHP extensions this package declares (IAM-2.8); how
+`iam:check` runs every member's check and this package's own (IAM-10); what `laravel-authorization`'s glue adds to both;
+and the gaps in the members it works around.
 
 ## Invariants
 
 ### Installation (IAM-2.1, IAM-2.4)
 
-- `Console\InstallCommand` (`iam:install`) is thin: it reads `--prefix`, or asks for the prefix while it can still be
-  written and the command is interactive, hands it to `Install\Installer::install()`, the one core method, and prints
-  the `Install\InstallReport` it returns. With `--no-interaction` it asks nothing and prefixes nothing unless `--prefix`
-  says so; an empty `--prefix` is no prefix, and nothing is asked.
-- `Install\Publications::all()` is the working order: member by member, `laravel-authentication`,
-  `laravel-authorization`, `laravel-mfa`, `laravel-sso`, `laravel-audit-log`, then this package's `iam-config` last;
-  within a member, its `-config`, `-lang` and `-migrations` tags (`laravel-authentication` ships no language files).
-  No member's migration has a foreign key to another's, so the order only makes each run read the same.
-- Every file is published from the paths its own provider registers under the tag
-  (`ServiceProvider::pathsToPublish(null, $tag)`), to the destination the provider gives it, so the member, never this
-  package, decides where its files go. A tag that publishes a directory (MFA's and `laravel-authorization`'s
-  migrations, every language tag) is expanded to its files, in name order, so each file is judged on its own: Laravel's
-  `vendor:publish` compares only a whole file name.
-- Nothing is ever overwritten, and nothing the run did not publish is changed:
-  - a configuration file or a language file already at its destination is kept as it is;
-  - a member's migration is recognised by its base name, its file name without the `YYYY_MM_DD_HHMMSS_` timestamp and
-    the extension (`Install\MigrationLedger::baseName()`), among the `.php` files directly in the directory it would
-    be published to, read once per run; a file of that base name counts as the member's copy only while it names the
-    member's namespace (`Publication::$namespace`), as every member's migration does, and a copy found is reported and
-    never published again.
-- Where a migration's identity is in doubt the run fails closed, as incomplete (exit 1), rather than report success; the
-  report names each as a `[conflict]` (`InstallReport::$conflicts`):
-  - a migration of the application's own that shares a member's base name (`create_roles_table`,
-    `create_permissions_table`, `create_policies_table`, `create_rate_limits_table`) is not taken for the member's: the
-    member's is published beside it, so its table is never left uncreated without a word, and the run that finds it
-    fails, naming both, for the application to check the two create no table in common before it migrates (the
-    member's collision guard refuses one both create). A later run recognises the member's copy and passes. A
-    namesake of one of `laravel-authorization`'s migrations is no conflict in a run that writes the prefix into the
-    configuration it publishes (decision recorded here, IAM-2.4): every table name the member derives then carries the
-    prefix, so the two create different tables, and the run reports it as a `[note]` (`InstallReport::$notes`) rather
-    than failing; it stays a conflict when the prefix is not written, and a namesake of another member's migration is
-    a conflict whatever the prefix;
-  - a file of the application's at the very path a member's migration is published to is kept, the member's migration
-    is not published, and every run fails until the application moves it.
-- Audit-log's values (decision Q5 (a), IAM-2.5) are written only into `config/audit-log.php` published in the same run,
-  as soon as it is published and before the next file is copied (`Install\AuditLogConfiguration::write()`):
-  `capture.laravel.except_guards` gets the list `Audit\CaptureExclusions::exceptGuards()` computes (every `jwt` and
-  `api_key` guard, after whatever the configuration already excludes), and `definitions.require_registered` becomes the
-  default of the `env()` call the file reads, so `AUDIT_LOG_DEFINITIONS_REQUIRE_REGISTERED` still wins. Gate capture
-  already defaults off in the published file, so nothing is written for it. Each value is written only where the file
-  still holds audit-log's own default, matched exactly once. A configuration file the application published before is
-  never written: each value it does not hold, read from the configuration in force, is reported as owed, as Gate capture
-  switched on is.
-- The prefix for `laravel-authorization`'s tables (IAM-2.4) is offered, and written, only while neither its
-  configuration file nor any of its migrations, under any timestamp, has been published, so no table has a name yet
-  (`Installer::offersTablePrefix()`). It is written into the configuration file published in the run, as soon as it is
-  published and before any of `laravel-authorization`'s migrations is copied, as the default of each
-  `AUTHORIZATION_TABLE_*` variable (`Install\AuthorizationTablePrefix::apply()`), so the variable still wins and
-  `laravel-authorization`'s migrations and models read the prefixed names from the first migration on. A prefix is
-  lower-case letters, digits and underscores, starting with a letter, at most 16 characters: the longest name the
-  migrations derive from a table name (a foreign key's) is 46 characters before the prefix, so every one stays within
-  PostgreSQL's 63 and MySQL's 64. A prefix given when it cannot be written is reported as owed, unless the configuration
-  published before already carries it on every table name it defaults to, each the name the prefix gives the table:
-  the prefix followed by the name `laravel-authorization` ships for it, read from the installed package's own
-  configuration, or that name alone where it already starts with the prefix (`AuthorizationTablePrefix::carries()`), as
-  a run with the same prefix leaves it, since `apply()` never prefixes a name twice: running `--prefix` again is
-  then noted, never owed. A prefix that is only the start of the one written (`iam` after `iam_`) is not carried, since
-  the tables are not named with it, so it is owed.
-- Everything the run reads from the configuration (the exclusions, whether the prefix can be written) and the prefix
-  itself are judged before any file is published, so a malformed `except_guards` or an invalid prefix refuses the run
-  with Symfony's `INVALID` exit code and nothing changed.
-- Every run ends with what the application still owes (`Installer::OWED`): migrating, naming the connection each
-  member's tables are created on (`laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s on
-  `iam.storage.connection`, which the storage alignment shares; audit-log's on `audit-log.storage.connection`, which it
-  never writes, the default connection when unset); its email and SMS
-  gateways; its tenant MFA requirement, memberships and tenant tree; `laravel-authentication`'s `TenantResolver`,
-  before a tenant MFA requirement is named or SSO's enforcement turned on, since MFA's tenant requirement, the tree's
-  changes and SSO's revocation resolve the session's tenant through it while `laravel-authentication` admits a
-  principal's own tenant without one, so an application that never needed a resolver needs one then; its provisioner;
-  the routes, following this package's example application guide, so SSO's handoffs are redeemed through
-  `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly (the adapters
-  answer only a redemption or a caller those core methods recorded, and `iam:check` cannot see a route);
-  `Iam::schedule()`; a queue worker for `laravel-authentication`'s delivery of one-time codes
-  (`authentication.delivery.queue.*`), which MFA's email and SMS codes go through once the gateways are named, whether
-  or not SSO is in use, and for SSO's metadata refresh while it is; allowing SSO's Composer plugin in its own
-  `composer.json`; mapping each application to the permission to use it (`authorization.application_access`), since
-  `laravel-authentication`'s application access is answered from `laravel-authorization` and admits anyone to an
-  application the map does not name, and binding its tenant access where principals act beyond their own tenant
-  (IAM-2.1);
-  declaring MFA's and SSO's freshness operations for their applications' guards, and allowing `external_provider` on
-  each SSO application's guard, which `iam:check` refuses but the install cannot write; keeping every guard it adds
-  excluded; defining every audit code the application records itself, which `definitions.require_registered` otherwise
-  refuses; and `iam:check` on every deploy.
+- `Console\InstallCommand` (`iam:install`) publishes every member's `-config` and `-lang` tags, and this package's
+  `iam-config`, through Laravel's `vendor:publish`, which keeps a file already there.
+- Each member's `-migrations` tag is expanded to its files and filtered through `Install\MigrationLedger`, since
+  `vendor:publish` compares only a whole file name: a migration is already published when a file beside its
+  destination shares its base name (its file name without the timestamp) and names the member's namespace, under
+  whatever timestamp. That copy, or a file at the very destination, is kept; the rest are copied. An application's own
+  migration of the same base name is no copy, so the member's is published beside it and the member's collision guard
+  refuses a table both create.
+- A tag no provider registered is reported and the run exits 1; the rest is still published.
+- The prefix for `laravel-authorization`'s tables comes from `--prefix`, or is asked for interactively, and is written
+  only while neither its configuration nor any of its migrations has been published, into the configuration published
+  in the run, as the default of each `AUTHORIZATION_TABLE_*` variable (`Install\AuthorizationTablePrefix::apply()`).
+  A prefix is at most 16 characters, so every name the migrations derive stays within PostgreSQL's 63 and MySQL's 64.
+  An invalid prefix refuses the run with Symfony's `INVALID` exit code before anything is published. A prefix that can
+  no longer be written is reported as carried (`AuthorizationTablePrefix::carries()`) or as not written. The rewrite
+  goes once `laravel-authorization` takes a `tables.prefix` setting.
+- The install writes no other member configuration: audit-log's `capture.laravel.except_guards` and
+  `definitions.require_registered` are owed, and `Checks\AuditCheck` enforces them.
+- Every run ends with a short list of what the application still owes, each item linking to the installation guide's
+  section on it.
 
 ### Scheduling (IAM-2.6)
 
@@ -193,7 +130,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     contributor there.
   - `AuditCheck` (IAM-9, IAM-2.5): `OperationalAlerts::validate()`, every `jwt` and `api_key` guard excluded
     (`CaptureExclusions::unexcludedGuards()`), Gate capture off (`laravel-authorization` is always installed) and
-    `require_registered` on, the values `iam:install` writes (decision Q5 (a)), whatever the mappers say: with them
+    `require_registered` on, the values `iam:install` owes (decision Q5 (a)), whatever the mappers say: with them
     off, whatever maps the members' events still records a sign-in beside audit-log's own capture, and the bullets
     stand unconditionally in IAM-2.5. Audit-log's provider registered, whatever the mappers say: boot refuses an
     application without it but stands aside for `iam:check`, so this is the one way `iam:check` meets this package's
@@ -341,35 +278,22 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 
 1. A fresh application requires this package and runs `php artisan iam:install`; asked, it prefixes
    `laravel-authorization`'s tables or not.
-2. Every member's configuration, language files and 50 migrations, and `config/iam.php`, are published;
-   `config/audit-log.php` excludes the application's `jwt` and `api_key` guards and refuses unregistered codes; the run
-   ends with what the application still owes, and exits 0.
+2. Every member's configuration, language files and migrations, and `config/iam.php`, are published; the run ends
+   with what the application still owes, and exits 0.
 3. Run again, it publishes nothing and changes no file: every configuration and language file is kept and every
    migration recognised.
 4. An application moving from installing the members directly runs it the same way: whatever it published, under any
-   timestamp, is recognised and kept, the rest is published, and each audit-log value its own `config/audit-log.php`
-   does not hold is owed.
+   timestamp, is recognised and kept, and the rest is published.
 5. The application calls `Iam::schedule($schedule)` from `withSchedule()`.
 6. On every deploy, `php artisan iam:check` runs every member's check, then this package's, and exits 0 once
    everything holds; a note (a schedule left off, audit-log on its own connection) is reported without failing.
 
 ## Failure / Edge Cases
 
-- A tag no provider registered (a member registers its tags only in the console) is reported as `[missing]`, the rest
-  is still published, and the run exits 1.
-- A migration whose identity is in doubt, an application's own of a member's base name or a file at a member
-  migration's very path, is reported as a `[conflict]` and the run exits 1 (see Installation); a namesake of one of
-  `laravel-authorization`'s migrations in a run that writes the prefix is a `[note]` instead.
-- A file that cannot be copied stops the run with `Exceptions\PublicationFailedException`, naming the path; what was
-  published before it is kept, and running again publishes the rest and nothing twice. Since each configuration's values
-  are written as soon as it is published, a configuration the stopped run published already holds them: the run after it
-  keeps the file as the application's, and finds the audit-log values held and the prefix carried, so it owes neither,
-  as a run that never stopped would. Creating its directory or copying it raises a warning, which Laravel's error
-  handler would raise as an `\ErrorException` in place of the publication's exception: the installer catches the warning
-  with an error handler of the copy's own, restored once the copy returns, and throws the publication's exception with
-  the warning as its cause, whatever the application reports.
-- An audit-log or authorization configuration published in the run that no longer holds the member's own default (a
-  member reshaped it) is written nothing; the value, or the prefix, is owed.
+- A tag no provider registered (a member registers its tags only in the console) is reported, the rest is still
+  published, and the run exits 1.
+- An authorization configuration published in the run that no longer holds the member's defaults (a member reshaped
+  it) is written nothing, and the prefix is reported as owed.
 - A malformed SSO cadence is SSO's own `InvalidArgumentException`, thrown as the schedule is built, so a scheduler never
   starts with it. `iam:check` reports it as the one `[schedule]` problem only when the schedule is first built inside
   `iam:check`; when the application resolves the schedule while the console bootstraps (the `Schedule` facade in
@@ -389,9 +313,6 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   SSO's `OwnTenantInheritance`, bound by the application, is kept by the binding rule but reported by the check while
   SSO's enforcement is on (decision recorded here).
 - Gaps in the members that installation and the checks work around:
-  - Audit-log's `capture.laravel.except_guards` is a literal list with no environment variable, so `iam:install` can
-    write it only into a `config/audit-log.php` it has just published, and an application that published its own
-    edits it by hand; a comma-separated variable read into the list would let the value be set without the file.
   - SSO's `OperationsSchedule::register()` throws on a malformed cadence as the schedule is built, while audit-log's
     `IntegritySchedule` never throws from its own, so one malformed SSO cadence stops the application's whole schedule,
     and, whenever the schedule is resolved while the console bootstraps (the `Schedule` facade in `routes/console.php`),
@@ -420,13 +341,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 
 ## Implementation Anchors
 
-- `src/Console/InstallCommand.php`: `handle()`, `tablePrefix()`, `askForTablePrefix()`, `report()`.
-- `src/Install/Installer.php`: `install()`, `offersTablePrefix()`, `publishTag()`, `publishFile()`, `writeAuditLog()`,
-  `writeTablePrefix()`, `judgeTablePrefix()`, `OWED`; `src/Install/InstallReport.php` (`$conflicts`, `$notes`).
-- `src/Install/Publications.php`: `all()`; `src/Install/Publication.php`; `src/Install/Enums/PublicationKind.php`.
-- `src/Install/MigrationLedger.php`: `baseName()`, `copyOf()`, `namesakesOf()`.
-- `src/Install/AuditLogConfiguration.php`: `write()`; `src/Install/AuthorizationTablePrefix.php`: `assertValid()`,
-  `apply()`, `carries()`, `MAX_LENGTH`; `src/Exceptions/PublicationFailedException.php`: `forFile()`.
+- `src/Console/InstallCommand.php`: `handle()`, `tablePrefix()`, `prefixTables()`, `prefixableConfiguration()`.
+- `src/Install/MigrationLedger.php`: `baseName()`, `copyOf()`.
+- `src/Install/AuthorizationTablePrefix.php`: `assertValid()`, `apply()`, `carries()`, `MAX_LENGTH`.
 - `src/Scheduling/IamSchedule.php`: `register()`; `src/IamManager.php`: `schedule()`.
 - `src/Console/CheckCommand.php`: `handle()`; `src/Checks/Checker.php`: `run()`, `MEMBER_COMMANDS`, `CHECKS`;
   `src/Checks/Contracts/Check.php`.
@@ -448,32 +365,16 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 
 ## Authoritative Tests
 
-- `tests/Feature/Console/InstallCommandTest.php` `testEveryMembersFilesArePublishedInTheirWorkingOrder`,
+- `tests/Feature/Console/InstallCommandTest.php` `testEveryMembersFilesArePublished`,
   `testRunningTwiceChangesNothing`, `testAMigrationPublishedUnderAnotherTimestampIsRecognised`,
   `testAnApplicationsMigrationSharingABaseNameIsNotTakenForTheMembers`, `testAFileAtAMigrationsPathIsNeverOverwritten`,
-  `testAnExistingConfigurationFileIsKept`, `testTheAuditLogValuesAreWrittenIntoItsConfigurationPublished`,
-  `testTheAuditLogValuesAreOwedWhenItsConfigurationIsKept`, `testAReshapedAuditLogConfigurationIsOwedItsValues`,
-  `testAMalformedExclusionListRefusesTheRunWithNothingPublished`, `testTheRunEndsWithWhatTheApplicationStillOwes`,
-  `testTheMigrationItemNamesEachMembersConnection`,
-  `testATagNoProviderRegisteredFailsTheRun`, `testThePrefixOptionPrefixesTheAuthorizationTables`,
-  `testAnInvalidPrefixRefusesTheRunWithNothingPublished`,
-  `testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished`, `testRunningTwiceWithThePrefixOwesNothing`,
-  `testANamesakeOfAnAuthorizationMigrationIsNoConflictOnceThePrefixIsWritten`,
-  `testANamesakeOfAnotherMembersMigrationStaysAConflictUnderThePrefix`,
-  `testANamesakeStaysAConflictWhenThePrefixIsNotWritten`,
-  `testANamesakeStaysAConflictWhenTheConfigurationWasPublishedBefore`,
-  `testAPrefixIsOwedWhileTheConfigurationTagIsUnregistered`,
-  `testInteractiveTheRunAsksForThePrefix`, `testWithoutInteractionNothingIsPrefixed`,
-  `testAFileThatCannotBeCopiedStopsTheRunAndARunOnceWritablePublishesTheRest`,
-  `testARunStoppedAfterAuditLogsConfigurationLeavesItsValuesWritten`,
-  `testARunStoppedAfterTheAuthorizationConfigurationLeavesThePrefixWritten`,
-  `testAFileThatCannotBeCopiedIntoItsDirectoryStopsTheRunAndLeavesTheErrorHandler`
+  `testTheRunEndsWithWhatTheApplicationStillOwes`, `testATagNoProviderRegisteredFailsTheRun`,
+  `testThePrefixOptionPrefixesTheAuthorizationTables`, `testRunningAgainWithAPrefixWritesNothing`,
+  `testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished`, `testAnInvalidPrefixRefusesTheRunWithNothingPublished`,
+  `testInteractiveTheRunAsksForThePrefix`
 - `tests/Unit/Install/MigrationLedgerTest.php` `testTheBaseNameDropsTheTimestampAndTheExtension`,
-  `testACopyUnderAnotherTimestampIsRecognised`, `testAnApplicationsMigrationOfTheSameBaseNameIsANamesake`,
+  `testACopyUnderAnotherTimestampIsRecognised`, `testAnApplicationsMigrationOfTheSameBaseNameIsNoCopy`,
   `testOnlyTheDirectorysOwnPhpFilesAreRead`
-- `tests/Unit/Install/PublicationsTest.php` `testEveryTagIsPublishedInItsWorkingOrder`
-- `tests/Unit/Install/AuditLogConfigurationTest.php` `testTheGuardsAndTheRefusalAreWritten`,
-  `testAFileWithoutTheDefaultsIsLeftAsItIs`
 - `tests/Unit/Install/AuthorizationTablePrefixTest.php` `testEveryTableNameIsPrefixed`, `testAnInvalidPrefixIsRefused`,
   `testWhetherAConfigurationCarriesThePrefix`
 - `tests/Integration/Install/PrefixedAuthorizationTablesTest.php` `testTheLongestPrefixMigratesEveryTable` (MySQL and
@@ -515,7 +416,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAGuardNamingNoProviderReadsTheDefaultProvidersModel`, `testAuditLogOnAnotherConnectionIsNoted`
 - `tests/Feature/Checks/ContextNamespacesCheckTest.php` `testItRequiresSsoOnlyWhileSsoIsInUse`,
   `testANamespaceNobodyRegisteredFails`, `testAnMfaNamespaceNobodyRegisteredFails`
-- `tests/Feature/Checks/AuditCheckTest.php` `testAuditLogAsItShipsFails`, `testWhatTheInstallWritesPasses`,
+- `tests/Feature/Checks/AuditCheckTest.php` `testAuditLogAsItShipsFails`, `testTheOwedValuesPass`,
   `testWithTheMappersOffAuditLogsValuesAreStillEnforced`, `testGateCaptureOnFails`,
   `testAnAuditLogThatNeverRegisteredIsReportedAsMissing`
 - `tests/Feature/Checks/SsoBridgeFallbackCheckTest.php` `testTheWholeBridgeRunsHereWhenSsosCheckDoesNotRunIt`,
@@ -549,10 +450,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
 
 ## Change Triggers
 
-- A member adding, renaming or removing a publishing tag, a migration, or its namespace: `Publications` follows, and
-  `MigrationLedger`'s recognition of a copy by the namespace it names.
-- A member reshaping the defaults `AuditLogConfiguration` and `AuthorizationTablePrefix` write over, or
-  `laravel-authorization` adding a table or a longer derived name: `MAX_LENGTH` follows.
+- A member adding, renaming or removing a publishing tag or its namespace: `InstallCommand`'s tags follow.
+- `laravel-authorization` reshaping the defaults `AuthorizationTablePrefix` writes over, adding a table or a longer
+  derived name (`MAX_LENGTH` follows), or taking a `tables.prefix` setting (the rewrite goes).
 - A member scheduling work of its own, or leaving more to the application: `IamSchedule` follows, and so does
   `iam:check`'s report of schedules switched off.
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.

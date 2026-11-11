@@ -7,30 +7,8 @@ namespace SineMacula\Laravel\Iam\Install;
 use Illuminate\Filesystem\Filesystem;
 
 /**
- * The migrations an application has already published, recognised by their base
- * name, never their timestamp (IAM-2.1): `create_mfa_factors_table` is the base
- * name of `2026_04_15_000000_create_mfa_factors_table.php`, and of the same
- * migration an application published with another timestamp, as Laravel's
- * `publishesMigrations()` and an application moving from installing members
- * directly both give one.
- *
- * A file of the same base name counts as the member's copy only while it names
- * the member's namespace, as every member's migration does (each uses the
- * member's collision guard and storage connection): `laravel-authorization`'s
- * base names (`create_roles_table`, `create_permissions_table`,
- * `create_policies_table`) and `laravel-authentication`'s
- * `create_rate_limits_table` are generic enough for an application's own
- * migration to share one, and taking it for the member's would leave the
- * member's table uncreated without a word. Such a namesake is a conflict of the
- * run that finds it instead, and the member's migration is published beside it,
- * so a table the two share is refused loudly by the member's collision guard
- * when it migrates.
- *
- * A directory is read once, when it is first asked about, and only its own
- * `.php` files, as Laravel's migrator reads it. No two of a member's migrations
- * share a base name, and a migration names its own member's namespace alone, so
- * what one run publishes never changes what the ledger answers for the rest of
- * the run.
+ * Recognises a member's published migration by its base name, whatever its
+ * timestamp (IAM-2.1).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,7 +18,7 @@ use Illuminate\Filesystem\Filesystem;
 final class MigrationLedger
 {
     /** @var string The timestamp a migration's file name starts with. */
-    public const string TIMESTAMP = '/^\d{4}_\d{2}_\d{2}_\d{6}_/';
+    private const string TIMESTAMP = '/^\d{4}_\d{2}_\d{2}_\d{6}_/';
 
     /** @var string The extension of a migration's file. */
     private const string EXTENSION = '.php';
@@ -60,8 +38,7 @@ final class MigrationLedger
     ) {}
 
     /**
-     * The base name of a migration: its file name without the timestamp it
-     * starts with and without its extension.
+     * The file name of a migration without its timestamp and extension.
      *
      * @param  string  $path
      * @return string
@@ -72,8 +49,8 @@ final class MigrationLedger
     }
 
     /**
-     * The copy of the given migration already published beside where it would
-     * be published, under any timestamp, or `null` when there is none.
+     * The copy of a migration beside its destination that shares its base name
+     * and names the member's namespace.
      *
      * @param  string  $destination
      * @param  string  $namespace
@@ -83,9 +60,13 @@ final class MigrationLedger
      */
     public function copyOf(string $destination, string $namespace): ?string
     {
-        foreach ($this->sharingBaseName($destination) as $path) {
+        $directory = dirname($destination);
 
-            if ($this->names($path, $namespace)) {
+        $this->directories[$directory] ??= $this->read($directory);
+
+        foreach ($this->directories[$directory][self::baseName($destination)] ?? [] as $path) {
+
+            if (str_contains($this->files->get($path), $namespace)) {
                 return $path;
             }
         }
@@ -94,51 +75,13 @@ final class MigrationLedger
     }
 
     /**
-     * The application's own migrations that share the given migration's base
-     * name without being a copy of it.
-     *
-     * @param  string  $destination
-     * @param  string  $namespace
-     * @return list<string>
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function namesakesOf(string $destination, string $namespace): array
-    {
-        return array_values(array_filter(
-            $this->sharingBaseName($destination),
-            fn (string $path): bool => !$this->names($path, $namespace),
-        ));
-    }
-
-    /**
-     * Every migration beside the given one that shares its base name, in file
-     * name order.
-     *
-     * @param  string  $destination
-     * @return list<string>
-     */
-    private function sharingBaseName(string $destination): array
-    {
-        $directory = dirname($destination);
-
-        $this->read($directory);
-
-        return $this->directories[$directory][self::baseName($destination)] ?? [];
-    }
-
-    /**
-     * Read a directory's migrations by base name, once.
+     * A directory's own `.php` files, by base name, in file name order.
      *
      * @param  string  $directory
-     * @return void
+     * @return array<string, list<string>>
      */
-    private function read(string $directory): void
+    private function read(string $directory): array
     {
-        if (isset($this->directories[$directory])) {
-            return;
-        }
-
         $migrations = [];
 
         foreach ($this->files->isDirectory($directory) ? $this->files->files($directory) : [] as $file) {
@@ -150,20 +93,6 @@ final class MigrationLedger
             $migrations[self::baseName($file->getPathname())][] = $file->getPathname();
         }
 
-        $this->directories[$directory] = $migrations;
-    }
-
-    /**
-     * Whether a migration names the given namespace.
-     *
-     * @param  string  $path
-     * @param  string  $namespace
-     * @return bool
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    private function names(string $path, string $namespace): bool
-    {
-        return str_contains($this->files->get($path), $namespace);
+        return $migrations;
     }
 }

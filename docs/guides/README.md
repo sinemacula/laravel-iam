@@ -32,7 +32,7 @@ php artisan migrate
 The install command ends with what your application still owes: its gateways, its tenancy contracts, its provisioner,
 its routes (following [An example application](example-application.md), which redeems SSO's handoffs through
 `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`), a definition registered with `AuditLog::define()`
-for every audit code it records itself (audit-log refuses an unregistered one once `iam:install` has turned
+for every audit code it records itself (audit-log refuses an unregistered one once you turn
 `definitions.require_registered` on; see [The audit trail](audit-trail.md#codes)), and its schedule. Register the
 scheduled work in `bootstrap/app.php`:
 

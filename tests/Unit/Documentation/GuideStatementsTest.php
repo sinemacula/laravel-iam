@@ -568,15 +568,6 @@ final class GuideStatementsTest extends TestCase
             ['is issued through `laravel-authentication`\'s factor codes, and delivered from its queued job'],
         ];
 
-        yield 'a prefixed namesake of an authorization migration is only noted' => [
-            'docs/guides/installation.md',
-            [
-                'One namesake does not fail the run: a namesake of one of `laravel-authorization`\'s migrations (`create_roles_table`, say) in a run that writes the table prefix',
-                'is reported as a note, since the two then create different tables, unless an `AUTHORIZATION_TABLE_*` variable you set names the table yours creates',
-            ],
-            ['(`create_roles_table`, say) is not taken for the member\'s'],
-        ];
-
         yield 'iam:check says Gate capture would record the mapped decisions again' => [
             'docs/guides/checks.md',
             ['This package maps `laravel-authorization`\'s decision events, the `Gate` checks it answers among them'],

@@ -14,8 +14,7 @@ use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
  * Unit tests for what audit-log's own capture must leave alone (IAM-9.6,
  * IAM-2.5): every `jwt` and `api_key` guard, found by its driver, in
  * `audit-log.capture.laravel.except_guards`, and Gate capture off. It only
- * computes, for `iam:install` to write and `iam:check` to enforce, and writes
- * nothing.
+ * computes, for `iam:check` to enforce, and writes nothing.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

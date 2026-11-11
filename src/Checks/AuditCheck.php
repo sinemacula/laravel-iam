@@ -16,7 +16,7 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
  * The audit trail's configuration across the members (IAM-9, IAM-2.5).
  *
  * Audit-log is configured the way IAM-2.5 states, whatever the mappers say,
- * which `iam:install` writes and this enforces (decision Q5 (a)): every `jwt`
+ * which the application sets and this enforces (decision Q5 (a)): every `jwt`
  * and `api_key` guard is in `audit-log.capture.laravel.except_guards`
  * (`CaptureExclusions`), audit-log's Gate capture is off, since
  * `laravel-authorization` is always installed, and
@@ -56,7 +56,7 @@ final readonly class AuditCheck implements Check
         . 'register laravel-iam\'s provider before the application boots, or turn `%s` off.';
 
     /** @var string Why a guard audit-log's own capture still records is refused. */
-    private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice; `iam:install` writes them.';
+    private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice: add them.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
     private const string GATE_CAPTURE_ON = '`%s` must be false, so no authorization decision is recorded twice:'
@@ -64,7 +64,7 @@ final readonly class AuditCheck implements Check
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNCHECKED_CODES = '`%s` must be true, so a code without a definition is refused rather than recorded unchecked; '
-        . '`iam:install` writes it.';
+        . 'turn it on.';
 
     /**
      * Constructor.

@@ -76,7 +76,7 @@ Every definition is version 1 and keeps only the properties it lists. Nothing ke
 by its id and type, never its label or destination; a policy by its document's version and digest, never the document,
 and an update by the names of the fields it changed, never their values; reasons as codes; an identifier change's
 identifiers pseudonymised under audit-log's redaction key. Every code's definition is registered, so turn audit-log's
-`definitions.require_registered` on, which `iam:install` writes and `iam:check` requires: a code with no definition is
+`definitions.require_registered` on, which `iam:install` owes and `iam:check` requires: a code with no definition is
 then refused rather than recorded unchecked.
 
 **Your own codes need definitions too.** Once `definitions.require_registered` is on, every code your application
@@ -158,8 +158,8 @@ audit-log's own capture of Laravel's events would record each a second time. So:
 - audit-log's Gate capture stays off (`audit-log.capture.gate.enabled`), so that each authorization decision is
   recorded once, through `laravel-authorization`'s own events.
 
-`iam:install` writes the exclusions into a `config/audit-log.php` it publishes, and `iam:check` refuses a configuration
-without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list yourself. Two
+Set both in your `config/audit-log.php`: `iam:install` lists them as owed, and `iam:check` refuses a configuration
+without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too. Two
 consequences of the exclusion: a sign-in made through a `jwt` guard's own `attempt()` or `login()`, rather than the
 session service, dispatches only `Login`, and is recorded by nothing; nor is an `api_key` guard's `logout()`. Sign
 people in through `Auth::sessions()`.

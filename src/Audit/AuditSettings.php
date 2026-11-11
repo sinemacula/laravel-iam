@@ -19,7 +19,7 @@ use Illuminate\Contracts\Config\Repository;
  * boots: audit-log takes registrations only until the application has booted.
  *
  * Audit-log's `definitions.require_registered` is only read here, never
- * written: `iam:install` turns it on and `iam:check` refuses a configuration
+ * written: the application turns it on and `iam:check` refuses a configuration
  * without it (decision Q5 (a)). It counts as on only while it is `true`, the
  * one value audit-log reads as on; anything else, unset included, is not.
  *

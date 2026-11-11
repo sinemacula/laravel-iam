@@ -367,10 +367,8 @@ return [
     | (`audit-log.capture.laravel.except_guards`) and leave its Gate capture
     | off, or each sign-in is recorded twice, and turn audit-log's
     | `definitions.require_registered` on, so a code without a definition is
-    | refused rather than recorded unchecked. `iam:install` writes the
-    | exclusions and the refusal into an audit-log configuration it publishes
-    | (Gate capture already ships off), and `iam:check` refuses a
-    | configuration without any of the three.
+    | refused rather than recorded unchecked. Gate capture already ships off,
+    | and `iam:check` refuses a configuration without any of the three.
     |
     | `alerts` offers the suite's operational events to the application's
     | alerting: `audit_write_failed` (audit-log's `AuditWriteFailed`, a record
