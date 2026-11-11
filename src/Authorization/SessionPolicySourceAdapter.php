@@ -104,19 +104,7 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
             return $this->sessionScopes($subject, $subject->session);
         }
 
-        if ($subject->guard !== null) {
-            try {
-                $guard = $this->auth->guard($subject->guard);
-
-                if ($guard instanceof ContextualGuard && $guard->hasUser() && self::isCaller($guard, $subject->subject)) {
-                    return $guard->scopes();
-                }
-            } catch (\Exception) {
-                return [];
-            }
-        }
-
-        return self::withoutCredential($subject->subject, $subject->identity)->scopes();
+        return ($this->callerScopes($subject) ?? self::withoutCredential($subject->subject, $subject->identity))->scopes();
     }
 
     /**
@@ -134,6 +122,41 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
     public static function withoutCredential(object $subject, ?object $identity = null): CredentialScopes
     {
         return self::isMachine($subject, $identity) ? CredentialScopes::of([]) : CredentialScopes::uncapped();
+    }
+
+    /**
+     * The scopes of the credential of the guard the subject names, while its
+     * caller is the subject's own model; `[]` when the guard cannot be read;
+     * null when it names no credential of the subject's: no guard named, a
+     * guard that is not `laravel-authentication`'s, one that has not resolved
+     * its request, or one whose caller is someone else.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
+     * @return ?\SineMacula\Laravel\Authorization\Support\CredentialScopes
+     */
+    private function callerScopes(Subject $subject): ?CredentialScopes
+    {
+        try {
+            $guard = $subject->guard === null ? null : $this->auth->guard($subject->guard);
+
+            return $guard instanceof ContextualGuard && $guard->hasUser() && self::isCaller($guard, $subject->subject) ? self::carried($guard->scopes()) : null;
+        } catch (\Exception) {
+            return CredentialScopes::of([]);
+        }
+    }
+
+    /**
+     * What a credential carrying the scopes given says: no cap for `null`, and
+     * those scopes otherwise.
+     *
+     * @param  ?list<string>  $scopes
+     * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function carried(?array $scopes): CredentialScopes
+    {
+        return $scopes === null ? CredentialScopes::uncapped() : CredentialScopes::of($scopes);
     }
 
     /**

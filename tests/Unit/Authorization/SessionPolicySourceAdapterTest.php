@@ -140,17 +140,17 @@ final class SessionPolicySourceAdapterTest extends TestCase
     {
         yield 'no guard named' => [
             static fn (self $test): Subject => new Subject($test->person(), session: 'session-1'),
-            static fn (self $test): AuthFactory => $test->sessionsThrowing(),
+            static fn (self $test): AuthFactory => $test->sessionsUnasked(),
         ];
 
         yield 'a subject that is no identity' => [
             static fn (): Subject => new Subject(new \stdClass, guard: self::GUARD, session: 'session-1'),
-            static fn (self $test): AuthFactory => $test->sessionsThrowing(),
+            static fn (self $test): AuthFactory => $test->sessionsUnasked(),
         ];
 
         yield 'a principal acting for another identity than the one named' => [
             static fn (self $test): Subject => new Subject($test->person(), $test->identity(Identity::class), guard: self::GUARD, session: 'session-1'),
-            static fn (self $test): AuthFactory => $test->sessionsThrowing(),
+            static fn (self $test): AuthFactory => $test->sessionsUnasked(),
         ];
 
         yield 'an authentication factory with no session service' => [
@@ -166,7 +166,8 @@ final class SessionPolicySourceAdapterTest extends TestCase
 
     /**
      * A session the source cannot establish allows nothing, and the source
-     * never throws for it.
+     * never throws for it; one it can tell it cannot establish is never looked
+     * up.
      *
      * @param  \Closure(self): \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  \Closure(self): \Illuminate\Contracts\Auth\Factory  $auth
@@ -192,7 +193,9 @@ final class SessionPolicySourceAdapterTest extends TestCase
 
         $auth->expects(self::once())->method('sessions')->with(self::GUARD)->willThrowException(new \LogicException('No session service.'));
 
-        self::assertSame([], (new SessionPolicySourceAdapter($auth))->scopesFor(new Subject($this->principalActingFor($identity), $identity, guard: self::GUARD, session: 'session-1')));
+        $subject = new Subject($this->principalActingFor($identity), $identity, guard: self::GUARD, session: 'session-1');
+
+        self::assertSame([], (new SessionPolicySourceAdapter($auth))->scopesFor($subject));
     }
 
     /**
@@ -252,7 +255,9 @@ final class SessionPolicySourceAdapterTest extends TestCase
         $caller = (new Member)->forceFill(['id' => 3]);
 
         self::assertNull((new SessionPolicySourceAdapter($this->guardHolding($caller, null)))->scopesFor(new Subject((new Member)->forceFill(['id' => 4]), guard: self::GUARD)));
-        self::assertSame([], (new SessionPolicySourceAdapter($this->guardHolding($caller, (new Machine)->forceFill(['id' => 1]))))->scopesFor(new Subject((new Machine)->forceFill(['id' => 2]), guard: self::GUARD)));
+        $machine = new SessionPolicySourceAdapter($this->guardHolding($caller, (new Machine)->forceFill(['id' => 1])));
+
+        self::assertSame([], $machine->scopesFor(new Subject((new Machine)->forceFill(['id' => 2]), guard: self::GUARD)));
         self::assertNull((new SessionPolicySourceAdapter($this->guardHolding(null, null)))->scopesFor(new Subject($this->person(), guard: self::GUARD)));
     }
 
@@ -349,6 +354,20 @@ final class SessionPolicySourceAdapterTest extends TestCase
     {
         $auth = self::createStub(AuthManager::class);
         $auth->method('sessions')->willThrowException(new \LogicException('No session service.'));
+
+        return $auth;
+    }
+
+    /**
+     * An authentication factory whose session service is never asked, since
+     * nothing it could answer would establish the session.
+     *
+     * @return \Illuminate\Contracts\Auth\Factory
+     */
+    public function sessionsUnasked(): AuthFactory
+    {
+        $auth = $this->createMock(AuthManager::class);
+        $auth->expects(self::never())->method('sessions');
 
         return $auth;
     }

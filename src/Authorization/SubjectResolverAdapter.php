@@ -199,8 +199,8 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
     {
         $model     = $subject->subject;
         $principal = $model instanceof Principal ? $model : null;
-        $identity  = $principal === null ? $subject->identity : $principal->getIdentity();
-        $tenant    = $principal === null ? $subject->tenant : $principal->getTenant();
+        $identity  = $principal        === null ? $subject->identity : $principal->getIdentity();
+        $tenant    = $principal        === null ? $subject->tenant : $principal->getTenant();
         $scopes    = $subject->session === null ? null : CredentialScopes::uncapped();
 
         return new Subject($model, $identity, $tenant, $subject->application, $subject->guard, $subject->session, $scopes);
