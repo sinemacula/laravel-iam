@@ -9,15 +9,16 @@ use Illuminate\Contracts\Config\Repository;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use SineMacula\Laravel\AuditLog\Contributors\ContributorRegistry;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Authorization\AccessMandates;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\IamServiceProvider;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
 use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -85,7 +86,6 @@ final class BindingsGuideTest extends TestCase
         '`authorization.requirement_checker`',
         '`authorization.session.source`',
         '`authorization.identity_directory`',
-        '`authorization.tenant_tree`',
     ];
 
     /** @var string The heading of the first column of the table of the package's other bindings. */
@@ -470,7 +470,7 @@ final class BindingsGuideTest extends TestCase
         $config->set('sso.features.enforcement', true);
         $config->set('sso.features.saml2', true);
         $config->set('sso.features.domain_linking', true);
-        $config->set('iam.tenancy.tree', FakeTenantTree::class);
+        $this->app->instance(TenantTree::class, new StoredTenantTree);
         $this->app->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
         $config->set('auth.guards.keys', ['driver' => 'api_key', 'application' => ['methods' => ['api_key']]]);
         $config->set(AccessMandates::APPLICATION_ACCESS, ['api' => 'api:use']);

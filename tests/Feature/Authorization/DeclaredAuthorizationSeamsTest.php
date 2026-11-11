@@ -16,9 +16,7 @@ use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
-use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantHookAdapter;
@@ -26,7 +24,6 @@ use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
 use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\SessionPolicySourceAdapter;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
-use SineMacula\Laravel\Iam\Authorization\TenantTreeAdapter;
 use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -34,16 +31,15 @@ use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use Tests\Concerns\PermutesProviderOrder;
+use Tests\Fixtures\Authorization\NamedIdentityDirectory;
 use Tests\Fixtures\Authorization\NamedSubjectResolver;
-use Tests\Fixtures\Authorization\NamedTenantTree;
 use Tests\TestCase;
 
 /**
  * Feature tests for the declaration of each adapter bound over one of
  * `laravel-authorization`'s contracts to its configuration report: in every
  * provider order, `authorization:check` names each as declared by
- * `laravel-iam`, with its class, or the tree's two classes and when its factory
- * decides, and its lifetime, and the closure declared is the one bound over the
+ * `laravel-iam`, with its class and its lifetime, and the closure declared is the one bound over the
  * contract; a binding made over an adapter afterwards shows the declaration
  * overridden, and an instance bound over it shows that; and nothing is declared
  * over the application's own binding, over a class the application names in
@@ -63,15 +59,14 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
 {
     use PermutesProviderOrder;
 
-    /** @var array<class-string, array{list<class-string>, ?string, string}> Each contract declared, with the classes declared, when a factory decides, and the lifetime. */
+    /** @var array<class-string, array{class-string, string}> Each contract declared, with the adapter declared and its lifetime. */
     private const array DECLARED = [
-        SubjectResolver::class                  => [[SubjectResolverAdapter::class], null, 'scoped'],
-        AuthenticationContext::class            => [[AuthenticationContextAdapter::class], null, 'transient'],
-        AuthenticationRequirementChecker::class => [[RequirementCheckerAdapter::class], null, 'transient'],
-        SessionPolicySource::class              => [[SessionPolicySourceAdapter::class], null, 'transient'],
-        IdentityDirectory::class                => [[IdentityDirectoryAdapter::class], null, 'transient'],
-        TenantTree::class                       => [[TenantTreeAdapter::class, FlatTenantTree::class], AuthorizationSeams::DECIDES, 'scoped'],
-        GrantHook::class                        => [[GrantHookAdapter::class], null, 'transient'],
+        SubjectResolver::class                  => [SubjectResolverAdapter::class, 'scoped'],
+        AuthenticationContext::class            => [AuthenticationContextAdapter::class, 'transient'],
+        AuthenticationRequirementChecker::class => [RequirementCheckerAdapter::class, 'transient'],
+        SessionPolicySource::class              => [SessionPolicySourceAdapter::class, 'transient'],
+        IdentityDirectory::class                => [IdentityDirectoryAdapter::class, 'transient'],
+        GrantHook::class                        => [GrantHookAdapter::class, 'transient'],
     ];
 
     /** @var array<string, mixed> What the application sets in `laravel-authorization`'s configuration before any provider registers. */
@@ -105,18 +100,18 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
 
         self::assertSame(0, $exit);
 
-        foreach (self::DECLARED as $contract => [$classes, $decides, $lifetime]) {
+        foreach (self::DECLARED as $contract => [$adapter, $lifetime]) {
 
             $seam = $seams[$contract];
 
             self::assertSame('declared', $seam['origin'], $contract);
-            self::assertSame($classes, $seam['classes'], $contract);
-            self::assertSame($decides, $seam['decides'], $contract);
+            self::assertSame([$adapter], $seam['classes'], $contract);
+            self::assertNull($seam['decides'], $contract);
             self::assertSame($lifetime, $seam['lifetime'], $contract);
             self::assertSame([
                 'owner'    => AuthorizationSeams::OWNER,
-                'classes'  => $classes,
-                'decides'  => $decides,
+                'classes'  => [$adapter],
+                'decides'  => null,
                 'lifetime' => $lifetime,
                 'state'    => 'standing',
             ], $seam['declaration'], $contract);
@@ -124,8 +119,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * The text report names the owner, the class, or the tree's classes and
-     * when its factory decides, and the lifetime.
+     * The text report names the owner, the class and the lifetime.
      *
      * @return void
      */
@@ -135,9 +129,6 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
 
         self::assertStringContainsString('[seam SubjectResolver] declared by laravel-iam; ' . SubjectResolverAdapter::class . '; scoped', $output);
         self::assertStringContainsString('[seam AuthenticationContext] declared by laravel-iam; ' . AuthenticationContextAdapter::class . '; transient', $output);
-        $tree = sprintf('one of %s, %s, decided at first resolution', TenantTreeAdapter::class, FlatTenantTree::class);
-
-        self::assertStringContainsString('[seam TenantTree] declared by laravel-iam; ' . $tree . '; scoped', $output);
     }
 
     /**
@@ -177,11 +168,11 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     {
         $app = $this->application();
 
-        $app->instance(TenantTree::class, new FlatTenantTree);
+        $app->instance(IdentityDirectory::class, \Mockery::mock(IdentityDirectory::class));
 
         [, $seams] = $this->report();
 
-        self::assertSame('instance_over_it', $seams[TenantTree::class]['declaration']['state'] ?? null);
+        self::assertSame('instance_over_it', $seams[IdentityDirectory::class]['declaration']['state'] ?? null);
         self::assertSame('standing', $seams[SubjectResolver::class]['declaration']['state'] ?? null);
     }
 
@@ -224,7 +215,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testAConfiguredClassIsReportedAsConfiguredInEveryProviderOrder(array $providers): void
     {
-        $this->authorization = ['subject_resolver' => NamedSubjectResolver::class, 'tenant_tree' => NamedTenantTree::class];
+        $this->authorization = ['subject_resolver' => NamedSubjectResolver::class, 'identity_directory' => NamedIdentityDirectory::class];
 
         $this->bootInOrder($providers);
 
@@ -232,7 +223,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
 
         [, $seams] = $this->report();
 
-        foreach ([SubjectResolver::class, TenantTree::class] as $contract) {
+        foreach ([SubjectResolver::class, IdentityDirectory::class] as $contract) {
             self::assertSame('configured', $seams[$contract]['origin'], $contract);
             self::assertSame($first ? null : 'overridden', $seams[$contract]['declaration']['state'] ?? null, $contract);
         }

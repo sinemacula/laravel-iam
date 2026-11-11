@@ -85,9 +85,9 @@ return [
     |
     | While `sso` is on and the application names its memberships
     | (`tenancy.memberships`), the package binds SSO's tenant membership, its
-    | link eligibility and its principal scope, answered from them; while it
-    | names a tenant tree (`tenancy.tree`), SSO's enforcement inheritance,
-    | answered from the tree. Without them SSO's defaults stay, and refuse.
+    | link eligibility and its principal scope, answered from them. Without
+    | them SSO's defaults stay, and refuse. While `sso` is on, SSO's
+    | enforcement inheritance reads `laravel-authorization`'s tenant tree.
     |
     | `authorization` binds `laravel-authorization` to the other members: its
     | subject resolver, answered from `Auth::caller()` (the principal, its
@@ -169,35 +169,20 @@ return [
     | link for good. Name none and SSO's defaults stay: no membership, no
     | `link`, no linking by a domain.
     |
-    | `tree` names the application's tenant tree, a class implementing
-    | `SineMacula\Laravel\Iam\Contracts\TenantTree`. While `adapters.sso` is
-    | on, a tenant inherits SSO's enforcement from the nearest tenant, from
-    | itself up through its ancestors, that has a rule stored, on or off: a
-    | rule turned off keeps its tenant, and every tenant inheriting from it,
-    | out of an ancestor's rule, so turning one off only loosens, and an
-    | enforcement change judges the sessions of the enforcing tenant and
-    | every tenant below it. While `adapters.authorization` is on, it is
-    | `laravel-authorization`'s tree too, so a grant in a tenant reaches the
-    | tenants below it. Report every move of a tenant inside the transaction that
-    | writes it, after the write, and a removal as the move of each child moved
-    | out from under the removed tenant:
-    | `Iam::treeChanges()->changed($tenantId)` passes the move on to
-    | `laravel-authorization` while `adapters.authorization` is on, and judges
-    | the sessions of that tenant and every tenant below it while SSO's
-    | enforcement is on or MFA's tenant requirement is bound. Name none and every tenant
-    | stands alone.
+    | The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`).
+    | Report every move of a tenant inside the transaction that writes it,
+    | after the write: `Iam::treeChanges()->changed($tenantId)`.
     |
-    | Either bound in the container counts as named when it is bound by the
-    | time every service provider has registered (in a provider's
-    | `register()`, the application's own included); one bound from a
-    | provider's `boot()` is still the one asked, but binds no adapter. Any
+    | Memberships bound in the container count as named when they are bound
+    | by the time every service provider has registered (in a provider's
+    | `register()`, the application's own included); bound from a provider's
+    | `boot()` they are still the ones asked, but bind no adapter. Any
     | value that is no class name (true, false, a number) fails closed.
     |
     */
 
     'tenancy' => [
         'memberships' => null,
-        'tree'        => null,
     ],
 
     /*

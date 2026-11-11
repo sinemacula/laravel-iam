@@ -23,12 +23,9 @@ use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\SubtreeGrantees;
-use SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Links\Enums\LinkState;
 use SineMacula\Laravel\Sso\Models\Link;
@@ -45,6 +42,7 @@ use Tests\Fixtures\Authorization\Seat;
 use Tests\Fixtures\Authorization\SeatHolder;
 use Tests\Fixtures\Authorization\Staff;
 use Tests\Fixtures\Models\Person;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -62,8 +60,8 @@ use Tests\TestCase;
  * principal's identity for a principal, a grantee named by its morph alias as
  * the model it maps to, never a grant that has expired, one outside the
  * subtree, one of another tenant type, one to a role, or one to what is no
- * model; and a move of a subtree holding a tenant of another type is refused,
- * and rolls back.
+ * model; and a move reports the people granted in a tenant of another type
+ * below the moved one.
  *
  * The move's report takes SSO's identity guard and locks the connections
  * holding the person's links inside the move's transaction, so each scenario
@@ -77,7 +75,7 @@ use Tests\TestCase;
  */
 #[CoversClass(TreeChanges::class)]
 #[CoversClass(SubtreeGrantees::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TreeMoveWideningTest extends TestCase
 {
     use MigratesAuthorization, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople, SignsInThroughLinks {
@@ -97,9 +95,6 @@ final class TreeMoveWideningTest extends TestCase
 
     /** @var string The role granted. */
     private const string ROLE = 'editor';
-
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeTenantTree The application's tree. */
-    private ?FakeTenantTree $tree = null;
 
     /** @var ?\Tests\Fixtures\Models\Person The person granted in the granted tenant. */
     private ?Person $person = null;
@@ -127,7 +122,9 @@ final class TreeMoveWideningTest extends TestCase
 
         $this->arrangeSso();
 
-        $this->tree = FakeTenantTree::fake($this->app)->place(self::LINKED)->place(self::GRANTED, self::LINKED)->place(self::GRANTED_CHILD, self::GRANTED);
+        StoredTenantTree::place(self::organisation(self::LINKED));
+        StoredTenantTree::place(self::organisation(self::GRANTED), self::organisation(self::LINKED));
+        StoredTenantTree::place(self::organisation(self::GRANTED_CHILD), self::organisation(self::GRANTED));
 
         $this->app?->instance(TenantResolver::class, new OrganisationTenancy);
 
@@ -165,7 +162,7 @@ final class TreeMoveWideningTest extends TestCase
         $session = $this->signInThrough($this->person(), $this->linkedConnectionId, $this->linkId);
         $inside  = Iam::transaction(function () use ($session): array {
 
-            $this->tree()->place(self::GRANTED);
+            StoredTenantTree::place(self::organisation(self::GRANTED));
 
             Iam::treeChanges()->changed(self::GRANTED);
 
@@ -310,10 +307,9 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * A move of a subtree holding a tenant of another type, an account below
-     * the granted organisation, is refused, and rolls back: the grants rooted
-     * in the account would never be matched by the organisation's type, and the
-     * people granted there would go unreported to SSO's widening.
+     * A move of a subtree holding a tenant of another type reports the people
+     * granted there too: a person granted only in an account below the granted
+     * organisation has their link suspended.
      *
      * @param  ?string  $level
      * @return void
@@ -321,31 +317,29 @@ final class TreeMoveWideningTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testAMoveOfASubtreeHoldingAnotherTenantTypeIsRefused(?string $level): void
+    public function testAMoveReportsThePeopleGrantedInATenantOfAnotherTypeBelow(?string $level): void
     {
         self::runAtIsolationLevel($level);
 
-        $account = Account::PREFIX . '1';
-
         $this->app?->instance(TenantResolver::class, new AccountTenancy);
-        $this->tree()->place($account, self::GRANTED_CHILD);
 
-        $refused = null;
+        $account = new Reference(Account::TYPE, Account::PREFIX . '1');
+        $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
 
-        try {
-            Iam::transaction(function (): void {
+        StoredTenantTree::place($account, self::organisation(self::GRANTED_CHILD));
 
-                $this->tree()->place(self::GRANTED);
+        DB::table('authorizable_roles')->where('authorizable_id', self::keyOf($this->person()))->delete();
 
-                Iam::treeChanges()->changed(self::GRANTED);
-            });
-        } catch (\Throwable $exception) {
-            $refused = $exception;
-        }
+        $service->grantRole($this->person(), self::ROLE, tenant: $account, includeSubtree: false);
 
-        self::assertInstanceOf(TenancyMisconfiguredException::class, $refused);
-        self::assertStringContainsString('[' . Account::TYPE . ']', $refused->getMessage());
-        self::assertSame(LinkState::ACTIVE, $this->link()->state);
+        Iam::transaction(function (): void {
+
+            StoredTenantTree::place(self::organisation(self::GRANTED));
+
+            Iam::treeChanges()->changed(self::GRANTED);
+        });
+
+        self::assertSame(LinkState::SUSPENDED, $this->link()->state);
     }
 
     /**
@@ -508,16 +502,6 @@ final class TreeMoveWideningTest extends TestCase
     private function person(): Person
     {
         return $this->person ?? self::fail('No person is arranged.');
-    }
-
-    /**
-     * The application's tree.
-     *
-     * @return \SineMacula\Laravel\Iam\Testing\FakeTenantTree
-     */
-    private function tree(): FakeTenantTree
-    {
-        return $this->tree ?? self::fail('The tree is not arranged.');
     }
 
     /**

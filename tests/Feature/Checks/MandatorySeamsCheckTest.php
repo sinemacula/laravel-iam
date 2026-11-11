@@ -14,12 +14,13 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\External\NoExternalLinks;
 use SineMacula\Laravel\Authentication\Passkeys\NoPasskeyFactors;
 use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
@@ -27,7 +28,6 @@ use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
@@ -52,6 +52,7 @@ use Tests\Fixtures\Bindings\Contracts\SharedSeam;
 use Tests\Fixtures\Bindings\DeclaredSeams;
 use Tests\Fixtures\Checks\ExtensibleDefault;
 use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -427,9 +428,9 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The enforcement inheritance is mandatory while the application has a
-     * tenant tree, named or bound, and SSO's enforcement is on: neither alone
-     * makes it so.
+     * The enforcement inheritance is mandatory while the application binds a
+     * tenant tree to `laravel-authorization` and SSO's enforcement is on:
+     * neither alone makes it so.
      *
      * @return void
      */
@@ -438,17 +439,16 @@ final class MandatorySeamsCheckTest extends TestCase
         $config = $this->app?->make('config');
 
         $this->app?->bind(EnforcementInheritance::class, OwnTenantInheritance::class);
-
-        $config?->set('iam.tenancy.tree', FakeTenantTree::class);
+        $this->app?->instance(TenantTree::class, new StoredTenantTree);
 
         self::assertSame([], self::problems($this->check()->checks()));
 
-        $config?->set('iam.tenancy.tree', null);
+        $this->app?->instance(TenantTree::class, new FlatTenantTree);
         $config?->set(TenancySeams::ENFORCEMENT, 'true');
 
         self::assertSame([], self::problems($this->check()->checks()));
 
-        $this->app?->bind(TenantTree::class, FakeTenantTree::class);
+        $this->app?->instance(TenantTree::class, new StoredTenantTree);
 
         self::assertStringContainsString(EnforcementInheritance::class . ' is still bound to ' . OwnTenantInheritance::class, self::problems($this->check()->checks())[0]);
     }

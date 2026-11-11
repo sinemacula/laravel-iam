@@ -149,31 +149,31 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     repeats). Audit-log's storage connection, when another, is a note
     (`audit-mapping.md`).
   - `MandatorySeamsCheck` (IAM-10.2): every row the capabilities declare mandatory now (`SeamBinding::isMandatory()`,
-    read again from the configuration and the container as they stand) is bound, and its live binding (`Checks\SeamHolders`,
-    never building anything new) names neither one of the row's member defaults nor any other class of a member's own,
-    the row's adapter apart (SSO's own `LinkStore` is the linker's) and the member classes the row accepts
-    (`SeamBinding::$accepted`): SSO's `LinkStore` on the link storage, which SSO's guide binds it to, is SSO's real
-    store, not a permissive default, so it is accepted there (decision recorded here). A row is checked whatever this
-    package's capability switch says, as the tenant policy's note has it: with the switch off the application binds the
-    seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept with the application's
-    binding. A binding whose implementation cannot be read without building it (a closure of the application's own,
-    which `SeamHolders` names nothing for: the class declaring a closure does not tell what it returns) fails too, since
-    the check takes nothing on trust; the application binds a mandatory seam by class name or as an instance, or the
-    shared instance something has already resolved is read. An anonymous class is judged by what it is, not by its
-    debug name, which starts with the contract it implements and so would read the application's implementation of a
-    member's contract as the member's own (decision recorded here): one extending a class is named by that class, whose
-    behaviour it inherits, so an anonymous subclass of a member's default still fails; one extending nothing is the
-    application's own, named by the file and line it is declared at, and passes. No member declares an anonymous
-    default, so where the class is declared is not read. While SSO is in use, the rows of
+    read again from the configuration and the container as they stand) is bound, and its live binding
+    (`Checks\SeamHolders`, never building anything new) names neither one of the row's member defaults nor any other
+    class of a member's own, the row's adapter apart (SSO's own `LinkStore` is the linker's) and the member classes the
+    row accepts (`SeamBinding::$accepted`): SSO's `LinkStore` on the link storage, which SSO's guide binds it to, is
+    SSO's real store, not a permissive default, so it is accepted there (decision recorded here). A row is checked
+    whatever this package's capability switch says, as the tenant policy's note has it: with the switch off the
+    application binds the seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept
+    with the application's binding. A binding whose implementation cannot be read without building it (a closure of the
+    application's own, which `SeamHolders` names nothing for: the class declaring a closure does not tell what it
+    returns) fails too, since the check takes nothing on trust; the application binds a mandatory seam by class name or
+    as an instance, or the shared instance something has already resolved is read. An anonymous class is judged by what
+    it is, not by its debug name, which starts with the contract it implements and so would read the application's
+    implementation of a member's contract as the member's own (decision recorded here): one extending a class is named
+    by that class, whose behaviour it inherits, so an anonymous subclass of a member's default still fails; one
+    extending nothing is the application's own, named by the file and line it is declared at, and passes. No member
+    declares an anonymous default, so where the class is declared is not read. While SSO is in use, the rows of
     `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, which `sso:check` or
     `SsoBridgeFallbackCheck` runs, so `iam:check` reports each mandatory seam once; while SSO is not in use, the bridge
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
     passkey factor gate always; the external identity links, the linker and the link storage while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
-    enforcement is on or MFA's tenant requirement is bound; the enforcement inheritance while a tenant tree is
-    named or bound and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
-    `api_key` or `client_credentials`, as the bound application policy says (asked only as the check reads the
-    mandate), and its application access while `authorization.application_access` maps an application
+    enforcement is on or MFA's tenant requirement is bound; the enforcement inheritance while a tenant tree is bound to
+    `laravel-authorization` and SSO's enforcement is on; `laravel-authentication`'s scope registry while a guard accepts
+    `api_key` or `client_credentials`, as the bound application policy says (asked only as the check reads the mandate),
+    and its application access while `authorization.application_access` maps an application
     (`Authorization\AccessMandates`).
   - `SsoBridgeFallbackCheck` (IAM-2.5, IAM-10.2): while SSO is in use and `sso:check` does not run the bridge
     (`SsoCheckRegistration::isInForce()` is false: the application keeps a check of its own under `iam`, which the
@@ -215,12 +215,11 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
     use, every operation SSO names (`FreshnessOperation`) for each SSO application's guard; while SSO's enforcement is
     on or MFA's tenant requirement is bound (`TenancySeams::isEnforcedOrRequired()`), or the authorization and
     SSO adapters are both on, so the grant hook reports `laravel-authorization`'s grants to SSO's scope widening
-    (`AuthorizationSeams::reportsWidenings()`), or the authorization adapters are on while the application names or
-    binds a tenant tree (`AuthorizationSeams::isOn()` and `TenancyContracts::hasTree()`), since `TenantTreeAdapter`
-    resolves every tenant `laravel-authorization` asks about through it, `laravel-authentication`'s `TenantResolver` is
+    (`AuthorizationSeams::reportsWidenings()`), or the application binds a tenant tree to `laravel-authorization`
+    (`TenancyContracts::hasTree()`), `laravel-authentication`'s `TenantResolver` is
     no longer its `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the
-    tree's changes and SSO's revocation resolve the session's tenant through it, the grant hook the tenant of every
-    grant that widens and the tree adapter every tenant it is asked about (`Tenancy\TenantReferences`), while
+    tree's changes, SSO's enforcement inheritance and its revocation resolve the session's tenant through it, and the
+    grant hook the tenant of every grant that widens (`Tenancy\TenantReferences`), while
     `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
     read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
     `Sso\SsoBridgeCheck` (or `SsoBridgeFallbackCheck` while SSO's check does not run it), `sso.endpoints.base_url` by
@@ -329,7 +328,7 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   tenant resolver left on `laravel-authorization`'s default while people act in tenants
   (`CrossMemberConfigurationCheck`). The tenant resolver requirement of `CrossMemberConfigurationCheck` gains the grant
   hook's condition (the authorization and SSO adapters both on, `AuthorizationSeams::reportsWidenings()`) and the tree's
-  (the authorization adapters on while the application names or binds a tenant tree, `TenancyContracts::hasTree()`), so
+  (the application binding a tenant tree to `laravel-authorization`, `TenancyContracts::hasTree()`), so
   a widening grant or a tree read never resolves its tenant through `ResolveNoTenant`. No resource tenant resolver is
   named by `iam:install`: a record's tenant is the application's to say, which this package cannot read from its models
   (`authorization.md`). `iam:install` still writes none of `laravel-authorization`'s resolver keys, and

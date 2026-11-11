@@ -42,19 +42,17 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   enforcement is on, the application binds MFA's tenant requirement,
  *   `laravel-authorization`'s grants are reported to SSO's scope widening (both
  *   capabilities' switches on, as they are by default,
- *   `AuthorizationSeams::reportsWidenings()`), or the authorization
- *   capability's switch is on while the application names or binds a tenant
- *   tree: the tenant policy, the tree's changes and SSO's revocation resolve
- *   the session's tenant through it, the grant hook every tenant a widening
- *   grant holds in (`Tenancy\TenantReferences`), and `laravel-authorization`'s
- *   tree every tenant it asks about, in every tenant-scoped check and query
- *   (`Authorization\TenantTreeAdapter`), while `laravel-authentication` admits
- *   a principal's own tenant without one, so an application that never needed a
+ *   `AuthorizationSeams::reportsWidenings()`), or the application binds a
+ *   tenant tree to `laravel-authorization`: the tenant policy, the tree's
+ *   changes, SSO's enforcement inheritance and revocation resolve the session's
+ *   tenant through it, and the grant hook every tenant a widening grant holds
+ *   in (`Tenancy\TenantReferences`), while `laravel-authentication` admits a
+ *   principal's own tenant without one, so an application that never needed a
  *   resolver would otherwise refuse every grant to an identity, or a
- *   principal's first, in a tenant, every tenant-scoped check and every move of
- *   a tenant, at runtime. Its live binding (`SeamHolders`) still naming
- *   `laravel-authentication`'s `ResolveNoTenant` is refused; a resolver bound
- *   through a closure is not built, so it is the application's to answer.
+ *   principal's first, in a tenant, and every move of a tenant, at runtime. Its
+ *   live binding (`SeamHolders`) still naming `laravel-authentication`'s
+ *   `ResolveNoTenant` is refused; a resolver bound through a closure is not
+ *   built, so it is the application's to answer.
  * - While the application has memberships, so its people act in tenants,
  *   `laravel-authorization`'s resource tenant resolver still on its default is
  *   noted, never failed: the shipped `NoResourceTenant` knows no model's
@@ -284,7 +282,7 @@ final readonly class CrossMemberConfigurationCheck implements AuthenticationChec
     {
         return TenancySeams::isEnforcedOrRequired($this->config, $this->container)
             || AuthorizationSeams::reportsWidenings($this->config)
-            || (AuthorizationSeams::isOn($this->config) && TenancyContracts::hasTree($this->container, $this->config));
+            || TenancyContracts::hasTree();
     }
 
     /**

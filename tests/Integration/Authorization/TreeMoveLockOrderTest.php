@@ -16,9 +16,7 @@ use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\IdentityGuards;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Linking\IdentityLock;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
@@ -32,6 +30,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Authorization\OrganisationTenancy;
 use Tests\Fixtures\Models\Person;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
@@ -60,7 +59,7 @@ use Tests\TestCase;
  */
 #[CoversClass(TreeChanges::class)]
 #[CoversClass(IdentityGuards::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TreeMoveLockOrderTest extends TestCase
 {
     use MigratesAuthorization, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -98,9 +97,6 @@ final class TreeMoveLockOrderTest extends TestCase
     /** @var int How long the parent waits for a line from the worker, in seconds. */
     private const int WORKER_TIMEOUT = 30;
 
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeTenantTree The application's tree. */
-    private ?FakeTenantTree $tree = null;
-
     /** @var array<string, \Tests\Fixtures\Models\Person> The two people granted in the moved tenant, by SSO's digest of each. */
     private array $people = [];
 
@@ -124,7 +120,9 @@ final class TreeMoveLockOrderTest extends TestCase
 
         $this->arrangeSso();
 
-        $this->tree = FakeTenantTree::fake($this->app)->place(self::LINKED)->place(self::GRANTED, self::LINKED)->place(self::ELSEWHERE_TENANT);
+        StoredTenantTree::place(self::organisation(self::LINKED));
+        StoredTenantTree::place(self::organisation(self::GRANTED), self::organisation(self::LINKED));
+        StoredTenantTree::place(self::organisation(self::ELSEWHERE_TENANT));
 
         $this->app?->instance(TenantResolver::class, new OrganisationTenancy);
 
@@ -181,7 +179,7 @@ final class TreeMoveLockOrderTest extends TestCase
 
         Iam::transaction(function (): void {
 
-            $this->tree()->place(self::GRANTED);
+            StoredTenantTree::place(self::organisation(self::GRANTED));
 
             Iam::treeChanges()->changed(self::GRANTED);
         });
@@ -331,7 +329,7 @@ final class TreeMoveLockOrderTest extends TestCase
         try {
             DB::connection(self::CONNECTION)->transaction(function (): void {
 
-                $this->tree()->place(self::GRANTED);
+                StoredTenantTree::place(self::organisation(self::GRANTED));
 
                 Iam::treeChanges()->changed(self::GRANTED);
             }, 1);
@@ -526,12 +524,13 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * The application's tree.
+     * `laravel-authorization`'s reference to the organisation of the id.
      *
-     * @return \SineMacula\Laravel\Iam\Testing\FakeTenantTree
+     * @param  string  $id
+     * @return \SineMacula\Laravel\Authorization\Support\Reference
      */
-    private function tree(): FakeTenantTree
+    private static function organisation(string $id): Reference
     {
-        return $this->tree ?? self::fail('The tree is not arranged.');
+        return new Reference(Organisation::TYPE, $id);
     }
 }

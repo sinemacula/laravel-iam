@@ -21,35 +21,26 @@ use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantHookAdapter;
 use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
-use SineMacula\Laravel\Iam\Authorization\TenantTreeAdapter;
 use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
-use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
-use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\Concerns\RunsChecks;
 use Tests\Fixtures\Authorization\NamedIdentityDirectory;
-use Tests\Fixtures\Authorization\NamedTenantTree;
 use Tests\Fixtures\Authorization\RecordingGrantHook;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams `laravel-authorization` reads the grants and the
- * tree through (IAM-6.7, IAM-6.8, IAM-7.5): its identity directory, its tenant
- * tree and its grant hook, each bound over `laravel-authorization`'s
- * unconditional default in every provider order, none over a class the
- * application names in `laravel-authorization`'s configuration or a binding it
- * makes (IAM-8.4); the grant hook follows the SSO capability's switch too, is
- * bound over the composite whatever hooks the application lists, which
- * `laravel-authorization` runs once, before it, and is mandatory while SSO's
- * linking by a verified domain is on; the tree is the adapter only while the
- * application names or binds a tree, and `laravel-authorization`'s own flat
- * tree otherwise; and an identity the hook cannot resolve refuses the grant.
- * The application names a tree unless a test says otherwise.
+ * Feature tests for the seams `laravel-authorization` reads the grants through
+ * (IAM-6.7, IAM-6.8): its identity directory and its grant hook, each bound
+ * over `laravel-authorization`'s unconditional default in every provider order,
+ * none over a class the application names in `laravel-authorization`'s
+ * configuration or a binding it makes (IAM-8.4); the grant hook follows the SSO
+ * capability's switch too, is bound over the composite whatever hooks the
+ * application lists, which `laravel-authorization` runs once, before it, and is
+ * mandatory while SSO's linking by a verified domain is on; the tenant tree is
+ * left to the application; and an identity the hook cannot resolve refuses the
+ * grant.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,8 +49,6 @@ use Tests\TestCase;
  */
 #[CoversClass(AuthorizationSeams::class)]
 #[CoversClass(GrantHookAdapter::class)]
-#[CoversClass(TenantTreeAdapter::class)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
 final class GrantSeamsTest extends TestCase
 {
     use PermutesProviderOrder, RunsChecks;
@@ -67,7 +56,6 @@ final class GrantSeamsTest extends TestCase
     /** @var array<class-string, class-string> Each seam, with the adapter bound over it. */
     private const array ADAPTERS = [
         IdentityDirectory::class => IdentityDirectoryAdapter::class,
-        TenantTree::class        => TenantTreeAdapter::class,
         GrantHook::class         => GrantHookAdapter::class,
     ];
 
@@ -134,10 +122,10 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * A tree and an identity directory the application names in
-     * `laravel-authorization`'s configuration win in every provider order,
-     * `laravel-authorization` binding each over the adapter where this package
-     * registered first, and `iam:check` passes them.
+     * An identity directory the application names in `laravel-authorization`'s
+     * configuration wins in every provider order, `laravel-authorization`
+     * binding it over the adapter where this package registered first, and
+     * `iam:check` passes it.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -147,11 +135,10 @@ final class GrantSeamsTest extends TestCase
     #[DataProvider('provideProviderOrders')]
     public function testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept(array $providers): void
     {
-        $this->authorization = ['tenant_tree' => NamedTenantTree::class, 'identity_directory' => NamedIdentityDirectory::class];
+        $this->authorization = ['identity_directory' => NamedIdentityDirectory::class];
 
         $this->bootInOrder($providers);
 
-        self::assertInstanceOf(NamedTenantTree::class, $this->resolved(TenantTree::class));
         self::assertInstanceOf(NamedIdentityDirectory::class, $this->resolved(IdentityDirectory::class));
         self::assertInstanceOf(GrantHookAdapter::class, $this->resolved(GrantHook::class));
 
@@ -174,16 +161,15 @@ final class GrantSeamsTest extends TestCase
     {
         $hook = new RecordingGrantHook;
 
-        $this->bootInOrder($providers, after: [GrantHook::class => $hook, TenantTree::class => NamedTenantTree::class]);
+        $this->bootInOrder($providers, after: [GrantHook::class => $hook, IdentityDirectory::class => NamedIdentityDirectory::class]);
 
         self::assertSame($hook, $this->resolved(GrantHook::class));
-        self::assertInstanceOf(NamedTenantTree::class, $this->resolved(TenantTree::class));
+        self::assertInstanceOf(NamedIdentityDirectory::class, $this->resolved(IdentityDirectory::class));
     }
 
     /**
      * With the SSO capability's switch off, the grant hook keeps
-     * `laravel-authorization`'s composite, while the directory and the tree are
-     * bound.
+     * `laravel-authorization`'s composite, while the directory is bound.
      *
      * @return void
      *
@@ -193,42 +179,24 @@ final class GrantSeamsTest extends TestCase
     public function testWithTheSsoSwitchOffTheGrantHookIsLeftAlone(): void
     {
         self::assertInstanceOf(GrantHooks::class, $this->resolved(GrantHook::class));
-        self::assertInstanceOf(TenantTreeAdapter::class, $this->resolved(TenantTree::class));
+        self::assertInstanceOf(IdentityDirectoryAdapter::class, $this->resolved(IdentityDirectory::class));
     }
 
     /**
-     * While the application neither names nor binds a tree, the seam is
-     * `laravel-authorization`'s own flat tree, which it tells a flat
-     * application by, though the row is bound; a tree bound later is the
-     * adapter's from the next unit of work, and one taken away is flat again.
+     * The tenant tree is left to the application: nothing is bound over
+     * `laravel-authorization`'s flat default.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    #[WithConfig(TenancyContracts::TREE, null, defer: false)]
-    public function testWithoutATreeTheMembersFlatTreeIsTheSeam(): void
+    public function testTheTreeIsLeftToTheApplication(): void
     {
         $outcome = $this->app?->make(BindingOutcome::class);
-        $flat    = $this->resolved(TenantTree::class);
 
         self::assertInstanceOf(BindingOutcome::class, $outcome);
-        self::assertContains(TenantTree::class, $outcome->bound);
-        self::assertInstanceOf(FlatTenantTree::class, $flat);
-
-        FakeTenantTree::fake($this->app);
-
-        self::assertSame($flat, $this->resolved(TenantTree::class));
-
-        Iam::resetWorkerState();
-
-        self::assertSame(TenantTreeAdapter::class, $this->treeClass());
-
-        $this->app?->forgetInstance(FakeTenantTree::TREE);
-
-        Iam::resetWorkerState();
-
-        self::assertSame(FlatTenantTree::class, $this->treeClass());
+        self::assertNotContains(TenantTree::class, $outcome->bound);
+        self::assertInstanceOf(FlatTenantTree::class, $this->resolved(TenantTree::class));
     }
 
     /**
@@ -319,38 +287,6 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * The tree is held under this package's own scoped key: one instance for a
-     * unit of work, as `laravel-authorization` keeps the request's tenant chain
-     * only while the tree bound is the instance it read it from, forgotten by
-     * the worker reset, and the seam itself never scoped; the directory and the
-     * hook stay transient.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testTheTreeIsOneForAUnitOfWork(): void
-    {
-        $app   = $this->app ?? self::fail('The application has not booted.');
-        $first = $this->resolved(TenantTree::class);
-        $rows  = [];
-
-        foreach ((new AuthorizationSeams)->seams($app->make('config')) as $row) {
-            $rows[$row->abstract] = $row->lifetime;
-        }
-
-        self::assertInstanceOf(TenantTreeAdapter::class, $first);
-        self::assertSame($first, $this->resolved(TenantTree::class));
-        self::assertTrue($app->bound(BindingRule::SCOPED_PREFIX . TenantTree::class));
-        self::assertFalse($app->isShared(TenantTree::class));
-        self::assertSame([Lifetime::SCOPED, Lifetime::TRANSIENT, Lifetime::TRANSIENT], [$rows[TenantTree::class], $rows[IdentityDirectory::class], $rows[GrantHook::class]]);
-
-        Iam::resetWorkerState();
-
-        self::assertNotSame($first, $this->resolved(TenantTree::class));
-    }
-
-    /**
      * A widening of an identity whose type names no `laravel-authentication`
      * identity, which SSO never links, is not reported to SSO, nor refused: the
      * hooks the application lists once the application has booted still run for
@@ -424,20 +360,6 @@ final class GrantSeamsTest extends TestCase
         foreach ($expected as $abstract => $concrete) {
             self::assertInstanceOf($concrete, $this->resolved($abstract), $abstract);
         }
-    }
-
-    /**
-     * The class of the tree `laravel-authorization` reads now.
-     *
-     * @return string
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function treeClass(): string
-    {
-        $tree = $this->resolved(TenantTree::class);
-
-        return is_object($tree) ? $tree::class : '';
     }
 
     /**

@@ -20,11 +20,9 @@ use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Resolvers\AuthGuardSubjectResolver;
-use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\GuardUserIdentityDirectory;
 use SineMacula\Laravel\Authorization\Resolvers\NoSessionPolicy;
 use SineMacula\Laravel\Authorization\Resolvers\RefusingRequirementChecker;
@@ -56,21 +54,21 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * contract itself. A class the application names in `laravel-authorization`'s
  * configuration (`authorization.subject_resolver`,
  * `authorization.requirement_checker`, `authorization.session.source`,
- * `authorization.identity_directory`, `authorization.tenant_tree`) is no
- * default, so is kept, and `laravel-authorization`, registering after this
- * package, binds it over the adapter itself, so it stands whichever registers
- * first; this package reads none of those keys.
+ * `authorization.identity_directory`) is no default, so is kept, and
+ * `laravel-authorization`, registering after this package, binds it over the
+ * adapter itself, so it stands whichever registers first; this package reads
+ * none of those keys.
  *
  * The requirement checker is bound only while the MFA capability's switch is on
  * too, since it is MFA's requirement check that judges, as the mapping of the
  * step-up exception is registered only then. Every adapter here holds nothing
  * between calls and reads what it judges afresh on each, so each is transient,
- * but the subject resolver, application access (IAM-6.6) and the tenant tree,
- * which are scoped, under this package's own `iam.scoped:` keys. The subject
- * resolver is scoped as `laravel-authorization`'s own default is, one for a
- * request or job, since `laravel-authorization` keeps the tenant it resolved
- * for the request only while the resolver bound is the very one that resolved
- * it (`ResolvedTenant::isFrom()`): a resolver built afresh for each check would
+ * but the subject resolver and application access (IAM-6.6), which are scoped,
+ * under this package's own `iam.scoped:` keys. The subject resolver is scoped
+ * as `laravel-authorization`'s own default is, one for a request or job, since
+ * `laravel-authorization` keeps the tenant it resolved for the request only
+ * while the resolver bound is the very one that resolved it
+ * (`ResolvedTenant::isFrom()`): a resolver built afresh for each check would
  * resolve the subject again on every tenant-scoped read, and each new tenant
  * would empty the request's resolution memo, so every check would read its
  * grants again. It still reads `Auth::caller()` afresh on each call.
@@ -94,37 +92,12 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * `laravel-authorization`'s configuration, which `isPackageDefault()` says is
  * no default.
  *
- * The grants and the tree (IAM-6.7, IAM-6.8, IAM-7.5) are bound here too:
- * `laravel-authorization`'s identity directory, answered from
- * `laravel-authentication`'s principals (`IdentityDirectoryAdapter`), so its
- * grant scope query can answer `within` and its grant hook classifies a grant
- * by the identity's real principals; its tenant tree, answered from the
- * application's one tree, and `laravel-authorization`'s own `FlatTenantTree`
- * while the application has none, which the member tells a flat application by
- * (`TenantTreeAdapter::forApplication()`, decided as each request or job first
- * resolves it); and its grant hook, answered by SSO's scope widening
- * (`GrantHookAdapter`), only while the SSO capability's switch is on too, since
- * it is SSO's widening that reports, and mandatory while SSO's linking by a
- * verified domain is on (`sso.features.domain_linking`): left on
- * `laravel-authorization`'s default then, a grant that takes a person beyond a
- * tenant would leave their link by that tenant's verified domain active. Its
- * default is the composite holding no hook (`GrantHooks`), and no configuration
- * key names a class for it: the hooks the application lists in
- * `authorization.grant_hooks` wrap whatever hook is bound, so
- * `laravel-authorization` runs them first and then the adapter, and any of them
- * may refuse the grant. Each holds nothing between calls; the identity
- * directory and the grant hook are transient, and the tree is scoped, under
- * this package's own `iam.scoped:` key, one for a request or job as
- * `laravel-authorization`'s own default is: it keeps the request's tenant
- * chain, and its batch memo of tree reads, only while the tree it reads is the
- * very instance that answered (`ResolvedTenant::chain()`, keyed by the tree
- * instance), so a tree built afresh for each read would walk the application's
- * tree and resolve every ancestor again on every check and every tenant-scoped
- * query. `laravel-authorization` forgets the resolutions read through the
- * subject resolver or the tree when either is bound again, in whichever order
- * the providers register. The grant half of SSO's principal scope is this
- * package's own port, not a member's seam, and is bound by the service provider
- * (`GrantScopeAdapter`).
+ * The grants (IAM-6.7, IAM-6.8) are bound here too: `laravel-authorization`'s
+ * identity directory, answered from `laravel-authentication`'s principals
+ * (`IdentityDirectoryAdapter`), and its grant hook, answered by SSO's scope
+ * widening (`GrantHookAdapter`) while the SSO capability's switch is on too,
+ * and mandatory while SSO's linking by a verified domain is on. The tenant tree
+ * is the application's own binding of `laravel-authorization`'s contract.
  *
  * Audit-log's access policy (IAM-6.10) is answered from
  * `laravel-authorization`'s grants too (`AuditAccessPolicyAdapter`), over
@@ -139,10 +112,8 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * `laravel-iam`, with its class, its lifetime and the very closure the binding
  * rule bound over the contract, so `authorization:check` names the adapter
  * while that closure still supplies the contract, and says it was overridden,
- * or that an instance is bound over it, once it does not. The tree, which
- * `TenantTreeAdapter::forApplication()` decides, is declared as a factory of
- * the adapter or `FlatTenantTree`, decided at first resolution. A contract the
- * rule keeps the application's binding on, or a configured class on, is not
+ * or that an instance is bound over it, once it does not. A contract the rule
+ * keeps the application's binding on, or a configured class on, is not
  * declared, as nothing of this package's is bound there.
  *
  * The whole capability is switched by `iam.adapters.authorization`: off,
@@ -163,9 +134,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 
     /** @var string The owner `laravel-authorization`'s configuration report names each adapter declared to it by. */
     public const string OWNER = 'laravel-iam';
-
-    /** @var string When a factory bound over a contract decides which class it builds, as the report says it. */
-    public const string DECIDES = 'at first resolution';
 
     /**
      * Constructor.
@@ -206,7 +174,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             new SeamBinding(ScopeRegistry::class, ScopeRegistryAdapter::class, [AcceptAnyScope::class], appliesWhen: $on, mandatory: $machines),
             new SeamBinding(ApplicationAccess::class, ApplicationAccessAdapter::class, [AdmitAnyPrincipal::class], Lifetime::SCOPED, appliesWhen: $on, mandatory: $access),
             self::authorizationRow(IdentityDirectory::class, IdentityDirectoryAdapter::class, GuardUserIdentityDirectory::class, $on),
-            self::authorizationRow(TenantTree::class, TenantTreeAdapter::class, FlatTenantTree::class, $on, Lifetime::SCOPED, factory: TenantTreeAdapter::forApplication(...)),
             self::authorizationRow(GrantHook::class, GrantHookAdapter::class, GrantHooks::class, $widening, mandatory: $domains),
             new SeamBinding(AuditAccessPolicy::class, AuditAccessPolicyAdapter::class, [DenyAllPolicy::class], Lifetime::SHARED, appliesWhen: $on),
         ];
@@ -245,13 +212,8 @@ final readonly class AuthorizationSeams implements ProvidesSeams
 
     /**
      * The binding of the adapter over one of `laravel-authorization`'s
-     * contracts: replaced only while the contract is unbound or holds
-     * `laravel-authorization`'s own default, as
-     * `AuthorizationServiceProvider::isPackageDefault()` says, with the
-     * lifetime and the mandate given, built by the factory given, if any, and
-     * declared to `laravel-authorization`'s configuration report once bound.
-     * The default class is named so the checks name the default they refuse,
-     * and refuse it bound by its class name.
+     * contracts, replaced only while it holds the member's default, and
+     * declared to its configuration report once bound.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter
@@ -259,7 +221,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
      * @param  \Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  bool|\Closure(): bool  $mandatory
-     * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
      * @return \SineMacula\Laravel\Iam\Bindings\SeamBinding
      */
     private static function authorizationRow(
@@ -269,8 +230,11 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         \Closure $appliesWhen,
         Lifetime $lifetime = Lifetime::TRANSIENT,
         bool|\Closure $mandatory = false,
-        ?\Closure $factory = null,
     ): SeamBinding {
+        $declare = static function (Container $container, ?\Closure $bound) use ($contract, $adapter, $lifetime): void {
+            Declarations::of($container)->adapter($contract, self::OWNER, $adapter, $lifetime->reported(), $bound);
+        };
+
         return new SeamBinding(
             $contract,
             $adapter,
@@ -279,35 +243,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
             holdsDefault: AuthorizationServiceProvider::isPackageDefault(...),
-            factory: $factory,
-            declare: self::declaration($contract, $adapter, $default, $lifetime, $factory !== null),
+            declare: $declare,
         );
-    }
-
-    /**
-     * How the adapter bound over one of `laravel-authorization`'s contracts is
-     * declared to its configuration report, handed the container and the
-     * closure the binding rule bound over the contract: as the adapter, or, for
-     * a row built by a factory, as a factory of the adapter or the member's
-     * default, decided at first resolution; with the row's lifetime.
-     *
-     * @param  class-string  $contract
-     * @param  class-string  $adapter
-     * @param  class-string  $default
-     * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
-     * @param  bool  $isFactory
-     * @return \Closure(\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null): void
-     */
-    private static function declaration(string $contract, string $adapter, string $default, Lifetime $lifetime, bool $isFactory): \Closure
-    {
-        if ($isFactory) {
-            return static function (Container $container, ?\Closure $bound) use ($contract, $adapter, $default, $lifetime): void {
-                Declarations::of($container)->factory($contract, self::OWNER, [$adapter, $default], self::DECIDES, $lifetime->reported(), $bound);
-            };
-        }
-
-        return static function (Container $container, ?\Closure $bound) use ($contract, $adapter, $lifetime): void {
-            Declarations::of($container)->adapter($contract, self::OWNER, $adapter, $lifetime->reported(), $bound);
-        };
     }
 }

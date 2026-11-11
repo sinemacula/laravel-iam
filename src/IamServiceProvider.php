@@ -87,19 +87,19 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  *
  * Two more steps wait for the booting phase, from a `booting()` callback that
  * runs once every provider has registered and before any boots. The first is
- * SSO's seams answered from the application's memberships and tenant tree,
- * whose switches read whether the application has bound either, which it does
- * in its own provider's `register()`, after the packages': the rule is applied
- * to them once more there, over the very bindings of SSO's defaults it reserved
- * in `register()` only, so an application's binding of one of them made in
- * between is kept. The second is the storage connection. A member key can be
- * written only once its member has merged its configuration, which a member
- * registering after this package does only then, since a key written before
- * would replace the member's whole `storage` block; and an application provider
- * registered later may name another shared connection. So the member keys are
- * aligned again and checked there, before any provider boots. A provider
- * registered once the booting callbacks have run settles from its own `boot()`,
- * which Laravel runs for it at once.
+ * SSO's seams answered from the application's memberships, whose switches read
+ * whether the application has bound them, which it does in its own provider's
+ * `register()`, after the packages': the rule is applied to them once more
+ * there, over the very bindings of SSO's defaults it reserved in `register()`
+ * only, so an application's binding of one of them made in between is kept. The
+ * second is the storage connection. A member key can be written only once its
+ * member has merged its configuration, which a member registering after this
+ * package does only then, since a key written before would replace the member's
+ * whole `storage` block; and an application provider registered later may name
+ * another shared connection. So the member keys are aligned again and checked
+ * there, before any provider boots. A provider registered once the booting
+ * callbacks have run settles from its own `boot()`, which Laravel runs for it
+ * at once.
  *
  * The storage step runs once more when the application has booted, from a
  * `booted()` callback the settling queues, because a provider's `boot()` can
@@ -380,8 +380,8 @@ final class IamServiceProvider extends ServiceProvider
      * binding rule has no default of a member's to tell it from.
      *
      * While the SSO capability's switch is on, the seams answered from the
-     * application's memberships and tenant tree that the rule left off are
-     * reserved for the rule applied again once every provider has registered
+     * application's memberships that the rule left off are reserved for the
+     * rule applied again once every provider has registered
      * (`BindingRule::reserve()`): the exact binding of SSO's default each holds
      * is recorded, SSO's default bound there first where SSO has not registered
      * yet, as SSO would bind it, so that only a seam still holding it then is
@@ -559,22 +559,22 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Apply the binding rule once more to the seams answered from the
-     * application's memberships and tenant tree, then align the storage
-     * connections again and refuse a mismatch, once only, whichever phase
-     * reaches it first, and queue the same once more for when the application
-     * has booted, refusing then a member that has still not registered.
+     * application's memberships, then align the storage connections again and
+     * refuse a mismatch, once only, whichever phase reaches it first, and queue
+     * the same once more for when the application has booted, refusing then a
+     * member that has still not registered.
      *
-     * The seams answered from the memberships and the tree are applied again
-     * only while the SSO capability's switch was on when the binding rule first
-     * read it, and follow the switch as it read then, whatever a provider
-     * registering later wrote, so they and SSO's other seams are bound together
-     * or not at all: a membership contract or a tree the application binds in
-     * its own provider's `register()`, which Laravel runs after the packages',
-     * is bound only by now, and binds the adapters it answers over the very
-     * bindings of SSO's defaults reserved as the rule first ran, never over a
-     * binding of SSO's seam the application has made meanwhile, even one of
-     * SSO's own default class. The outcome kept for the checks gains whatever
-     * this binds or keeps.
+     * The seams answered from the memberships are applied again only while the
+     * SSO capability's switch was on when the binding rule first read it, and
+     * follow the switch as it read then, whatever a provider registering later
+     * wrote, so they and SSO's other seams are bound together or not at all: a
+     * membership contract the application binds in its own provider's
+     * `register()`, which Laravel runs after the packages', is bound only by
+     * now, and binds the adapters it answers over the very bindings of SSO's
+     * defaults reserved as the rule first ran, never over a binding of SSO's
+     * seam the application has made meanwhile, even one of SSO's own default
+     * class. The outcome kept for the checks gains whatever this binds or
+     * keeps.
      *
      * Neither can be done in `register()` alone: a member that registers after
      * this package merges its configuration only then, so its key can be
