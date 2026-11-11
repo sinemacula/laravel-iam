@@ -21,6 +21,7 @@ use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
@@ -117,6 +118,7 @@ final class RedemptionSecretsTest extends TestCase
             new Container,
             $transaction,
             $sessions,
+            new DecisionCacheInvalidation(new Container, \Mockery::mock(DatabaseManager::class)),
         ))->redeem('api', 'connection-1', self::CODE, self::VERIFIER, $client)];
 
         yield 'a link inside the caller\'s transaction' => [static fn (): mixed => self::linkInsideTheCallersTransaction()

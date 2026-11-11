@@ -81,9 +81,8 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * The decision `laravel-authorization` keeps that read an authentication
-     * requirement in the sign-in the change was made on is forgotten once the
-     * session is judged again (IAM-6.11).
+     * The decisions `laravel-authorization` keeps for the request are forgotten
+     * once the session the change was made on is judged again (IAM-6.11).
      *
      * @return void
      *
@@ -93,7 +92,7 @@ final class SessionTransitionAdapterTest extends TestCase
     {
         $change = $this->sessionChange(FactorChangeMade::CONFIRMED);
 
-        $this->recordRequirementDecision($change->session);
+        $this->recordDecision();
 
         $this->transition()->factorChanged($change);
 

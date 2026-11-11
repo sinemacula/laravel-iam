@@ -134,9 +134,8 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The decision `laravel-authorization` keeps that read an authentication
-     * requirement in the pending session is forgotten once the session takes
-     * the proof (IAM-6.11).
+     * The decisions `laravel-authorization` keeps for the request are forgotten
+     * once the pending session takes the proof (IAM-6.11).
      *
      * @return void
      *
@@ -147,7 +146,7 @@ final class PendingCompletionAdapterTest extends TestCase
         $credential = $this->signInPending($this->createPerson());
         $pending    = $this->pendingContextFor($credential);
 
-        $this->recordRequirementDecision($pending->sessionId);
+        $this->recordDecision();
 
         $this->completeInTransaction($pending, $this->verified($pending, $this->factorProof($pending)));
 

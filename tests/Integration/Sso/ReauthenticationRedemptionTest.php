@@ -35,6 +35,7 @@ use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\HandoffRedemption;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use Tests\Concerns\MigratesSso;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
@@ -53,8 +54,9 @@ use Tests\TestCase;
  * session, issuing a token and keeping the session's refresh token and
  * provenance; SSO's refusal commits; a failed token result rolls back and
  * reports nothing; every way an adapter could break the one-renewal rule is a
- * `LogicException` that rolls back; and a code admitted through SSO's own
- * admission, outside this redemption, renews nothing and stays unspent.
+ * `LogicException` that rolls back; a code admitted through SSO's own
+ * admission, outside this redemption, renews nothing and stays unspent; and a
+ * renewal has the request's decisions forgotten, while a refusal keeps them.
  *
  * Each scenario that commits or rolls back runs at the connection's own level
  * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
@@ -69,7 +71,7 @@ use Tests\TestCase;
 #[CoversClass(ExternalResults::class)]
 final class ReauthenticationRedemptionTest extends TestCase
 {
-    use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use MigratesSso, RecordsRequirementDecisions, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var string What a renewal asked for while no redemption is open to write it is. */
     private const string NO_REDEMPTION = 'SSO asked for a renewal no redemption would write: a re-authentication is redeemed through Iam::reauthentications().';
@@ -252,6 +254,45 @@ final class ReauthenticationRedemptionTest extends TestCase
 
         self::assertInstanceOf(AccessTokenResult::class, $answer);
         self::assertTrue($answer->isIssued());
+    }
+
+    /**
+     * A renewal has `laravel-authorization` forget the decisions of the request
+     * (IAM-6.11): the session's authentication they read has been renewed, so
+     * the next check reads the provider's time.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testARenewalForgetsTheRequestsDecisions(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $handoff = $this->reauthenticationHandoff();
+
+        $this->recordDecision();
+
+        self::assertInstanceOf(AccessTokenResult::class, $this->redeem($handoff));
+        self::assertNull($this->lastDecision());
+    }
+
+    /**
+     * A refusal by SSO renews nothing, so the request's decisions are kept.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARefusalBySsoKeepsTheRequestsDecisions(): void
+    {
+        $handoff  = $this->reauthenticationHandoff();
+        $decision = $this->recordDecision();
+
+        self::assertInstanceOf(RedemptionResult::class, $this->redeem(new Handoff($handoff->code, self::WRONG_VERIFIER, $handoff->reference)));
+        self::assertSame($decision, $this->lastDecision());
     }
 
     /**

@@ -366,7 +366,10 @@ run through are in `storage-and-transactions.md`.
    redeemed and admitted, the renewal is taken, must be for the session the redemption names, and
    `reauthenticateExternally()` makes the one write: `auth_time` becomes the later of the session's and the
    provider's, and refresh tokens, deadlines, provenance and earlier evidence stay unless this authentication's own
-   evidence was accepted. No renewal is still recorded when it commits, and the token leaves after the commit.
+   evidence was accepted. The token issued, `laravel-authorization` forgets the request's decisions, naming the
+   session and SSO's reference to the identity (`DecisionCacheInvalidation`, IAM-6.11, `authorization.md`), and again
+   should the transaction roll back. No renewal is still recorded when it commits, and the token leaves after the
+   commit.
 3. Link: `Iam::links()->redeem(...)` resolves the caller's guard, names its identity to SSO and calls SSO's
    standalone `redeem()`, which commits the link before it answers (inside a transaction the caller holds open, it
    writes the link in a savepoint of that transaction instead); no session is written.
@@ -517,6 +520,7 @@ run through are in `storage-and-transactions.md`.
   `src/Transactions/OutermostCommits.php`: `committing()`, `count()`;
   `src/Transactions/ConcurrencyFailures.php`: `asRaised()`, what a redemption's last failure reaches the caller as.
 - `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`, `src/Sso/LinkRedemption.php`: `redeem()`;
+  `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`, forgetting the request's decisions once it renews;
   `src/IamManager.php`: `signIns()`, `reauthentications()`, `links()`; `src/Facades/Iam.php`.
 - `src/Sso/AdmittedRedemptions.php`: `record()`, `matching()`, `acceptedEvidence()`, `clientFor()`, `forget()`;
   `src/Sso/RenewalRecorder.php`: `open()`, `close()`, `record()`, `take()`, `isHolding()`; `src/Sso/Renewal.php`;
@@ -623,7 +627,8 @@ run through are in `storage-and-transactions.md`.
   `testAnOlderProviderTimeLeavesTheSessionsOwn`, `testARefusalBySsoCommitsAndSpendsTheCode`,
   `testAFailedTokenResultRollsBackAndLeavesTheCodeUnspent`, `testABrokenRenewalIsALogicExceptionThatRollsBack`,
   `testAnApplicationThatIsNoSessionGuardThrowsBeforeTheCodeIsTouched`, `testTheRecordsAreTheRedemptionsAlone`,
-  `testACodeAdmittedOutsideItsRedemptionRenewsNothingAndStaysUnspent`, `testAJobsRedemptionReportsNoClient`
+  `testACodeAdmittedOutsideItsRedemptionRenewsNothingAndStaysUnspent`, `testAJobsRedemptionReportsNoClient`,
+  `testARenewalForgetsTheRequestsDecisions`, `testARefusalBySsoKeepsTheRequestsDecisions`
 - `tests/Integration/Sso/LinkRedemptionTest.php` `testTheCallerIsLinkedStandalone`,
   `testACodeStartedForAnotherIdentityLinksNobody`, `testACallerThatCannotBeNamedThrowsBeforeTheCodeIsTouched`,
   `testAnApplicationThatIsNoSessionGuardThrowsBeforeTheCodeIsTouched`, `testSsosDefaultFreshnessRefusesEveryLink`, `testAConcurrencyFailureIsRedeemedAgainStandalone`,

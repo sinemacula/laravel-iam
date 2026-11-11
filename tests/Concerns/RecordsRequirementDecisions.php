@@ -4,19 +4,18 @@ declare(strict_types = 1);
 
 namespace Tests\Concerns;
 
-use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authorization\Evaluation\Decision;
-use SineMacula\Laravel\Authorization\Evaluation\DecisionProvenance;
-use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionStage;
-use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
-use SineMacula\Laravel\Authorization\Evaluation\RequirementFreshness;
-use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Authorization\Facades\Authorization;
 
 /**
- * Records, as `laravel-authorization`'s last decision, an allow that read an
- * authentication requirement in a session or about an identity, and reads the
- * last decision back, so a test of an MFA adapter can show it forgets the
- * decision that depended on the authentication it changed (IAM-6.11).
+ * Leaves the request holding a decision through `laravel-authorization`'s
+ * facade, by making a check, and reads the last decision back through it, so a
+ * test of a change to an identity's authentication can show the change has the
+ * request's decisions forgotten (IAM-6.11).
+ *
+ * The check is a guest's, which `laravel-authorization` refuses as
+ * `subject_unresolved` without reading a table, so the test needs none of its
+ * migrations: the decision forgotten is the request's whoever it was about.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -28,49 +27,24 @@ use SineMacula\Laravel\Authorization\Support\Reference;
 trait RecordsRequirementDecisions
 {
     /**
-     * Record an allow that read an authentication requirement, made in the
-     * session given, about the identity given, as the request's last decision.
+     * Make a check, and answer the last decision it left the request holding.
      *
-     * @param  ?string  $session
-     * @param  ?\Illuminate\Database\Eloquent\Model  $identity
      * @return \SineMacula\Laravel\Authorization\Evaluation\Decision
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    protected function recordRequirementDecision(?string $session, ?Model $identity = null): Decision
+    protected function recordDecision(): Decision
     {
-        $decision = Decision::allow(DecisionStage::ALLOW)->withFreshness(new RequirementFreshness($session));
+        Authorization::forUser(null)->can('invoices:refund');
 
-        $this->lastDecisionStore()->put($decision, new DecisionProvenance(identity: $identity === null ? null : Reference::of($identity)), $session);
-
-        return $decision;
+        return Authorization::lastDecision() ?? self::fail('The check left the request holding no decision.');
     }
 
     /**
-     * The request's last decision, whatever session reads it.
+     * The request's last decision.
      *
      * @return ?\SineMacula\Laravel\Authorization\Evaluation\Decision
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     protected function lastDecision(): ?Decision
     {
-        return $this->lastDecisionStore()->get();
-    }
-
-    /**
-     * The request's store of the last decision.
-     *
-     * @return \SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function lastDecisionStore(): LastDecisionStore
-    {
-        $store = $this->app?->make(LastDecisionStore::class);
-
-        self::assertInstanceOf(LastDecisionStore::class, $store);
-
-        return $store;
+        return Authorization::lastDecision();
     }
 }

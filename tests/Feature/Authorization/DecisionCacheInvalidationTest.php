@@ -6,34 +6,24 @@ namespace Tests\Feature\Authorization;
 
 use Illuminate\Database\DatabaseTransactionRecord;
 use Illuminate\Database\DatabaseTransactionsManager;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Authorization\Evaluation\Decision;
-use SineMacula\Laravel\Authorization\Evaluation\DecisionProvenance;
-use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionStage;
-use SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore;
-use SineMacula\Laravel\Authorization\Evaluation\RequirementFreshness;
-use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Transactions\OpenTransactions;
+use Tests\Concerns\RecordsRequirementDecisions;
 use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
 
 /**
- * Feature tests for forgetting the decision `laravel-authorization` keeps that
- * depended on an identity's authentication (IAM-6.11): the request's last
- * decision is forgotten when it read an authentication requirement and was made
- * in the session named or was about the identity, and kept when it read none,
- * or was about another identity in another session; with no session named, only
- * a decision about the identity is forgotten, never one made outside any
- * session about someone else; an identity that is no model is matched by the
- * session alone; a decision made in the session is forgotten even when a met
- * requirement it read lapses while it is compared; and a decision recorded
+ * Feature tests for having `laravel-authorization` forget the decisions of the
+ * request once an identity's authentication changes (IAM-6.11): the request's
+ * last decision is forgotten whatever it read and whoever it was about, the
+ * identity a model or not, a session named or none; and a decision recorded
  * after the change is forgotten again should the transaction on the storage
  * connection roll back, the enclosing one included when the change was made in
- * a savepoint that committed, but kept once it commits.
+ * a savepoint that committed, but kept once it commits. Every decision is
+ * recorded and read through `laravel-authorization`'s facade.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,149 +34,47 @@ use Tests\TestCase;
 #[CoversClass(OpenTransactions::class)]
 final class DecisionCacheInvalidationTest extends TestCase
 {
+    use RecordsRequirementDecisions;
+
     /** @var string The session the change was made in. */
     private const string SESSION = 'the-changed-session';
 
-    /** @var string Another session. */
-    private const string OTHER_SESSION = 'another-session';
-
     /**
-     * Rows of `[the session the decision was made in, whether it read a
-     * requirement, whether it was about the identity, whether it is
-     * forgotten]`.
+     * Rows of `[whether the identity whose authentication changed is a model,
+     * the session it changed in]`.
      *
-     * @return iterable<string, array{0: ?string, 1: bool, 2: bool, 3: bool}>
+     * @return iterable<string, array{0: bool, 1: ?string}>
      */
-    public static function provideDecisions(): iterable
+    public static function provideChanges(): iterable
     {
-        yield 'a requirement read in the session' => [self::SESSION, true, false, true];
+        yield 'a model in a session' => [true, self::SESSION];
 
-        yield 'a requirement read about the identity in another session' => [self::OTHER_SESSION, true, true, true];
+        yield 'a model in no session' => [true, null];
 
-        yield 'a requirement read about the identity outside any session' => [null, true, true, true];
+        yield 'no model in a session' => [false, self::SESSION];
 
-        yield 'a requirement read about someone else in another session' => [self::OTHER_SESSION, true, false, false];
-
-        yield 'a requirement read about someone else outside any session' => [null, true, false, false];
-
-        yield 'no requirement read in the session' => [self::SESSION, false, true, false];
+        yield 'no model in no session' => [false, null];
     }
 
     /**
-     * The last decision is forgotten exactly when it read a requirement and was
-     * made in the session named or was about the identity.
+     * The request's last decision is forgotten whatever the change names, even
+     * one that read no authentication requirement, about nobody, made in no
+     * session: `laravel-authorization` forgets every decision of the request.
      *
+     * @param  bool  $aModel
      * @param  ?string  $session
-     * @param  bool  $readARequirement
-     * @param  bool  $aboutTheIdentity
-     * @param  bool  $forgotten
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideDecisions')]
-    public function testTheLastDecisionIsForgottenWhenItDependedOnTheChange(?string $session, bool $readARequirement, bool $aboutTheIdentity, bool $forgotten): void
+    #[DataProvider('provideChanges')]
+    public function testTheRequestsDecisionsAreForgottenWhateverTheChangeNames(bool $aModel, ?string $session): void
     {
-        $identity = self::identity(7);
-        $decision = $this->record($session, $readARequirement, $aboutTheIdentity ? $identity : self::identity(8));
+        $this->recordDecision();
 
-        $this->invalidation()->authenticationChanged($identity, self::SESSION);
+        $this->invalidation()->authenticationChanged($aModel ? self::identity(7) : new \stdClass, $session);
 
-        self::assertSame($forgotten ? null : $decision, $this->store()->get());
-    }
-
-    /**
-     * With no session named, as a reset names none, a decision about the
-     * identity is forgotten and one made outside any session about someone else
-     * is kept.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testWithNoSessionNamedOnlyTheIdentityIsMatched(): void
-    {
-        $identity = self::identity(7);
-        $kept     = $this->record(null, true, self::identity(8));
-
-        $this->invalidation()->authenticationChanged($identity);
-
-        self::assertSame($kept, $this->store()->get());
-
-        $this->record(self::SESSION, true, $identity);
-
-        $this->invalidation()->authenticationChanged($identity);
-
-        self::assertNull($this->store()->get());
-    }
-
-    /**
-     * An identity that is no model is matched by the session alone, whoever the
-     * decision was about, and a decision whose provenance names no identity by
-     * the session alone too, whoever the change was made to.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAnIdentityThatIsNoModelIsMatchedByTheSessionAlone(): void
-    {
-        $identity = new \stdClass;
-        $kept     = $this->record(self::OTHER_SESSION, true, null);
-
-        $this->invalidation()->authenticationChanged($identity, self::SESSION);
-
-        self::assertSame($kept, $this->store()->get());
-
-        $this->record(self::SESSION, true, null);
-
-        $this->invalidation()->authenticationChanged($identity, self::SESSION);
-
-        self::assertNull($this->store()->get());
-
-        $kept = $this->record(self::OTHER_SESSION, true, self::identity(7));
-
-        $this->invalidation()->authenticationChanged($identity, self::SESSION);
-
-        self::assertSame($kept, $this->store()->get());
-
-        $kept = $this->record(self::OTHER_SESSION, true, null);
-
-        $this->invalidation()->authenticationChanged(self::identity(7), self::SESSION);
-
-        self::assertSame($kept, $this->store()->get());
-    }
-
-    /**
-     * A decision made in the session named is forgotten by its session alone,
-     * even when a met requirement it read lapses between the store handing it
-     * over and the session being compared, so it is never kept for a later read
-     * once its expiry is moved or ignored.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testADecisionMadeInTheSessionIsForgottenWhateverItsExpiry(): void
-    {
-        $start = Carbon::parse('2026-11-09 12:00:00');
-        $reads = 0;
-
-        $decision = Decision::allow(DecisionStage::ALLOW)->withFreshness(new RequirementFreshness(self::SESSION, $start->toImmutable()->addSecond()));
-
-        $this->store()->put($decision, new DecisionProvenance(identity: Reference::of(self::identity(8))), self::SESSION);
-
-        Carbon::setTestNow(static function () use ($start, &$reads): Carbon {
-            return $reads++ === 0 ? $start->copy() : $start->copy()->addSeconds(2);
-        });
-
-        try {
-            $this->invalidation()->authenticationChanged(self::identity(7), self::SESSION);
-        } finally {
-            Carbon::setTestNow();
-        }
-
-        self::assertNull($this->store()->provenance());
+        self::assertNull($this->lastDecision());
     }
 
     /**
@@ -204,17 +92,17 @@ final class DecisionCacheInvalidationTest extends TestCase
 
         DB::beginTransaction();
 
-        $this->record(self::SESSION, true, $identity);
+        $this->recordDecision();
 
         $this->invalidation()->authenticationChanged($identity, self::SESSION);
 
-        self::assertNull($this->store()->get());
+        self::assertNull($this->lastDecision());
 
-        $this->record(self::SESSION, true, $identity);
+        $this->recordDecision();
 
         DB::rollBack();
 
-        self::assertNull($this->store()->get());
+        self::assertNull($this->lastDecision());
     }
 
     /**
@@ -245,11 +133,11 @@ final class DecisionCacheInvalidationTest extends TestCase
         self::assertInstanceOf(DatabaseTransactionRecord::class, $enclosing);
         self::assertCount(1, $enclosing->getCallbacksForRollback());
 
-        $this->record(self::SESSION, true, $identity);
+        $this->recordDecision();
 
         DB::rollBack();
 
-        self::assertNull($this->store()->get());
+        self::assertNull($this->lastDecision());
     }
 
     /**
@@ -268,7 +156,7 @@ final class DecisionCacheInvalidationTest extends TestCase
 
         DB::beginTransaction();
 
-        $this->record(self::SESSION, true, $identity);
+        $this->recordDecision();
 
         $app->instance('db.transactions', new \stdClass);
 
@@ -278,7 +166,7 @@ final class DecisionCacheInvalidationTest extends TestCase
             unset($app['db.transactions']);
         }
 
-        self::assertNull($this->store()->get());
+        self::assertNull($this->lastDecision());
 
         DB::rollBack();
     }
@@ -297,12 +185,12 @@ final class DecisionCacheInvalidationTest extends TestCase
 
         $this->invalidation()->authenticationChanged($identity, self::SESSION);
 
-        $decision = $this->record(self::SESSION, true, $identity);
+        $decision = $this->recordDecision();
 
         DB::beginTransaction();
         DB::rollBack();
 
-        self::assertSame($decision, $this->store()->get());
+        self::assertSame($decision, $this->lastDecision());
     }
 
     /**
@@ -322,32 +210,11 @@ final class DecisionCacheInvalidationTest extends TestCase
 
         $this->invalidation()->authenticationChanged($identity, self::SESSION);
 
-        $decision = $this->record(self::SESSION, true, $identity);
+        $decision = $this->recordDecision();
 
         DB::commit();
 
-        self::assertSame($decision, $this->store()->get());
-    }
-
-    /**
-     * Record an allow as the last decision, made in the session given, having
-     * read a requirement or not, about the identity given.
-     *
-     * @param  ?string  $session
-     * @param  bool  $readARequirement
-     * @param  ?\Tests\Fixtures\Authorization\Member  $identity
-     * @return \SineMacula\Laravel\Authorization\Evaluation\Decision
-     *
-     * @throws \Throwable
-     */
-    private function record(?string $session, bool $readARequirement, ?Member $identity): Decision
-    {
-        $decision = Decision::allow(DecisionStage::ALLOW);
-        $decision = $readARequirement ? $decision->withFreshness(new RequirementFreshness($session)) : $decision;
-
-        $this->store()->put($decision, new DecisionProvenance(identity: $identity === null ? null : Reference::of($identity)), $session);
-
-        return $decision;
+        self::assertSame($decision, $this->lastDecision());
     }
 
     /**
@@ -363,22 +230,6 @@ final class DecisionCacheInvalidationTest extends TestCase
         $identity->setAttribute($identity->getKeyName(), $key);
 
         return $identity;
-    }
-
-    /**
-     * The request's store of the last decision.
-     *
-     * @return \SineMacula\Laravel\Authorization\Evaluation\LastDecisionStore
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function store(): LastDecisionStore
-    {
-        $store = $this->app?->make(LastDecisionStore::class);
-
-        self::assertInstanceOf(LastDecisionStore::class, $store);
-
-        return $store;
     }
 
     /**
