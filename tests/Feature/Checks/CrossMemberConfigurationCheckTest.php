@@ -40,10 +40,10 @@ use Tests\TestCase;
  * Feature tests for the configuration that crosses the members (IAM-2.5),
  * bullet by bullet: the ones this check holds (MFA's applications, the members'
  * freshness operations and the tenant resolver a tenant's rule needs), and the
- * ones held where they belong, SSO's by the check SSO's own runs and
- * audit-log's by the audit check, so every bullet is pinned here. The
- * authorization capability is off unless a test turns it on, so only the test's
- * own rule asks for a tenant resolver.
+ * ones held where they belong, SSO's by the SSO bridge check and audit-log's by
+ * the audit check, so every bullet is pinned here. The authorization capability
+ * is off unless a test turns it on, so only the test's own rule asks for a
+ * tenant resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -414,35 +414,6 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $this->declare([...array_column(Operation::cases(), 'value'), ...array_column(FreshnessOperation::cases(), 'value')]);
 
         self::assertSame([], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * `laravel-authentication`'s side is the tenant resolver, about no one
-     * guard, and the MFA and SSO applications named after a guard, about that
-     * guard, the SSO application's only while SSO is in use.
-     *
-     * @return void
-     */
-    public function testLaravelAuthenticationsSideIsTheTenantResolverAndEachGuardsApplications(): void
-    {
-        $config = $this->app?->make('config');
-
-        $config?->set('sso.applications', ['api' => [], 'portal' => []]);
-
-        self::assertSame([], $this->check()->authenticationChecks());
-        $undeclared = 'mfa.add_factor, mfa.replace_factor, mfa.remove_factor, mfa.generate_recovery_codes';
-
-        self::assertSame([sprintf(self::UNDECLARED, $undeclared)], self::problems($this->check()->guardChecks('api')));
-        self::assertCount(2, $this->check()->guardChecks('api'));
-        self::assertSame([], $this->check()->guardChecks('portal'));
-
-        $config?->set('sso.features.saml2', true);
-        $this->app?->bind(TenantMfaRequirement::class, FakeTenantMfaRequirement::class);
-
-        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->authenticationChecks()));
-        self::assertCount(3, $this->check()->guardChecks('api'));
-        self::assertCount(1, $this->check()->guardChecks('portal'));
-        self::assertSame([], $this->check()->guardChecks('other'));
     }
 
     /**

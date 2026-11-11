@@ -282,9 +282,8 @@ final class MandatorySeamsCheckTest extends TestCase
 
     /**
      * While SSO is in use, the seams this package's check of SSO's side holds
-     * are left to it, which `sso:check` runs, or `iam:check` while SSO's check
-     * does not (`SsoBridgeFallbackCheckTest`), so each is reported once: the
-     * bridge reports SSO's linker left on its default, and this check does not.
+     * are left to it, so each is reported once: the bridge reports SSO's linker
+     * left on its default, and this check does not.
      *
      * @return void
      */
@@ -444,29 +443,6 @@ final class MandatorySeamsCheckTest extends TestCase
         $this->app?->offsetUnset(BindingOutcome::class);
 
         self::assertSame([], self::notes($this->check()->checks()));
-    }
-
-    /**
-     * `laravel-authentication`'s side is its own seams alone, and the notes of
-     * those the rule kept, about no one guard.
-     *
-     * @return void
-     */
-    public function testLaravelAuthenticationsSideIsItsOwnSeams(): void
-    {
-        $this->app?->bind(PasskeyFactorGate::class, NoPasskeyFactors::class);
-        $this->app?->bind(SessionRevoker::class, GenerationSessionRevoker::class);
-        $this->app?->instance(BindingOutcome::class, new BindingOutcome([], [SessionRevocation::class, PasskeyFactorGate::class]));
-
-        self::assertCount(2, self::problems($this->check()->checks()));
-        self::assertCount(2, self::notes($this->check()->checks()));
-
-        $problems = self::problems($this->check()->authenticationChecks());
-
-        self::assertCount(1, $problems);
-        self::assertStringStartsWith(PasskeyFactorGate::class . ' is still bound to ' . NoPasskeyFactors::class, $problems[0]);
-        self::assertSame([PasskeyFactorGate::class . ' keeps the application\'s binding, not this package\'s adapter.'], self::notes($this->check()->authenticationChecks()));
-        self::assertSame([], $this->check()->guardChecks('api'));
     }
 
     /**

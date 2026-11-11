@@ -6,30 +6,11 @@ namespace SineMacula\Laravel\Iam\Checks;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Runs every member's check, then this package's own (IAM-10.1, IAM-10.2),
- * reporting each to the output given and answering whether everything passed,
- * for `iam:check` to exit on at deploy.
- *
- * The members' checks are their own console commands, run through the console
- * as they would be run by hand, each reporting in its own words:
- * `authentication:check`, `authorization:check`, `mfa:check`, `sso:check`
- * (which reports this package's checks of SSO's side under `[iam]`) and
- * `audit-log:check`. Glue, not policy: their checks stay theirs, and a member
- * command that exits non-zero fails the run. One that throws is a defect of its
- * member's, and stops the run with that exception, which fails closed. One that
- * is not registered is reported as such and fails the run too, every member
- * being required (IAM-1.3). While they run, `RUNNING` is `true`, so this
- * package's checks reported in `authentication:check` too
- * (`AuthenticationConfigurationCheck`) are left to the report below, and each
- * problem is reported once.
- *
- * This package's checks (`Check`) follow, each resolved afresh, reported under
- * its subject: `OK`, `not applied`, each problem one of its closures threw, and
- * each note one returned, which does not fail the run. Every closure runs, so
- * one run reports every problem.
+ * `iam:check`: runs the members' check commands, then this package's checks.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,19 +22,15 @@ final readonly class Checker
     /** @var list<string> The members' check commands, in the order they run. */
     public const array MEMBER_COMMANDS = ['authentication:check', 'authorization:check', 'mfa:check', 'sso:check', 'audit-log:check'];
 
-    /** @var string The key bound in the container to `true` while the members' check commands run, and to `false` once they have. */
-    public const string RUNNING = 'iam.check.running';
-
     /** @var list<class-string<\SineMacula\Laravel\Iam\Checks\Contracts\Check>> This package's checks, in the order they run. */
     public const array CHECKS = [
         StorageCheck::class,
         MandatorySeamsCheck::class,
-        SsoBridgeFallbackCheck::class,
+        SsoBridgeCheck::class,
         ContextNamespacesCheck::class,
         AuditCheck::class,
         SendersCheck::class,
         CrossMemberConfigurationCheck::class,
-        PlatformCheck::class,
         SchedulesCheck::class,
     ];
 
@@ -81,13 +58,7 @@ final readonly class Checker
      */
     public function run(OutputInterface $output): bool
     {
-        $this->container->instance(self::RUNNING, true);
-
-        try {
-            $passed = $this->runCommands($output);
-        } finally {
-            $this->container->instance(self::RUNNING, false);
-        }
+        $passed = $this->runCommands($output);
 
         $output->writeln('<comment>iam</comment>');
 
