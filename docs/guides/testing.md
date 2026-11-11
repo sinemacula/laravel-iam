@@ -191,9 +191,10 @@ sign-in and records its proofs through `laravel-authentication`:
   first factor, as an application that checked a password itself starts one. The guard must allow the `password`
   method. The identity's stored password is never read or changed. The test then acts on the new session, as
   `actingOnSession()` does, so the requests it sends are served on it.
-- The level's further proof is recorded as `$verified` records it, with a confirmed factor of the level's type the
-  identity holds, or one enrolled for it when it holds none: an email factor for AAL1, an authenticator app for AAL2,
-  and a passkey for AAL3, which needs a combination policy that rates a hardware-protected passkey AAL3.
+- The level's further proof is MFA's own (`Mfa\Testing\LevelEvidence`), naming the factor the recorder's
+  `factorReference()` gives: a confirmed factor of the level's type the identity holds, or one enrolled for it when it
+  holds none. That is an email factor for AAL1, an authenticator app for AAL2, and a passkey for AAL3, which needs a
+  combination policy that rates a hardware-protected passkey AAL3.
 - A person who already holds a confirmed factor, under an application that requires one at sign-in, is left pending
   by the sign-in, as they would be. That includes the person the helper enrolled a factor for, the next time. The
   helper's further proof then completes the sign-in, as the person would complete it, before the test acts on it.
@@ -218,8 +219,9 @@ guide describes.
 ## Verifying a session you already hold
 
 `actingOnVerifiedSession($session, $level = AssuranceLevel::AAL2, $guard = null)` acts on a session your test signed
-in itself, as `actingOnSession()` does, and verifies it at exactly the level, as `$verified` does. The session must be a
-live, active session of a person, holding a first factor MFA can judge.
+in itself, as `actingOnSession()` does, and steps it up with MFA's level evidence, made now with the same factor as
+above, so it reads at exactly the level. The session must be a live, active session of a person, holding a first
+factor MFA can judge.
 
 ```php
 $this->actingOnVerifiedSession($session, AssuranceLevel::AAL2)->getJson('/api/account')->assertOk();
