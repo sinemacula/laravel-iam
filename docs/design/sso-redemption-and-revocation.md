@@ -315,14 +315,12 @@ run through are in `storage-and-transactions.md`.
 
   Each helper runs as a savepoint of SSO's transaction on the shared connection, throws on failure, and reports a
   revocation only once SSO's change commits, so nothing is reported that was not done. A connection scope with any
-  other reason, and a scope missing what its kind names, throws a `LogicException`. The tenant scope's helper runs a
-  second time once SSO's transaction commits, as `laravel-authentication` asks for a strict cut-off (Decision, M5:
-  the second pass is held for the storage connection's own transaction and runs once every callback queued on it has
-  run, SSO's report of the change among them, or, when one of those callbacks fails, as the unit of work ends; see
-  Failure / Edge Cases). Both passes go through `laravel-authentication`'s `tenantPolicyChanged()` as
-  `Tenancy\TenantPolicyChanges::changed()` makes them, the application's own reports included
-  (`tenant-authentication-policy.md`); for the enforcement change they are made for the enforcing tenant's subtree by
-  `Tenancy\SubtreePolicyChanges`, whose pass after the commit lists the subtree again (`provisioning-and-tenancy.md`).
+  other reason, and a scope missing what its kind names, throws a `LogicException`. The tenant scope's helper calls
+  `laravel-authentication`'s `tenantPolicyChanged()`, which judges the tenant again once SSO's transaction commits,
+  for a strict cut-off, as `Tenancy\TenantPolicyChanges::changed()` does for the application's own reports
+  (`tenant-authentication-policy.md`); for the enforcement change it is called for the enforcing tenant's subtree by
+  `Tenancy\SubtreePolicyChanges`, which lists the subtree again after the commit and judges any tenant it has gained
+  (`provisioning-and-tenancy.md`).
 - References (IAM-8.2):
   - `IdentityReferences::identity()` maps SSO's `IdentityReference` through the morph map
     (`Relation::getMorphedModel($type) ?? $type`) to an Eloquent model implementing `laravel-authentication`'s

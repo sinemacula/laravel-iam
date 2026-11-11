@@ -245,9 +245,9 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * A seam bound to a class of a member's own that is not among the row's
-     * defaults fails all the same, as a member's renamed default would: the
-     * external identity links bound to SSO's `NoLinks`.
+     * A seam of SSO's, which gives no answer of its own, bound to a class of a
+     * member's own that is not among the row's defaults fails all the same, as
+     * a renamed default would: SSO's session revocation bound to its `NoLinks`.
      *
      * @return void
      */
@@ -255,9 +255,9 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $this->useSso();
 
-        $this->app?->bind(ExternalIdentityLinks::class, NoLinks::class);
+        $this->app?->bind(SessionRevocation::class, NoLinks::class);
 
-        self::assertStringContainsString(ExternalIdentityLinks::class . ' is still bound to ' . NoLinks::class, self::problems($this->mandates())[0]);
+        self::assertStringContainsString(SessionRevocation::class . ' is still bound to ' . NoLinks::class, self::problems($this->mandates())[0]);
     }
 
     /**

@@ -11,7 +11,6 @@ use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\SubtreeGrantees;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
-use SineMacula\Laravel\Iam\Sso\IdentityGuards;
 use SineMacula\Laravel\Sso\Config\Enums\Feature;
 use SineMacula\Laravel\Sso\Config\Features;
 
@@ -65,12 +64,8 @@ use SineMacula\Laravel\Sso\Config\Features;
  *   of every person granted in it without a grant being written, and no grant
  *   hook runs. SSO suspends each one's links by a verified domain in every
  *   other tenant's connections, and revokes the sessions established through
- *   them, in the move's transaction. Every one's identity guard is taken first,
- *   in SSO's order (`Sso\IdentityGuards`), before any connection is locked:
- *   taken one widening after another, a guard would follow another identity's
- *   connections, and the move would deadlock with a grant, a reservation or an
- *   activation of that identity, which holds its guard and waits for one of
- *   those connections. The package cannot tell a move out from under a tenant
+ *   them, in the move's transaction, all in one widening, so SSO takes their
+ *   guards in its order. The package cannot tell a move out from under a tenant
  *   from one within it, so this is broader than needed, never narrower: a link
  *   in a tenant the subtree still stands below is suspended
  *   too, latched as SSO latches every suspension, and is linked again;
@@ -110,7 +105,6 @@ final readonly class TreeChanges
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
-     * @param  \SineMacula\Laravel\Iam\Sso\IdentityGuards  $guards
      */
     public function __construct(
 
@@ -131,9 +125,6 @@ final readonly class TreeChanges
 
         /** Reports each identity granted in the moved subtree to SSO's scope widening. */
         private ScopeWidenings $widenings,
-
-        /** Takes the guard of every identity granted in the moved subtree, in SSO's order, before any is reported. */
-        private IdentityGuards $guards,
     ) {}
 
     /**
@@ -169,10 +160,9 @@ final readonly class TreeChanges
     }
 
     /**
-     * Report each identity granted in the moved tenant's subtree to SSO's scope
-     * widening, every one's guard taken first in SSO's order, while
-     * `laravel-authorization`'s grants are reported to it, then the move to
-     * `laravel-authorization`.
+     * Report the identities granted in the moved tenant's subtree to SSO's
+     * scope widening, together, while `laravel-authorization`'s grants are
+     * reported to it, then the move to `laravel-authorization`.
      *
      * @param  string  $tenantId
      * @return void
@@ -186,12 +176,9 @@ final readonly class TreeChanges
     {
         if (AuthorizationSeams::reportsWidenings($this->config)) {
 
-            $client   = new ClientContext(null, null);
             $grantees = $this->container->make(SubtreeGrantees::class)->of($tenantId);
 
-            foreach ($this->guards->acquire($grantees) as $identity) {
-                $this->widenings->widen($identity, $tenantId, $client);
-            }
+            $this->widenings->widen($grantees, $tenantId, new ClientContext(null, null));
         }
 
         $this->container->make(AuthorizationManager::class)->treeChanged($this->tenants->toReference($tenantId));

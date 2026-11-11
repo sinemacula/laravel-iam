@@ -8,6 +8,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
@@ -17,7 +18,6 @@ use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
-use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
 use SineMacula\Laravel\Iam\Contracts\TenantTree;
@@ -207,10 +207,11 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     /**
      * While a tenant's rule reaches a session, or a grant is reported to SSO's
      * scope widening, `laravel-authentication`'s tenant resolver left on its
-     * `ResolveNoTenant` is refused, since MFA's tenant requirement, the tree's
-     * changes and SSO's revocation resolve the session's tenant through it, and
-     * the grant hook the tenant of every grant that widens; a resolver of the
-     * application's own, as an instance, a class name or a closure, passes.
+     * default, resolved or not, or bound to `ResolveNoTenant` by name, is
+     * refused, since MFA's tenant requirement, the tree's changes and SSO's
+     * revocation resolve the session's tenant through it, and the grant hook
+     * the tenant of every grant that widens; a resolver of the application's
+     * own, as an instance, a class name or a closure, passes.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
      * @return void
@@ -225,6 +226,14 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $this->declare(array_column(Operation::cases(), 'value'));
 
         $rule($app);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->make(TenantResolver::class);
+
+        self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+
+        $app->singleton(TenantResolver::class, ResolveNoTenant::class);
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
 
@@ -325,7 +334,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         $app = $this->app ?? self::fail('The application has not booted.');
 
-        self::assertSame(ResolveNoTenant::class, $app->make(SeamHolders::class)->of($app, TenantResolver::class));
+        self::assertTrue(AuthenticationServiceProvider::isPackageDefault($app, TenantResolver::class));
         self::assertSame([], self::problems($this->check()->checks()));
     }
 

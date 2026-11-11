@@ -4,8 +4,10 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Checks;
 
+use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
@@ -52,9 +54,8 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   a principal's own tenant without one, so an application that never needed a
  *   resolver would otherwise refuse every grant to an identity, or a
  *   principal's first, in a tenant, every tenant-scoped check and every move of
- *   a tenant, at runtime. Its live binding (`SeamHolders`) still naming
- *   `laravel-authentication`'s `ResolveNoTenant` is refused; a resolver bound
- *   through a closure is not built, so it is the application's to answer.
+ *   a tenant, at runtime. A resolver still on `laravel-authentication`'s
+ *   default, as it says, or bound to its `ResolveNoTenant` by name, is refused.
  * - While the application has memberships, so its people act in tenants,
  *   `laravel-authorization`'s resource tenant resolver still on its default is
  *   noted, never failed: the shipped `NoResourceTenant` knows no model's
@@ -219,16 +220,19 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Refuse a tenant resolver whose live binding is still
-     * `laravel-authentication`'s `ResolveNoTenant`, which resolves no tenant.
+     * Refuse a tenant resolver still on `laravel-authentication`'s default, or
+     * bound to its `ResolveNoTenant`, which resolves no tenant.
      *
      * @return void
      *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
      */
     private function assertTenantsResolve(): void
     {
-        if ($this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
+        $isDefault = $this->container instanceof IlluminateContainer && AuthenticationServiceProvider::isPackageDefault($this->container, TenantResolver::class);
+
+        if (!$isDefault && $this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
             return;
         }
 

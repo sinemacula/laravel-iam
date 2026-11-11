@@ -230,7 +230,7 @@ return [
     | Any other change that gives a person a principal (a membership created
     | or accepted, a platform principal created) reports it first, inside its
     | own transaction on the storage connection, before it writes the
-    | principal: `Iam::scopeWidenings()->widen($identity, $tenantId, $client)`,
+    | principal: `Iam::scopeWidenings()->widen([$identity], $tenantId, $client)`,
     | with `null` for a platform principal.
     |
     | `groups` maps the groups a provider reports (SSO's `groups` attribute) to
