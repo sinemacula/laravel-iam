@@ -4,29 +4,21 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Authorization;
 
-use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\MachineIdentity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
-use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authorization\Subject;
 use SineMacula\Laravel\Iam\Authorization\SessionPolicySourceAdapter;
-use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Models\Machine;
 
 /**
- * Unit tests for reading a credential's scopes only while the subject's guard
- * holds that very subject and, where the subject names one, that very session:
- * a guard holding a scoped credential for a session answers its scopes for a
- * subject naming that session, by its key compared as text, and no cap for a
- * subject naming another, for a guard whose session has no key that could be
- * named, or none at all, or for a guard that has not resolved its request yet,
- * whose resolution is never started. A machine the guard does not hold is
- * answered a cap allowing nothing, however it is one of
+ * Unit tests for answering the scopes the subject carries: a subject's own
+ * scopes, a list or an empty one, are answered as they are, for a person and a
+ * machine alike, and a subject carrying none is answered no cap, but for a
+ * machine, which is answered a cap allowing nothing, however it is one of
  * `laravel-authentication`'s machines, and never no cap.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -40,75 +32,44 @@ final class SessionPolicySourceAdapterTest extends TestCase
     /** @var string The guard the subject names. */
     private const string GUARD = 'api';
 
-    /** @var list<string> The scopes the guard's credential carries. */
-    private const array SCOPES = ['reports:read'];
-
     /**
-     * Rows of `[the key of the guard's session, the session the subject
-     * names, whether the scopes are answered]`.
+     * Rows of `[the scopes the subject carries]`.
      *
-     * @return iterable<string, array{0: mixed, 1: ?string, 2: bool}>
+     * @return iterable<string, array{0: list<string>}>
      */
-    public static function provideSessions(): iterable
+    public static function provideScopes(): iterable
     {
-        yield 'the session the guard holds, by a text key' => ['session-1', 'session-1', true];
+        yield 'two scopes' => [['reports:read', 'reports:export']];
 
-        yield 'the session the guard holds, by a whole-number key' => [42, '42', true];
-
-        yield 'another session' => ['session-1', 'session-2', false];
-
-        yield 'a session whose key is no text or number' => [4.2, '4.2', false];
-
-        yield 'a session while the guard holds none' => [null, 'session-1', false];
-
-        yield 'no session named' => ['session-1', null, true];
+        yield 'none granted' => [[]];
     }
 
     /**
-     * The scopes are answered only for the session the guard holds, where the
-     * subject names one.
+     * The scopes a person's subject carries are answered as they are, an empty
+     * list, which allows nothing, included.
      *
-     * @param  mixed  $held
-     * @param  ?string  $named
-     * @param  bool  $answered
+     * @param  list<string>  $scopes
      * @return void
      */
-    #[DataProvider('provideSessions')]
-    public function testTheScopesAreAnsweredOnlyForTheSessionTheGuardHolds(mixed $held, ?string $named, bool $answered): void
+    #[DataProvider('provideScopes')]
+    public function testAPersonsOwnScopesAreAnswered(array $scopes): void
     {
-        $principal = self::createStub(Principal::class);
-        $source    = new SessionPolicySourceAdapter($this->auth($principal, $held));
+        $principal = $this->principalActingFor($this->identity(Identity::class));
 
-        self::assertSame($answered ? self::SCOPES : null, $source->scopesFor(new Subject($principal, $principal, null, self::GUARD, self::GUARD, $named)));
+        self::assertSame($scopes, (new SessionPolicySourceAdapter)->scopesFor(self::subject($principal, null, $scopes)));
     }
 
     /**
-     * A principal that is no model is matched only as the very object the guard
-     * holds.
+     * A person whose subject carries no scopes, on a session no credential
+     * limits or named by the caller, is answered no cap.
      *
      * @return void
      */
-    public function testAPrincipalThatIsNoModelIsMatchedAsTheVeryObject(): void
+    public function testAPersonCarryingNoScopesIsAnsweredNoCap(): void
     {
-        $principal = self::createStub(Principal::class);
-        $source    = new SessionPolicySourceAdapter($this->auth($principal, null));
+        $principal = $this->principalActingFor($this->identity(Identity::class));
 
-        self::assertNull($source->scopesFor(new Subject(self::createStub(Principal::class), null, null, self::GUARD, self::GUARD)));
-    }
-
-    /**
-     * A principal that is no model is never matched to a subject that is one,
-     * nor a model principal to a subject that is none.
-     *
-     * @return void
-     */
-    public function testAModelAndAPrincipalThatIsNoneAreNeverMatched(): void
-    {
-        $member = new Member(['name' => 'Ada Lovelace']);
-        $other  = self::createStub(Principal::class);
-
-        self::assertNull((new SessionPolicySourceAdapter($this->auth($other, null)))->scopesFor(new Subject($member, null, null, self::GUARD, self::GUARD)));
-        self::assertNull((new SessionPolicySourceAdapter($this->auth($member, null)))->scopesFor(new Subject($other, null, null, self::GUARD, self::GUARD)));
+        self::assertNull((new SessionPolicySourceAdapter)->scopesFor(self::subject($principal, null, null)));
     }
 
     /**
@@ -134,48 +95,33 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A machine the guard does not hold is answered a cap allowing nothing,
-     * never no cap, whether or not it carries `laravel-authorization`'s marker,
-     * however it is a machine: `laravel-authorization` allows nothing to a
-     * machine answered `null` only when it carries the marker.
+     * A machine carrying no scopes is answered a cap allowing nothing, never no
+     * cap, whether or not it carries `laravel-authorization`'s marker, however
+     * it is a machine: `laravel-authorization` allows nothing to a machine
+     * answered `null` only when it carries the marker.
      *
      * @param  \Closure(self): object  $subject
      * @param  \Closure(self): ?object  $identity
      * @return void
      */
     #[DataProvider('provideMachines')]
-    public function testAMachineTheGuardDoesNotHoldIsAllowedNothing(\Closure $subject, \Closure $identity): void
+    public function testAMachineCarryingNoScopesIsAllowedNothing(\Closure $subject, \Closure $identity): void
     {
-        $source = new SessionPolicySourceAdapter($this->auth(self::createStub(Principal::class), null));
-
-        self::assertSame([], $source->scopesFor(new Subject($subject($this), $identity($this), null, self::GUARD, self::GUARD)));
+        self::assertSame([], (new SessionPolicySourceAdapter)->scopesFor(self::subject($subject($this), $identity($this), null)));
     }
 
     /**
-     * A machine naming no guard is answered a cap allowing nothing too, and no
-     * guard is read for it.
+     * A machine carrying its credential's scopes is answered them, however it
+     * is a machine, never a cap allowing nothing in their place.
      *
+     * @param  \Closure(self): object  $subject
+     * @param  \Closure(self): ?object  $identity
      * @return void
      */
-    public function testAMachineNamingNoGuardIsAllowedNothing(): void
+    #[DataProvider('provideMachines')]
+    public function testAMachinesOwnScopesAreAnswered(\Closure $subject, \Closure $identity): void
     {
-        $auth = $this->createMock(AuthFactory::class);
-        $auth->expects(self::never())->method('guard');
-
-        self::assertSame([], (new SessionPolicySourceAdapter($auth))->scopesFor(new Subject(new Machine, null, null, null, null)));
-    }
-
-    /**
-     * A principal acting for a person is no machine, so a principal the guard
-     * does not hold is answered no cap.
-     *
-     * @return void
-     */
-    public function testAPrincipalActingForAPersonIsAnsweredNoCap(): void
-    {
-        $source = new SessionPolicySourceAdapter($this->auth(self::createStub(Principal::class), null));
-
-        self::assertNull($source->scopesFor(new Subject($this->principalActingFor($this->identity(Identity::class)), null, null, self::GUARD, self::GUARD)));
+        self::assertSame(['reports:read'], (new SessionPolicySourceAdapter)->scopesFor(self::subject($subject($this), $identity($this), ['reports:read'])));
     }
 
     /**
@@ -204,79 +150,15 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject naming no guard carries no cap, and no guard is read for it,
-     * the default one included.
+     * A subject on the guard, with no session, carrying the scopes given.
      *
-     * @return void
+     * @param  object  $subject
+     * @param  ?object  $identity
+     * @param  ?list<string>  $scopes
+     * @return \SineMacula\Laravel\Authorization\Subject
      */
-    public function testASubjectNamingNoGuardReadsNoGuard(): void
+    private static function subject(object $subject, ?object $identity, ?array $scopes): Subject
     {
-        $auth = $this->createMock(AuthFactory::class);
-        $auth->expects(self::never())->method('guard');
-
-        self::assertNull((new SessionPolicySourceAdapter($auth))->scopesFor(new Subject(self::createStub(Principal::class), null, null, null, null)));
-    }
-
-    /**
-     * A guard that holds no principal answers no cap.
-     *
-     * @return void
-     */
-    public function testAGuardHoldingNoPrincipalAnswersNoCap(): void
-    {
-        $source = new SessionPolicySourceAdapter($this->auth(null, null));
-
-        self::assertNull($source->scopesFor(new Subject(self::createStub(Principal::class), null, null, self::GUARD, self::GUARD)));
-    }
-
-    /**
-     * A guard that has not resolved its request yet answers no cap, and its
-     * resolution is never started: neither its identity, principal, session nor
-     * scopes are read.
-     *
-     * @return void
-     */
-    public function testAGuardThatHasNotResolvedItsRequestIsNeverEntered(): void
-    {
-        $guard = $this->createMock(ContextualGuard::class);
-        $guard->method('hasUser')->willReturn(false);
-        $guard->expects(self::never())->method('user');
-        $guard->expects(self::never())->method('principal');
-        $guard->expects(self::never())->method('session');
-        $guard->expects(self::never())->method('scopes');
-
-        $auth = $this->createMock(AuthFactory::class);
-        $auth->expects(self::once())->method('guard')->with(self::GUARD)->willReturn($guard);
-
-        self::assertNull((new SessionPolicySourceAdapter($auth))->scopesFor(new Subject(self::createStub(Principal::class), null, null, self::GUARD, self::GUARD)));
-    }
-
-    /**
-     * An authentication factory whose guard holds the principal, a session of
-     * the key given (none for `null`) and a credential carrying the scopes.
-     *
-     * @param  ?\SineMacula\Laravel\Authentication\Contracts\Principal  $principal
-     * @param  mixed  $session
-     * @return \Illuminate\Contracts\Auth\Factory
-     */
-    private function auth(?Principal $principal, mixed $session): AuthFactory
-    {
-        $held = null;
-
-        if ($session !== null) {
-            $held = self::createStub(Session::class);
-            $held->method('getSessionIdentifier')->willReturn($session);
-        }
-
-        $guard = self::createStub(ContextualGuard::class);
-        $guard->method('hasUser')->willReturn(true);
-        $guard->method('principal')->willReturn($principal);
-        $guard->method('session')->willReturn($held);
-        $guard->method('scopes')->willReturn(self::SCOPES);
-
-        $auth = $this->createMock(AuthFactory::class);
-        $auth->expects(self::once())->method('guard')->with(self::GUARD)->willReturn($guard);
-
-        return $auth;
+        return new Subject($subject, $identity, null, self::GUARD, self::GUARD, scopes: $scopes);
     }
 }

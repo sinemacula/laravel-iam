@@ -104,8 +104,9 @@ The current note set is:
   keys it declares to the key catalogue with their types, and its assurance keys, which say how the session was
   authenticated and no condition may test; its requirement checker, answered by MFA's requirement check on the proofs
   of the subject's own session, each refusal undecidable; its insufficient-authentication exception, rendered as MFA's
-  step-up from the request Laravel hands its handler; the session policy source, the scope registry and application
-  access, which admits a machine on its grants as it admits a person; how the binding rule keeps a class the
+  step-up from the request Laravel hands its handler; the session policy source, answered from the credential's scopes
+  the subject resolver puts on the subject, the scope registry and application access, which admits a machine on its
+  grants as it admits a person; how the binding rule keeps a class the
   application names in `laravel-authorization`'s configuration, in whatever order the providers register; when the
   scope registry and application access are mandatory; the second part: the grant hook, answered by SSO's scope
   widening first inside the grant's own transaction, its lock order and its retries, the identity directory, the grant

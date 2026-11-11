@@ -204,11 +204,14 @@ A machine principal calling with an API key or a client-credentials token is cap
 is allowed only where the principal's grants allow it and a scope covers it. A scope names a permission or a pattern, or
 one `authorization.session.scopes` maps to the actions it stands for; a credential is issued only scopes
 `laravel-authorization`'s scope registry accepts, so a typo or a permission that does not exist is refused when the key
-is issued or rotated. A key issued no scopes allows nothing. The scopes are read only from the guard holding that very
-principal, on the request its credential was admitted on, so a machine checked anywhere else carries no scopes. A
-person's session is capped by nothing. A principal the caller names (`Authorization::for($account)`) holds no
-credential, so a machine named that way is allowed nothing, as is a machine checked outside its key's request: a queued
-job's, or one the Gate is handed on another guard. A machine here is any of `laravel-authentication`'s: a
+is issued or rotated. A key issued no scopes allows nothing. The scopes travel on the subject: the subject resolver puts
+the scopes of the caller's credential on the request's subject (`SineMacula\Laravel\Authorization\Subject::$scopes`),
+and on the subject the Gate decides about when it is the caller, and the session policy source caps every check about
+that subject by them, so a machine checked anywhere else carries no scopes. A person's session is capped by nothing. A
+principal the caller names (`Authorization::for($account)`) holds no credential, so a machine named that way is allowed
+nothing, as is a machine checked outside its key's request: a queued job's, or one the Gate is handed on another guard.
+A `Subject` you build yourself carries the scopes you give it (`scopes:`), and none otherwise, so build one for a
+machine with the scopes it acts with, or it is allowed nothing. A machine here is any of `laravel-authentication`'s: a
 `MachineIdentity`, or a principal acting for one, whether or not it also implements `laravel-authorization`'s
 `SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine`. `laravel-authorization`'s own default source,
 `NoSessionPolicy`, allows nothing only to a principal implementing `AuthorizableMachine`, and caps any other machine by
@@ -341,7 +344,8 @@ is cached across checks.
   tenant's identifier. The subject is a resolved `SineMacula\Laravel\Authorization\Subject`, never a bare model: hand
   it the request's subject (`Authorization::currentSubject()`), which carries the session, so an authentication
   requirement on the operation is judged against that session's proofs, or one you build for a job or a command. It is
-  decided in the tenant and application it names, or on the platform when it names no tenant. The object's tenant is
+  decided in the tenant and application it names, or on the platform when it names no tenant, whatever tenant the
+  request is in, and the request's scope is in place again afterwards. The object's tenant is
   resolved through `laravel-authentication`'s [tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver), so
   an object in a tenant needs one bound. A denial throws
   `laravel-authorization`'s `AuthorizationException`, or MFA's step-up exception for want of a stronger proof, before

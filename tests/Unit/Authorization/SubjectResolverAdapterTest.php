@@ -10,6 +10,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Auth\Guard;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Callers\Caller;
@@ -26,10 +27,13 @@ use Tests\Fixtures\Models\Machine;
 /**
  * Unit tests for the edges of the subject `laravel-authentication`'s caller and
  * guard give `laravel-authorization`: a caller still choosing its principal (a
- * pending session) is no subject, a session keyed by an integer is named by its
- * key as text, the caller's identity or principal loaded again apart from the
- * guard's is still the caller, and a principal acts for its identity in its own
- * tenant on a default guard that is not `laravel-authentication`'s.
+ * pending session) is no subject, the caller's credential's scopes are the
+ * subject's, from the caller and, for the guard's own principal handed over,
+ * from the guard, with no cap, a list and none granted kept apart, a session
+ * keyed by an integer is named by its key as text, the caller's identity or
+ * principal loaded again apart from the guard's is still the caller, and a
+ * principal acts for its identity in its own tenant on a default guard that is
+ * not `laravel-authentication`'s.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -57,6 +61,60 @@ final class SubjectResolverAdapterTest extends TestCase
         $auth->method('caller')->willReturn(new Caller(self::GUARD, CallerCredential::PENDING, self::createStub(Identity::class), null, null, null));
 
         self::assertNull($this->resolver($auth)->resolve());
+    }
+
+    /**
+     * Rows of `[the scopes the caller's credential carries]`: none limiting it,
+     * as a person's session, a list, as an API key's, and none granted.
+     *
+     * @return iterable<string, array{0: ?list<string>}>
+     */
+    public static function provideCredentialScopes(): iterable
+    {
+        yield 'no cap' => [null];
+
+        yield 'two scopes' => [['reports:read', 'reports:export']];
+
+        yield 'none granted' => [[]];
+    }
+
+    /**
+     * The scopes the caller's credential carries are the subject's, a list, an
+     * empty one and none kept apart, so the session policy source is handed
+     * them.
+     *
+     * @param  ?list<string>  $scopes
+     * @return void
+     */
+    #[DataProvider('provideCredentialScopes')]
+    public function testTheCallersScopesAreTheSubjects(?array $scopes): void
+    {
+        $principal = self::createStub(Principal::class);
+        $auth      = self::createStub(AuthManager::class);
+
+        $auth->method('guard')->willReturn(self::createStub(ContextualGuard::class));
+        $auth->method('caller')->willReturn(new Caller(self::GUARD, CallerCredential::ACCESS, self::createStub(Identity::class), $principal, null, null, scopes: $scopes));
+
+        self::assertSame($scopes, $this->resolver($auth)->resolve()?->scopes);
+    }
+
+    /**
+     * The model the Gate hands over carries the scopes of the credential the
+     * guard holds when it is the guard's principal, so the Gate's checks are
+     * capped as the request's own are, a list, an empty one and none kept
+     * apart; any other principal carries none.
+     *
+     * @param  ?list<string>  $scopes
+     * @return void
+     */
+    #[DataProvider('provideCredentialScopes')]
+    public function testTheGuardsPrincipalCarriesItsCredentialsScopes(?array $scopes): void
+    {
+        $principal = self::createStub(Principal::class);
+        $resolver  = $this->resolver($this->guardHolding($principal, self::createStub(Identity::class), $scopes));
+
+        self::assertSame($scopes, $resolver->forUser($principal)->scopes);
+        self::assertNull($resolver->forUser(self::createStub(Principal::class))->scopes);
     }
 
     /**
@@ -163,13 +221,15 @@ final class SubjectResolverAdapterTest extends TestCase
 
     /**
      * An authentication factory whose default guard has resolved its request to
-     * the principal and identity given, on a session keyed `session-1`.
+     * the principal and identity given, on a session keyed `session-1`, with a
+     * credential carrying the scopes given.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  ?list<string>  $scopes
      * @return \Illuminate\Contracts\Auth\Factory
      */
-    private function guardHolding(Principal $principal, Identity $identity): AuthFactory
+    private function guardHolding(Principal $principal, Identity $identity, ?array $scopes = null): AuthFactory
     {
         $session = self::createStub(Session::class);
         $guard   = self::createStub(ContextualGuard::class);
@@ -180,6 +240,7 @@ final class SubjectResolverAdapterTest extends TestCase
         $guard->method('principal')->willReturn($principal);
         $guard->method('identity')->willReturn($identity);
         $guard->method('session')->willReturn($session);
+        $guard->method('scopes')->willReturn($scopes);
         $auth->method('guard')->willReturn($guard);
 
         return $auth;

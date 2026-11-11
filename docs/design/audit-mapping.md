@@ -432,15 +432,18 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   (`Authorization\Enums\AdministrativeOperation`), reusing SSO's own names where it has them
   (`Freshness\Enums\FreshnessOperation`), and `Authorization\AdministrativeCheck::authorize()` checks one through
   `laravel-authorization` for the subject handed in, with the member's object (type, id or none for the type, tenant
-  identifier) as the resource. The subject must be a resolved `Subject`: a bare principal or model is not taken,
-  since `laravel-authorization`'s `for()` would complete it from the request's current subject, its session and its
-  scope, an ambient read. The `Subject` is decided in the scope it names, put in place of the request's for the check
-  alone (`AuthorizationScope::within()`), since `laravel-authorization` otherwise decides in the request's scope
-  whatever subject is named: a subject built for a job is decided where it acts, and the request's own where the
-  request is. Removing another identity's link is its own permission (`sso.link.remove_others`, AUTHZ-14.5).
-  Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s `Mfa::enableFactor()`, IAM-6.9's re-enable, recorded
-  as `mfa.factor_enabled`) is `mfa.factor.enable`; requirement management is the application's own over its
-  requirement contracts, declared as `mfa.requirements.manage` so it can be granted with the rest.
+  identifier) as the resource. The subject must be a resolved `Subject`: a bare principal or model is not taken, since
+  `laravel-authorization`'s `for()` would complete it from the request's current subject, its session and its scope, an
+  ambient read. The `Subject` is decided in the scope it names, and the request's scope is in place again afterwards:
+  `laravel-authorization`'s `for()` decides a `Subject` naming a tenant in that tenant, and one naming none is handed to
+  it marked as acting on the platform (`Subject::$platform`), which `for()` decides on the platform whatever tenant the
+  request is in, so a subject built for a job or a command is decided where it acts, never in the request's tenant, and
+  the request's own where the request is. A subject naming a tenant `laravel-authorization` cannot read is refused
+  (`UnresolvedReferenceException`), never decided on the platform. Removing another identity's link is its own
+  permission (`sso.link.remove_others`, AUTHZ-14.5). Re-enabling a factor disabled at its ceiling (`laravel-mfa`'s
+  `Mfa::enableFactor()`, IAM-6.9's re-enable, recorded as `mfa.factor_enabled`) is `mfa.factor.enable`; requirement
+  management is the application's own over its requirement contracts, declared as `mfa.requirements.manage` so it can be
+  granted with the rest.
 
 ### Trail reads (IAM-9.9)
 
@@ -623,8 +626,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
   `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`, `CATEGORIES`;
-  `src/Authorization/AdministrativeCheck.php`: `authorize()`; `src/Authorization/Enums/AdministrativeOperation.php`:
-  `member()`; `src/Authorization/AuthorizationSeams.php`: `seams()`.
+  `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
+  `src/Authorization/Enums/AdministrativeOperation.php`: `member()`; `src/Authorization/AuthorizationSeams.php`:
+  `seams()`.
 
 ## Authoritative Tests
 
@@ -758,8 +762,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testTheApplicationsPolicyBoundLastWins`, `testTheSwitchOffKeepsDenyAll`
 - `tests/Integration/Authorization/AdministrativeCheckTest.php` `testAGrantInTheObjectsTenantAllowsTheOperationThere`,
   `testADenialThrowsAndIsRecordedOnce`, `testARefusalForWantOfAProofOnNoSessionIsRecorded`,
-  `testASubjectWithNoTenantIsDecidedOnThePlatform`,
-  `testATenantThatResolvesToNothingIsRefused`
+  `testASubjectWithNoTenantIsDecidedOnThePlatform`, `testASubjectInATenantIsDecidedThereWhateverTheRequestsTenant`,
+  `testASubjectInATenantThatCannotBeReadIsRefused`, `testATenantThatResolvesToNothingIsRefused`
 - `tests/Unit/Authorization/PermissionCatalogueTest.php` `testEveryPermissionIsDeclaredOnceUnderItsMember`,
   `testSsosOwnNamesAreReused`, `testEachReadPurposeHasItsOwnPermissions`
 - `tests/Integration/Audit/TrailReadsTest.php` `testAReadInsideACrossMemberTransactionIsRefused`,

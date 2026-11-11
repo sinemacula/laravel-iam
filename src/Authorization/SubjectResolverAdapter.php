@@ -21,19 +21,24 @@ use SineMacula\Laravel\Authorization\Subject;
  * `laravel-authorization`'s subject resolver, answered from
  * `laravel-authentication`'s caller (IAM-6.1, AUTHZ-13.1): the principal the
  * caller acts as is the subject, with its identity, the active tenant, the
- * application (the guard's name) and the session the credential holds.
+ * application (the guard's name), the session the credential holds and the
+ * scopes it carries.
  *
  * `resolve()` takes nothing, so it reads the request's caller
  * (`Auth::caller()`), as the contract asks of it: the caller's principal, its
  * identity, the tenant the request acts in and the session's key, so the
- * requirement checker judges that very session (`RequirementCheckerAdapter`). A
- * request with no caller, or one whose pending session has not chosen a
- * principal, has no subject, and every check without one denies. A credential
- * without a session (an API key, a client-credentials token) gives a subject
- * with none, so no authentication requirement is met for it. `Auth::caller()`
- * is read once per request and kept on the request, so `resolve()` is never
- * asked from inside an admission, which never asks it: application access
- * decides about the principal it is handed (`forUser()`).
+ * requirement checker judges that very session (`RequirementCheckerAdapter`),
+ * and the scopes the credential carries (`Caller::$scopes`), `null` where none
+ * limits it and a list, `[]` for none granted, where one does, so the session
+ * policy source caps the subject's checks by them as a plain value
+ * (`SessionPolicySourceAdapter`). A request with no caller, or one whose
+ * pending session has not chosen a principal, has no subject, and every check
+ * without one denies. A credential without a session (an API key, a
+ * client-credentials token) gives a subject with none, so no authentication
+ * requirement is met for it. `Auth::caller()` is read once per request and kept
+ * on the request, so `resolve()` is never asked from inside an admission, which
+ * never asks it: application access decides about the principal it is handed
+ * (`forUser()`).
  *
  * `forUser()` is handed the model Laravel's Gate decides about, `Auth::user()`
  * (the identity), or one the caller names. It never reads `Auth::caller()`:
@@ -44,16 +49,16 @@ use SineMacula\Laravel\Authorization\Subject;
  * default guard's state, the guard Laravel's Gate takes its user from, only
  * where the guard has already resolved its user: a model that is the guard's
  * principal, or the identity acting as it, is the caller, with the guard's
- * active tenant and session, as `resolve()` answers it, whether it is the very
- * object the guard holds or the same model loaded again, as
- * `SessionPolicySourceAdapter` compares a principal. Any other principal is a
- * subject with no session, in its own tenant. Any other model, an identity that
- * is not the caller's and no principal itself among them, is its own subject
- * and identity, with no tenant and no session, as `laravel-authorization`'s own
- * resolver and `Subject::withSubject()` answer it: a decision about it counts
- * only the grants made to it, never those of a principal it acts as, and the
- * grant hook finds such an identity the recipient of a grant made to it
- * (AUTHZ-11.3).
+ * active tenant, session and credential's scopes, as `resolve()` answers it,
+ * whether it is the very object the guard holds or the same model loaded again,
+ * so the Gate's checks are capped as the request's own are. Any other principal
+ * is a subject with no session and no scopes, in its own tenant. Any other
+ * model, an identity that is not the caller's and no principal itself among
+ * them, is its own subject and identity, with no tenant, no session and no
+ * scopes, as `laravel-authorization`'s own resolver and
+ * `Subject::withSubject()` answer it: a decision about it counts only the
+ * grants made to it, never those of a principal it acts as, and the grant hook
+ * finds such an identity the recipient of a grant made to it (AUTHZ-11.3).
  *
  * A default guard that is not one of `laravel-authentication`'s (a Laravel
  * session guard an admin panel signs in through, say) is answered as
@@ -125,11 +130,11 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
     }
 
     /**
-     * The model handed in as the subject: the caller, with its tenant and
-     * session, when it is the default guard's principal or the identity acting
-     * as it; otherwise a principal acting for its identity in its own tenant,
-     * or any other model, an identity that is no principal included, as its own
-     * subject, with no session.
+     * The model handed in as the subject: the caller, with its tenant, session
+     * and credential's scopes, when it is the default guard's principal or the
+     * identity acting as it; otherwise a principal acting for its identity in
+     * its own tenant, or any other model, an identity that is no principal
+     * included, as its own subject, with no session and no scopes.
      *
      * @param  object  $user
      * @return \SineMacula\Laravel\Authorization\Subject
@@ -148,7 +153,7 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
         $identity  = $principal === null ? null : $guard->identity();
 
         if ($principal !== null && (self::isSameModel($user, $principal) || self::isSameModel($user, $identity))) {
-            return new Subject($principal, $identity, $guard->tenant(), $name, $name, self::sessionKey($guard->session()));
+            return new Subject($principal, $identity, $guard->tenant(), $name, $name, self::sessionKey($guard->session()), $guard->scopes());
         }
 
         return $user instanceof Principal
@@ -158,7 +163,8 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
 
     /**
      * The caller as the subject: its principal, its identity, the active
-     * tenant, its guard as the application, and the key of its session.
+     * tenant, its guard as the application, the key of its session and the
+     * scopes its credential carries.
      *
      * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
@@ -166,7 +172,7 @@ final readonly class SubjectResolverAdapter implements SubjectResolver
      */
     private static function callerSubject(Caller $caller, Principal $principal): Subject
     {
-        return new Subject($principal, $caller->identity, $caller->tenant, $caller->guard, $caller->guard, self::sessionKey($caller->session));
+        return new Subject($principal, $caller->identity, $caller->tenant, $caller->guard, $caller->guard, self::sessionKey($caller->session), $caller->scopes);
     }
 
     /**
