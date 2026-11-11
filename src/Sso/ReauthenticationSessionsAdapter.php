@@ -20,13 +20,10 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
  *
  * - `standing()`, as a `reauthenticate` flow starts, outside any transaction:
  *   whether the session is one of the identity's, established through the
- *   connection by any link, live and active, on a guard that allows the
- *   `external_provider` method, as `laravel-authentication`'s
+ *   connection by any link, live and active, on the guard the application is,
+ *   which allows the `external_provider` method, as `laravel-authentication`'s
  *   `externalStanding()` answers it with no link, reading on the write
- *   connection and locking nothing. SSO names no application there, and a
- *   session stands only on its own guard (any other answers
- *   `session_guard_mismatch`), so each guard that holds sessions is asked, and
- *   the session stands when its own guard says so.
+ *   connection and locking nothing.
  * - `lockedStanding()`, inside the redemption's transaction, after SSO's locks:
  *   the same, through exactly the link given, on the guard the application is,
  *   whose `externalStanding()` locks the session's row until the transaction
@@ -82,11 +79,12 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
     ) {}
 
     /**
-     * Whether the identity is signed in through the connection on the session,
-     * as a flow starts, locking nothing.
+     * Whether the identity is signed in on the session, of the application,
+     * through the connection, as a flow starts, locking nothing.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
      * @param  string  $sessionId
+     * @param  string  $application
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoConnection  $connection
      * @return \SineMacula\Laravel\Sso\Flows\Enums\SessionStanding
      *
@@ -97,18 +95,11 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
-    public function standing(IdentityReference $identity, string $sessionId, SsoConnection $connection): SessionStanding
+    public function standing(IdentityReference $identity, string $sessionId, string $application, SsoConnection $connection): SessionStanding
     {
-        $owner = $this->identities->identity($identity);
+        $reason = $this->sessions->sessions($application)->externalStanding($sessionId, $this->identities->identity($identity), $connection->getConnectionId());
 
-        foreach ($this->sessions->sessionGuards() as $guard) {
-
-            if ($this->sessions->sessions($guard)->externalStanding($sessionId, $owner, $connection->getConnectionId()) === null) {
-                return SessionStanding::SIGNED_IN;
-            }
-        }
-
-        return SessionStanding::NOT_SIGNED_IN;
+        return $reason === null ? SessionStanding::SIGNED_IN : SessionStanding::NOT_SIGNED_IN;
     }
 
     /**
