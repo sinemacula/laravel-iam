@@ -146,7 +146,7 @@ final readonly class ProvisionOnUnlinkedResult
             throw new \LogicException(sprintf($message, $identity::class));
         }
 
-        $this->widenings->widen($identity, $result->tenantId, new ClientContext($context->ip, $context->userAgent));
+        $this->widenings->widen([$identity], $result->tenantId, new ClientContext($context->ip, $context->userAgent));
 
         $provisioner->createMembership($identity, $result->tenantId, $result);
 

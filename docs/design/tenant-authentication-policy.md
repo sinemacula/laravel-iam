@@ -119,17 +119,15 @@ and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, and the b
    committed by then and asks the policy for each. A session through a satisfying connection meets it, an exempt
    identity's session is answered with no connection (and its exemption reported once the change commits), and every
    other active session it locked is revoked in the change's transaction, whatever any setting says. Once the change
-   commits, the revocation calls `tenantPolicyChanged($tenant)` a second time, as `laravel-authentication` asks for a
-   strict cut-off: every session the first pass recorded at the version it answered is skipped, and a session that
+   commits, `laravel-authentication`'s `tenantPolicyChanged($tenant)` judges the tenant a second time, for a strict
+   cut-off: every session the first pass recorded at the version it answered is skipped, and a session that
    entered the tenant while the first pass ran (a password or passkey sign-in, a switch into the tenant, a sign-in
    through another tenant's connection, none of which takes SSO's lock of the rule) is judged and, falling short,
-   revoked (`sso-redemption-and-revocation.md`). Both passes go through `Tenancy\SubtreePolicyChanges::changed()`,
-   whose pass after the commit lists the enforcing tenant's subtree again (`provisioning-and-tenancy.md`). The
-   second pass runs only once every callback queued on the change's transaction has run, so SSO reports the change
-   (`EnforcementChanged`) once, before it; what the second pass throws propagates from `EnforcementService::update()`
-   once the change is durable and reported, its first pass's revocations standing. A commit callback that fails, before
-   it or after it (a synchronous listener of `EnforcementChanged`), leaves the change durable and the second pass held
-   until the request, the command or the job ends, where it runs (`AfterConnectionCommits::settle()`).
+   revoked (`sso-redemption-and-revocation.md`). The change goes through `Tenancy\SubtreePolicyChanges::changed()`,
+   which, once the change commits, lists the enforcing tenant's subtree again and judges any tenant it has gained
+   (`provisioning-and-tenancy.md`). `laravel-authentication`'s second pass runs in turn with the transaction's other
+   commit callbacks, before SSO's report of the change (`EnforcementChanged`); what it throws propagates from
+   `EnforcementService::update()` once the change is durable, its first pass's revocations standing.
 5. A changed tenant requirement: the application changes its data and, inside the transaction that publishes the
    change, on the storage connection (`Iam::transaction()` opens one), reports it with
    `Iam::tenantPolicies()->changed($tenant)`. That is `laravel-authentication`'s strict cut-off: the first
