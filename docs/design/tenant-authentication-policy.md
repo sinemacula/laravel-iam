@@ -244,9 +244,7 @@ are in `sso-redemption-and-revocation.md`, and the binding rule that applies eve
   `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testBothSwitchesOffBindNothing`,
   `testMfaOnWithSsoOffBindsNothing`, `testTheBindingIsOnWhileTheSsoSwitchIs`, `testTheBindingIsTransientOverTheDefault`,
   `testTheBindingIsMandatoryWhileEnforcementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
-  `tests/Feature/Bindings/AdaptersDocumentationTest.php` `testTheAdaptersSectionNamesEverySeamTheSwitchesBind`,
-  `testTheAdaptersSectionSaysWhenTheTenantPolicyIsTheApplicationsToBind`,
-  `testTheTenancySectionSaysTheRequirementIsMfasTenantRequirement`, `testTheTenancySectionAsksForTheStrictCutOff`
+  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`
 - `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
   `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`;
   `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,

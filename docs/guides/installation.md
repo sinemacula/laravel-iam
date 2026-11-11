@@ -269,9 +269,7 @@ publishing anything twice.
      [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)), and register no provisioning listener
      beside the package's;
    - your own audit mappers of the members' events, or turn `IAM_AUDIT_MAPPERS` off to keep them;
-   - your own senders of MFA's and `laravel-authentication`'s codes: name your gateways instead;
-   - any check you registered with SSO under the subject `iam`: the package keeps yours there, and its own check of
-     SSO's side then runs only from `iam:check`, never at SSO's boot or in `sso:check`.
+   - your own senders of MFA's and `laravel-authentication`'s codes: name your gateways instead.
 7. In your tests, keep MFA's `actingAsVerified()` where the guard allows the `password` method, or use this package's
    helpers (see [Testing](testing.md)).
 8. Run `php artisan iam:check`.
