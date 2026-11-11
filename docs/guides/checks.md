@@ -185,10 +185,6 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
   rather than recorded unchecked. `iam:install` writes it.
-- Any value of `iam.audit.alerts` that names no alert, or no listener class, or a listener class with neither `handle()`
-  nor `__invoke()`: name a listener class, or a list of them, for each alert ([Configuration](configuration.md#audit)).
-  The check builds nothing, so a name you bound in the container yourself passes it, and its shape is checked only when
-  its event is dispatched; name the class rather than a binding to have it checked here.
 
 ## senders
 
