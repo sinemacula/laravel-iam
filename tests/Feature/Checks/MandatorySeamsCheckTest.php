@@ -24,7 +24,6 @@ use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
-use SineMacula\Laravel\Iam\Sso\BoundLinkStorage;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -36,7 +35,6 @@ use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Requirements\NoActiveTenant;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\Linker;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Enforcement\OwnTenantInheritance;
@@ -249,7 +247,7 @@ final class MandatorySeamsCheckTest extends TestCase
     /**
      * A seam bound to a class of a member's own that is not among the row's
      * defaults fails all the same, as a member's renamed default would: the
-     * link storage, which SSO binds no default of, bound to SSO's `NoLinks`.
+     * external identity links bound to SSO's `NoLinks`.
      *
      * @return void
      */
@@ -257,9 +255,9 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $this->useSso();
 
-        $this->app?->bind(LinkStorage::class, NoLinks::class);
+        $this->app?->bind(ExternalIdentityLinks::class, NoLinks::class);
 
-        self::assertStringContainsString(LinkStorage::class . ' is still bound to ' . NoLinks::class, self::problems($this->mandates())[0]);
+        self::assertStringContainsString(ExternalIdentityLinks::class . ' is still bound to ' . NoLinks::class, self::problems($this->mandates())[0]);
     }
 
     /**
@@ -271,9 +269,9 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $this->useSso();
 
-        $this->app?->offsetUnset(LinkStorage::class);
+        $this->app?->offsetUnset(Linker::class);
 
-        $problem = LinkStorage::class . ' is unbound; bind ' . BoundLinkStorage::class . ', or an implementation of your own, to it.';
+        $problem = Linker::class . ' is unbound; bind ' . LinkStore::class . ', or an implementation of your own, to it.';
 
         self::assertSame([$problem], self::problems($this->mandates()));
 
@@ -284,8 +282,8 @@ final class MandatorySeamsCheckTest extends TestCase
 
     /**
      * While SSO is in use, the seams this package's check of SSO's side holds
-     * are left to it, so each is reported once: the bridge reports SSO's link
-     * storage left on a member's class, and this check does not.
+     * are left to it, so each is reported once: the bridge reports SSO's linker
+     * left on its default, and this check does not.
      *
      * @return void
      */
@@ -293,7 +291,7 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $this->useSso();
 
-        $this->app?->bind(LinkStorage::class, NoLinks::class);
+        $this->app?->bind(Linker::class, NoLinks::class);
 
         self::assertSame([], self::problems($this->check()->checks()));
 
@@ -301,36 +299,14 @@ final class MandatorySeamsCheckTest extends TestCase
 
         assert($bridge instanceof SsoBridgeCheck);
 
-        self::assertStringContainsString(LinkStorage::class . ' is still bound to ' . NoLinks::class, self::problems($bridge->checks())[0]);
+        self::assertStringContainsString(Linker::class . ' is still bound to ' . NoLinks::class, self::problems($bridge->checks())[0]);
     }
 
     /**
-     * SSO's own link store, which SSO's guide binds the link storage to, is
-     * accepted there: it is SSO's real store, not a permissive default, so
-     * neither this check nor the bridge refuses it.
-     *
-     * @return void
-     */
-    public function testSsosOwnLinkStoreIsAcceptedOnTheLinkStorage(): void
-    {
-        $this->useSso();
-
-        $this->app?->scoped(LinkStorage::class, LinkStore::class);
-
-        self::assertSame([], self::problems($this->mandates()));
-
-        $bridge = $this->app?->make(SsoBridgeCheck::class);
-
-        assert($bridge instanceof SsoBridgeCheck);
-
-        self::assertSame([], self::problems($bridge->checks()));
-    }
-
-    /**
-     * The links and the link stores are mandatory only while SSO is in use:
-     * left on their defaults, they pass while it is not, and fail once a
-     * protocol is switched on, or its switch is malformed. The linker is SSO's
-     * own link store, which passes.
+     * The links and the link store are mandatory only while SSO is in use: left
+     * on their defaults, they pass while it is not, and fail once a protocol is
+     * switched on, or its switch is malformed. The linker is SSO's own link
+     * store, which passes.
      *
      * @return void
      */

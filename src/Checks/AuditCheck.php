@@ -8,13 +8,12 @@ use Illuminate\Contracts\Foundation\Application;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 
 /**
  * Audit-log is configured as IAM-2.5 states (every `jwt` and `api_key` guard
- * excluded from its capture, Gate capture off, `require_registered` on), the
- * mappers are registered while they are on, and the alerts are valid.
+ * excluded from its capture, Gate capture off, `require_registered` on), and the
+ * mappers are registered while they are on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,7 +43,6 @@ final readonly class AuditCheck implements Check
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  \SineMacula\Laravel\Iam\Audit\AuditSettings  $settings
      * @param  \SineMacula\Laravel\Iam\Audit\CaptureExclusions  $exclusions
-     * @param  \SineMacula\Laravel\Iam\Audit\OperationalAlerts  $alerts
      */
     public function __construct(
 
@@ -56,9 +54,6 @@ final readonly class AuditCheck implements Check
 
         /** Reads audit-log's capture exclusions and Gate capture. */
         private CaptureExclusions $exclusions,
-
-        /** Validates the operational alerts' listeners. */
-        private OperationalAlerts $alerts,
     ) {}
 
     /**
@@ -85,8 +80,8 @@ final readonly class AuditCheck implements Check
     }
 
     /**
-     * The alerts, the mappers' registration while they are on, then the guards'
-     * exclusion, Gate capture and the refusal of unregistered codes.
+     * The mappers' registration while they are on, then the guards' exclusion,
+     * Gate capture and the refusal of unregistered codes.
      *
      * @return list<\Closure(): mixed>
      */
@@ -96,7 +91,6 @@ final readonly class AuditCheck implements Check
         $registration = $this->settings->mapsEvents() ? [fn () => $this->assertRegistered()] : [];
 
         return [
-            fn () => $this->alerts->validate(),
             ...$registration,
             fn () => $this->assertExcluded(),
             fn () => $this->assertGateCaptureOff(),

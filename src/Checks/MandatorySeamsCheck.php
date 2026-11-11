@@ -31,22 +31,21 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * A mandatory seam fails when it is unbound, or when its live binding
  * (`SeamHolders`) names one of the row's member defaults, or any class of a
  * member's own other than the row's adapter and the member classes the row
- * accepts (`SeamBinding::$accepted`, SSO's `LinkStore` on the link storage, as
- * SSO's guide binds it): the defaults the members bind are their permissive or
- * inert ones, and a member that renames its default (which the binding rule
- * then keeps as though it were the application's) is caught here rather than
- * passed. A seam the application bound to a member's own default class by name
- * is reported too, though the rule keeps it. A member that says itself whether
- * the seam holds its default (`laravel-authorization`'s `isPackageDefault()`,
- * `SeamBinding::$holdsDefault`) is asked instead of its own classes being
- * refused wholesale: while it says the seam holds its default, the seam is
- * named by the row's default class and refused, and otherwise only the row's
- * defaults are, so a class the application names in that member's
- * configuration, which the member binds through a closure of its own, is
- * passed. A binding that names no class (a closure of the application's own,
- * whose implementation cannot be read without building it) is refused too: the
- * check takes nothing on trust, so a mandatory seam is bound by class name or
- * as an instance.
+ * accepts (`SeamBinding::$accepted`): the defaults the members bind are their
+ * permissive or inert ones, and a member that renames its default (which the
+ * binding rule then keeps as though it were the application's) is caught here
+ * rather than passed. A seam the application bound to a member's own default
+ * class by name is reported too, though the rule keeps it. A member that says
+ * itself whether the seam holds its default (`laravel-authorization`'s
+ * `isPackageDefault()`, `SeamBinding::$holdsDefault`) is asked instead of its
+ * own classes being refused wholesale: while it says the seam holds its
+ * default, the seam is named by the row's default class and refused, and
+ * otherwise only the row's defaults are, so a class the application names in
+ * that member's configuration, which the member binds through a closure of its
+ * own, is passed. A binding that names no class (a closure of the application's
+ * own, whose implementation cannot be read without building it) is refused too:
+ * the check takes nothing on trust, so a mandatory seam is bound by class name
+ * or as an instance.
  *
  * While SSO is in use, the seams of the capabilities this package's check of
  * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check, so

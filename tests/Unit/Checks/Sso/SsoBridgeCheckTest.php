@@ -19,7 +19,6 @@ use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Sso\Contracts\Linker;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use Tests\Concerns\RunsChecks;
 
@@ -80,7 +79,7 @@ final class SsoBridgeCheckTest extends TestCase
         $this->container->instance(ContainerContract::class, $this->container);
         $this->container->instance(ApplicationPolicy::class, $policy);
 
-        foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class, LinkStorage::class] as $seam) {
+        foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class] as $seam) {
             $this->container->instance($seam, \Mockery::mock($seam));
         }
     }
@@ -198,13 +197,13 @@ final class SsoBridgeCheckTest extends TestCase
     public function testTheMandatorySeamsAreChecked(): void
     {
         $this->container->offsetUnset(SessionRevocation::class);
-        $this->container->offsetUnset(LinkStorage::class);
+        $this->container->offsetUnset(Linker::class);
 
         $problems = self::problems($this->check()->checks());
 
         self::assertCount(2, $problems);
         self::assertStringStartsWith(SessionRevocation::class . ' is unbound', $problems[0]);
-        self::assertStringStartsWith(LinkStorage::class . ' is unbound', $problems[1]);
+        self::assertStringStartsWith(Linker::class . ' is unbound', $problems[1]);
     }
 
     /**
