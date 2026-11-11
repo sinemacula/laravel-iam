@@ -142,7 +142,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * Bind the application's gateways before the application boots.
+     * Bind the application's one-time code sender before the application boots.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

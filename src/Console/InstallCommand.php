@@ -5,25 +5,15 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix;
-use SineMacula\Laravel\Iam\Install\Installer;
-use SineMacula\Laravel\Iam\Install\InstallReport;
+use SineMacula\Laravel\Iam\Install\MigrationLedger;
 use Symfony\Component\Console\Attribute\AsCommand;
 
 /**
- * `iam:install`: publishes every member's configuration, language files and
- * migrations, and this package's configuration, writes the values of
- * audit-log's configuration this package needs, offers prefixed names for
- * `laravel-authorization`'s tables, and ends with what the application still
- * owes (IAM-2.1, IAM-2.4). The installation itself is `Install\Installer`'s;
- * this command only reads the prefix, from `--prefix` or, while it can still be
- * written and the command is interactive, by asking, and prints the report.
- *
- * Safe to run twice, and with `--no-interaction` it asks nothing and prefixes
- * nothing unless `--prefix` says so. It exits non-zero when a member has
- * registered none of its publishing tags or a migration's identity is in doubt
- * (a conflict), and with Symfony's `INVALID` code for a prefix that is not one
- * or a configuration it cannot read, with nothing published.
+ * `iam:install`: publishes every member's files and this package's
+ * configuration, and lists what is still owed.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,54 +26,141 @@ final class InstallCommand extends Command
     /** @var string The command's name. */
     public const string NAME = 'iam:install';
 
+    /** @var string The installation guide every owed item points at. */
+    public const string GUIDE = 'https://github.com/sinemacula/laravel-iam/blob/master/docs/guides/installation.md';
+
+    /** @var list<string> The configuration and language tags, which `vendor:publish` publishes. */
+    private const array TAGS = [
+        'authentication-config',
+        'authorization-config',
+        'authorization-lang',
+        'mfa-config',
+        'mfa-lang',
+        'sso-config',
+        'sso-lang',
+        'audit-log-config',
+        'audit-log-lang',
+        'iam-config',
+    ];
+
+    /** @var array<string, string> The migration tags, with the namespace each one's migrations name. */
+    private const array MIGRATIONS = [
+        'authentication-migrations' => 'SineMacula\Laravel\Authentication\\',
+        'authorization-migrations'  => 'SineMacula\Laravel\Authorization\\',
+        'mfa-migrations'            => 'SineMacula\Laravel\Mfa\\',
+        'sso-migrations'            => 'SineMacula\Laravel\Sso\\',
+        'audit-log-migrations'      => 'SineMacula\Laravel\AuditLog\\',
+    ];
+
+    /** @var array<string, string> What the application still owes, with the guide's section on it. */
+    private const array OWED = [
+        'Run `php artisan migrate`'                                                        => 'the-storage-connection',
+        'Add every `jwt` and `api_key` guard to `audit-log.capture.laravel.except_guards`' => 'the-audit-log-configuration',
+        'Turn `audit-log.definitions.require_registered` on'                               => 'the-audit-log-configuration',
+        'Declare MFA\'s and SSO\'s freshness operations for their guards'                  => 'guards-and-applications',
+        'Bind the contracts the package leaves to you, and add the routes'                 => 'what-you-still-owe',
+        'Call `Iam::schedule()`, and run the scheduler and a queue worker'                 => 'what-you-still-owe',
+        'Run `php artisan iam:check` on every deploy'                                      => 'checking',
+    ];
+
     /** @var string The question whether to prefix `laravel-authorization`'s tables. */
     private const string PREFIX_QUESTION = 'Prefix laravel-authorization\'s tables (roles, permissions, policies and the grant tables), whose names may collide with your own?';
 
     /** @var string The name and signature of the console command. */
-    protected $signature = self::NAME . <<<'EOD'
-
-                {--prefix= : Prefix laravel-authorization's table names (for example "authorization_")}
-        EOD;
+    protected $signature = self::NAME . ' {--prefix= : Prefix laravel-authorization\'s table names (for example "authorization_")}';
 
     /** @var string The console command description. */
     protected $description = 'Publish every member\'s configuration, language files and migrations, and say what the application still owes';
 
     /**
-     * Install the suite and report the run.
+     * Execute the console command.
      *
-     * @param  \SineMacula\Laravel\Iam\Install\Installer  $installer
+     * @param  \Illuminate\Filesystem\Filesystem  $files
+     * @param  \SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix  $tables
      * @return int
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\PublicationFailedException
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    public function handle(Installer $installer): int
+    public function handle(Filesystem $files, AuthorizationTablePrefix $tables): int
     {
+        $ledger        = new MigrationLedger($files);
+        $configuration = $this->prefixableConfiguration($files, $ledger);
+        $prefix        = $this->tablePrefix($configuration !== null);
+
         try {
-            $report = $installer->install($this->tablePrefix($installer));
+            if ($prefix !== null) {
+                AuthorizationTablePrefix::assertValid($prefix);
+            }
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
             return self::INVALID;
         }
 
-        $this->report($report);
+        $missing = array_filter([...self::TAGS, ...array_keys(self::MIGRATIONS)], static fn (string $tag): bool => self::pathsOf($tag) === []);
 
-        return $report->isComplete() ? self::SUCCESS : self::FAILURE;
+        foreach ($missing as $tag) {
+            $this->error("No provider registered the `{$tag}` tag.");
+        }
+
+        $this->call('vendor:publish', ['--tag' => self::TAGS]);
+
+        if ($prefix !== null) {
+            $this->prefixTables($tables, $configuration, $prefix);
+        }
+
+        $this->publishMigrations($files, $ledger);
+
+        $this->newLine();
+        $this->line('Still to do:');
+
+        foreach (self::OWED as $item => $section) {
+            $this->line(sprintf(' - %s: %s#%s', $item, self::GUIDE, $section));
+        }
+
+        return $missing === [] ? self::SUCCESS : self::FAILURE;
     }
 
     /**
-     * The prefix for `laravel-authorization`'s tables: the one `--prefix` gives
-     * (none when it is given empty, without asking), or, while the prefix can
-     * still be written and the command is interactive, the one the application
-     * chooses when asked; none otherwise.
+     * Publish every member's migration not already published, under any
+     * timestamp.
      *
-     * @param  \SineMacula\Laravel\Iam\Install\Installer  $installer
-     * @return ?string
+     * @param  \Illuminate\Filesystem\Filesystem  $files
+     * @param  \SineMacula\Laravel\Iam\Install\MigrationLedger  $ledger
+     * @return void
      *
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    private function tablePrefix(Installer $installer): ?string
+    private function publishMigrations(Filesystem $files, MigrationLedger $ledger): void
+    {
+        foreach (self::MIGRATIONS as $tag => $namespace) {
+
+            foreach (self::migrationsOf($files, $tag) as $source => $destination) {
+
+                $copy = $files->exists($destination) ? $destination : $ledger->copyOf($destination, $namespace);
+
+                if ($copy !== null) {
+                    $this->line(sprintf('Kept %s, published as %s.', basename($destination), basename($copy)));
+
+                    continue;
+                }
+
+                $files->ensureDirectoryExists(dirname($destination));
+                $files->copy($source, $destination);
+
+                $this->line('Published ' . basename($destination) . '.');
+            }
+        }
+    }
+
+    /**
+     * The prefix `--prefix` gives, or the one the application chooses when
+     * asked while it can still be written.
+     *
+     * @param  bool  $offered
+     * @return ?string
+     */
+    private function tablePrefix(bool $offered): ?string
     {
         $option = $this->option('prefix');
 
@@ -91,22 +168,7 @@ final class InstallCommand extends Command
             return $option !== '' ? $option : null;
         }
 
-        return $this->askForTablePrefix($installer);
-    }
-
-    /**
-     * Ask for the prefix for `laravel-authorization`'s tables, while it can
-     * still be written and the command is interactive: none when it cannot, or
-     * when the application declines one.
-     *
-     * @param  \SineMacula\Laravel\Iam\Install\Installer  $installer
-     * @return ?string
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    private function askForTablePrefix(Installer $installer): ?string
-    {
-        if (!$this->input->isInteractive() || !$installer->offersTablePrefix() || !$this->confirm(self::PREFIX_QUESTION)) {
+        if (!$offered || !$this->confirm(self::PREFIX_QUESTION)) {
             return null;
         }
 
@@ -116,59 +178,102 @@ final class InstallCommand extends Command
     }
 
     /**
-     * Print what the run did, then what the application still owes.
+     * Write the prefix into `laravel-authorization`'s configuration published
+     * in this run, or say why it was not.
      *
-     * @param  \SineMacula\Laravel\Iam\Install\InstallReport  $report
+     * @param  \SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix  $tables
+     * @param  ?string  $configuration
+     * @param  string  $prefix
      * @return void
+     *
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    private function report(InstallReport $report): void
+    private function prefixTables(AuthorizationTablePrefix $tables, ?string $configuration, string $prefix): void
     {
-        foreach ($report->missing as $tag) {
-            $this->error("[missing] No provider registered the `{$tag}` tag; nothing was published for it.");
-        }
+        $published = self::pathsOf('authorization-config')[0] ?? null;
 
-        foreach ($report->published as $path) {
-            $this->info('[published] ' . $this->relative($path));
-        }
-
-        foreach ($report->kept as $path) {
-            $this->line('[kept] ' . $this->relative($path));
-        }
-
-        foreach ($report->recognised as $path => $copy) {
-            $this->line(sprintf('[recognised] %s, published as %s', basename($path), $this->relative($copy)));
-        }
-
-        foreach ($report->written as $key => $value) {
-            $this->info("[written] {$key}: {$value}");
-        }
-
-        foreach ($report->conflicts as $conflict) {
-            $this->error('[conflict] ' . $conflict);
-        }
-
-        foreach ($report->notes as $note) {
-            $this->line('[note] ' . $note);
-        }
-
-        $this->newLine();
-        $this->line('Still to do:');
-
-        foreach ($report->owed as $item) {
-            $this->line(' - ' . $item);
+        if ($configuration !== null && $tables->apply($configuration, $prefix) !== []) {
+            $this->info("Prefixed laravel-authorization's tables with `{$prefix}`.");
+        } elseif ($configuration !== null) {
+            $this->warn('Prefix laravel-authorization\'s tables yourself (`authorization.tables`): its configuration no longer holds their defaults.');
+        } elseif ($published !== null && $tables->carries($published, $prefix)) {
+            $this->info("laravel-authorization's tables already carry the prefix `{$prefix}`.");
+        } else {
+            $this->warn('laravel-authorization\'s tables keep their names: its configuration or its migrations were published before.');
         }
     }
 
     /**
-     * A path relative to the application's base path, where it is under it.
+     * Where `laravel-authorization`'s configuration is published while none of
+     * its files has been yet, or `null`.
      *
-     * @param  string  $path
-     * @return string
+     * @param  \Illuminate\Filesystem\Filesystem  $files
+     * @param  \SineMacula\Laravel\Iam\Install\MigrationLedger  $ledger
+     * @return ?string
+     *
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
-    private function relative(string $path): string
+    private function prefixableConfiguration(Filesystem $files, MigrationLedger $ledger): ?string
     {
-        $base = $this->laravel->basePath() . DIRECTORY_SEPARATOR;
+        $configuration = self::pathsOf('authorization-config')[0] ?? null;
+        $migrations    = self::migrationsOf($files, 'authorization-migrations');
 
-        return str_starts_with($path, $base) ? substr($path, strlen($base)) : $path;
+        if ($configuration === null || $migrations === [] || $files->exists($configuration)) {
+            return null;
+        }
+
+        foreach ($migrations as $destination) {
+
+            if ($ledger->copyOf($destination, self::MIGRATIONS['authorization-migrations']) !== null) {
+                return null;
+            }
+        }
+
+        return $configuration;
+    }
+
+    /**
+     * Every migration a tag publishes, by its source, with where it is
+     * published.
+     *
+     * @param  \Illuminate\Filesystem\Filesystem  $files
+     * @param  string  $tag
+     * @return array<string, string>
+     */
+    private static function migrationsOf(Filesystem $files, string $tag): array
+    {
+        $migrations = [];
+
+        /** @var array<string, string> $paths */
+        $paths = ServiceProvider::pathsToPublish(null, $tag);
+
+        foreach ($paths as $source => $destination) {
+
+            if (!$files->isDirectory($source)) {
+                $migrations[$source] = $destination;
+
+                continue;
+            }
+
+            foreach ($files->files($source) as $file) {
+                $migrations[$file->getPathname()] = $destination . '/' . $file->getFilename();
+            }
+        }
+
+        return $migrations;
+    }
+
+    /**
+     * Where a tag publishes its files.
+     *
+     * @param  string  $tag
+     * @return list<string>
+     */
+    private static function pathsOf(string $tag): array
+    {
+        /** @var array<string, string> $paths */
+        $paths = ServiceProvider::pathsToPublish(null, $tag);
+
+        return array_values($paths);
     }
 }

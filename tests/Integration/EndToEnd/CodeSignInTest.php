@@ -5,21 +5,16 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
-use PHPUnit\Framework\Attributes\CoversClass;
+use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Codes\CodeService;
 use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
+use SineMacula\Laravel\Authentication\Codes\SendOneTimeCode;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
-use SineMacula\Laravel\Iam\Delivery\CodeMessage;
-use SineMacula\Laravel\Iam\Delivery\DeliverySettings;
-use SineMacula\Laravel\Iam\Delivery\Enums\Channel;
-use SineMacula\Laravel\Iam\Delivery\Enums\Purpose;
-use SineMacula\Laravel\Iam\Delivery\Enums\Source;
-use SineMacula\Laravel\Iam\Delivery\OneTimeCodeSenderAdapter;
-use Tests\Concerns\DeliversThroughGateways;
+use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
@@ -27,30 +22,21 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of `laravel-authentication`'s one-time code sign-in
- * (IAM-3.13), by email address and by phone number, with both of the
- * application's gateways named and every adapter of this package's bound.
- *
- * A code asked for under an identifier type reaches the gateway
- * `iam.delivery.types` routes that type to, once, as this package's one
- * `CodeMessage`, the same message an MFA factor's code arrives as, and signs
- * the person in. `laravel-authentication` delivers from its own queued job once
- * the code has committed, so a gateway that throws fails the job and leaves the
- * code issued, never rolled back, and the queue's retry delivers that same
- * code. Everything runs on MySQL and PostgreSQL at READ COMMITTED and
- * REPEATABLE READ.
+ * End-to-end tests of `laravel-authentication`'s one-time code sign-in by email
+ * address and by phone number, with every adapter of this package's bound: the
+ * code reaches the application's one-time code sender and signs the person in.
+ * Everything runs on MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
+ * READ.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-#[CoversClass(OneTimeCodeSenderAdapter::class)]
-#[CoversClass(DeliverySettings::class)]
-#[CoversClass(CodeMessage::class)]
+#[CoversNothing]
 final class CodeSignInTest extends TestCase
 {
-    use DeliversThroughGateways, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string The person's phone number, in its normal form. */
     private const string PHONE = '+447700900789';
@@ -58,8 +44,11 @@ final class CodeSignInTest extends TestCase
     /** @var string The person's email address, in its normal form. */
     private const string ADDRESS = 'ada.sign-in@example.test';
 
+    /** @var ?\SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender The application's sender. */
+    private ?FakeOneTimeCodeSender $sender = null;
+
     /**
-     * Queue the deliveries.
+     * Hold `laravel-authentication`'s delivery jobs until the test runs them.
      *
      * @return void
      */
@@ -68,128 +57,73 @@ final class CodeSignInTest extends TestCase
     {
         parent::setUp();
 
-        $this->queueDeliveries();
+        config()->set('queue.default', 'deliveries');
+        config()->set('queue.connections.deliveries', ['driver' => 'database']);
+
+        Queue::fake();
     }
 
     /**
      * Rows of `[isolation level, method, identifier type, identifier as given,
-     * identifier in its normal form, channel]` for each code sign-in method at
-     * each level.
+     * identifier in its normal form]` for each code sign-in method at each
+     * level.
      *
-     * @return iterable<string, array{0: string, 1: string, 2: string, 3: string, 4: string, 5: \SineMacula\Laravel\Iam\Delivery\Enums\Channel}>
+     * @return iterable<string, array{0: string, 1: string, 2: string, 3: string, 4: string}>
      */
     public static function provideCodeSignIns(): iterable
     {
         foreach (self::provideIsolationLevels() as $name => [$level]) {
-            yield $name . ', email' => [$level, 'email_code', 'email', 'Ada.Sign-In@Example.test', self::ADDRESS, Channel::EMAIL];
+            yield $name . ', email' => [$level, 'email_code', 'email', 'Ada.Sign-In@Example.test', self::ADDRESS];
 
-            yield $name . ', phone' => [$level, 'phone_code', 'phone', self::PHONE, self::PHONE, Channel::SMS];
+            yield $name . ', phone' => [$level, 'phone_code', 'phone', self::PHONE, self::PHONE];
         }
     }
 
     /**
-     * A sign-in code asked for under an identifier type reaches the gateway the
-     * type routes to once its delivery job runs, as this package's message from
-     * `laravel-authentication` for a sign-in, to the identifier in its normal
-     * form, for the person on the guard, naming no factor; nothing reaches the
-     * other gateway, and the code signs the person in.
+     * A sign-in code reaches the application's sender once its delivery job
+     * runs, to the identifier in its normal form, and signs the person in.
      *
      * @param  string  $level
      * @param  string  $method
      * @param  string  $type
      * @param  string  $given
      * @param  string  $destination
-     * @param  \SineMacula\Laravel\Iam\Delivery\Enums\Channel  $channel
      * @return void
      *
      * @throws \Throwable
      */
     #[DataProvider('provideCodeSignIns')]
-    public function testACodeSignInIsDeliveredThroughTheGatewayItsTypeRoutesTo(
-        string $level,
-        string $method,
-        string $type,
-        string $given,
-        string $destination,
-        Channel $channel,
-    ): void {
+    public function testACodeSignInReachesTheApplicationsSender(string $level, string $method, string $type, string $given, string $destination): void
+    {
         self::requireIsolationLevels();
         self::useIsolationLevel($level);
 
         $person  = $this->person();
-        $gateway = $this->gatewayOf($channel);
+        $sender  = $this->sender ?? self::fail('No sender is bound.');
         $request = $this->codes()->send($method, [$type => $given], self::client());
 
         self::assertTrue($request->isSent(), $request->status->value);
-        self::assertSame([], $gateway->sent(), 'The code is delivered once it has committed, by the queued job.');
-        self::assertSame(1, $this->runDeliveries());
-        self::assertCount(1, $gateway->sent());
+        self::assertSame(0, $sender->count(), 'The code is delivered once it has committed, by the queued job.');
 
-        $message = $gateway->sent()[0];
+        foreach (Queue::pushed(SendOneTimeCode::class) as $job) {
+            self::assertInstanceOf(SendOneTimeCode::class, $job);
+            $job->handle($this->app ?? self::fail('The application has not booted.'));
+        }
 
-        self::assertSame(Source::AUTHENTICATION, $message->source);
-        self::assertSame(CodePurpose::SIGN_IN, $message->memberPurpose);
-        self::assertSame(Purpose::SIGN_IN, $message->purpose);
-        self::assertSame($channel, $message->channel);
+        $message = $sender->sent()[0] ?? self::fail('No code was delivered.');
+
+        self::assertSame(1, $sender->count());
+        self::assertSame(CodePurpose::SIGN_IN, $message->purpose);
         self::assertSame($type, $message->type);
-        self::assertSame($destination, $message->destination());
-        self::assertSame(self::GUARD, $message->application);
-        self::assertIsThePerson($person, $message->recipient());
-        self::assertNull($message->factor);
-        self::assertTrue($message->expiresAt->isFuture());
-        self::assertSame([], $this->otherGatewayThan($channel)->sent());
+        self::assertSame($destination, $message->identifier);
+        self::assertSame(self::GUARD, $message->guard);
+        self::assertIsThePerson($person, $message->identity);
 
         $result = $this->signInWith($method, $type, $given, (string) $request->challengeId, $message->code->reveal());
 
         self::assertTrue($result->isSignedIn(), (string) $result->reason?->value);
         self::assertNotNull($result->session);
         self::assertTrue($person->sessions()->whereKey($result->session->record->getKey())->exists(), 'The session is the person\'s.');
-    }
-
-    /**
-     * A gateway that throws fails the sign-in code's delivery job with its
-     * exception, once the code has committed: the code stays issued, unused,
-     * nothing is delivered, and the queue's retry of the job delivers that same
-     * code, which then signs the person in.
-     *
-     * @param  string  $level
-     * @param  string  $method
-     * @param  string  $type
-     * @param  string  $given
-     * @param  string  $destination
-     * @param  \SineMacula\Laravel\Iam\Delivery\Enums\Channel  $channel
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideCodeSignIns')]
-    public function testAFailedDeliveryLeavesTheCodeIssuedForTheQueuesRetry(
-        string $level,
-        string $method,
-        string $type,
-        string $given,
-        string $destination,
-        Channel $channel,
-    ): void {
-        self::requireIsolationLevels();
-        self::useIsolationLevel($level);
-
-        $this->person();
-
-        $failure = new \RuntimeException('The provider refused the message.');
-        $gateway = $this->gatewayOf($channel)->failNext($failure);
-        $request = $this->codes()->send($method, [$type => $given], self::client());
-
-        self::assertTrue($request->isSent(), 'laravel-authentication answers the request before the code is delivered.');
-        self::assertSame($failure, $this->assertDeliveryFails(\RuntimeException::class));
-        self::assertSame([], $gateway->sent());
-        self::assertSame(1, DB::table('one_time_codes')->whereNull('consumed_at')->count(), 'The code stays issued.');
-
-        $this->retryLastDelivery();
-
-        $code = $gateway->lastCodeTo($destination, Purpose::SIGN_IN) ?? self::fail('The retry delivered nothing.');
-
-        self::assertTrue($this->signInWith($method, $type, $given, (string) $request->challengeId, $code)->isSignedIn());
     }
 
     /**
@@ -204,17 +138,17 @@ final class CodeSignInTest extends TestCase
     }
 
     /**
-     * Name both gateways before any provider registers.
+     * Bind the application's sender before the application boots.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     #[\Override]
-    protected function resolveApplicationConfiguration(mixed $app): void
+    protected function defineEnvironment(mixed $app): void
     {
-        parent::resolveApplicationConfiguration($app);
+        parent::defineEnvironment($app);
 
-        $this->nameTheGateways($app);
+        $this->sender = FakeOneTimeCodeSender::fake($app);
     }
 
     /**

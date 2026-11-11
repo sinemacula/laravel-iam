@@ -27,7 +27,7 @@ final readonly class AuditCheck implements Check
         . 'register laravel-iam\'s provider before the application boots, or turn `%s` off.';
 
     /** @var string Why a guard audit-log's own capture still records is refused. */
-    private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice; `iam:install` writes them.';
+    private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice: add them.';
 
     /** @var string Why audit-log's Gate capture on is refused. */
     private const string GATE_CAPTURE_ON = '`%s` must be false, so no authorization decision is recorded twice:'
@@ -35,7 +35,7 @@ final readonly class AuditCheck implements Check
 
     /** @var string Why audit-log recording unregistered codes is refused. */
     private const string UNCHECKED_CODES = '`%s` must be true, so a code without a definition is refused rather than recorded unchecked; '
-        . '`iam:install` writes it.';
+        . 'turn it on.';
 
     /**
      * Constructor.

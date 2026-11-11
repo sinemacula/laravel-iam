@@ -5,8 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Mfa;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Events\QueryExecuted;
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
@@ -23,11 +21,7 @@ use Tests\TestCase;
 
 /**
  * Integration tests for a session's recorded proofs read as MFA's proofs of the
- * sign-in (IAM-3.11, IAM-3.12): proofs that name no factor are all kept, in the
- * order handed in, without MFA's factor table being read; a proof naming a
- * factor the identity still holds is kept; one naming a factor since removed is
- * left out, and what is kept is a list; and a factor is named by its identifier
- * as text.
+ * sign-in (IAM-3.11).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,82 +34,25 @@ final class SignInProofsTest extends TestCase
     use InteractsWithIam, MigratesMembers, SignsInPeople;
 
     /**
-     * Proofs that name no factor are each kept, in the order handed in, and
-     * MFA's factor table is not read for them.
+     * Proofs are kept in the order handed in.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testProofsNamingNoFactorAreAllKeptWithoutReadingTheFactors(): void
-    {
-        $person  = $this->createPerson();
-        $session = $this->signInAndActOnSession($person);
-        $first   = $this->firstFactorOf($session) ?? self::fail('No first factor was recorded.');
-        $table   = (new Factor)->getTable();
-        $reads   = 0;
-
-        DB::listen(static function (QueryExecuted $query) use ($table, &$reads): void {
-            if (!str_contains($query->sql, $table)) {
-                return;
-            }
-
-            $reads++;
-        });
-
-        $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$first, $first]);
-
-        self::assertSame([0, 1], array_keys($proofs));
-        self::assertSame([null, null], array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs));
-        self::assertSame(0, $reads);
-    }
-
-    /**
-     * A proof naming a factor the identity still holds is kept beside the
-     * proofs that name none.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAProofOfAFactorStillHeldIsKept(): void
+    public function testProofsAreKeptInTheOrderHandedIn(): void
     {
         $person  = $this->createPerson();
         $session = $this->verifiedSessionOf($person);
 
-        $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$this->firstOf($session), $this->furtherOf($session)]);
+        $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$this->furtherOf($session), $this->firstOf($session)]);
 
-        self::assertSame([null, $this->factorOf($person)], array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs));
+        self::assertSame([$this->factorOf($person), null], array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs));
     }
 
     /**
-     * A proof naming a factor since removed is left out, whether or not a proof
-     * naming no factor is handed in beside it, and what is kept is a list.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAProofOfAFactorNoLongerHeldIsLeftOut(): void
-    {
-        $person  = $this->createPerson();
-        $session = $this->verifiedSessionOf($person);
-        $first   = $this->firstOf($session);
-        $further = $this->furtherOf($session);
-
-        Factor::query()->whereKey($this->factorOf($person))->delete();
-
-        $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$further, $first]);
-
-        self::assertSame([0], array_keys($proofs));
-        self::assertNull($proofs[0]->reference);
-        self::assertSame([], $this->signInProofs()->of($person, self::GUARD, $session, [$further]));
-    }
-
-    /**
-     * A factor is named by its identifier as text, so a factor identified by a
-     * number is the one a proof naming that number names; an identifier that is
-     * no scalar names nothing.
+     * A factor is named by its identifier as text, and by nothing when it is no
+     * scalar.
      *
      * @return void
      */

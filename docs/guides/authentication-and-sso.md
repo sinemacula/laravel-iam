@@ -23,7 +23,7 @@ specification the adapters are written to. This guide covers what you call, and 
 | SSO `ApplicationPolicy`                    | the guard's sign-in methods                                       | a guard that does not allow `external_provider` starts no flow                     |
 | SSO `LinkEmailMatcher`                     | `laravel-authentication`'s verified identifiers                   | linking by a verified domain matches only a verified email address                 |
 | SSO `LinkConfirmation`                     | how the caller's session signed in, from its proofs               | only a session apart from every provider confirms a verified domain link           |
-| Auth `TenantAuthenticationPolicy`          | SSO's enforcement and exemptions, and your tenant MFA requirement | one tenant policy decides every session acting in the tenant                       |
+| Auth `TenantAuthenticationPolicy`          | SSO's enforcement and exemptions, and your MFA tenant requirement | one tenant policy decides every session acting in the tenant                       |
 | The `sso` authentication context namespace | the provenance SSO captured at sign-in                            | `Auth::context()` says how a session began                                         |
 
 SSO's handoff codes stay SSO's own: the package never binds a handoff issuer. The membership and tree seams are in
@@ -185,7 +185,7 @@ Nothing is yours to call. When a connection is disabled or deleted, a link is re
 enforcement changes, SSO asks the package to revoke inside its own transaction, and exactly the sessions the change
 concerns end with it. An enforcement change judges the sessions acting in the tenant against the tenant policy, once
 in SSO's transaction and once more after it commits, so a session that entered the tenant meanwhile is judged too.
-With a tenant tree named, every tenant below the enforcing one is judged as well.
+With a tenant tree bound to `laravel-authorization`, every tenant below the enforcing one is judged as well.
 
 Bind `laravel-authentication`'s `TenantResolver` before you turn enforcement on: its default resolves no tenant, and
 every enforcement change then throws. See `laravel-authentication`'s [extending guide][auth-extending].
@@ -193,7 +193,7 @@ every enforcement change then throws. See `laravel-authentication`'s [extending 
 ## The tenant policy
 
 `laravel-authentication`'s tenant authentication policy is answered from SSO's enforcement, SSO's exemption gate and
-your tenant MFA requirement together, with a version that changes whenever any of them does. A session that signed in
+your MFA `TenantRequirement` together, with a version that changes whenever any of them does. A session that signed in
 through a connection the tenant's rule accepts meets it; an exempt identity's session is answered without one; any
 other is refused as `sso_required`, or owes a further factor.
 
@@ -209,7 +209,7 @@ Iam::transaction(function () use ($tenant): void {
 });
 ```
 
-The same call reports a change to your tenant MFA requirement (see
+The same call reports a change to your MFA tenant requirement (see
 [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)).
 
 ## Provenance and the `sso` context
@@ -245,7 +245,8 @@ The package ships no routes. SSO's start, completion and metadata routes are SSO
 ## Transactions and locks
 
 - The sign-in and re-authentication redemptions run in one transaction on the storage connection, retried whole; a
-  `link` runs through SSO's standalone redemption.
+  `link` runs through SSO's standalone redemption, in SSO's own transaction, so retry the request when it fails to
+  serialise.
 - SSO's starts and completions talk to the provider and refuse to run inside a transaction: never wrap them.
 - Every adapter takes its locks in SSO's lock order, with `laravel-authentication`'s session row last. Your own
   contracts that SSO asks under its locks (memberships, link eligibility) come after SSO's, so take no lock on rows

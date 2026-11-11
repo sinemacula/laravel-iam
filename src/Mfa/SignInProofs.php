@@ -12,34 +12,10 @@ use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
-use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
- * The proofs one of `laravel-authentication`'s sessions recorded, as MFA's
- * proofs of the sign-in the session is (IAM-3.11, IAM-3.12): what the proof
- * store answers for the guard's current session, and what the `mfa` context
- * contributor hands MFA for the session it is given, so the two read a
- * session's proofs alike.
- *
- * The session's proofs are read by the caller, through
- * `laravel-authentication`'s public readers (`Auth::sessions($guard)->proofs()`
- * and `firstFactor()`, or the contribution subject's own), and handed in oldest
- * first. Each is translated to MFA's proof bound to the sign-in (the identity,
- * the application, the session's key) and stamped with the identity's current
- * verification generation, read once for them all. An SSO sign-in's first
- * factor, or a reauthentication at the provider, names its connection only when
- * it carries evidence SSO's evidence contract accepted and the session's
- * tenant, if any, trusts the connection (`ProviderTrust::accepted()`). A proof
- * MFA cannot express (an additional factor that names no factor, say) is left
- * out rather than guessed at, and so is one that names a factor the identity no
- * longer holds in MFA's factor table, read on the write connection only when a
- * proof names a factor, so a factor MFA has just deleted, in its own
- * transaction or in one since committed, stops counting at once and a replica
- * that has not caught up cannot bring it back.
- *
- * It reads nothing of the request or the guard, and holds no state between
- * calls (IAM-8.1).
+ * A session's recorded proofs as MFA's proofs of the sign-in (IAM-3.11).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,8 +36,7 @@ final readonly class SignInProofs
     ) {}
 
     /**
-     * The session's recorded proofs, oldest first as handed in, as MFA's proofs
-     * of the identity's sign-in on the application that still count.
+     * The proofs, oldest first, leaving out any MFA cannot express.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -86,26 +61,11 @@ final readonly class SignInProofs
             }
         }
 
-        return self::held($identity, $proofs);
+        return $proofs;
     }
 
     /**
-     * Whether the identity still holds the factor, read from MFA's factor table
-     * on the write connection.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $factorId
-     * @return bool
-     */
-    public static function holds(MultiFactorAuthenticatable $identity, string $factorId): bool
-    {
-        return in_array($factorId, self::factors($identity), true);
-    }
-
-    /**
-     * The factor's id, as a proof made with it names it: its identifier as
-     * text, so a factor identified by a number is the one a proof naming that
-     * number names.
+     * The factor's identifier as text, as a proof made with it names it.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @return string
@@ -118,8 +78,7 @@ final readonly class SignInProofs
     }
 
     /**
-     * Whether any of the proofs is a first factor, as `laravel-authentication`
-     * recorded it.
+     * Whether any of the proofs is a first factor.
      *
      * @param  list<\SineMacula\Laravel\Authentication\Proofs\RecordedProof>  $recorded
      * @return bool
@@ -133,39 +92,5 @@ final readonly class SignInProofs
         }
 
         return false;
-    }
-
-    /**
-     * The proofs that still count: each that names no factor, and each that
-     * names a factor the identity still holds.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  list<\SineMacula\Laravel\Mfa\Proofs\Proof>  $proofs
-     * @return list<\SineMacula\Laravel\Mfa\Proofs\Proof>
-     */
-    private static function held(MultiFactorAuthenticatable $identity, array $proofs): array
-    {
-        if (array_filter($proofs, static fn (Proof $proof): bool => $proof->reference !== null) === []) {
-            return $proofs;
-        }
-
-        $factors = self::factors($identity);
-
-        return array_values(array_filter($proofs, static fn (Proof $proof): bool => $proof->reference === null || in_array($proof->reference, $factors, true)));
-    }
-
-    /**
-     * The identity's factors, as a proof made with each names it, read from
-     * MFA's factor table on the write connection.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @return array<int, string>
-     */
-    private static function factors(MultiFactorAuthenticatable $identity): array
-    {
-        return array_map(
-            static fn (Factor $factor): string => self::factorReference($factor),
-            $identity->authFactors()->useWritePdo()->get()->all(),
-        );
     }
 }

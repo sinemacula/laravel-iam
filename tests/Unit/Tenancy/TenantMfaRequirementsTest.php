@@ -4,26 +4,27 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Tenancy;
 
-use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
-use SineMacula\Laravel\Iam\Bindings\ConfiguredImplementations;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
-use SineMacula\Laravel\Iam\Exceptions\TenantMfaRequirementMisconfiguredException;
+use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
+use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
+use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 
 /**
- * Unit tests for asking the application's tenant MFA requirement (IAM-4.5): the
- * application's binding wins over the class it names (IAM-8.4), a class named
- * is built and asked, neither means no tenant requires a further factor, and a
- * class named that is no requirement, or a binding that resolves to none, fails
- * closed rather than answer that nothing is required.
+ * Unit tests for asking the application's binding of MFA's tenant requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,18 +32,13 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
  * @internal
  */
 #[CoversClass(TenantMfaRequirements::class)]
-#[CoversClass(ConfiguredImplementations::class)]
 final class TenantMfaRequirementsTest extends TestCase
 {
-    /** @var \Illuminate\Container\Container The container the requirement is bound and built in. */
+    /** @var \Illuminate\Container\Container The container MFA's tenant requirement is bound in. */
     private Container $container;
 
-    /** @var \Illuminate\Config\Repository The configuration naming the requirement. */
-    private Repository $config;
-
     /**
-     * Start each test with an empty container and the shipped tenancy
-     * configuration.
+     * Start each test with MFA's default bound.
      *
      * @return void
      */
@@ -52,276 +48,92 @@ final class TenantMfaRequirementsTest extends TestCase
         parent::setUp();
 
         $this->container = new Container;
-        $this->config    = new Repository(['iam' => ['tenancy' => ['mfa_requirement' => null]]]);
+
+        $this->container->bind(TenantRequirement::class, NoTenantRequirement::class);
     }
 
     /**
-     * With no requirement bound or named, no tenant requires a further factor.
+     * MFA's default is no requirement; any other binding is one.
      *
      * @return void
      */
-    public function testWithNoRequirementNoTenantRequiresAFactor(): void
-    {
-        $rule = $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-
-        self::assertTrue($rule->isEmpty());
-        self::assertNull($rule->version);
-    }
-
-    /**
-     * The class the configuration names is built and asked, for the tenant and
-     * the application given.
-     *
-     * @return void
-     */
-    public function testTheClassNamedIsAsked(): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, FakeTenantMfaRequirement::class);
-
-        $fake = new FakeTenantMfaRequirement;
-
-        $fake->require('tenant-1', self::multifactor());
-
-        $this->container->instance(FakeTenantMfaRequirement::class, $fake);
-
-        self::assertEquals(self::multifactor(), $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api')->requirement);
-        self::assertSame([['tenant' => 'tenant-1', 'application' => 'api']], $fake->asked());
-    }
-
-    /**
-     * The application's binding of the contract wins over the class it names.
-     *
-     * @return void
-     */
-    public function testTheApplicationsBindingWinsOverTheClassNamed(): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, 'App\Tenancy\Unbuildable');
-
-        FakeTenantMfaRequirement::fake($this->container)->require('tenant-1', self::multifactor());
-
-        self::assertFalse($this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api')->isEmpty());
-    }
-
-    /**
-     * The requirement is resolved when it is asked, not when the resolver was
-     * built.
-     *
-     * @return void
-     */
-    public function testTheRequirementIsTheOneBoundWhenAsked(): void
-    {
-        $requirements = $this->requirements();
-
-        FakeTenantMfaRequirement::fake($this->container)->require('tenant-1', self::multifactor());
-
-        self::assertFalse($requirements->ruleFor(new ClaimedTenant('tenant-1'), 'api')->isEmpty());
-    }
-
-    /**
-     * What the application's requirement throws propagates.
-     *
-     * @return void
-     */
-    public function testWhatTheRequirementThrowsPropagates(): void
-    {
-        $failure = new \RuntimeException('The tenant\'s settings cannot be read.');
-
-        FakeTenantMfaRequirement::fake($this->container)->failFor('tenant-1', $failure);
-
-        try {
-            $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-
-            self::fail('The requirement answered.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame($failure, $exception);
-        }
-    }
-
-    /**
-     * Rows of a value naming no class implementing the contract.
-     *
-     * @return iterable<string, array{0: string}>
-     */
-    public static function provideNoRequirements(): iterable
-    {
-        yield 'no class' => ['App\Tenancy\Missing'];
-
-        yield 'a class of another kind' => [\stdClass::class];
-
-        yield 'the contract itself' => [TenantMfaRequirement::class];
-    }
-
-    /**
-     * A class named that does not implement the contract fails closed, naming
-     * the key and the class.
-     *
-     * @param  string  $named
-     * @return void
-     */
-    #[DataProvider('provideNoRequirements')]
-    public function testAClassNamedThatIsNoRequirementFailsClosed(string $named): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, $named);
-
-        $this->expectException(TenantMfaRequirementMisconfiguredException::class);
-        $this->expectExceptionMessage(sprintf('iam.tenancy.mfa_requirement names [%s], which is not a class implementing %s', $named, TenantMfaRequirement::class));
-
-        $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-    }
-
-    /**
-     * Rows of `[value, type]`: a configured value that is no class name at all,
-     * and the type the failure names.
-     *
-     * @return iterable<string, array{0: mixed, 1: string}>
-     */
-    public static function provideValuesThatAreNoClassName(): iterable
-    {
-        yield 'true' => [true, 'bool'];
-
-        yield 'false' => [false, 'bool'];
-
-        yield 'a number' => [1, 'int'];
-
-        yield 'an array' => [[FakeTenantMfaRequirement::class], 'array'];
-    }
-
-    /**
-     * A value that is no class name at all is a misconfiguration, never a
-     * choice of no requirement: the application has a requirement, and asking
-     * it fails closed, naming the key and the value's type, never the value.
-     *
-     * @param  mixed  $value
-     * @param  string  $type
-     * @return void
-     */
-    #[DataProvider('provideValuesThatAreNoClassName')]
-    public function testAValueThatIsNoClassNameFailsClosed(mixed $value, string $type): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, $value);
-
-        self::assertTrue($this->requirements()->isConfigured());
-
-        $this->expectException(TenantMfaRequirementMisconfiguredException::class);
-        $this->expectExceptionMessage(sprintf('iam.tenancy.mfa_requirement holds a value of type [%s], which names no class implementing %s', $type, TenantMfaRequirement::class));
-
-        $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-    }
-
-    /**
-     * A binding, of the contract or of the class named, that resolves to what
-     * is no requirement fails closed, naming the binding.
-     *
-     * @return void
-     */
-    public function testABindingThatResolvesToNoRequirementFailsClosed(): void
-    {
-        $this->container->bind(TenantMfaRequirement::class, static fn (): object => new \stdClass);
-
-        $this->expectException(TenantMfaRequirementMisconfiguredException::class);
-        $this->expectExceptionMessage(sprintf('The container binding of %s resolves to [stdClass]', TenantMfaRequirement::class));
-
-        $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-    }
-
-    /**
-     * The class named is blamed for a binding of it that resolves to no
-     * requirement.
-     *
-     * @return void
-     */
-    public function testABindingOfTheClassNamedThatResolvesToNoRequirementFailsClosed(): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, FakeTenantMfaRequirement::class);
-        $this->container->bind(FakeTenantMfaRequirement::class, static fn (): object => new \stdClass);
-
-        $this->expectException(TenantMfaRequirementMisconfiguredException::class);
-        $this->expectExceptionMessage(sprintf('The container binding of %s resolves to [stdClass]', FakeTenantMfaRequirement::class));
-
-        $this->requirements()->ruleFor(new ClaimedTenant('tenant-1'), 'api');
-    }
-
-    /**
-     * Rows of `[value, named]`: a configured value, and whether it names a
-     * class.
-     *
-     * @return iterable<string, array{0: mixed, 1: bool}>
-     */
-    public static function provideNamedValues(): iterable
-    {
-        yield 'a class' => [FakeTenantMfaRequirement::class, true];
-
-        yield 'any text' => ['App\Tenancy\Missing', true];
-
-        yield 'nothing' => [null, false];
-
-        yield 'empty' => ['', false];
-
-        yield 'blank' => ['   ', false];
-
-        yield 'true' => [true, true];
-
-        yield 'false' => [false, true];
-
-        yield 'a number' => [1, true];
-
-        yield 'an array' => [[FakeTenantMfaRequirement::class], true];
-    }
-
-    /**
-     * The configuration names a requirement by any value but `null` and blank
-     * text, which alone name none.
-     *
-     * @param  mixed  $value
-     * @param  bool  $named
-     * @return void
-     */
-    #[DataProvider('provideNamedValues')]
-    public function testARequirementIsNamedByAnyValueButNothingOrBlankText(mixed $value, bool $named): void
-    {
-        $this->config->set(TenantMfaRequirements::KEY, $value);
-
-        self::assertSame($named, TenantMfaRequirements::isNamed($this->config));
-    }
-
-    /**
-     * The application has a requirement once it binds one or names one, and not
-     * before.
-     *
-     * @return void
-     */
-    public function testARequirementIsConfiguredOnceBoundOrNamed(): void
+    public function testARequirementIsConfiguredOnceBoundOffMfasDefault(): void
     {
         self::assertFalse($this->requirements()->isConfigured());
 
-        $this->config->set(TenantMfaRequirements::KEY, FakeTenantMfaRequirement::class);
-
-        self::assertTrue($this->requirements()->isConfigured());
-
-        $this->config->set(TenantMfaRequirements::KEY, null);
-
-        FakeTenantMfaRequirement::fake($this->container);
+        ScriptedTenantRequirement::bind($this->container);
 
         self::assertTrue($this->requirements()->isConfigured());
     }
 
     /**
-     * The resolver over the test's container and configuration.
+     * The binding is asked for the identity, the application and the tenant id,
+     * and its answer translated.
+     *
+     * @return void
+     */
+    public function testTheBindingIsAskedAndItsAnswerTranslated(): void
+    {
+        $scripted = ScriptedTenantRequirement::bind($this->container)->require('tenant-1', MfaRequirement::none()->withMultifactor(300));
+
+        $requirement = $this->requirements()->requirementFor(self::context(\Mockery::mock(Identity::class, MultiFactorAuthenticatable::class)), 'tenant-1');
+
+        self::assertEquals(new Requirement(multifactor: new RequirementPart(300)), $requirement);
+        self::assertSame([['tenant' => 'tenant-1', 'application' => 'api']], $scripted->asked());
+    }
+
+    /**
+     * With MFA's default, nothing is required and the identity is not asked
+     * about.
+     *
+     * @return void
+     */
+    public function testWithMfasDefaultNothingIsRequired(): void
+    {
+        self::assertTrue($this->requirements()->requirementFor(self::context(\Mockery::mock(Identity::class)), 'tenant-1')->isEmpty());
+    }
+
+    /**
+     * Once a requirement is bound, an identity MFA holds no factors for is
+     * refused.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnIdentityMfaHoldsNoFactorsForIsRefused(): void
+    {
+        $scripted = ScriptedTenantRequirement::bind($this->container);
+
+        try {
+            $this->requirements()->requirementFor(self::context(\Mockery::mock(Identity::class)), 'tenant-1');
+
+            self::fail('The requirement answered.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
+        }
+
+        self::assertSame([], $scripted->asked());
+    }
+
+    /**
+     * The requirements over the test's container.
      *
      * @return \SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements
      */
     private function requirements(): TenantMfaRequirements
     {
-        return new TenantMfaRequirements($this->container, $this->config);
+        return new TenantMfaRequirements($this->container, new RequirementTranslator);
     }
 
     /**
-     * Multifactor authentication within five minutes.
+     * The context of the identity acting in `tenant-1` on `api`.
      *
-     * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @return \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext
      */
-    private static function multifactor(): Requirement
+    private static function context(Identity $identity): TenantPolicyContext
     {
-        return new Requirement(multifactor: new RequirementPart(300));
+        return new TenantPolicyContext('api', $identity, \Mockery::mock(Principal::class), new ClaimedTenant('tenant-1'), null, static fn (): ?string => null);
     }
 }

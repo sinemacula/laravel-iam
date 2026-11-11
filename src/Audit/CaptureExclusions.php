@@ -32,12 +32,12 @@ use Illuminate\Contracts\Config\Repository;
  * (`AuthorizationEventMapper`), the Gate checks it answers among them, so Gate
  * capture stays off.
  *
- * It only computes and answers: it never writes configuration. Installation
- * (`iam:install`) writes the exclusions this answers and `iam:check` refuses a
- * configuration that does not hold them (decision Q5 (a)); at runtime audit-log
- * reads its own keys when each event arrives, and this package changes none of
- * them. Every value is read from configuration when it is asked for, never
- * kept, so a guard configured later counts.
+ * It only computes and answers: it never writes configuration. The application
+ * sets the exclusions this answers and `iam:check` refuses a configuration that
+ * does not hold them (decision Q5 (a)); at runtime audit-log reads its own keys
+ * when each event arrives, and this package changes none of them. Every value
+ * is read from configuration when it is asked for, never kept, so a guard
+ * configured later counts.
  *
  * The guards are found by their driver, in the order `auth.guards` lists
  * them; a guard whose configuration is no array, or names no driver, is no

@@ -7,19 +7,8 @@ namespace SineMacula\Laravel\Iam\Exceptions;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ReportsMisconfiguration;
 
 /**
- * Thrown when the application's memberships or tenant tree cannot be built
- * (IAM-7.4, IAM-7.5): `iam.tenancy.memberships` or `iam.tenancy.tree` names
- * what is no class implementing its contract, holds a value that is no class
- * name at all, the container binding it is resolved by resolves to what is no
- * such implementation, an adapter that answers from the memberships is asked
- * while none is configured, or the tree places a tenant below one of another
- * type, which `laravel-authorization` cannot read.
- *
- * It is thrown where a member asks, inside the member's transaction, so the
- * link, the redemption or the change being judged fails rather than proceed as
- * though the identity held no membership or the tenant stood alone. The message
- * names the configuration key, the binding or the tenant types, never a tenant
- * or an identity.
+ * Thrown when the application's memberships cannot be built, or none is
+ * configured (IAM-7.4).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -87,20 +76,5 @@ final class TenancyMisconfiguredException extends \LogicException implements Rep
     public static function forNone(string $key, string $contract): self
     {
         return new self(sprintf('Nothing implements %s: name the class in %s, or bind it in the container.', $contract, $key));
-    }
-
-    /**
-     * Build an exception for a tenant tree that places a tenant below one of
-     * another type, which `laravel-authorization`, reading every tenant of a
-     * subtree as the type of the tenant at its top, cannot be given. The
-     * message names the two types, never a tenant.
-     *
-     * @param  string  $type
-     * @param  string  $otherType
-     * @return self
-     */
-    public static function forMixedTree(string $type, string $otherType): self
-    {
-        return new self(sprintf('The tenant tree nests a tenant of type [%s] with one of type [%s]: every tenant of the tree must be of one type.', $type, $otherType));
     }
 }

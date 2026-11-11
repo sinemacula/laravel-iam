@@ -9,6 +9,7 @@ use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
@@ -405,8 +406,8 @@ final class IamManagerTest extends TestCase
 
                 throw LinkCandidatesChanged::retryWhole();
             }, $attempts);
-        } catch (LinkCandidatesChanged) {
-            // The last attempt's failure is rethrown; only the runs matter.
+        } catch (DeadlockException $exception) {
+            self::assertInstanceOf(LinkCandidatesChanged::class, $exception->getPrevious());
         }
 
         return $runs;

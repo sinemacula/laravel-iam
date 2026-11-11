@@ -8,17 +8,14 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
-use SineMacula\Laravel\Iam\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Database\AuthorizationConnection;
+use SineMacula\Laravel\Authorization\Support\Reference;
+use Tests\Fixtures\Resolvers\ClaimedTenant;
 
 /**
- * A tenant tree held in the database, as an application's is: each tenant a row
- * of the `iam_tenant_nodes` table with its parent's id, none for a root, read
- * on the default connection, its write PDO, at every call, with nothing kept
- * from one call for the next and no lock taken.
- *
- * So a move another connection commits is seen by the next read made outside a
- * transaction that has already read, as an application's tree would be. A
- * tenant is placed or moved with `place()`, on the default connection.
+ * An application's tenant tree, held in the `iam_tenant_nodes` table and read
+ * afresh on every call; tenants of any type.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,31 +28,53 @@ final readonly class StoredTenantTree implements TenantTree
     public const string TABLE = 'iam_tenant_nodes';
 
     /**
-     * Place the tenant under the parent given, or as a root, moving it there
-     * when it was placed before.
+     * Place the tenant under the parent, or as a root, moving it when placed
+     * before; an id alone names a `ClaimedTenant`.
      *
-     * @param  string  $tenantId
-     * @param  ?string  $parentId
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference|string  $tenant
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference|string|null  $parent
      * @return void
      */
-    public static function place(string $tenantId, ?string $parentId = null): void
+    public static function place(Reference|string $tenant, Reference|string|null $parent = null): void
     {
-        self::database()->table(self::TABLE)->updateOrInsert(['tenant_id' => $tenantId], ['parent_id' => $parentId]);
+        $tenant = self::reference($tenant);
+        $parent = $parent === null ? null : self::reference($parent);
+
+        self::database()->table(self::TABLE)->updateOrInsert(
+            ['tenant_type' => $tenant->type, 'tenant_id' => $tenant->id],
+            ['parent_type' => $parent?->type, 'parent_id' => $parent?->id],
+        );
     }
 
     /**
-     * The tenant's ancestors, nearest first, the tenant excluded.
+     * Take the tenant out of the tree, its children placed under its parent.
      *
-     * @param  string  $tenantId
-     * @return list<string>
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference|string  $tenant
+     * @return void
+     */
+    public static function remove(Reference|string $tenant): void
+    {
+        $tenant = self::reference($tenant);
+        $parent = self::parentOf($tenant);
+        $nodes  = self::database()->table(self::TABLE);
+
+        $nodes->clone()->where(['parent_type' => $tenant->type, 'parent_id' => $tenant->id])->update(['parent_type' => $parent?->type, 'parent_id' => $parent?->id]);
+        $nodes->clone()->where(['tenant_type' => $tenant->type, 'tenant_id' => $tenant->id])->delete();
+    }
+
+    /**
+     * The tenant's ancestors, nearest first, the tenant left out.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
+     * @return list<\SineMacula\Laravel\Authorization\Support\Reference>
      */
     #[\Override]
-    public function ancestors(string $tenantId): array
+    public function ancestors(Reference $tenant): array
     {
         $ancestors = [];
-        $current   = self::parentOf($tenantId);
+        $current   = self::parentOf($tenant);
 
-        while ($current !== null && !in_array($current, $ancestors, true)) {
+        while ($current !== null) {
             $ancestors[] = $current;
             $current     = self::parentOf($current);
         }
@@ -64,74 +83,87 @@ final readonly class StoredTenantTree implements TenantTree
     }
 
     /**
-     * Every tenant below the tenant, nearest first, a level at a time.
+     * Whether the tenant is the ancestor or below it.
      *
-     * @param  string  $tenantId
-     * @return list<string>
-     */
-    #[\Override]
-    public function descendants(string $tenantId): array
-    {
-        $below    = [];
-        $frontier = [$tenantId];
-
-        while ($frontier !== []) {
-
-            $ids  = self::database()->table(self::TABLE)->useWritePdo()->whereIn('parent_id', $frontier)->orderBy('tenant_id')->pluck('tenant_id')->all();
-            $next = array_values(array_filter($ids, is_string(...)));
-
-            array_push($below, ...$next);
-
-            $frontier = $next;
-        }
-
-        return $below;
-    }
-
-    /**
-     * Whether the tenant is the ancestor given, or below it.
-     *
-     * @param  string  $tenantId
-     * @param  string  $ancestorId
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $ancestor
      * @return bool
      */
     #[\Override]
-    public function isWithin(string $tenantId, string $ancestorId): bool
+    public function isWithin(Reference $tenant, Reference $ancestor): bool
     {
-        return $tenantId === $ancestorId || in_array($ancestorId, $this->ancestors($tenantId), true);
+        $matches = static fn (Reference $node): bool => $node->type === $ancestor->type && $node->id === $ancestor->id;
+
+        return array_filter([$tenant, ...$this->ancestors($tenant)], $matches) !== [];
     }
 
     /**
-     * The tenant and every tenant below it, as a query selecting their ids in
-     * the `tenant_id` column.
+     * The tenant and every tenant below it, as a query of typed rows on
+     * `laravel-authorization`'s connection.
      *
-     * @param  string  $tenantId
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
      * @return \Illuminate\Contracts\Database\Query\Builder
      */
     #[\Override]
-    public function subtree(string $tenantId): Builder
+    public function subtree(Reference $tenant): Builder
     {
-        $database = self::database();
-        $union    = $database->query()->selectRaw('? as ' . self::ID_COLUMN, [$tenantId]);
+        $database = AuthorizationConnection::connection();
+        $union    = $database->query()->selectRaw('? as tenant_type, ? as tenant_id', [$tenant->type, $tenant->id]);
+        $frontier = [$tenant];
 
-        foreach ($this->descendants($tenantId) as $id) {
-            $union->unionAll($database->query()->selectRaw('? as ' . self::ID_COLUMN, [$id]));
+        while ($frontier !== []) {
+
+            $below = [];
+
+            foreach ($frontier as $node) {
+                foreach (self::childrenOf($node) as $child) {
+                    $union->unionAll($database->query()->selectRaw('? as tenant_type, ? as tenant_id', [$child->type, $child->id]));
+
+                    $below[] = $child;
+                }
+            }
+
+            $frontier = $below;
         }
 
-        return $database->query()->fromSub($union, 'subtree')->select(self::ID_COLUMN);
+        return $database->query()->fromSub($union, 'subtree')->select(['tenant_type', 'tenant_id']);
     }
 
     /**
-     * The tenant's parent's id, or `null` for a root or a tenant not held.
+     * The tenant's parent, or `null` for a root or a tenant not held.
      *
-     * @param  string  $tenantId
-     * @return ?string
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
+     * @return ?\SineMacula\Laravel\Authorization\Support\Reference
      */
-    private static function parentOf(string $tenantId): ?string
+    private static function parentOf(Reference $tenant): ?Reference
     {
-        $parent = self::database()->table(self::TABLE)->useWritePdo()->where('tenant_id', $tenantId)->value('parent_id');
+        $row = self::database()->table(self::TABLE)->useWritePdo()->where(['tenant_type' => $tenant->type, 'tenant_id' => $tenant->id])->first();
 
-        return is_string($parent) ? $parent : null;
+        return is_string($row?->parent_type) && is_string($row->parent_id) ? new Reference($row->parent_type, $row->parent_id) : null;
+    }
+
+    /**
+     * The tenant's children.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
+     * @return list<\SineMacula\Laravel\Authorization\Support\Reference>
+     */
+    private static function childrenOf(Reference $tenant): array
+    {
+        $rows = self::database()->table(self::TABLE)->useWritePdo()->where(['parent_type' => $tenant->type, 'parent_id' => $tenant->id])->orderBy('tenant_id')->get();
+
+        return array_values($rows->map(static fn (object $row): Reference => new Reference((string) ($row->tenant_type), (string) ($row->tenant_id)))->all());
+    }
+
+    /**
+     * The tenant given, or a `ClaimedTenant` of the id given.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference|string  $tenant
+     * @return \SineMacula\Laravel\Authorization\Support\Reference
+     */
+    private static function reference(Reference|string $tenant): Reference
+    {
+        return is_string($tenant) ? new Reference(ClaimedTenant::TYPE, $tenant) : $tenant;
     }
 
     /**

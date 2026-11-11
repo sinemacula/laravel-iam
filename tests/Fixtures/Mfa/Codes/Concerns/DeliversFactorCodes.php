@@ -9,35 +9,15 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Queue;
 use SineMacula\Laravel\Authentication\Codes\SendOneTimeCode;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
-use SineMacula\Laravel\Iam\Testing\FakeEmailGateway;
-use SineMacula\Laravel\Iam\Testing\FakeSmsGateway;
 
 /**
  * Delivers the factor codes `laravel-authentication` sends for MFA's delivered
- * factors (IAM-3.9), as a queue worker would: the queue is faked, and each
- * `SendOneTimeCode` job queued since the last delivery is run against
- * `laravel-authentication`'s fake one-time code sender, so a test reads the
- * code a person would receive.
+ * factors (IAM-3.9) to its fake one-time code sender, running each queued
+ * `SendOneTimeCode` job as a queue worker would.
  *
- * Before any provider registers, the MFA application offers `sms` and `email`,
- * and the application names a fake of each of this package's gateways, so the
- * binding rule points `laravel-authentication`'s one-time code sender and MFA's
- * senders at them, and MFA's challenge gateway at `laravel-authentication`'s
- * factor codes; once the providers have registered, a fake of each is bound as
- * the application's, so a test can read what reached it. Once it has booted,
- * `laravel-authentication`'s fake one-time code sender replaces this package's,
- * so a delivered code is read from it, and nothing reaches the gateways, which
- * only MFA's own senders would call, so a test can show MFA's senders deliver
- * nothing. Deliveries are queued on a connection of their own, never run
- * inline, with no cooldown and the most deliveries a window allows, so a test
- * may send a code as often as it needs to; the settings are set one by one
- * then, after every member has merged its own, which they would otherwise
- * replace.
- *
- * Used with `MigratesMembers`, `SignsInPeople` and `ArrangesDeliveredFactors`;
- * a test calls `defineFactorCodes()` from `defineEnvironment()`, which runs
- * once every provider has registered, and `fakeFactorCodeDelivery()` once the
- * application has booted.
+ * A test calls `defineFactorCodes()` from `defineEnvironment()`, so the sender
+ * is bound before MFA's boot check resolves its senders, and
+ * `fakeFactorCodeDelivery()` once the application has booted.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,12 +34,6 @@ trait DeliversFactorCodes
     /** @var int How many of the queued deliveries have been run. */
     private int $delivered = 0;
 
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeSmsGateway The application's SMS gateway, which MFA's SMS sender is pointed at. */
-    private ?FakeSmsGateway $smsGateway = null;
-
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeEmailGateway The application's email gateway, which MFA's email sender is pointed at. */
-    private ?FakeEmailGateway $emailGateway = null;
-
     /**
      * Offer `sms` and `email` as well as TOTP.
      *
@@ -72,41 +46,21 @@ trait DeliversFactorCodes
     }
 
     /**
-     * Load the application's configuration, then name a fake of each gateway,
-     * before any provider registers, as a published configuration file holds
-     * them.
-     *
-     * @param  \Illuminate\Foundation\Application  $app
-     * @return void
-     */
-    #[\Override]
-    protected function resolveApplicationConfiguration(mixed $app): void
-    {
-        parent::resolveApplicationConfiguration($app);
-
-        $app->make(ConfigRepository::class)->set('iam.delivery', [
-            'email' => FakeEmailGateway::class,
-            'sms'   => FakeSmsGateway::class,
-            'types' => ['email' => 'email', 'phone' => 'sms'],
-        ]);
-    }
-
-    /**
-     * Bind a fake of each gateway as the application's, before it boots.
+     * Bind `laravel-authentication`'s fake one-time code sender as the
+     * application's, before it boots.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
      */
     protected function defineFactorCodes(Application $app): void
     {
-        $this->smsGateway   = FakeSmsGateway::fake($app);
-        $this->emailGateway = FakeEmailGateway::fake($app);
+        $this->codeSender = FakeOneTimeCodeSender::fake($app);
     }
 
     /**
      * Queue `laravel-authentication`'s deliveries on a connection of their own
      * with no cooldown and the most deliveries a window allows, and fake the
-     * queue and its one-time code sender.
+     * queue.
      *
      * @return void
      */
@@ -121,8 +75,7 @@ trait DeliversFactorCodes
 
         Queue::fake();
 
-        $this->codeSender = FakeOneTimeCodeSender::fake($this->app);
-        $this->delivered  = 0;
+        $this->delivered = 0;
     }
 
     /**
@@ -181,19 +134,5 @@ trait DeliversFactorCodes
     protected function codeSender(): FakeOneTimeCodeSender
     {
         return $this->codeSender ?? self::fail('The delivery of factor codes has not been faked.');
-    }
-
-    /**
-     * The application's gateways, which only MFA's own senders would reach once
-     * `laravel-authentication`'s fake one-time code sender is bound.
-     *
-     * @return list<\SineMacula\Laravel\Iam\Testing\FakeEmailGateway|\SineMacula\Laravel\Iam\Testing\FakeSmsGateway>
-     */
-    protected function gateways(): array
-    {
-        return [
-            $this->smsGateway   ?? self::fail('The gateways have not been bound.'),
-            $this->emailGateway ?? self::fail('The gateways have not been bound.'),
-        ];
     }
 }

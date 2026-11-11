@@ -18,11 +18,13 @@ use SineMacula\Laravel\Mfa\Enums\RequirementPart;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Lifecycle\FactorRemovalResult;
 use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
+use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
@@ -103,6 +105,28 @@ final class FactorRemovalTest extends TestCase
         self::assertRemovalAgrees($result, $short);
         self::assertSame($short ? SessionStatus::PENDING : SessionStatus::ACTIVE, Session::query()->whereKey($session->getKey())->firstOrFail()->getStatus());
         self::assertNull(Factor::query()->find($removed->id));
+    }
+
+    /**
+     * Once MFA removes a factor, the session's further proof made with it no
+     * longer counts, and the one made with the kept factor still does.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheRemovedFactorsProofNoLongerCountsOnTheSession(): void
+    {
+        [$session, $removed, $result] = $this->removeAfterSteppingUp(self::MAX_AGE - 100);
+
+        self::assertTrue($result->wasMade());
+
+        $person = Person::query()->sole();
+        $proofs = $this->app?->make(ProofStoreAdapter::class)->proofs($person, self::GUARD, $this->signInReference($session)) ?? self::fail('The application has not booted.');
+        $names  = array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs);
+
+        self::assertCount(2, $names);
+        self::assertNotContains($removed->id, $names);
     }
 
     /**
