@@ -16,6 +16,7 @@ use SineMacula\Laravel\Authorization\Exceptions\InsufficientAuthenticationExcept
 use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Models\Policy;
 use SineMacula\Laravel\Authorization\Subject;
+use SineMacula\Laravel\Authorization\Support\AuthorizationScope;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AdministrativeCheck;
 use SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation;
@@ -35,10 +36,12 @@ use Tests\TestCase;
  * (IAM-6.9, AUTHZ-14.5): the operation is checked through
  * `laravel-authorization`'s grants for the subject handed in, with the member's
  * object as the resource in its own tenant, so a grant in the object's tenant
- * allows it and a grant in another tenant does not; a denial throws before the
- * operation and is recorded once as `authorization.access_denied`, a refusal
- * for want of a stronger proof on no session among them; and a tenant that
- * resolves to nothing is refused rather than checked as the platform's.
+ * allows it and a grant in another tenant does not; a subject naming no tenant
+ * is decided on the platform and one naming a tenant in that tenant, whatever
+ * tenant the request is in, which is in place again afterwards; a denial throws
+ * before the operation and is recorded once as `authorization.access_denied`, a
+ * refusal for want of a stronger proof on no session among them; and a tenant
+ * that resolves to nothing is refused rather than checked as the platform's.
  *
  * Each check reads the grants on the storage connection, so it runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
@@ -187,8 +190,11 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A subject that names no tenant is decided on the platform: a
-     * platform-wide grant allows, and a grant in the object's tenant does not.
+     * A subject that names no tenant, one built for a job or a command, is
+     * decided on the platform, never in the tenant of the request it is checked
+     * in: a platform-wide grant allows, a grant held in the request's tenant
+     * does not, and the request's scope is in place again afterwards, after the
+     * denial too.
      *
      * @return void
      *
@@ -198,14 +204,50 @@ final class AdministrativeCheckTest extends TestCase
     {
         $platform = $this->administrator(AdministrativeOperation::SSO_DOMAIN_VERIFY->value, null);
         $tenant   = Staff::query()->create(['name' => 'Grace Hopper', 'email' => 'grace@example.test']);
+        $request  = AuthorizationScope::tenant(new Reference(Organisation::TYPE, self::TENANT));
 
         $tenant->givePermission(AdministrativeOperation::SSO_DOMAIN_VERIFY->value, tenant: new Reference(Organisation::TYPE, self::TENANT));
 
-        $this->check()->authorize(new Subject($platform, $platform), AdministrativeOperation::SSO_DOMAIN_VERIFY, 'sso_domain', 'example.test', self::TENANT);
+        $decided = $request->within(function () use ($platform, $tenant): array {
 
-        $this->expectException(AuthorizationException::class);
+            $this->check()->authorize(new Subject($platform, $platform), AdministrativeOperation::SSO_DOMAIN_VERIFY, 'sso_domain', 'example.test', self::TENANT);
 
-        $this->check()->authorize(new Subject($tenant, $tenant), AdministrativeOperation::SSO_DOMAIN_VERIFY, 'sso_domain', 'example.test', self::TENANT);
+            $afterAllow = AuthorizationScope::current();
+
+            try {
+                $this->check()->authorize(new Subject($tenant, $tenant), AdministrativeOperation::SSO_DOMAIN_VERIFY, 'sso_domain', 'example.test', self::TENANT);
+                self::fail('The subject was decided in the request\'s tenant.');
+            } catch (AuthorizationException) {
+                // The denial is what this test checks.
+            }
+
+            return [$afterAllow, AuthorizationScope::current()];
+        });
+
+        self::assertEquals([$request, $request], $decided);
+    }
+
+    /**
+     * A subject that names a tenant is decided in that tenant, whatever tenant
+     * the request is in, and the request's scope is in place again afterwards.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASubjectInATenantIsDecidedThereWhateverTheRequestsTenant(): void
+    {
+        $staff   = $this->administrator(AdministrativeOperation::SSO_DOMAIN_VERIFY->value, new Reference(Organisation::TYPE, self::TENANT));
+        $request = AuthorizationScope::tenant(new Reference(Organisation::TYPE, self::OTHER));
+
+        $decided = $request->within(function () use ($staff): AuthorizationScope {
+
+            $this->check()->authorize(self::actingIn($staff, self::TENANT), AdministrativeOperation::SSO_DOMAIN_VERIFY, 'sso_domain', 'example.test', self::TENANT);
+
+            return AuthorizationScope::current();
+        });
+
+        self::assertEquals($request, $decided);
     }
 
     /**

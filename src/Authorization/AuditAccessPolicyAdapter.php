@@ -90,7 +90,12 @@ use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
  * deny it guards does. With no session at all, a requirement would be unmet
  * without asking, and a deny it guards would not apply, listing an action the
  * reader's own session might be refused. Freshness for reading the trail
- * belongs on the route that reads it, enforced before audit-log is asked.
+ * belongs on the route that reads it, enforced before audit-log is asked. Nor
+ * is the policy told the scopes of the reader's credential, so the subject says
+ * them as those of a subject naming no credential
+ * (`SessionPolicySourceAdapter::withoutCredential()`): no cap for a person and
+ * none granted for a machine, as before; left unsaid, the session key would be
+ * taken for a session to look up, and every reader would be allowed nothing.
  *
  * It never reads the entries table, keeps nothing between calls and is bound as
  * a singleton (IAM-8.1): `laravel-authorization`'s manager, the memberships and
@@ -270,7 +275,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
 
         $mayAct = $tenant instanceof Tenant && $container->make(TenantAccess::class)->mayActIn($principal, $tenant);
 
-        return $mayAct ? $subject : new Subject($principal->getIdentity(), $principal->getIdentity(), $tenant, session: $subject->session);
+        return $mayAct ? $subject : new Subject($principal->getIdentity(), $principal->getIdentity(), $tenant, session: $subject->session, scopes: $subject->scopes);
     }
 
     /**
@@ -322,16 +327,23 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     /**
      * The subject the viewer is decided as: a principal as itself, for its
      * identity, in its tenant; any other model as itself; on a session no
-     * requirement can be judged for.
+     * requirement can be judged for, with the scopes of a viewer whose
+     * credential the policy is never told: no cap for a person, and none
+     * granted for a machine, as the session policy source answers a subject
+     * naming no credential, so the session key is never taken for one to look
+     * up.
      *
      * @param  object  $viewer
      * @return \SineMacula\Laravel\Authorization\Subject
+     *
+     * @throws \LogicException
      */
     private static function subjectOf(object $viewer): Subject
     {
-        return $viewer instanceof Principal
-            ? new Subject($viewer, $viewer->getIdentity(), $viewer->getTenant(), session: self::UNJUDGED_SESSION)
-            : new Subject($viewer, $viewer, session: self::UNJUDGED_SESSION);
+        $identity = $viewer instanceof Principal ? $viewer->getIdentity() : $viewer;
+        $tenant   = $viewer instanceof Principal ? $viewer->getTenant() : null;
+
+        return new Subject($viewer, $identity, $tenant, session: self::UNJUDGED_SESSION, scopes: SessionPolicySourceAdapter::withoutCredential($viewer, $identity));
     }
 
     /**

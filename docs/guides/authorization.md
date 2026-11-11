@@ -71,12 +71,13 @@ other model, is its own subject, in no tenant and with no session, as `laravel-a
 a check about it counts only the grants made to it, never those of a principal it acts as, and a grant made to it
 reaches a grant hook as a grant to the identity itself.
 
-A default guard that is not `laravel-authentication`'s (a Laravel session guard an admin panel signs in through, say)
-is answered as `laravel-authorization`'s own resolver answers it, except that a `laravel-authentication` principal is
-still mapped to the identity it acts for and its own tenant. Which guard happens to be the default never changes what a
-principal may do: application access, `authorization:why` and `Gate::forUser($principal)` decide the same on the
-grants, denials and boundaries of the principal and its identity, even on a sign-in or refresh route that names no
-guard.
+A default guard that is not `laravel-authentication`'s (a Laravel session guard an admin panel signs in through, say) is
+answered as `laravel-authorization`'s own resolver answers it, except that a `laravel-authentication` principal is still
+mapped to the identity it acts for and its own tenant. A person signed in there with the Laravel session is capped by
+nothing, and a machine signed in that way is allowed nothing, as a machine with no credential of its own is. Which guard
+happens to be the default never changes what a principal may do: application access, `authorization:why` and
+`Gate::forUser($principal)` decide the same on the grants, denials and boundaries of the principal and its identity,
+even on a sign-in or refresh route that names no guard.
 
 ## The authentication context
 
@@ -204,16 +205,32 @@ A machine principal calling with an API key or a client-credentials token is cap
 is allowed only where the principal's grants allow it and a scope covers it. A scope names a permission or a pattern, or
 one `authorization.session.scopes` maps to the actions it stands for; a credential is issued only scopes
 `laravel-authorization`'s scope registry accepts, so a typo or a permission that does not exist is refused when the key
-is issued or rotated. A key issued no scopes allows nothing. The scopes are read only from the guard holding that very
-principal, on the request its credential was admitted on, so a machine checked anywhere else carries no scopes. A
-person's session is capped by nothing. A principal the caller names (`Authorization::for($account)`) holds no
-credential, so a machine named that way is allowed nothing, as is a machine checked outside its key's request: a queued
-job's, or one the Gate is handed on another guard. A machine here is any of `laravel-authentication`'s: a
-`MachineIdentity`, or a principal acting for one, whether or not it also implements `laravel-authorization`'s
-`SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine`. `laravel-authorization`'s own default source,
-`NoSessionPolicy`, allows nothing only to a principal implementing `AuthorizableMachine`, and caps any other machine by
-nothing, so with `iam.adapters.authorization` off, bind a session policy source of your own, or name one in
-`authorization.session.source`.
+is issued or rotated. A key issued no scopes allows nothing. The scopes travel on the subject: the subject resolver says
+what the caller's credential carries on the request's subject (`SineMacula\Laravel\Authorization\Subject::$scopes`,
+a `CredentialScopes`), and on the subject the Gate decides about when it is the caller, and the session policy source
+caps every check about that subject by them. A person's session is capped by nothing. A principal the caller names
+(`Authorization::for($account)`) holds no credential, so a machine named that way is allowed nothing, as is a machine
+checked outside its key's request: a queued job's, or one the Gate is handed on another guard.
+
+A `Subject` you build yourself that says nothing of its scopes fails closed wherever it names a credential the source
+cannot establish:
+
+- naming a session, it carries no cap while that is a live session of the guard it names, owned by the identity it
+  acts for, and is allowed nothing otherwise (a revoked session, another identity's, one of another guard, or a key
+  that names none);
+- naming a guard whose caller it is, it is capped by that caller's credential, as the request's own subject is;
+- naming a guard that is not configured, it is allowed nothing;
+- naming no credential, as a job's or a console command's subject, or naming a guard whose caller is someone else, it
+  carries no cap if it is a person and is allowed nothing if it is a machine.
+
+Say the scopes yourself (`scopes: CredentialScopes::of([...])` or `CredentialScopes::uncapped()`, from
+`SineMacula\Laravel\Authorization\Support\CredentialScopes`) when you know them.
+
+A machine here is any of `laravel-authentication`'s: a `MachineIdentity`, or a principal acting for one, whether or not
+it also implements `laravel-authorization`'s `SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine`.
+`laravel-authorization`'s own default source, `NoSessionPolicy`, allows nothing only to a principal implementing
+`AuthorizableMachine`, and caps any other machine by nothing, so with `iam.adapters.authorization` off, bind a session
+policy source of your own, or name one in `authorization.session.source`.
 
 The scope registry is `laravel-authorization`'s `CatalogueScopeRegistry` unless you bind
 `SineMacula\Laravel\Authorization\Contracts\ScopeRegistry` yourself. It and the session policy source are mandatory
@@ -346,7 +363,8 @@ those, call `Authorization::forgetDecisionsFor($sessionId, $user)` yourself once
   tenant's identifier. The subject is a resolved `SineMacula\Laravel\Authorization\Subject`, never a bare model: hand
   it the request's subject (`Authorization::currentSubject()`), which carries the session, so an authentication
   requirement on the operation is judged against that session's proofs, or one you build for a job or a command. It is
-  decided in the tenant and application it names, or on the platform when it names no tenant. The object's tenant is
+  decided in the tenant and application it names, or on the platform when it names no tenant, whatever tenant the
+  request is in, and the request's scope is in place again afterwards. The object's tenant is
   resolved through `laravel-authentication`'s [tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver), so
   an object in a tenant needs one bound. A denial throws
   `laravel-authorization`'s `AuthorizationException`, or MFA's step-up exception for want of a stronger proof, before

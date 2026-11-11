@@ -6,55 +6,62 @@ namespace SineMacula\Laravel\Iam\Authorization;
 
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Database\Eloquent\Model;
+use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\MachineIdentity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Subject;
+use SineMacula\Laravel\Authorization\Support\CredentialScopes;
 
 /**
  * `laravel-authorization`'s session policy source (AUTHZ-13.3), answered from
  * the scopes of the caller's credential as `laravel-authentication` holds them
  * (AUTH-4.5, IAM-6.5): an API key's or a client-credentials token's scopes cap
  * every check about the principal acting with it, and a person's session, which
- * no credential limits, caps nothing.
+ * no credential limits, caps nothing. It answers in the order
+ * `laravel-authorization`'s contract sets, and fails closed, answering `[]`,
+ * wherever it cannot establish the scopes of a credential the subject names.
  *
- * The scopes are read from the guard the check's subject names, and only while
- * that guard holds the subject now: its current principal is the subject's, by
- * the same model, and, where the subject carries a session, its current session
- * is that session. Any other subject, one the caller names for another
- * principal (`Authorization::for()`) or for another of the principal's sessions
- * among them, is no credential the guard holds, so it is answered `null`, no
- * cap, as `laravel-authorization`'s contract asks of a person. A subject naming
- * no guard, or a guard that is not one of `laravel-authentication`'s contextual
- * guards, is answered `null` too.
+ * - A subject that says what its credential carries (`Subject::$scopes`), as
+ *   the subject resolver fills it from the credential it read
+ *   (`SubjectResolverAdapter`), is answered from it: `null` for
+ *   `CredentialScopes::uncapped()`, the list for `CredentialScopes::of()`.
+ * - A subject that says nothing but names a session is answered `null` while
+ *   that session is a live session of the guard the subject names, owned by the
+ *   identity the subject acts for: no session stands behind a credential that
+ *   carries scopes (an API key and a client-credentials token have none), so a
+ *   session carries no cap. The session is looked up for that identity through
+ *   `laravel-authentication`'s session service (`SessionService::session()`),
+ *   never through the guard's current state. A session that is missing, another
+ *   identity's, pending, revoked, expired or of another guard, a subject naming
+ *   no guard or acting for no `laravel-authentication` identity, an identity
+ *   that holds no sessions, and a guard that is not one of
+ *   `laravel-authentication`'s JWT guards, are answered `[]`.
+ * - A subject that says nothing and names no session, but names a guard whose
+ *   caller is now the subject's own model (the guard's principal or identity,
+ *   the same object or the same model), is answered from that caller's
+ *   credential (`ContextualGuard::scopes()`): `null` for a person's token, the
+ *   list, `[]` included, for an API key or a client-credentials token. Only the
+ *   guard the subject names is read, never the default one, and only once it
+ *   has resolved its request (`hasUser()`), so its resolution is never started
+ *   or entered again from here. A guard that is not configured, or whose
+ *   reading throws, is answered `[]`.
+ * - Any other subject names no credential: a job's or a console command's, a
+ *   model named through `Authorization::for()` (`Subject::withSubject()`), or
+ *   one naming a guard whose caller is someone else, or a guard that is not
+ *   `laravel-authentication`'s. It is answered `null`, no cap, for a person.
  *
- * A machine is never answered `null`: `laravel-authorization` allows nothing to
- * a machine answered `null` only when the subject carries its own marker
- * (`AuthorizableMachine`), and caps nothing otherwise, while
- * `laravel-authentication`'s machines are its `MachineIdentity`, which does not
- * carry it. So a subject that is a machine identity, whose identity is one, or
- * a principal acting for one, and whose credential the guard does not hold, is
- * answered `[]`, a cap allowing nothing, marker or not, and a machine never
- * borrows scopes it was not issued, nor goes uncapped for want of them. A
- * machine's own guard always answers a list for it
- * (`ContextualGuard::scopes()`), so `null` is left for people alone.
- *
- * The read is ambient, and has to be: `laravel-authentication` hands a
- * credential's scopes to the guard that admitted it (`scopes()`, which
- * `Auth::scopes()` reads for the default guard) and to the request's caller
- * (`Caller::$scopes`), but `laravel-authorization`'s subject, all the source is
- * handed, carries none, and the request's caller is no less ambient a read than
- * the guard, nor names the guard the subject does. It reads only the guard the
- * subject names, never the default one, and reads it afresh on every call, and
- * only once that guard has already resolved its request (`hasUser()`): a guard
- * that has not, or one that is still admitting its request (a principal's
- * application access asked as an API key is admitted), holds no credential yet,
- * so the subject it is asked about is answered as one the guard does not hold,
- * `null` for a person and `[]` for a machine, and the guard's resolution is
- * never started or entered again from here. Whatever the guard throws (an
- * identity that no longer resolves, a guard the subject names that is not
- * configured) propagates, and `laravel-authorization` makes no decision.
+ * A machine is never answered `null` for want of a credential:
+ * `laravel-authorization` allows nothing to a machine answered `null` only when
+ * the subject carries its own marker (`AuthorizableMachine`), and caps nothing
+ * otherwise, while `laravel-authentication`'s machines are its
+ * `MachineIdentity`, which does not carry it. So a subject that is a machine
+ * identity, whose identity is one, or a principal acting for one, and that
+ * names no credential, is answered `[]`, marker or not. A machine's own
+ * credential always carries a list (`Caller::$scopes`), so `null` from a
+ * credential is left for people alone.
  *
  * It holds nothing between calls (IAM-8.1), so it is bound transient.
  *
@@ -72,32 +79,159 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
      */
     public function __construct(
 
-        /** Resolves the guard the subject names. */
+        /** Resolves the guard the subject names, and its session service. */
         private AuthFactory $auth,
     ) {}
 
     /**
-     * The scopes of the credential the subject's guard holds for it now; where
-     * the guard has resolved no credential yet or holds none of the subject's,
-     * `[]` for a machine and `null` for anyone else; `null` too for a
-     * credential no scope limits.
+     * The scopes the subject's credential carries: those it says, or those of
+     * the credential it names, `[]` when they cannot be established; where it
+     * names none, `[]` for a machine and `null`, no cap, for anyone else.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @return list<string>|null
      *
-     * @throws \SineMacula\Laravel\Authentication\Resolvers\UnresolvableIdentityException
      * @throws \LogicException
      */
     #[\Override]
     public function scopesFor(Subject $subject): ?array
     {
-        $guard = $subject->guard === null ? null : $this->auth->guard($subject->guard);
-
-        if ($guard instanceof ContextualGuard && $guard->hasUser() && self::holds($guard, $subject)) {
-            return $guard->scopes();
+        if ($subject->scopes !== null) {
+            return $subject->scopes->scopes();
         }
 
-        return self::isMachine($subject) ? [] : null;
+        if ($subject->session !== null) {
+            return $this->sessionScopes($subject, $subject->session);
+        }
+
+        return ($this->callerScopes($subject) ?? self::withoutCredential($subject->subject, $subject->identity))->scopes();
+    }
+
+    /**
+     * The scopes of a subject that names no credential: none granted for one of
+     * `laravel-authentication`'s machines, and no cap for anyone else. What a
+     * caller deciding about a model without its credential, such as the audit
+     * access policy, says of it.
+     *
+     * @param  object  $subject
+     * @param  ?object  $identity
+     * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
+     *
+     * @throws \LogicException
+     */
+    public static function withoutCredential(object $subject, ?object $identity = null): CredentialScopes
+    {
+        return self::isMachine($subject, $identity) ? CredentialScopes::of([]) : CredentialScopes::uncapped();
+    }
+
+    /**
+     * The scopes of the credential of the guard the subject names, while its
+     * caller is the subject's own model; `[]` when the guard cannot be read;
+     * null when it names no credential of the subject's: no guard named, a
+     * guard that is not `laravel-authentication`'s, one that has not resolved
+     * its request, or one whose caller is someone else.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
+     * @return ?\SineMacula\Laravel\Authorization\Support\CredentialScopes
+     */
+    private function callerScopes(Subject $subject): ?CredentialScopes
+    {
+        try {
+            $guard = $subject->guard === null ? null : $this->auth->guard($subject->guard);
+
+            return $guard instanceof ContextualGuard && $guard->hasUser() && self::isCaller($guard, $subject->subject) ? self::carried($guard->scopes()) : null;
+        } catch (\Exception) {
+            return CredentialScopes::of([]);
+        }
+    }
+
+    /**
+     * What a credential carrying the scopes given says: no cap for `null`, and
+     * those scopes otherwise.
+     *
+     * @param  ?list<string>  $scopes
+     * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function carried(?array $scopes): CredentialScopes
+    {
+        return $scopes === null ? CredentialScopes::uncapped() : CredentialScopes::of($scopes);
+    }
+
+    /**
+     * The scopes of the session the subject names: `null`, no cap, while it is
+     * a live session of the subject's guard owned by the identity the subject
+     * acts for, and `[]` otherwise.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
+     * @param  string  $session
+     * @return list<string>|null
+     */
+    private function sessionScopes(Subject $subject, string $session): ?array
+    {
+        try {
+            $owner = self::ownerOf($subject);
+
+            if ($subject->guard === null || $owner === null || !$this->auth instanceof AuthManager) {
+                return [];
+            }
+
+            $summary = $this->auth->sessions($subject->guard)->session($owner, $session);
+        } catch (\Exception) {
+            return [];
+        }
+
+        return $summary !== null && $summary->guard === $subject->guard ? null : [];
+    }
+
+    /**
+     * The `laravel-authentication` identity the subject acts for: the identity
+     * a principal acts for, or the subject itself, and only when the identity
+     * the subject names, where it names one, is that same identity; null
+     * otherwise.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
+     * @return ?\SineMacula\Laravel\Authentication\Contracts\Identity
+     *
+     * @throws \LogicException
+     */
+    private static function ownerOf(Subject $subject): ?Identity
+    {
+        $model = $subject->subject;
+        $owner = $model instanceof Principal ? $model->getIdentity() : $model;
+
+        return $owner instanceof Identity && self::isSame($subject->identity ?? $owner, $owner) ? $owner : null;
+    }
+
+    /**
+     * Whether the guard's caller is the model: its principal or its identity,
+     * the same object or the same model.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\ContextualGuard  $guard
+     * @param  object  $model
+     * @return bool
+     *
+     * @throws \SineMacula\Laravel\Authentication\Resolvers\UnresolvableIdentityException
+     */
+    private static function isCaller(ContextualGuard $guard, object $model): bool
+    {
+        $principal = $guard->principal();
+
+        return $principal !== null && (self::isSame($principal, $model) || self::isSame($guard->identity(), $model));
+    }
+
+    /**
+     * Whether the two are the same: the same object, or the same model, by its
+     * key, table and connection; never when the first is missing.
+     *
+     * @param  ?object  $held
+     * @param  object  $model
+     * @return bool
+     */
+    private static function isSame(?object $held, object $model): bool
+    {
+        return $held === $model || ($held instanceof Model && $model instanceof Model && $held->is($model));
     }
 
     /**
@@ -105,55 +239,16 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
      * machine identity itself, or carrying one as its identity, or a principal
      * acting for one.
      *
-     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
+     * @param  object  $subject
+     * @param  ?object  $identity
      * @return bool
      *
      * @throws \LogicException
      */
-    private static function isMachine(Subject $subject): bool
+    private static function isMachine(object $subject, ?object $identity): bool
     {
-        return $subject->subject instanceof MachineIdentity
-            || $subject->identity instanceof MachineIdentity
-            || ($subject->subject instanceof Principal && $subject->subject->getIdentity() instanceof MachineIdentity);
-    }
-
-    /**
-     * Whether the guard holds the subject now: its current principal is the
-     * subject's, and its current session is the one the subject carries, where
-     * it carries one.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\ContextualGuard  $guard
-     * @param  \SineMacula\Laravel\Authorization\Subject  $subject
-     * @return bool
-     *
-     * @throws \SineMacula\Laravel\Authentication\Resolvers\UnresolvableIdentityException
-     */
-    private static function holds(ContextualGuard $guard, Subject $subject): bool
-    {
-        if (!self::isSamePrincipal($guard->principal(), $subject->subject)) {
-            return false;
-        }
-
-        if ($subject->session === null) {
-            return true;
-        }
-
-        $session = $guard->session()?->getSessionIdentifier();
-
-        return (is_string($session) || is_int($session)) && (string) $session === $subject->session;
-    }
-
-    /**
-     * Whether the guard's principal is the subject: the same object, or the
-     * same model, by its key, table and connection; never when the guard holds
-     * none.
-     *
-     * @param  ?object  $principal
-     * @param  object  $subject
-     * @return bool
-     */
-    private static function isSamePrincipal(?object $principal, object $subject): bool
-    {
-        return $principal === $subject || ($principal instanceof Model && $subject instanceof Model && $principal->is($subject));
+        return $subject instanceof MachineIdentity
+            || $identity instanceof MachineIdentity
+            || ($subject instanceof Principal && $subject->getIdentity() instanceof MachineIdentity);
     }
 }

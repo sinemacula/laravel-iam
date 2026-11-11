@@ -9,7 +9,6 @@ use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\Exceptions\InvalidTenantException;
 use SineMacula\Laravel\Authorization\Scopes\TenantScope;
 use SineMacula\Laravel\Authorization\Subject;
-use SineMacula\Laravel\Authorization\Support\AuthorizationScope;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Authorization\Support\ResourceReference;
 use SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation;
@@ -41,15 +40,18 @@ use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
  * principal or a model is not taken: `laravel-authorization`'s `for()` would
  * complete it from the request's current subject, its session and its scope,
  * which is the ambient read this check exists to avoid. The `Subject` is
- * decided in the scope it names (its tenant, or the platform for none, and its
- * application), put in place of the request's for the check alone, so a subject
- * built for a job or a command is decided where it acts, and the request's own
- * is decided where the request is. A grant counts for an object of the tenant
- * the subject acts in, or of one below it, and an object of any other tenant is
- * denied (`tenant_scope`) unless a platform-wide grant admits it. The tenant is
- * named by its identifier and resolved through `laravel-authentication`'s
- * tenant resolver (`TenantReferences`); one that names no tenant, or one
- * `laravel-authorization` cannot scope to, is refused
+ * decided in the scope it names, its tenant, or the platform for none, and its
+ * application, and the request's scope is restored afterwards:
+ * `laravel-authorization`'s `for()` decides a `Subject` naming a tenant in that
+ * tenant, and one naming none is handed to it marked as acting on the platform
+ * (`Subject::$platform`), so a subject built for a job or a command is decided
+ * where it acts, never in the tenant of the request it is checked in, and the
+ * request's own is decided where the request is. A grant counts for an object
+ * of the tenant the subject acts in, or of one below it, and an object of any
+ * other tenant is denied (`tenant_scope`) unless a platform-wide grant admits
+ * it. The tenant is named by its identifier and resolved through
+ * `laravel-authentication`'s tenant resolver (`TenantReferences`); one that
+ * names no tenant, or one `laravel-authorization` cannot scope to, is refused
  * (`UnresolvedReferenceException`) rather than checked as the platform's.
  *
  * Stateless (IAM-8.1): `laravel-authorization`'s manager is resolved from the
@@ -81,8 +83,9 @@ final readonly class AdministrativeCheck
      * Check that the subject may make the operation on the member's object, and
      * throw `laravel-authorization`'s denial when it may not: its
      * `AuthorizationException`, or its `InsufficientAuthenticationException`
-     * for want of a stronger proof, rethrown from the subject's own scope,
-     * which runs the check in a closure.
+     * for want of a stronger proof. A subject naming a tenant
+     * `laravel-authorization` cannot read is refused before anything is decided
+     * (`UnresolvedReferenceException`), never decided on the platform.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  \SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation|string  $operation
@@ -100,31 +103,35 @@ final readonly class AdministrativeCheck
         $tenant   = $tenantId   === null ? null : $this->tenant($tenantId);
         $resource = $resourceId === null ? ResourceReference::type($resourceType, $tenant) : ResourceReference::record($resourceType, $resourceId, $tenant);
         $action   = $operation instanceof AdministrativeOperation ? $operation->value : $operation;
-        $manager  = $this->container->make(AuthorizationManager::class)->for($subject);
 
-        self::scopeOf($subject)->within(static fn () => $manager->authorize($action, $resource));
+        $this->container->make(AuthorizationManager::class)->for(self::decidedWhereItActs($subject))->authorize($action, $resource);
     }
 
     /**
-     * The scope a subject handed in acts in: its own tenant, or the platform
-     * for none, and its own application.
+     * The subject as `laravel-authorization` decides it where it acts: as it is
+     * when it names a tenant, which `for()` decides it in, and otherwise marked
+     * as acting on the platform, with everything else it carries kept. A tenant
+     * `laravel-authorization` cannot read is refused here, before anything is
+     * decided.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
-     * @return \SineMacula\Laravel\Authorization\Support\AuthorizationScope
+     * @return \SineMacula\Laravel\Authorization\Subject
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private static function scopeOf(Subject $subject): AuthorizationScope
+    private static function decidedWhereItActs(Subject $subject): Subject
     {
         if ($subject->tenant === null) {
-            return AuthorizationScope::platform($subject->application);
+            return new Subject($subject->subject, $subject->identity, null, $subject->application, $subject->guard, $subject->session, $subject->scopes, platform: true);
         }
 
         try {
-            return AuthorizationScope::tenant(new Reference(...TenantScope::extractTenantPair($subject->tenant)), $subject->application);
+            TenantScope::extractTenantPair($subject->tenant);
         } catch (InvalidTenantException) {
             throw UnresolvedReferenceException::forTenantIdentifier();
         }
+
+        return $subject;
     }
 
     /**
