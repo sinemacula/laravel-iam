@@ -10,11 +10,11 @@ use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
+use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
- * Tells a member's own default binding of a seam from the application's: by
- * asking the member (`isPackageDefault()`) where it answers, and by reading the
- * container's binding table for SSO, which does not.
+ * Tells a member's own default binding of a seam from the application's by
+ * asking the member (`isPackageDefault()`).
  *
  * An instance, a resolved shared default or an alias the container holds is
  * kept, whatever the member says: binding over it would drop the application's
@@ -28,47 +28,36 @@ use SineMacula\Laravel\Mfa\MfaServiceProvider;
 final readonly class MemberDefaults
 {
     /**
-     * Whether the seam may be bound over: it is unbound, or holds one of the
-     * member's defaults, as the member's answer given says or, without one, as
-     * a class-string binding to one of the defaults given, or a closure one of
-     * them declares.
+     * Whether the seam may be bound over: it is unbound, or holds its member's
+     * default, as the member's answer given says.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
-     * @param  list<class-string>  $defaults
-     * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
+     * @param  \Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      * @return bool
      */
-    public function isReplaceable(Container $container, string $abstract, array $defaults, ?\Closure $holdsDefault = null): bool
+    public function isReplaceable(Container $container, string $abstract, \Closure $holdsDefault): bool
     {
-        if (!$container->bound($abstract)) {
-            return true;
-        }
-
-        if ($holdsDefault !== null) {
-            return $this->holdsDefault($container, $abstract, $holdsDefault);
-        }
-
-        $closure = $this->bindingOf($container, $abstract);
-
-        return $closure !== null && in_array($this->declarer(new \ReflectionFunction($closure)), $defaults, true);
+        return !$container->bound($abstract) || $this->holdsDefault($container, $abstract, $holdsDefault);
     }
 
     /**
-     * The `isPackageDefault()` of the member whose contract the seam is, or
-     * `null` for SSO and any other, which give none.
+     * The `isPackageDefault()` of the member whose contract the seam is.
      *
      * @param  string  $abstract
-     * @return ?\Closure(\Illuminate\Container\Container, string): bool
+     * @return \Closure(\Illuminate\Container\Container, string): bool
+     *
+     * @throws \InvalidArgumentException
      */
-    public static function answerOf(string $abstract): ?\Closure
+    public static function answerOf(string $abstract): \Closure
     {
         return match (true) {
             str_starts_with($abstract, 'SineMacula\Laravel\Authentication\\') => AuthenticationServiceProvider::isPackageDefault(...),
             str_starts_with($abstract, 'SineMacula\Laravel\Authorization\\')  => AuthorizationServiceProvider::isPackageDefault(...),
             str_starts_with($abstract, 'SineMacula\Laravel\Mfa\\')            => MfaServiceProvider::isPackageDefault(...),
+            str_starts_with($abstract, 'SineMacula\Laravel\Sso\\')            => SsoServiceProvider::isPackageDefault(...),
             str_starts_with($abstract, 'SineMacula\Laravel\AuditLog\\')       => AuditLogServiceProvider::isPackageDefault(...),
-            default                                                           => null,
+            default                                                           => throw new \InvalidArgumentException($abstract . ' is no member\'s contract.'),
         };
     }
 
@@ -90,9 +79,7 @@ final readonly class MemberDefaults
      * Return the closure the container's binding table holds for the seam, or
      * `null` when there is none to read: the seam is unbound or an alias, holds
      * a shared instance (one bound with `instance()` or one already resolved),
-     * or the container keeps no table this can read. Each binding the container
-     * makes is a closure of its own, so the closure tells one binding of the
-     * seam from any later one, even of the same class.
+     * or the container keeps no table this can read.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  string  $abstract
@@ -107,25 +94,5 @@ final readonly class MemberDefaults
         $concrete = $container->getBindings()[$abstract]['concrete'] ?? null;
 
         return $concrete instanceof \Closure ? $concrete : null;
-    }
-
-    /**
-     * Return the class a binding's closure names: the concrete class it was
-     * given, for the closure Laravel builds around a class-string binding, or
-     * else the class that lexically declares the closure (`null` for none).
-     *
-     * @param  \ReflectionFunction  $closure
-     * @return ?string
-     */
-    private function declarer(\ReflectionFunction $closure): ?string
-    {
-        $scope    = $closure->getClosureScopeClass()?->getName();
-        $concrete = $closure->getClosureUsedVariables()['concrete'] ?? null;
-
-        if ($scope === IlluminateContainer::class && is_string($concrete)) {
-            return $concrete;
-        }
-
-        return $scope;
     }
 }
