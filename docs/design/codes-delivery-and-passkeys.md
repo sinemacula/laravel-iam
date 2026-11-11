@@ -108,18 +108,9 @@ and the binding rule that applies every row is in `binding-precedence.md`.
     it) is `invalid_code`. A binding naming another identity, or a request allowing none of the identity's passkeys,
     throws `OperationRefusedException(not_found)`. MFA hands the gateway no client, so `verifyFactor()` is handed one of
     which nothing is known.
-  - `credentialIds()` lists the identity's passkeys as `laravel-authentication` holds them
-    (`PasskeyService::credentialIds()`), on the relying party of each guard of the `jwt` driver whose MFA application
-    offers the `passkey` type (`mfa.applications.<guard>.types`), in declaration order, each relying party's oldest
-    first, each id once. Those are the only guards whose passkeys can back a passkey factor: a ceremony runs on the
-    binding's application's guard alone, and MFA refuses a factor of a type its application does not enable before it
-    asks for the list. MFA names no application when it asks, and uses the list only to check that a passkey factor's
-    credential is still registered; every ceremony is narrowed to the binding's guard's relying party, so another
-    relying party's passkey is never offered or verified there. A sign-in passkey is listed too and never asserted,
-    since MFA asserts only a factor it holds an association for. A `jwt` guard that offers no passkeys is never asked,
-    so one with no relying party, as `laravel-authentication` allows a guard that uses no passkeys, leaves the listing
-    and every offer and ceremony working; a guard that offers passkeys with no valid relying party makes the listing
-    throw, failing closed as that guard's ceremonies do.
+  - `credentialIds()` lists the identity's passkeys on the application's guard, as `laravel-authentication` holds them
+    (`PasskeyService::credentialIds()`), or none where that application does not offer the `passkey` type. A guard
+    that offers passkeys with no valid relying party makes the listing throw, failing closed.
   - `laravel-authentication`'s passkey factor gate calls MFA's `PasskeyChangeGate` inside the passkey transaction. A
     registration with no binding returns `null`, so the key stays a sign-in passkey and MFA is never asked; one bound
     for another purpose than an enrolment is refused (`OperationRefusedException(not_found)`); an identity that is not
@@ -435,7 +426,7 @@ and the binding rule that applies every row is in `binding-precedence.md`.
   `tests/Integration/Delivery/MfaCodeDeliveryTest.php` `testTheGatewayRunsInsideMfasTransactionAndTakesNoLock`
 - Passkeys: `tests/Integration/Mfa/PasskeyGatewayAdapterTest.php` (over MFA's `PasskeyGatewayTests`)
   `testAPasskeyFactorStepsTheSessionUpThroughMfa`, `testTheRegisteredPasskeysAreTheIdentitysPasskeys`,
-  `testThePasskeysOfEveryGuardOfferingPasskeysAreListed`, `testAGuardThatUsesNoPasskeysLeavesTheListingWorking`,
+  `testEachApplicationListsOnlyItsOwnGuardsPasskeys`, `testAGuardThatUsesNoPasskeysLeavesTheListingWorking`,
   `testAGuardOfferingPasskeysWithNoValidRelyingPartyFailsClosed`,
   `testAnAssertionVerifiesInsideTheCallersTransaction`, `testAnAssertionOfAnExpiredChallengeIsExpired`,
   `testARequestAllowingNoneOfTheIdentitysPasskeysIsRefused`, `testEachFailureReasonCrosses`,
@@ -509,9 +500,8 @@ Update this note when:
 - `laravel-authentication` delivers factor codes inside their transaction, or gains an opt-in to do so (declined for
   now; a failing gateway would then roll every code back), or stops queueing its deliveries or leaving their retry to
   the application's queue;
-- `laravel-authentication` changes `PasskeyService::credentialIds()`, MFA changes where a passkey factor can be used
-  (the listing reads only the guards whose MFA application offers passkeys), or MFA passes the application to
-  `PasskeyGateway::credentialIds()` (the gateway would read the one guard's relying party, not every offering guard's);
+- `laravel-authentication` changes `PasskeyService::credentialIds()`, or MFA changes what it passes to
+  `PasskeyGateway::credentialIds()`;
 - MFA changes what `AttemptOutcome::$caused` names (the counters adapter answers it as the lock a wrong code caused);
 - MFA changes what its `ActiveStateResolver` or `GuardApplicationResolver` is asked, or where, gains a rate-limited
   failure reason, or hands its pending session resolver the guard (a pending caller could then be named after the
