@@ -176,7 +176,7 @@ process calls it.
 
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `forgetCallers()`,
   `flushSession()`, `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`,
-  `AUTHORIZATION_DEFAULT`, `CALLER_MEMO`.
+  `CALLER_MEMO`.
 - `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
   scoped adapters by, `bindScoped()` and `unscope()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
