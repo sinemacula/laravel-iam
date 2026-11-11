@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Console;
 
-use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
@@ -13,12 +12,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
-use SineMacula\Laravel\Iam\Audit\AuditSettings;
-use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
-use SineMacula\Laravel\Iam\Exceptions\PublicationFailedException;
-use SineMacula\Laravel\Iam\Install\Installer;
-use SineMacula\Laravel\Iam\Install\InstallReport;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\NamesAuthorizationTables;
@@ -26,18 +20,7 @@ use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
 /**
- * Feature tests for `iam:install` (IAM-2.1, IAM-2.4): every member's
- * configuration, language files and migrations, and this package's
- * configuration, published in their working order; safe to run twice; a
- * migration already published under another timestamp recognised by its base
- * name and never published again; an existing configuration file kept;
- * audit-log's values written into the configuration published (decision Q5
- * (a)); prefixed authorization table names offered; and what the application
- * still owes reported.
- *
- * The application's configuration, database and language directories are a
- * directory of each test's own, set before any provider registers, so every
- * member's tags publish there.
+ * Feature tests for `iam:install` (IAM-2.1, IAM-2.4).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,9 +28,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(InstallCommand::class)]
-#[CoversClass(Installer::class)]
-#[CoversClass(InstallReport::class)]
-#[CoversClass(PublicationFailedException::class)]
 final class InstallCommandTest extends TestCase
 {
     use NamesAuthorizationTables, UsesScratchDirectory;
@@ -61,26 +41,21 @@ final class InstallCommandTest extends TestCase
         'audit-log'      => AuditLogServiceProvider::class,
     ];
 
+    /** @var string The question whether to prefix `laravel-authorization`'s tables. */
+    private const string QUESTION = 'Prefix laravel-authorization\'s tables (roles, permissions, policies and the grant tables), whose names may collide with your own?';
+
     /** @var ?array<string, array<string, string>> The publishing groups before a test replaced one, restored once it ends. */
     private ?array $publishGroups = null;
 
-    /** @var list<string> The directories a test made read-only, made writable again once it ends. */
-    private array $readOnly = [];
-
     /**
-     * Restore the publishing groups a test replaced, destroy the application,
-     * then make every directory the test made read-only writable again and
-     * delete the test's directory.
+     * Restore the publishing groups a test replaced, then delete the test's
+     * directory.
      *
      * @return void
      */
     #[\Override]
     protected function tearDown(): void
     {
-        foreach ($this->readOnly as $directory) {
-            chmod($directory, 0755);
-        }
-
         if ($this->publishGroups !== null) {
             (new \ReflectionProperty(ServiceProvider::class, 'publishGroups'))->setValue(null, $this->publishGroups);
         }
@@ -92,24 +67,24 @@ final class InstallCommandTest extends TestCase
 
     /**
      * Every member's configuration, language files and migrations, and this
-     * package's configuration, are published, in their working order, each as
-     * its member ships it, and the run succeeds.
+     * package's configuration, are published.
      *
      * @return void
      */
-    public function testEveryMembersFilesArePublishedInTheirWorkingOrder(): void
+    public function testEveryMembersFilesArePublished(): void
     {
         [$code, $output] = $this->install();
 
-        self::assertSame(0, $code);
+        self::assertSame(0, $code, $output);
 
         foreach (self::MEMBERS as $key => $provider) {
             $package = self::packagePath($provider);
 
-            self::assertFileExists($this->scratch("config/{$key}.php"));
+            self::assertFileEquals($package . "/config/{$key}.php", $this->scratch("config/{$key}.php"));
 
             foreach (glob($package . '/database/migrations/*.php') ?: [] as $migration) {
                 self::assertFileEquals($migration, $this->scratch('database/migrations/' . basename($migration)));
+                self::assertStringContainsString('Published ' . basename($migration) . ".\n", $output);
             }
 
             foreach (is_dir($package . '/lang') ? (new Filesystem)->allFiles($package . '/lang') : [] as $file) {
@@ -120,31 +95,10 @@ final class InstallCommandTest extends TestCase
         self::assertFileEquals(dirname(__DIR__, 3) . '/config/iam.php', $this->scratch('config/iam.php'));
         self::assertDirectoryDoesNotExist($this->scratch('lang/vendor/authentication'));
         self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
-
-        preg_match_all('/^\[published\] .*?(config\/[\w-]+\.php|lang\/vendor\/[\w-]+|database\/migrations)/m', $output, $matches);
-
-        self::assertSame([
-            'config/authentication.php',
-            'database/migrations',
-            'config/authorization.php',
-            'lang/vendor/authorization',
-            'database/migrations',
-            'config/mfa.php',
-            'lang/vendor/mfa',
-            'database/migrations',
-            'config/sso.php',
-            'lang/vendor/sso',
-            'database/migrations',
-            'config/audit-log.php',
-            'lang/vendor/audit-log',
-            'database/migrations',
-            'config/iam.php',
-        ], self::collapse($matches[1]));
     }
 
     /**
-     * Run twice, the second run publishes nothing and changes no file, and
-     * reports each file kept or recognised.
+     * Run twice, the second run publishes nothing and changes no file.
      *
      * @return void
      */
@@ -158,16 +112,13 @@ final class InstallCommandTest extends TestCase
 
         self::assertSame(0, $code);
         self::assertSame($before, $this->snapshot());
-        self::assertStringNotContainsString('[published]', $output);
-        self::assertStringNotContainsString('[written]', $output);
-        self::assertSame(self::migrationCount(), substr_count($output, '[recognised]'));
-        self::assertStringContainsString('[kept] ' . $this->scratch('config/audit-log.php'), $output);
-        self::assertStringContainsString('[kept] ' . $this->scratch('lang/vendor/mfa/en/messages.php'), $output);
+        self::assertStringNotContainsString('Published ', $output);
+        self::assertSame(self::migrationCount(), substr_count($output, 'Kept '));
     }
 
     /**
      * A member's migration already published under another timestamp is
-     * recognised by its base name and never published a second time.
+     * recognised and never published again.
      *
      * @return void
      */
@@ -181,15 +132,13 @@ final class InstallCommandTest extends TestCase
         self::assertSame(0, $code);
         self::assertFileDoesNotExist($this->scratch('database/migrations/2026_04_15_000000_create_mfa_factors_table.php'));
         self::assertFileEquals($source, $copy);
-        self::assertStringContainsString('[recognised] 2026_04_15_000000_create_mfa_factors_table.php, published as ' . $copy, $output);
+        self::assertStringContainsString('Kept 2026_04_15_000000_create_mfa_factors_table.php, published as 2025_01_01_120000_create_mfa_factors_table.php.', $output);
         self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
     }
 
     /**
-     * An application's own migration that shares a member's base name is not
-     * taken for the member's: the member's is published beside it, the
-     * application's is left as it is, and the run that finds it fails as a
-     * conflict; a later run recognises the member's copy and passes.
+     * An application's own migration sharing a member's base name is not taken
+     * for the member's.
      *
      * @return void
      */
@@ -198,27 +147,16 @@ final class InstallCommandTest extends TestCase
         $contents = "<?php\n\n// The application's own roles table\n";
         $own      = $this->writeScratch('database/migrations/2019_01_01_000000_create_roles_table.php', $contents);
 
-        [$code, $output] = $this->install();
-
-        self::assertSame(1, $code);
-        self::assertStringEqualsFile($own, $contents);
-        self::assertFileExists($this->scratch('database/migrations/2026_04_14_000001_create_roles_table.php'));
-        self::assertStringContainsString(
-            '[conflict] 2019_01_01_000000_create_roles_table.php shares its base name with 2026_04_14_000001_create_roles_table.php, published beside it',
-            $output,
-        );
-
-        [$code, $output] = $this->install();
+        [$code] = $this->install();
 
         self::assertSame(0, $code);
-        self::assertStringNotContainsString('[conflict]', $output);
         self::assertStringEqualsFile($own, $contents);
+        self::assertFileExists($this->scratch('database/migrations/2026_04_14_000001_create_roles_table.php'));
     }
 
     /**
      * A file of the application's at the very path a member's migration is
-     * published to is never overwritten, and fails every run until it is moved,
-     * the member's migration left unpublished meanwhile.
+     * published to is never overwritten.
      *
      * @return void
      */
@@ -227,46 +165,16 @@ final class InstallCommandTest extends TestCase
         $contents = "<?php\n\n// The application's own file\n";
         $own      = $this->writeScratch('database/migrations/2026_04_15_000000_create_mfa_factors_table.php', $contents);
 
-        foreach ([1, 2] as $run) {
-            [$code, $output] = $this->install();
-
-            self::assertSame(1, $code, "Run {$run}");
-            self::assertStringEqualsFile($own, $contents);
-            self::assertStringContainsString(
-                '[conflict] 2026_04_15_000000_create_mfa_factors_table.php is where mfa-migrations publishes its migration, but is not its copy',
-                $output,
-            );
-            self::assertStringNotContainsString('shares its base name', $output);
-            self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
-        }
-
-        unlink($own);
-
-        [$code] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringNotEqualsFile($own, $contents);
-    }
-
-    /**
-     * A path under the application's base path is reported relative to it.
-     *
-     * @return void
-     */
-    public function testAPathUnderTheBasePathIsReportedRelativeToIt(): void
-    {
-        $this->app?->setBasePath($this->scratch());
-
         [$code, $output] = $this->install();
 
         self::assertSame(0, $code);
-        self::assertStringContainsString("[published] config/authentication.php\n", $output);
-        self::assertStringContainsString("[published] lang/vendor/mfa/en/messages.php\n", $output);
+        self::assertStringEqualsFile($own, $contents);
+        self::assertStringContainsString('Kept 2026_04_15_000000_create_mfa_factors_table.php, published as 2026_04_15_000000_create_mfa_factors_table.php.', $output);
     }
 
     /**
      * An existing configuration file and an existing language file are left as
-     * they are, and every other file is still published.
+     * they are.
      *
      * @return void
      */
@@ -275,142 +183,17 @@ final class InstallCommandTest extends TestCase
         $configuration = $this->writeScratch('config/mfa.php', "<?php\n\nreturn ['kept' => true];\n");
         $language      = $this->writeScratch('lang/vendor/sso/en/messages.php', "<?php\n\nreturn [];\n");
 
-        [$code, $output] = $this->install();
+        [$code] = $this->install();
 
         self::assertSame(0, $code);
         self::assertStringEqualsFile($configuration, "<?php\n\nreturn ['kept' => true];\n");
         self::assertStringEqualsFile($language, "<?php\n\nreturn [];\n");
-        self::assertStringContainsString('[kept] ' . $configuration, $output);
-        self::assertStringContainsString('[kept] ' . $language, $output);
         self::assertFileExists($this->scratch('config/sso.php'));
     }
 
     /**
-     * Audit-log's configuration, published in the run, holds every `jwt` and
-     * `api_key` guard excluded and the refusal of unregistered codes on, with
-     * Gate capture left off, and nothing is owed for them.
-     *
-     * @return void
-     */
-    public function testTheAuditLogValuesAreWrittenIntoItsConfigurationPublished(): void
-    {
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-
-        /** @var array{capture: array{laravel: array{except_guards: list<string>}, gate: array{enabled: mixed}}, definitions: array{require_registered: mixed}} $configuration */
-        $configuration = require $this->scratch('config/audit-log.php');
-
-        self::assertSame(['api', 'keys'], $configuration['capture']['laravel']['except_guards']);
-        self::assertTrue($configuration['definitions']['require_registered']);
-        self::assertFalse($configuration['capture']['gate']['enabled']);
-        self::assertStringContainsString('[written] audit-log.capture.laravel.except_guards: [\'api\', \'keys\']', $output);
-        self::assertStringContainsString('[written] audit-log.definitions.require_registered: true', $output);
-        self::assertStringNotContainsString(' to `audit-log.capture.laravel.except_guards`', $output);
-        self::assertStringNotContainsString('Turn `audit-log.definitions.require_registered` on', $output);
-        self::assertStringNotContainsString('Gate capture off', $output);
-    }
-
-    /**
-     * With no guard of either driver, nothing is written for the exclusions and
-     * nothing is owed for them.
-     *
-     * @return void
-     */
-    public function testNoGuardToExcludeWritesNoExclusions(): void
-    {
-        $this->config()->set('auth.guards', ['web' => ['driver' => 'session', 'provider' => 'people']]);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringNotContainsString('[written] audit-log.capture.laravel.except_guards', $output);
-        self::assertStringNotContainsString(' to `audit-log.capture.laravel.except_guards`', $output);
-        self::assertStringContainsString('[written] audit-log.definitions.require_registered: true', $output);
-    }
-
-    /**
-     * Audit-log's configuration already published is left alone, and each value
-     * it does not hold is owed instead, as is Gate capture while it is on.
-     *
-     * @return void
-     */
-    public function testTheAuditLogValuesAreOwedWhenItsConfigurationIsKept(): void
-    {
-        $file = $this->writeScratch('config/audit-log.php', "<?php\n\nreturn [];\n");
-
-        $this->config()->set(CaptureExclusions::EXCEPT_GUARDS_KEY, ['api']);
-        $this->config()->set(CaptureExclusions::GATE_KEY, true);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringEqualsFile($file, "<?php\n\nreturn [];\n");
-        self::assertStringNotContainsString('[written] audit-log', $output);
-        self::assertStringContainsString(' - Add [\'keys\'] to `audit-log.capture.laravel.except_guards`, so nothing the suite records is recorded twice.', $output);
-        self::assertStringContainsString(
-            ' - Turn `audit-log.definitions.require_registered` on (`true`), so a code no definition registers is refused rather than recorded unchecked.',
-            $output,
-        );
-        self::assertStringContainsString(' - Turn audit-log\'s Gate capture off (`audit-log.capture.gate.enabled`)', $output);
-    }
-
-    /**
-     * Audit-log's configuration already published that holds every value is
-     * owed nothing.
-     *
-     * @return void
-     */
-    public function testNothingIsOwedForAuditLogsConfigurationThatHolds(): void
-    {
-        $this->writeScratch('config/audit-log.php', "<?php\n\nreturn [];\n");
-
-        $this->config()->set(CaptureExclusions::EXCEPT_GUARDS_KEY, ['*']);
-        $this->config()->set(AuditSettings::REQUIRE_REGISTERED, true);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringNotContainsString(' to `audit-log.capture.laravel.except_guards`', $output);
-        self::assertStringNotContainsString('Turn `audit-log.definitions.require_registered` on', $output);
-    }
-
-    /**
-     * An audit-log configuration published in the run that no longer holds
-     * audit-log's defaults is written nothing, and each value is owed.
-     *
-     * @return void
-     */
-    public function testAReshapedAuditLogConfigurationIsOwedItsValues(): void
-    {
-        $this->replacePublication('audit-log-config', [dirname(__DIR__, 2) . '/Fixtures/Install/reshaped-audit-log.php' => $this->scratch('config/audit-log.php')]);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringNotContainsString('[written] audit-log', $output);
-        self::assertStringContainsString(' - Add [\'api\', \'keys\'] to `audit-log.capture.laravel.except_guards`', $output);
-        self::assertStringContainsString(' - Turn `audit-log.definitions.require_registered` on (`true`)', $output);
-    }
-
-    /**
-     * A malformed exclusion list refuses the run before anything is published.
-     *
-     * @return void
-     */
-    public function testAMalformedExclusionListRefusesTheRunWithNothingPublished(): void
-    {
-        $this->config()->set(CaptureExclusions::EXCEPT_GUARDS_KEY, 'api');
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(2, $code);
-        self::assertStringContainsString('`audit-log.capture.laravel.except_guards` must be a list of guard names', $output);
-        self::assertSame([], $this->snapshot());
-    }
-
-    /**
-     * Every run ends with what the application still owes.
+     * Every run ends with what the application still owes, each item pointing
+     * at the installation guide.
      *
      * @return void
      */
@@ -418,95 +201,39 @@ final class InstallCommandTest extends TestCase
     {
         [, $output] = $this->install();
 
-        self::assertStringContainsString("\n\nStill to do:\n", $output);
+        $guide = InstallCommand::GUIDE;
 
-        $owed = substr($output, (int) strpos($output, 'Still to do:'));
-
-        foreach (Installer::OWED as $item) {
-            self::assertStringContainsString(' - ' . $item, $owed);
-        }
-
-        self::assertStringContainsString('Bind laravel-authentication\'s `OneTimeCodeSender`', $owed);
-        self::assertStringContainsString('iam.tenancy', $owed);
-        self::assertStringContainsString('Bind laravel-authentication\'s `TenantResolver`', $owed);
-        self::assertStringContainsString('even if your principals act only in their own tenant', $owed);
-        self::assertStringContainsString('iam.provisioning.provisioner', $owed);
-        self::assertStringContainsString('routes', $owed);
-        self::assertStringContainsString('laravel-iam\'s example application guide (docs/guides/example-application.md)', $owed);
-        self::assertStringContainsString('redeem SSO\'s handoffs through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`', $owed);
-        self::assertStringContainsString('never `HandoffRedemption` directly', $owed);
-        self::assertStringNotContainsString('laravel-sso\'s example application guide', $owed);
-        self::assertStringContainsString('`AuditLog::define()`', $owed);
-        self::assertStringContainsString('`audit-log.definitions.require_registered`', $owed);
-        self::assertStringContainsString('Iam::schedule', $owed);
-        self::assertStringContainsString('`authorization.application_access`', $owed);
-        self::assertStringContainsString('bind laravel-authentication\'s `TenantAccess`', $owed);
-        self::assertStringNotContainsString('in a later release', $owed);
-        self::assertStringContainsString('authentication.freshness', $owed);
-        self::assertStringContainsString('external_provider', $owed);
-    }
-
-    /**
-     * The worker item asks for a queue worker for `laravel-authentication`'s
-     * delivery of every one-time code, MFA's email and SMS codes among them,
-     * whether or not SSO is in use, and for SSO's metadata refresh while it is.
-     *
-     * @return void
-     */
-    public function testTheWorkerItemAsksForAWorkerThatDeliversEveryCode(): void
-    {
-        [, $output] = $this->install();
-
-        $owed = substr($output, (int) strpos($output, 'Still to do:'));
-
-        self::assertStringContainsString(
-            ' - Run a queue worker for laravel-authentication\'s delivery of one-time codes (`authentication.delivery.queue.connection`'
-                . ' and `authentication.delivery.queue.name`), which laravel-mfa\'s email and SMS codes go through too,'
-                . ' and, while laravel-sso is in use, for its metadata refresh (`sso.metadata.queue`):'
-                . ' see laravel-iam\'s operations guide (docs/guides/operations.md#queues).',
-            $owed,
+        self::assertStringEndsWith(
+            "\n\nStill to do:\n"
+            . " - Run `php artisan migrate`: {$guide}#the-storage-connection\n"
+            . " - Add every `jwt` and `api_key` guard to `audit-log.capture.laravel.except_guards`: {$guide}#the-audit-log-configuration\n"
+            . " - Turn `audit-log.definitions.require_registered` on: {$guide}#the-audit-log-configuration\n"
+            . " - Declare MFA's and SSO's freshness operations for their guards: {$guide}#guards-and-applications\n"
+            . " - Bind the contracts the package leaves to you, and add the routes: {$guide}#what-you-still-owe\n"
+            . " - Call `Iam::schedule()`, and run the scheduler and a queue worker: {$guide}#what-you-still-owe\n"
+            . " - Run `php artisan iam:check` on every deploy: {$guide}#checking\n",
+            $output,
         );
-        self::assertStringNotContainsString('and run a queue worker for laravel-sso\'s metadata refresh', $owed);
     }
 
     /**
-     * The migration item names the connection each member's tables are created
-     * on: `laravel-authentication`'s, MFA's and SSO's on the shared one,
-     * audit-log's and `laravel-authorization`'s on their own keys, which the
-     * alignment never writes.
-     *
-     * @return void
-     */
-    public function testTheMigrationItemNamesEachMembersConnection(): void
-    {
-        [, $output] = $this->install();
-
-        $owed = substr($output, (int) strpos($output, 'Still to do:'));
-
-        self::assertStringContainsString(
-            ' - Run `php artisan migrate`: laravel-authentication\'s, laravel-mfa\'s, laravel-sso\'s and laravel-authorization\'s'
-                . ' tables are created on `iam.storage.connection`, and laravel-audit-log\'s on `audit-log.storage.connection`,'
-                . ' each the default connection when unset.',
-            $owed,
-        );
-        self::assertStringNotContainsString('every member\'s tables', $owed);
-    }
-
-    /**
-     * A tag no provider registered is reported, the rest is still published,
-     * and the run fails.
+     * A tag no provider registered is reported and fails the run, and the rest
+     * is still published.
      *
      * @return void
      */
     public function testATagNoProviderRegisteredFailsTheRun(): void
     {
-        $this->replacePublication('mfa-lang', null);
+        $this->replacePublication('sso-lang', null);
+        $this->replacePublication('mfa-migrations', null);
 
         [$code, $output] = $this->install();
 
         self::assertSame(1, $code);
-        self::assertStringContainsString('[missing] No provider registered the `mfa-lang` tag; nothing was published for it.', $output);
-        self::assertDirectoryDoesNotExist($this->scratch('lang/vendor/mfa'));
+        self::assertStringContainsString('No provider registered the `sso-lang` tag.', $output);
+        self::assertStringContainsString('No provider registered the `mfa-migrations` tag.', $output);
+        self::assertDirectoryDoesNotExist($this->scratch('lang/vendor/sso'));
+        self::assertFileDoesNotExist($this->scratch('database/migrations/2026_04_15_000000_create_mfa_factors_table.php'));
         self::assertFileExists($this->scratch('config/iam.php'));
     }
 
@@ -521,28 +248,17 @@ final class InstallCommandTest extends TestCase
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(0, $code);
-
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
-
-        $expected = self::prefixedAuthorizationTables('authz_');
-
-        self::assertSame($expected, $configuration['tables']);
-
-        foreach ($expected as $key => $table) {
-            self::assertStringContainsString("[written] authorization.tables.{$key}: {$table}", $output);
-        }
+        self::assertSame(self::prefixedAuthorizationTables('authz_'), $this->authorizationTables());
+        self::assertStringContainsString('Prefixed laravel-authorization\'s tables with `authz_`.', $output);
     }
 
     /**
-     * Run twice with the same prefix, the second run writes nothing, owes no
-     * prefix, and notes that the tables already carry it; a different prefix
-     * given then, the start of the first one among them, is owed, the tables
-     * keeping the names the first run wrote.
+     * Run again, the same prefix is noted as carried and another one is not
+     * written.
      *
      * @return void
      */
-    public function testRunningTwiceWithThePrefixOwesNothing(): void
+    public function testRunningAgainWithAPrefixWritesNothing(): void
     {
         $this->install(['--prefix' => 'authz_']);
 
@@ -552,134 +268,93 @@ final class InstallCommandTest extends TestCase
 
         self::assertSame(0, $code);
         self::assertSame($before, $this->snapshot());
-        self::assertStringNotContainsString('[written]', $output);
-        self::assertStringNotContainsString('tables keep their names', $output);
-        self::assertStringContainsString('[note] laravel-authorization\'s tables already carry the prefix `authz_` in its published configuration.', $output);
+        self::assertStringContainsString('laravel-authorization\'s tables already carry the prefix `authz_`.', $output);
 
-        foreach (['authz', 'other_'] as $prefix) {
+        [$code, $output] = $this->install(['--prefix' => 'other_']);
 
-            [$code, $output] = $this->install(['--prefix' => $prefix]);
-
-            self::assertSame(0, $code);
-            self::assertSame($before, $this->snapshot());
-            self::assertStringNotContainsString('[note]', $output);
-            self::assertStringContainsString(' - laravel-authorization\'s tables keep their names', $output);
-        }
+        self::assertSame(0, $code);
+        self::assertSame($before, $this->snapshot());
+        self::assertStringContainsString('laravel-authorization\'s tables keep their names: its configuration or its migrations were published before.', $output);
     }
 
     /**
-     * An application's own migration sharing the base name of one of
-     * `laravel-authorization`'s is no conflict once the run prefixes the
-     * member's tables, since the two then create different tables: it is noted,
-     * and the run succeeds. Without the prefix it is still a conflict.
+     * A prefix is not written into a configuration already published.
      *
      * @return void
      */
-    public function testANamesakeOfAnAuthorizationMigrationIsNoConflictOnceThePrefixIsWritten(): void
+    public function testAPrefixIsNotWrittenIntoAConfigurationAlreadyPublished(): void
     {
-        $contents = "<?php\n\n// The application's own roles table\n";
-        $own      = $this->writeScratch('database/migrations/2019_01_01_000000_create_roles_table.php', $contents);
-
-        $this->writeScratch('database/migrations/2020_01_01_000000_create_roles_table.php', $contents);
-        $this->writeScratch('database/migrations/2019_01_01_000000_create_permissions_table.php', "<?php\n");
+        $file = $this->writeScratch('config/authorization.php', "<?php\n\nreturn [];\n");
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
-        self::assertSame(0, $code, $output);
-        self::assertStringEqualsFile($own, $contents);
-        self::assertFileExists($this->scratch('database/migrations/2026_04_14_000001_create_roles_table.php'));
-        self::assertStringNotContainsString('[conflict]', $output);
-        self::assertSame(3, substr_count($output, '[note] '));
-
-        $namesakes = [
-            '2019_01_01_000000_create_roles_table.php'       => '2026_04_14_000001_create_roles_table.php',
-            '2020_01_01_000000_create_roles_table.php'       => '2026_04_14_000001_create_roles_table.php',
-            '2019_01_01_000000_create_permissions_table.php' => '2026_04_14_000002_create_permissions_table.php',
-        ];
-
-        foreach ($namesakes as $namesake => $migration) {
-            self::assertStringContainsString(
-                "[note] {$namesake} shares its base name with {$migration}, published beside it:"
-                . ' the two create different tables, since the run prefixed laravel-authorization\'s with `authz_`',
-                $output,
-            );
-        }
+        self::assertSame(0, $code);
+        self::assertStringEqualsFile($file, "<?php\n\nreturn [];\n");
+        self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
     }
 
     /**
-     * A namesake of one of `laravel-authorization`'s migrations stays a
-     * conflict when the prefix given can no longer be written, its
-     * configuration published before; without a prefix it is one too.
+     * A prefix is not written once one of `laravel-authorization`'s migrations
+     * is published, under any timestamp.
      *
      * @return void
      */
-    public function testANamesakeStaysAConflictWhenTheConfigurationWasPublishedBefore(): void
+    public function testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished(): void
     {
-        $this->writeScratch('config/authorization.php', "<?php\n\nreturn [];\n");
-        $this->writeScratch('database/migrations/2019_01_01_000000_create_roles_table.php', "<?php\n");
+        $source = self::packagePath(AuthorizationServiceProvider::class) . '/database/migrations/2026_04_14_000010_create_guardrails_table.php';
+
+        $this->writeScratch('database/migrations/2024_01_01_000000_create_guardrails_table.php', (string) file_get_contents($source));
+
+        [$code, $output] = $this->install(['--prefix' => 'authz_']);
+
+        self::assertSame(0, $code);
+        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
+    }
+
+    /**
+     * A prefix is not written while either of `laravel-authorization`'s tags is
+     * unregistered.
+     *
+     * @return void
+     */
+    public function testAPrefixIsNotWrittenWhileATagIsUnregistered(): void
+    {
+        $this->replacePublication('authorization-migrations', null);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(1, $code);
-        self::assertStringNotContainsString('[note]', $output);
-        self::assertStringContainsString('[conflict] 2019_01_01_000000_create_roles_table.php shares its base name with 2026_04_14_000001_create_roles_table.php', $output);
-    }
+        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
 
-    /**
-     * With `laravel-authorization`'s configuration tag unregistered, a prefix
-     * cannot be written, and is owed.
-     *
-     * @return void
-     */
-    public function testAPrefixIsOwedWhileTheConfigurationTagIsUnregistered(): void
-    {
+        $this->deleteScratch();
+        $this->restorePublications();
         $this->replacePublication('authorization-config', null);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(1, $code);
-        self::assertStringContainsString('[missing] No provider registered the `authorization-config` tag', $output);
-        self::assertStringNotContainsString('[note]', $output);
-        self::assertStringContainsString(' - laravel-authorization\'s tables keep their names', $output);
+        self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
     }
 
     /**
-     * The prefix covers `laravel-authorization`'s tables alone: a namesake of
-     * another member's migration stays a conflict when the run prefixes them.
+     * A configuration published in the run that no longer holds the table name
+     * defaults is owed the prefix.
      *
      * @return void
      */
-    public function testANamesakeOfAnotherMembersMigrationStaysAConflictUnderThePrefix(): void
+    public function testAReshapedAuthorizationConfigurationIsOwedThePrefix(): void
     {
-        $this->writeScratch('database/migrations/2019_01_01_000000_create_rate_limits_table.php', "<?php\n");
-
-        [$code, $output] = $this->install(['--prefix' => 'authz_']);
-
-        self::assertSame(1, $code);
-        self::assertStringNotContainsString('[note]', $output);
-        self::assertStringContainsString(
-            '[conflict] 2019_01_01_000000_create_rate_limits_table.php shares its base name with 2026_04_06_000002_create_rate_limits_table.php',
-            $output,
-        );
-    }
-
-    /**
-     * A namesake of one of `laravel-authorization`'s migrations stays a
-     * conflict when the prefix given cannot be written over the configuration
-     * published in the run.
-     *
-     * @return void
-     */
-    public function testANamesakeStaysAConflictWhenThePrefixIsNotWritten(): void
-    {
-        $this->writeScratch('database/migrations/2019_01_01_000000_create_roles_table.php', "<?php\n");
         $this->replacePublication('authorization-config', [dirname(__DIR__, 2) . '/Fixtures/Install/reshaped-authorization.php' => $this->scratch('config/authorization.php')]);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
-        self::assertSame(1, $code);
-        self::assertStringNotContainsString('[note]', $output);
-        self::assertStringContainsString('[conflict] 2019_01_01_000000_create_roles_table.php shares its base name with 2026_04_14_000001_create_roles_table.php', $output);
+        self::assertSame(0, $code);
+        self::assertStringContainsString(
+            'Prefix laravel-authorization\'s tables yourself (`authorization.tables`): its configuration no longer holds their defaults.',
+            $output,
+        );
     }
 
     /**
@@ -697,85 +372,20 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A prefix given once `laravel-authorization`'s configuration is already
-     * published is not written, and that is reported.
-     *
-     * @return void
-     */
-    public function testAPrefixIsNotWrittenIntoAConfigurationAlreadyPublished(): void
-    {
-        $file = $this->writeScratch('config/authorization.php', "<?php\n\nreturn [];\n");
-
-        [$code, $output] = $this->install(['--prefix' => 'authz_']);
-
-        self::assertSame(0, $code);
-        self::assertStringEqualsFile($file, "<?php\n\nreturn [];\n");
-        self::assertStringNotContainsString('[written] authorization.tables', $output);
-        self::assertStringContainsString(
-            ' - laravel-authorization\'s tables keep their names: its configuration or its migrations were published before, so the prefix was not written.',
-            $output,
-        );
-    }
-
-    /**
-     * A prefix given once one of `laravel-authorization`'s migrations is
-     * already published is not written, though its configuration is published
-     * in the run.
-     *
-     * @return void
-     */
-    public function testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished(): void
-    {
-        $source = self::packagePath(AuthorizationServiceProvider::class) . '/database/migrations/2026_04_14_000010_create_guardrails_table.php';
-
-        $this->writeScratch('database/migrations/2024_01_01_000000_create_guardrails_table.php', (string) file_get_contents($source));
-
-        [$code, $output] = $this->install(['--prefix' => 'authz_']);
-
-        self::assertSame(0, $code);
-        self::assertFileExists($this->scratch('config/authorization.php'));
-        self::assertStringNotContainsString('[written] authorization.tables', $output);
-        self::assertStringContainsString('tables keep their names', $output);
-    }
-
-    /**
-     * An authorization configuration published in the run that no longer holds
-     * the table name defaults is written nothing, and the prefix is owed.
-     *
-     * @return void
-     */
-    public function testAReshapedAuthorizationConfigurationIsOwedThePrefix(): void
-    {
-        $this->replacePublication('authorization-config', [dirname(__DIR__, 2) . '/Fixtures/Install/reshaped-authorization.php' => $this->scratch('config/authorization.php')]);
-
-        [$code, $output] = $this->install(['--prefix' => 'authz_']);
-
-        self::assertSame(0, $code);
-        self::assertStringNotContainsString('[written] authorization.tables', $output);
-        self::assertStringContainsString(
-            ' - Prefix laravel-authorization\'s tables yourself (`authorization.tables`) before you migrate:'
-            . ' its configuration no longer holds the defaults the prefix is written over.',
-            $output,
-        );
-    }
-
-    /**
-     * Interactive, the run asks whether to prefix the tables, and prefixes them
-     * with the prefix given.
+     * Interactive, the run asks for the prefix, and prefixes the tables with
+     * the one given.
      *
      * @return void
      */
     public function testInteractiveTheRunAsksForThePrefix(): void
     {
         $this->interactively()
-            ->expectsConfirmation('Prefix laravel-authorization\'s tables (roles, permissions, policies and the grant tables), whose names may collide with your own?', 'yes')
+            ->expectsConfirmation(self::QUESTION, 'yes')
             ->expectsQuestion('Table prefix', 'iam_')
-            ->assertExitCode(0);
+            ->assertExitCode(0)
+            ->run();
 
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
-
-        self::assertSame('iam_roles', $configuration['tables']['roles']);
+        self::assertSame('iam_roles', $this->authorizationTables()['roles']);
     }
 
     /**
@@ -786,223 +396,31 @@ final class InstallCommandTest extends TestCase
     public function testInteractiveDecliningThePrefixLeavesTheNames(): void
     {
         $this->interactively()
-            ->expectsConfirmation('Prefix laravel-authorization\'s tables (roles, permissions, policies and the grant tables), whose names may collide with your own?', 'no')
-            ->assertExitCode(0);
+            ->expectsConfirmation(self::QUESTION, 'no')
+            ->assertExitCode(0)
+            ->run();
 
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
-
-        self::assertSame('roles', $configuration['tables']['roles']);
+        self::assertSame('roles', $this->authorizationTables()['roles']);
     }
 
     /**
-     * Interactive, nothing is asked once the prefix can no longer be written,
-     * nor when `--prefix` gives it, an empty one (no prefix) included.
+     * Interactive, nothing is asked when `--prefix` gives the prefix, or once
+     * it can no longer be written.
      *
      * @return void
      */
-    public function testInteractiveNothingIsAskedWhenThePrefixCannotBeWrittenOrIsGiven(): void
+    public function testInteractiveNothingIsAskedWhenThePrefixIsGivenOrCannotBeWritten(): void
     {
-        $this->interactively(['--prefix' => ''])->assertExitCode(0);
+        $this->interactively(['--prefix' => ''])->assertExitCode(0)->run();
 
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
+        self::assertSame('roles', $this->authorizationTables()['roles']);
 
-        self::assertSame('roles', $configuration['tables']['roles']);
-
-        $this->interactively(['--prefix' => 'authz_'])->assertExitCode(0);
-        $this->interactively()->assertExitCode(0);
-    }
-
-    /**
-     * Without interaction nothing is asked and nothing is prefixed, and an
-     * empty `--prefix` is no prefix.
-     *
-     * @return void
-     */
-    public function testWithoutInteractionNothingIsPrefixed(): void
-    {
-        [$code] = $this->install(['--prefix' => '']);
-
-        self::assertSame(0, $code);
-
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
-
-        self::assertSame('roles', $configuration['tables']['roles']);
-    }
-
-    /**
-     * The prefix is offered only while neither `laravel-authorization`'s
-     * configuration nor any of its migrations is published, and its tags are
-     * registered.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testThePrefixIsOfferedOnlyBeforeAuthorizationIsPublished(): void
-    {
-        self::assertTrue($this->installer()->offersTablePrefix());
-
-        $this->replacePublication('authorization-migrations', null);
-
-        self::assertFalse($this->installer()->offersTablePrefix());
-
-        (new \ReflectionProperty(ServiceProvider::class, 'publishGroups'))->setValue(null, $this->publishGroups);
-
-        $this->replacePublication('authorization-config', null);
-
-        self::assertFalse($this->installer()->offersTablePrefix());
-    }
-
-    /**
-     * A file that cannot be copied, its directory unwritable, stops the run with
-     * the exception naming it, in place of the warning the copy raises; every
-     * file published before it is kept, and a run once the directory is
-     * writable publishes the rest and nothing twice.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testAFileThatCannotBeCopiedStopsTheRunAndARunOnceWritablePublishesTheRest(): void
-    {
-        $this->readOnly('lang');
-
-        $failure = $this->failedInstall();
-
-        self::assertMatchesRegularExpression(
-            '#^' . preg_quote($this->scratch('lang/vendor/authorization/'), '#') . '\S+\.php could not be published; make its directory writable and run iam:install again\.$#',
-            $failure->getMessage(),
-        );
-        self::assertInstanceOf(\ErrorException::class, $failure->getPrevious());
-        self::assertStringStartsWith('mkdir(', $failure->getPrevious()->getMessage());
-        self::assertSame(E_WARNING, $failure->getPrevious()->getSeverity());
-        self::assertFileExists($this->scratch('config/authentication.php'));
-        self::assertFileExists($this->scratch('config/authorization.php'));
-        self::assertFileDoesNotExist($this->scratch('config/mfa.php'));
-
-        $published = glob($this->scratch('database/migrations/*.php')) ?: [];
-
-        self::assertNotSame([], $published);
-
-        chmod($this->scratch('lang'), 0755);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertCount(self::migrationCount(), glob($this->scratch('database/migrations/*.php')) ?: []);
-        self::assertSame(count($published), substr_count($output, '[recognised]'));
-        self::assertStringContainsString('[kept] ' . $this->scratch('config/authentication.php'), $output);
-        self::assertStringContainsString('[published] ' . $this->scratch('config/mfa.php'), $output);
-        self::assertFileExists($this->scratch('lang/vendor/authorization/en/authorization.php'));
-    }
-
-    /**
-     * A run stopped by a file after audit-log's configuration still writes the
-     * audit-log values into that configuration, so the run once the directory
-     * is writable keeps it with the values written and owes nothing for them.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testARunStoppedAfterAuditLogsConfigurationLeavesItsValuesWritten(): void
-    {
-        $this->readOnly('lang/vendor/audit-log');
-
-        $failure = $this->failedInstall();
-
-        self::assertStringStartsWith($this->scratch('lang/vendor/audit-log/'), $failure->getMessage());
-
-        chmod($this->scratch('lang/vendor/audit-log'), 0755);
-
-        $file = $this->scratch('config/audit-log.php');
-
-        /** @var array{capture: array{laravel: array{except_guards: list<string>}}, definitions: array{require_registered: mixed}} $configuration */
-        $configuration = require $file;
-
-        self::assertSame(['api', 'keys'], $configuration['capture']['laravel']['except_guards']);
-        self::assertTrue($configuration['definitions']['require_registered']);
-
-        // The run that follows reads the configuration the stopped run wrote,
-        // as a new process would
-        $this->config()->set('audit-log', $configuration);
-
-        [$code, $output] = $this->install();
-
-        self::assertSame(0, $code);
-        self::assertStringContainsString('[kept] ' . $file, $output);
-        self::assertStringNotContainsString(' to `audit-log.capture.laravel.except_guards`', $output);
-        self::assertStringNotContainsString('Turn `audit-log.definitions.require_registered` on', $output);
-        self::assertFileExists($this->scratch('lang/vendor/audit-log/en/codes.php'));
-    }
-
-    /**
-     * A run stopped by a file after `laravel-authorization`'s configuration
-     * still writes the prefix into that configuration, so the run once the
-     * directory is writable notes the prefix carried and owes none.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testARunStoppedAfterTheAuthorizationConfigurationLeavesThePrefixWritten(): void
-    {
-        $this->readOnly('lang');
-
-        try {
-            $this->installer()->install('authz_');
-
-            self::fail('iam:install published every file.');
-        } catch (PublicationFailedException $failure) {
-            self::assertStringStartsWith($this->scratch('lang/vendor/authorization/'), $failure->getMessage());
-        }
-
-        chmod($this->scratch('lang'), 0755);
-
-        /** @var array{tables: array<string, string>} $configuration */
-        $configuration = require $this->scratch('config/authorization.php');
-
-        self::assertSame(self::prefixedAuthorizationTables('authz_'), $configuration['tables']);
-
-        [$code, $output] = $this->install(['--prefix' => 'authz_']);
-
-        self::assertSame(0, $code);
-        self::assertStringContainsString('[note] laravel-authorization\'s tables already carry the prefix `authz_` in its published configuration.', $output);
-        self::assertStringNotContainsString('tables keep their names', $output);
-    }
-
-    /**
-     * A file whose directory exists but cannot be written to stops the run
-     * alike, with the copy's warning as the cause, and the application's error
-     * handler is back in place once the run has stopped.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testAFileThatCannotBeCopiedIntoItsDirectoryStopsTheRunAndLeavesTheErrorHandler(): void
-    {
-        $this->readOnly('config');
-
-        $failure = $this->failedInstall();
-
-        self::assertSame($this->scratch('config/authentication.php') . ' could not be published; make its directory writable and run iam:install again.', $failure->getMessage());
-        self::assertInstanceOf(\ErrorException::class, $failure->getPrevious());
-        self::assertStringStartsWith('copy(', $failure->getPrevious()->getMessage());
-        self::assertSame([], glob($this->scratch('config/*')) ?: []);
-
-        $this->expectException(\ErrorException::class);
-
-        trigger_error('The application\'s error handler raises this.', E_USER_WARNING);
+        $this->interactively()->assertExitCode(0)->run();
     }
 
     /**
      * Point the application's configuration, database and language directories
-     * at the test's own, and add an `api_key` guard beside the `jwt` one,
-     * before any provider registers.
+     * at the test's own.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -1015,8 +433,6 @@ final class InstallCommandTest extends TestCase
         $app->useConfigPath($this->scratch('config'));
         $app->useDatabasePath($this->scratch('database'));
         $app->useLangPath($this->scratch('lang'));
-
-        $app->make(ConfigRepository::class)->set('auth.guards.keys', ['driver' => 'api_key', 'provider' => 'people']);
     }
 
     /**
@@ -1034,46 +450,6 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Run the installer `iam:install` hands its run to, without a prefix, as a
-     * run without interaction asks it, expecting it to stop on a file it cannot
-     * publish, and return the exception it stopped with.
-     *
-     * @return \SineMacula\Laravel\Iam\Exceptions\PublicationFailedException
-     *
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    private function failedInstall(): PublicationFailedException
-    {
-        try {
-            $this->installer()->install(null);
-        } catch (PublicationFailedException $exception) {
-            return $exception;
-        }
-
-        self::fail('iam:install published every file.');
-    }
-
-    /**
-     * Create a directory of the test's that nothing can be written to, made
-     * writable again once the test ends.
-     *
-     * @param  string  $path
-     * @return void
-     */
-    private function readOnly(string $path): void
-    {
-        $directory = $this->scratch($path);
-
-        (new Filesystem)->ensureDirectoryExists($directory);
-
-        chmod($directory, 0555);
-
-        $this->readOnly[] = $directory;
-
-        self::assertFalse(is_writable($directory), 'The test cannot make a directory read-only for this user.');
-    }
-
-    /**
      * Run `iam:install` interactively, its questions answered as the test
      * expects.
      *
@@ -1084,37 +460,22 @@ final class InstallCommandTest extends TestCase
     {
         $command = $this->artisan(InstallCommand::NAME, $options);
 
-        assert($command instanceof PendingCommand);
+        self::assertInstanceOf(PendingCommand::class, $command);
 
         return $command;
     }
 
     /**
-     * Return the installer, as the command is given it.
+     * The table names `laravel-authorization`'s published configuration holds.
      *
-     * @return \SineMacula\Laravel\Iam\Install\Installer
+     * @return array<string, string>
      */
-    private function installer(): Installer
+    private function authorizationTables(): array
     {
-        $installer = $this->app?->make(Installer::class);
+        /** @var array{tables: array<string, string>} $configuration */
+        $configuration = require $this->scratch('config/authorization.php');
 
-        assert($installer instanceof Installer);
-
-        return $installer;
-    }
-
-    /**
-     * Return the configuration repository.
-     *
-     * @return \Illuminate\Config\Repository
-     */
-    private function config(): ConfigRepository
-    {
-        $config = $this->app?->make(ConfigRepository::class);
-
-        assert($config instanceof ConfigRepository);
-
-        return $config;
+        return $configuration['tables'];
     }
 
     /**
@@ -1144,7 +505,17 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Return every file in the test's directory with a hash of its contents.
+     * Restore the publishing groups a test replaced.
+     *
+     * @return void
+     */
+    private function restorePublications(): void
+    {
+        (new \ReflectionProperty(ServiceProvider::class, 'publishGroups'))->setValue(null, $this->publishGroups);
+    }
+
+    /**
+     * Every file in the test's directory with a hash of its contents.
      *
      * @return array<string, string>
      */
@@ -1166,29 +537,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Collapse runs of the same entry into one.
-     *
-     * @param  list<string>  $entries
-     * @return list<string>
-     */
-    private static function collapse(array $entries): array
-    {
-        $collapsed = [];
-
-        foreach ($entries as $entry) {
-
-            if (end($collapsed) === $entry) {
-                continue;
-            }
-
-            $collapsed[] = $entry;
-        }
-
-        return $collapsed;
-    }
-
-    /**
-     * Return the root of the package a provider ships.
+     * The root of the package a provider ships.
      *
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
      * @return string
@@ -1199,8 +548,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * The number of migrations the members ship between them, every one of
-     * which the install publishes.
+     * The number of migrations the members ship between them.
      *
      * @return int
      */

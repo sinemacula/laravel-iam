@@ -141,13 +141,13 @@ Always applies, whatever `iam.audit.mappers` says, except where noted.
   application boots, or turn `iam.audit.mappers` off to map the members' events yourself. Only this one follows the
   switch.
 - *Guards [...] are missing from `audit-log.capture.laravel.except_guards`, ...*: add every `jwt` and `api_key` guard
-  to audit-log's exclusions, or each of their sign-ins is recorded twice. `iam:install` writes the guards it finds.
+  to audit-log's exclusions, or each of their sign-ins is recorded twice.
 - *`audit-log.capture.gate.enabled` must be false, so no authorization decision is recorded twice: ...*: turn
   audit-log's Gate capture off. This package maps `laravel-authorization`'s decision events, the `Gate` checks it
   answers among them, so audit-log's own capture would record each of them again
   ([The audit trail](audit-trail.md#no-double-records)).
 - *`audit-log.definitions.require_registered` must be true, ...*: turn it on, so a code without a definition is refused
-  rather than recorded unchecked. `iam:install` writes it.
+  rather than recorded unchecked.
 
 ## configuration
 

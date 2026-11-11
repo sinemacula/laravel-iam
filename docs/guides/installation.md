@@ -46,9 +46,9 @@ its storage or registered its audit mapping.
 php artisan iam:install
 ```
 
-`iam:install` publishes, in a fixed order, every member's configuration, language files and migrations
-(`laravel-authentication`, `laravel-authorization`, `laravel-mfa`, `laravel-sso`, then `laravel-audit-log`), and
-this package's `config/iam.php` last. Each file goes where its own member's provider publishes it.
+`iam:install` publishes every member's configuration and language files, and this package's `config/iam.php`, through
+Laravel's `vendor:publish`, then every member's migrations (`laravel-authentication`, `laravel-authorization`,
+`laravel-mfa`, `laravel-sso`, then `laravel-audit-log`). Each file goes where its own member's provider publishes it.
 
 It never overwrites anything, and is safe to run twice:
 
@@ -56,20 +56,8 @@ It never overwrites anything, and is safe to run twice:
 - a migration already published is recognised by its name without the timestamp, whatever timestamp it was published
   under, and is never published a second time;
 - a migration of your own that shares a member migration's name (`create_rate_limits_table`, say) is not taken for
-  the member's: the member's is published beside it and the run fails, naming both, so you can check the two create no
-  table in common before you migrate. A later run recognises the member's copy and passes. One namesake does not fail
-  the run: a namesake of one of `laravel-authorization`'s migrations (`create_roles_table`, say) in a run that writes
-  the table prefix (see [Prefixing the authorization tables](#prefixing-the-authorization-tables)) is reported as a
-  note, since the two then create different tables, unless an `AUTHORIZATION_TABLE_*` variable you set names the
-  table yours creates: check those variables before you migrate.
-
-Where it publishes `config/audit-log.php` itself, it writes two values into it: every `jwt` and `api_key` guard into
-`capture.laravel.except_guards`, and `definitions.require_registered` on. Without them each sign-in would be recorded
-twice and a code with no definition recorded unchecked (see [The audit trail](audit-trail.md)). A
-`config/audit-log.php` you published before is never written to: each value it lacks is listed as owed instead. With
-`definitions.require_registered` on, every audit code your application records itself must have a definition
-registered with `AuditLog::define()` before it is recorded, or recording it throws (see
-[Your own codes](audit-trail.md#codes)).
+  the member's: the member's is published beside it, and the member's collision guard refuses a table the two both
+  create when you migrate.
 
 ### Prefixing the authorization tables
 
@@ -88,9 +76,20 @@ carrying the prefix twice. With `--no-interaction` the command asks
 nothing and prefixes nothing unless the option says so. Once any of the member's files is published the tables have
 their names, so a prefix is no longer offered.
 
+### The audit-log configuration
+
+`config/audit-log.php` is yours: the install never writes it. Set two values in it, which `iam:check` requires:
+
+- every `jwt` and `api_key` guard in `capture.laravel.except_guards`, or each sign-in is recorded twice (see
+  [The audit trail](audit-trail.md#no-double-records));
+- `definitions.require_registered` on, so a code with no definition is refused rather than recorded unchecked. With it
+  on, every audit code your application records itself must have a definition registered with `AuditLog::define()`
+  before it is recorded, or recording it throws (see [Your own codes](audit-trail.md#codes)).
+
 ### What you still owe
 
-Every run ends with what the application still owes. The package cannot do these for you:
+Every run ends with a short list of what the application still owes, each item linking here. In full, the package
+cannot do these for you:
 
 | Owed                                                                                                                                                                                                                                                          | Where it is covered                                                         |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
@@ -105,12 +104,11 @@ Every run ends with what the application still owes. The package cannot do these
 | Allow SSO's Composer plugin                                                                                                                                                                                                                                   | [Requirements](#requirements)                                               |
 | Map each application to its permission in `authorization.application_access`, and bind `TenantAccess` if your principals act beyond their own tenant                                                                                                          | [Authorization](authorization.md#access-contracts)                          |
 | Declare MFA's and SSO's freshness operations for their guards                                                                                                                                                                                                 | [Guards and applications](#guards-and-applications)                         |
-| Keep every `jwt` and `api_key` guard excluded from audit-log's capture                                                                                                                                                                                        | [The audit trail](audit-trail.md#no-double-records)                         |
+| Exclude every `jwt` and `api_key` guard from audit-log's capture, and turn `definitions.require_registered` on                                                                                                                                                | [The audit-log configuration](#the-audit-log-configuration)                 |
 | Define every audit code your application records itself                                                                                                                                                                                                       | [The audit trail](audit-trail.md#codes)                                     |
 | Run `php artisan iam:check` on every deploy                                                                                                                                                                                                                   | [Checks](checks.md)                                                         |
 
-A run fails (exit code 1) when a tag it publishes is not registered, when a migration's identity is in doubt, or when a
-file cannot be copied; what it published before the failure is kept, and running it again publishes the rest.
+A run fails (exit code 1) when a tag it publishes is not registered; the rest is still published.
 
 ## The storage connection
 
@@ -245,12 +243,11 @@ publishing anything twice.
 3. Run `php artisan iam:install`. Every configuration and language file you published is kept, every migration you
    published is recognised whatever its timestamp, and only what is missing is published, `config/iam.php` among it.
    Run `php artisan migrate` for anything new.
-4. Read what the run owes. Your `config/audit-log.php` is yours, so the install does not write it: add every `jwt` and
-   `api_key` guard to `capture.laravel.except_guards` and turn `definitions.require_registered` on yourself. Before
-   you turn it on, register a definition with `AuditLog::define()` for every audit code your application records
-   itself: codes audit-log recorded under its permissive default are refused once it is on, and every
-   `AuditLog::record()` of one throws (see [The audit trail](audit-trail.md#codes)). A table prefix for
-   `laravel-authorization` is no longer offered once its files exist.
+4. Read what the run owes. As on a fresh install, add every `jwt` and `api_key` guard to `capture.laravel.except_guards`
+   and turn `definitions.require_registered` on yourself. Before you turn it on, register a definition with
+   `AuditLog::define()` for every audit code your application records itself: codes audit-log recorded under its
+   permissive default are refused once it is on, and every `AuditLog::record()` of one throws (see [The audit
+   trail](audit-trail.md#codes)). A table prefix for `laravel-authorization` is no longer offered once its files exist.
 5. Replace your own redemption of SSO's handoff codes. A direct install redeems a code through SSO's
    `SineMacula\Laravel\Sso\Handoffs\HandoffRedemption` (`admit()` or `redeem()`) and then hands the result to
    `laravel-authentication`'s `signInExternally()` or `reauthenticateExternally()`. Under this package, its

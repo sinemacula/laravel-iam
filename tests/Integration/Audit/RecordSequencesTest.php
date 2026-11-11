@@ -48,9 +48,9 @@ use Tests\TestCase;
  * handoff issued and redeemed, all correlated as one sign-in, then
  * `laravel-authentication`'s session written, person signed in and result
  * redeemed, the last correlated with SSO's halves, each recorded once. The
- * `jwt` guard is excluded from audit-log's own capture, as `iam:install`
- * writes, so no Laravel event adds a record, and audit-log refuses a code no
- * definition registers, as `iam:install` also writes, so every code the flows
+ * `jwt` guard is excluded from audit-log's own capture, as the application sets
+ * it, so no Laravel event adds a record, and audit-log refuses a code no
+ * definition registers, as the application also sets, so every code the flows
  * record is proven defined. The records reach audit-log's fake store through
  * its whole capture pipeline, the contributors included. Every flow runs at the
  * connection's own level on every engine, then at READ COMMITTED and REPEATABLE

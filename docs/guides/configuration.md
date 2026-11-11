@@ -136,7 +136,7 @@ package's: see [laravel-sso: managing connections][sso-custom-attributes] and
 `iam.audit.mappers` is read leniently, as the adapter switches are, and as the package boots, so a change takes effect
 on the next boot. Turn it off only to map the members' events yourself. Whatever it says, `iam:check` requires every
 `jwt` and `api_key` guard excluded from audit-log's own capture (`audit-log.capture.laravel.except_guards`), its Gate
-capture off and `audit-log.definitions.require_registered` on; `iam:install` writes the first and the last.
+capture off and `audit-log.definitions.require_registered` on; `iam:install` lists the first and the last as owed.
 
 The codes, categories, correlation and the events to alert on are in [The audit trail](audit-trail.md).
 
