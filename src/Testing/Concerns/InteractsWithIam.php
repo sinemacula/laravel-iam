@@ -31,22 +31,8 @@ use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
  * machine identity is acted as without a session. `actingOnVerifiedSession()`
  * verifies a session the test already holds instead.
  *
- * With this package's proof store bound, a session's proofs are the ones
- * `laravel-authentication` records and a proof counts only while it names one
- * of the identity's factors, so MFA's `InteractsWithMfa::actingAsVerified()`
- * begins its sign-in and records its proofs through the recorder this package
- * binds (`Testing\VerifiedSignInRecorderAdapter`), which starts the session
- * from a password first factor and steps it up, or completes it, as
- * `actingOnVerifiedSession()` and `actingAsCaller()` do.
- * `actingOnVerifiedSession()` arranges it on a session the test already holds,
- * the way a real step-up does: it acts on the session, as
- * `laravel-authentication`'s `actingOnSession()` does, takes a confirmed factor
- * the session's identity holds (enrolling a fixture one when it holds none) and
- * steps the session up with a proof made with it, then reads the proofs back as
- * MFA's route gate does and throws a `LogicException` unless they evaluate at
- * exactly the level asked for, with additional verification. The session must
- * be a live, active session of a person, signed in as the application signs
- * people in, so it holds its first factor.
+ * MFA's `actingAsVerified()` works too, through the recorder this package binds
+ * (`Testing\VerifiedSignInRecorderAdapter`).
  *
  * Acting composes with `laravel-authentication`'s helpers, which this trait
  * brings in: the same context authenticates every request the test then sends
@@ -165,15 +151,9 @@ trait InteractsWithIam
      * default guard), verified now at exactly the level with additional
      * verification.
      *
-     * The further proof is made now and the session's first factor when it
-     * signed in, so a test of freshness verifies the session and then moves the
-     * clock on (`$this->travel(20)->minutes()`), rather than verifying it in
-     * the past. The proof is made with a confirmed factor of the level's type
-     * the session's identity holds, or one enrolled for it when it holds none:
-     * an email factor for AAL1, an authenticator app for AAL2, and a passkey
-     * for AAL3, which needs a combination policy that rates a
-     * hardware-protected passkey AAL3. The unclassified level is refused with
-     * an `InvalidArgumentException` before anything is recorded.
+     * The further proof is MFA's level evidence, made now with a confirmed
+     * factor of its type the identity holds (one is enrolled when it holds
+     * none), so a test of freshness moves the clock on afterwards.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
