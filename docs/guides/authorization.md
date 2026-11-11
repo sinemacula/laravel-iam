@@ -204,19 +204,32 @@ A machine principal calling with an API key or a client-credentials token is cap
 is allowed only where the principal's grants allow it and a scope covers it. A scope names a permission or a pattern, or
 one `authorization.session.scopes` maps to the actions it stands for; a credential is issued only scopes
 `laravel-authorization`'s scope registry accepts, so a typo or a permission that does not exist is refused when the key
-is issued or rotated. A key issued no scopes allows nothing. The scopes travel on the subject: the subject resolver puts
-the scopes of the caller's credential on the request's subject (`SineMacula\Laravel\Authorization\Subject::$scopes`),
-and on the subject the Gate decides about when it is the caller, and the session policy source caps every check about
-that subject by them, so a machine checked anywhere else carries no scopes. A person's session is capped by nothing. A
-principal the caller names (`Authorization::for($account)`) holds no credential, so a machine named that way is allowed
-nothing, as is a machine checked outside its key's request: a queued job's, or one the Gate is handed on another guard.
-A `Subject` you build yourself carries the scopes you give it (`scopes:`), and none otherwise, so build one for a
-machine with the scopes it acts with, or it is allowed nothing. A machine here is any of `laravel-authentication`'s: a
-`MachineIdentity`, or a principal acting for one, whether or not it also implements `laravel-authorization`'s
-`SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine`. `laravel-authorization`'s own default source,
-`NoSessionPolicy`, allows nothing only to a principal implementing `AuthorizableMachine`, and caps any other machine by
-nothing, so with `iam.adapters.authorization` off, bind a session policy source of your own, or name one in
-`authorization.session.source`.
+is issued or rotated. A key issued no scopes allows nothing. The scopes travel on the subject: the subject resolver says
+what the caller's credential carries on the request's subject (`SineMacula\Laravel\Authorization\Subject::$scopes`,
+a `CredentialScopes`), and on the subject the Gate decides about when it is the caller, and the session policy source
+caps every check about that subject by them. A person's session is capped by nothing. A principal the caller names
+(`Authorization::for($account)`) holds no credential, so a machine named that way is allowed nothing, as is a machine
+checked outside its key's request: a queued job's, or one the Gate is handed on another guard.
+
+A `Subject` you build yourself that says nothing of its scopes fails closed wherever it names a credential the source
+cannot establish:
+
+- naming a session, it carries no cap while that is a live session of the guard it names, owned by the identity it
+  acts for, and is allowed nothing otherwise (a revoked session, another identity's, one of another guard, or a key
+  that names none);
+- naming a guard whose caller it is, it is capped by that caller's credential, as the request's own subject is;
+- naming a guard that is not configured, it is allowed nothing;
+- naming no credential, as a job's or a console command's subject, or naming a guard whose caller is someone else, it
+  carries no cap if it is a person and is allowed nothing if it is a machine.
+
+Say the scopes yourself (`scopes: CredentialScopes::of([...])` or `CredentialScopes::uncapped()`, from
+`SineMacula\Laravel\Authorization\Support\CredentialScopes`) when you know them.
+
+A machine here is any of `laravel-authentication`'s: a `MachineIdentity`, or a principal acting for one, whether or not
+it also implements `laravel-authorization`'s `SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine`.
+`laravel-authorization`'s own default source, `NoSessionPolicy`, allows nothing only to a principal implementing
+`AuthorizableMachine`, and caps any other machine by nothing, so with `iam.adapters.authorization` off, bind a session
+policy source of your own, or name one in `authorization.session.source`.
 
 The scope registry is `laravel-authorization`'s `CatalogueScopeRegistry` unless you bind
 `SineMacula\Laravel\Authorization\Contracts\ScopeRegistry` yourself. It and the session policy source are mandatory

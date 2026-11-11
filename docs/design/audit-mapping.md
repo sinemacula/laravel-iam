@@ -425,7 +425,11 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   so no session key equals it), and this package's requirement checker refuses a subject naming no guard by throwing,
   so `laravel-authorization` reads each requirement as undecidable: an allow it guards does not apply, and a deny it
   guards does. A subject with no session would be judged unmet without the checker being asked, and a deny the
-  requirement guards would not apply to it, listing an action the reader's own session could be refused.
+  requirement guards would not apply to it, listing an action the reader's own session could be refused. Nor is the
+  policy told the scopes of the reader's credential, so the subject says them as those of a subject naming no
+  credential (`SessionPolicySourceAdapter::withoutCredential()`): no cap for a person, none granted for a machine. Left
+  unsaid, the session policy source would take the session key for a session to look up, find none, and allow every
+  reader nothing.
 - The adapter keeps nothing and resolves `laravel-authorization`'s manager, the memberships and the
   tenants from the application current on every call, so the singleton audit-log expects holds no request state.
 - Administrative operations (IAM-6.9). The catalogue also declares SSO's and MFA's administrative operations
@@ -624,9 +628,10 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `src/Audit/OperationalAlerts.php`: `listen()`, `validate()`, `KEY`, `EVENTS`; `config/iam.php`: `audit.alerts`.
 - `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Mappers/AuthorizationChange.php`: `of()`;
   `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
-- `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
-  `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`, `CATEGORIES`;
-  `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
+- `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`, `subjectOf()`, `UNJUDGED_SESSION`;
+  `src/Authorization/SessionPolicySourceAdapter.php`: `withoutCredential()`;
+  `src/Authorization/PermissionCatalogue.php`: `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`,
+  `CATEGORIES`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
   `src/Authorization/Enums/AdministrativeOperation.php`: `member()`; `src/Authorization/AuthorizationSeams.php`:
   `seams()`.
 

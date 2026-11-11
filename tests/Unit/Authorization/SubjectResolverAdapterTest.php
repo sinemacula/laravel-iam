@@ -20,6 +20,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
+use SineMacula\Laravel\Authorization\Support\CredentialScopes;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
 use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Models\Machine;
@@ -79,9 +80,9 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The scopes the caller's credential carries are the subject's, a list, an
-     * empty one and none kept apart, so the session policy source is handed
-     * them.
+     * The scopes the caller's credential carries are said on the subject, no
+     * cap, a list and an empty one kept apart, so the session policy source is
+     * handed them and looks nothing up.
      *
      * @param  ?list<string>  $scopes
      * @return void
@@ -95,14 +96,14 @@ final class SubjectResolverAdapterTest extends TestCase
         $auth->method('guard')->willReturn(self::createStub(ContextualGuard::class));
         $auth->method('caller')->willReturn(new Caller(self::GUARD, CallerCredential::ACCESS, self::createStub(Identity::class), $principal, null, null, scopes: $scopes));
 
-        self::assertSame($scopes, $this->resolver($auth)->resolve()?->scopes);
+        self::assertEquals(self::said($scopes), $this->resolver($auth)->resolve()?->scopes);
     }
 
     /**
      * The model the Gate hands over carries the scopes of the credential the
      * guard holds when it is the guard's principal, so the Gate's checks are
-     * capped as the request's own are, a list, an empty one and none kept
-     * apart; any other principal carries none.
+     * capped as the request's own are, no cap, a list and an empty one kept
+     * apart; any other principal says nothing of them.
      *
      * @param  ?list<string>  $scopes
      * @return void
@@ -113,7 +114,7 @@ final class SubjectResolverAdapterTest extends TestCase
         $principal = self::createStub(Principal::class);
         $resolver  = $this->resolver($this->guardHolding($principal, self::createStub(Identity::class), $scopes));
 
-        self::assertSame($scopes, $resolver->forUser($principal)->scopes);
+        self::assertEquals(self::said($scopes), $resolver->forUser($principal)->scopes);
         self::assertNull($resolver->forUser(self::createStub(Principal::class))->scopes);
     }
 
@@ -217,6 +218,18 @@ final class SubjectResolverAdapterTest extends TestCase
             self::assertSame(self::GUARD, $subject->guard);
             self::assertNull($subject->session);
         }
+    }
+
+    /**
+     * What the subject says of the scopes a credential carries: no cap for
+     * `null`, and the scopes otherwise.
+     *
+     * @param  ?list<string>  $scopes
+     * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
+     */
+    private static function said(?array $scopes): CredentialScopes
+    {
+        return $scopes === null ? CredentialScopes::uncapped() : CredentialScopes::of($scopes);
     }
 
     /**

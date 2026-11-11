@@ -114,31 +114,35 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   each seam has exactly one listener once resolved.
 - The subject (`SubjectResolverAdapter`). `resolve()` takes nothing, so it reads the request's caller
   (`Auth::caller()`): the principal, its identity, the active tenant, the guard as the application, the session's key
-  and the scopes the credential carries (`Caller::$scopes` onto `Subject::$scopes`), `null` where no credential limits
-  the caller and a list, `[]` for none granted, where one does, kept apart. No caller, or a pending session that has not
-  chosen its principal, is no subject. `forUser()` is handed the model Laravel's Gate decides about (`Auth::user()`, the
-  identity) or one the caller names, and never reads `Auth::caller()`: application access asks it while
-  `laravel-authentication` admits a sign-in, a refresh or a switch, and reading the caller then would prove the
+  and what the credential says of its scopes (`Caller::$scopes`), said on the subject (`Subject::$scopes`) as
+  `CredentialScopes::uncapped()` where no credential limits the caller and `CredentialScopes::of()` with the list, `[]`
+  for none granted, where one does, so the session policy source looks nothing up for it. No caller, or a pending
+  session that has not chosen its principal, is no subject. `forUser()` is handed the model Laravel's Gate decides about
+  (`Auth::user()`, the identity) or one the caller names, and never reads `Auth::caller()`: application access asks it
+  while `laravel-authentication` admits a sign-in, a refresh or a switch, and reading the caller then would prove the
   request's credential again mid-admission, a refresh credential's replay detection included, and keep the answer on the
   request for the rest of it. It reads the default guard's state instead, only where the guard has already resolved its
   user (`hasUser()`): a model that is the guard's principal, or the identity acting as it, the very object or the same
-  model loaded again (`Model::is()`), is the caller with the guard's tenant, session and credential's scopes
-  (`ContextualGuard::scopes()`), so the Gate's checks are capped as the request's own are; any other principal is a
-  subject in its own tenant with no session and no scopes; any other model, an identity that is not the caller's and no
-  principal among them, is its own subject and identity, with no tenant, no session and no scopes, as
-  `laravel-authorization`'s own resolver and `Subject::withSubject()` answer it, so a check about such an identity
-  counts only its own grants and the grant hook's classifier finds it the recipient of a grant made to it
-  (`WideningClassifier::recipient()` asks `forUser()`; grants to an identity are a grantee kind of their own,
-  AUTHZ-2.2). A default guard that is not one of `laravel-authentication`'s is answered by `laravel-authorization`'s own
-  resolver, so an admin panel on a Laravel session guard decides as it did before, except that a
-  `laravel-authentication` principal, the guard's user or one handed in, is still mapped to its identity and its own
-  tenant, with that resolver's application, guard and session: application access, `authorization:why` and
-  `Gate::forUser()` all build their subject through `forUser()`, and a sign-in or refresh route names no guard, so a
-  principal answered as its own identity in no tenant there would lose its identity's grants, denials, boundaries and
-  inactive state only because another guard was the default. `laravel-authentication` keeps the caller on the request's
-  attributes, and a queue worker's jobs share one request, so the worker reset drops those attributes between units of
-  work (`WorkerReset::forgetMemberState()`, `long-running-processes.md`): without it every later job would be decided
-  about the first job's caller.
+  model loaded again (`Model::is()`), is the caller with the guard's tenant and session, and the scopes of its
+  credential (`ContextualGuard::scopes()`) said as `resolve()` says them, so the Gate's checks are capped as the
+  request's own are; any other principal is a subject in its own tenant with no session, saying nothing of its scopes;
+  any other model, an identity that is not the caller's and no principal among them, is its own subject and identity,
+  with no tenant and no session, saying nothing of its scopes, as `laravel-authorization`'s own resolver and
+  `Subject::withSubject()` answer it, so a check about such an identity counts only its own grants and the grant hook's
+  classifier finds it the recipient of a grant made to it (`WideningClassifier::recipient()` asks `forUser()`; grants to
+  an identity are a grantee kind of their own, AUTHZ-2.2). A default guard that is not one of `laravel-authentication`'s
+  is answered by `laravel-authorization`'s own resolver, so an admin panel on a Laravel session guard decides as it did
+  before, except that a `laravel-authentication` principal, the guard's user or one handed in, is still mapped to its
+  identity and its own tenant, with that resolver's application, guard and session. A user that resolver finds signed in
+  with the request's session on that guard is said to carry no cap, since a Laravel session carries no scopes; otherwise
+  the session key would be taken for one of `laravel-authentication`'s sessions to look up, and the source would allow
+  it nothing. One with no session says nothing. Application access, `authorization:why` and `Gate::forUser()` all build
+  their subject through `forUser()`, and a sign-in or refresh route names no guard, so a principal answered as its own
+  identity in no tenant there would lose its identity's grants, denials, boundaries and inactive state only because
+  another guard was the default. `laravel-authentication` keeps the caller on the request's attributes, and a queue
+  worker's jobs share one request, so the worker reset drops those attributes between units of work
+  (`WorkerReset::forgetMemberState()`, `long-running-processes.md`): without it every later job would be decided about
+  the first job's caller.
 - The context (`AuthenticationContextAdapter`). Its namespaces are a fixed list, `authentication`, `mfa` and `sso`:
   `laravel-authorization` reads them as it boots and builds its key catalogue once, both before this package registers
   its `mfa` and `sso` contributors once every provider has booted, and a namespace missing then would leave its
@@ -213,19 +217,38 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   factors MFA offers the caller and whether its identity holds a confirmed factor (`Mfa::factors()`), and the handler
   renders MFA's exception as the application renders it. A refusal none of whose candidates MFA can express stays
   Laravel's 403. It is registered while both the authorization and MFA switches are on, on Laravel's own handler only.
-- The session policy (`SessionPolicySourceAdapter`). It answers the scopes the subject carries (`Subject::$scopes`),
-  which the subject resolver fills from the credential it read (above), so it is handed them as a plain value and reads
-  no guard, no caller and no request: a person's session answers `null`, no cap, and an API key or client-credentials
-  token its scopes, `[]` allowing nothing. A subject the caller names for another model (`Authorization::for()`,
-  through `Subject::withSubject()`) is no request's credential: `laravel-authorization` drops its scopes with its
-  session, so it carries none and is answered `null`, as the contract asks of a named person. A machine carrying no
-  scopes is answered `[]`, never `null`: `laravel-authorization` allows nothing to a machine answered `null` only when
-  it carries its own marker (`AuthorizableMachine`), and caps any other subject by nothing, while
-  `laravel-authentication`'s machines are its `MachineIdentity`. So a subject that is a machine identity, whose identity
-  is one, or a principal acting for one, is capped to nothing wherever no credential of its own caps it, named by the
-  caller, built for a job or a command, or asked about outside a request, marker or not, and a machine never borrows
-  scopes it was not issued nor goes uncapped for want of them. A machine's own credential always carries a list, so
-  `null` is left for people alone.
+- The session policy (`SessionPolicySourceAdapter`). It answers in the order `laravel-authorization`'s contract sets
+  (N126), and fails closed, `[]`, wherever it cannot establish the scopes of a credential the subject names, never
+  throwing for it:
+  - A subject that says what its credential carries (`Subject::$scopes`, a `CredentialScopes`) is answered from it:
+    `null` for `uncapped()`, the list for `of()`. The subject resolver says it whenever it read the credential (above),
+    so the request's subject and the Gate's caller are answered with no look-up.
+  - A subject that says nothing but names a session is answered `null` while that session is a live session of the
+    guard the subject names, owned by the identity the subject acts for (a principal's identity, or the subject itself,
+    and the identity it names, where it names one, must be that same one). No session stands behind a credential that
+    carries scopes: an API key and a client-credentials token have none, and `laravel-authentication` rejects a token
+    naming both a client and a session. The session is found through `laravel-authentication`'s session service for
+    that identity (`Auth::sessions($guard)->session()`), never through the guard's current state, and its summary's
+    guard must be the guard the subject names. A session that is missing, another identity's, pending, revoked,
+    expired or of another guard, a subject naming no guard or acting for no `laravel-authentication` identity, an
+    identity that holds no sessions, and a guard that is not a JWT guard of `laravel-authentication`'s, are answered
+    `[]`.
+  - A subject that says nothing and names no session, but names a guard whose caller is now its own model (the guard's
+    principal or identity, the very object or the same model, `Model::is()`), is answered from that caller's credential
+    (`ContextualGuard::scopes()`): `null` for a person's token, the list, `[]` included, for an API key or a
+    client-credentials token. Only the guard the subject names is read, never the default one, and only once it has
+    resolved its request (`hasUser()`), so its resolution is never started, or entered again mid-admission, from here.
+    A guard that is not configured, or whose reading throws, is answered `[]`.
+  - Any other subject names no credential: a job's or a console command's, a model the caller names
+    (`Authorization::for()`, through `Subject::withSubject()`, which says nothing of the scopes and drops the session),
+    or one naming a guard whose caller is someone else, or a guard that is not `laravel-authentication`'s. A person is
+    answered `null`, no cap; a machine `[]`, never `null`: `laravel-authorization` allows nothing to a machine answered
+    `null` only when it carries its own marker (`AuthorizableMachine`), and caps any other subject by nothing, while
+    `laravel-authentication`'s machines are its `MachineIdentity`. So a subject that is a machine identity, whose
+    identity is one, or a principal acting for one, is capped to nothing wherever no credential of its own caps it,
+    marker or not, and a machine never borrows scopes it was not issued nor goes uncapped for want of them. What a
+    subject naming no credential carries is `SessionPolicySourceAdapter::withoutCredential()`, which the audit access
+    policy says of its viewer.
 - The scope registry (`ScopeRegistryAdapter`). Each scope is asked of `laravel-authorization`'s registry alone, and every
   one it does not accept is rejected, in the order given, so `laravel-authentication` refuses to issue or rotate the
   credential. The registry is the application's binding of `laravel-authorization`'s contract where it binds one, and
@@ -503,9 +526,11 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   scope registry mandatory, whatever the guard's configured methods list.
 - A key issued a scope `laravel-authorization`'s registry does not accept is refused before anything is written, and a
   rotation holds the scopes to the registry again.
-- A subject carrying no scopes, one the caller names for another model, one built for a job or a command, or one asked
-  about outside a request, is capped by nothing if it is a person and allowed nothing if it is a machine; the source
-  never looks for a credential the subject does not carry.
+- A subject that says nothing of its scopes and names a credential the source cannot establish is allowed nothing: a
+  session that is not a live session of its guard owned by its identity (a revoked one, another identity's, one of
+  another guard, a key naming none), a session on a subject naming no guard, or a guard that is not configured or
+  cannot be read. One naming no credential (a job's, a console command's, a model the caller names, or one naming a
+  guard whose caller is someone else) is capped by nothing if it is a person and allowed nothing if it is a machine.
 - Gaps in the members the adapters work around:
   - `laravel-authorization` recognises a machine only by its own marker (`AuthorizableMachine`): a session policy
     source answering `null` allows such a subject nothing, and caps any other by nothing, though
@@ -675,10 +700,10 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `src/Mfa/RequirementCheckAdapter.php`: `since()`; `src/Mfa/CurrentSession.php`: `named()`,
   `sessions()`; `src/Mfa/SignInProofs.php`: `of()`.
 - `src/Authorization/InsufficientAuthenticationMapping.php`: `register()`, `stepUp()`, `isDecidedOn()`.
-- `src/Authorization/SessionPolicySourceAdapter.php`: `scopesFor()`; `src/Authorization/ScopeRegistryAdapter.php`:
-  `rejected()`; `src/Authorization/ApplicationAccessAdapter.php`: `mayUse()`; `src/Authorization/AccessMandates.php`:
-  `acceptsMachineCredentials()`, `isMachineGuard()`, `namesApplicationAccess()`, `MACHINE_METHODS`,
-  `APPLICATION_ACCESS`.
+- `src/Authorization/SessionPolicySourceAdapter.php`: `scopesFor()`, `withoutCredential()`;
+  `src/Authorization/ScopeRegistryAdapter.php`: `rejected()`; `src/Authorization/ApplicationAccessAdapter.php`:
+  `mayUse()`; `src/Authorization/AccessMandates.php`: `acceptsMachineCredentials()`, `isMachineGuard()`,
+  `namesApplicationAccess()`, `MACHINE_METHODS`, `APPLICATION_ACCESS`.
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetCallers()`.
 - `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
@@ -742,7 +767,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testTheGuardsOwnPrincipalIsTheCallerWithItsSession`, `testACopyOfTheCallerLoadedAgainIsTheCaller`,
   `testAnyOtherPrincipalHasNoSession`, `testEachJobInAWorkerIsDecidedAboutItsOwnCaller`,
   `testAnIdentityThatIsNoPrincipalAndAnyOtherModelAreTheirOwnSubject`,
-  `testAnotherKindOfGuardIsAnsweredAsLaravelAuthorizationsOwn`,
+  `testAnotherKindOfGuardIsAnsweredAsLaravelAuthorizationsOwn`, `testASessionOfAnotherKindOfGuardCarriesNoCap`,
   `testAPrincipalKeepsItsIdentityAndTenantWhicheverGuardIsTheDefault`
 - `tests/Integration/Authorization/IdentityGranteeTest.php` (every isolation level)
   `testAGrantToAnIdentityThatIsNoPrincipalIsWrittenAndDecided`
@@ -792,11 +817,18 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testTheScopeRegistryIsMandatoryWhileAGuardAcceptsAMachineCredential`,
   `testApplicationAccessIsMandatoryWhileAnApplicationIsMapped`,
   `testTheBoundApplicationPolicySaysWhichMachineCredentialsAGuardAccepts`
-- `tests/Unit/Authorization/SessionPolicySourceAdapterTest.php` `testAPersonsOwnScopesAreAnswered`,
-  `testAPersonCarryingNoScopesIsAnsweredNoCap`, `testAMachineCarryingNoScopesIsAllowedNothing`,
-  `testAMachinesOwnScopesAreAnswered`
+- `tests/Unit/Authorization/SessionPolicySourceAdapterTest.php` `testTheScopesASubjectSaysAreAnswered`,
+  `testAPersonNamingNoCredentialIsAnsweredNoCap`, `testAMachineNamingNoCredentialIsAllowedNothing`,
+  `testASessionThatCannotBeEstablishedAllowsNothing`, `testASessionIsLookedUpOnTheGuardTheSubjectNames`,
+  `testAGuardsOwnCallerIsAnsweredFromItsCredential`, `testAGuardWhoseCallerIsSomeoneElseNamesNoCredential`,
+  `testAGuardThatHasNotResolvedItsRequestIsNeverEntered`, `testAGuardThatIsNotContextualNamesNoCredential`,
+  `testAGuardThatCannotBeReadAllowsNothing`
 - `tests/Integration/Authorization/SessionPolicySourceAdapterTest.php` `testAnApiKeysScopesReachTheSource`,
   `testAPersonsSessionReachesTheSourceWithNoCap`, `testASubjectNamedForAnotherModelCarriesNoScopes`,
+  `testAPersonsLiveSessionCarriesNoCap`, `testASessionThatIsNotThePersonsLiveSessionOfTheGuardAllowsNothing`,
+  `testASubjectNamingTheGuardWhoseCallerItIsIsCappedByItsKey`,
+  `testASubjectNamingAGuardWhoseCallerIsSomeoneElseNamesNoCredential`,
+  `testASubjectNamingAGuardThatIsNotConfiguredAllowsNothing`, `testAJobsPersonCarriesNoCap`,
   `testOutsideARequestAMachineIsAllowedNothing`
 - `tests/Integration/Authorization/ScopeRegistryAdapterTest.php` `testAKeyWithAScopeNamingNoPermissionIsRefused`,
   `testTheRegistryRejectsEachScopeAuthorizationDoesNotAccept`, `testTheApplicationsOwnAuthorizationRegistryIsAsked`,
@@ -909,9 +941,11 @@ Part (b) follows the manifest's remaining rows, with these departures:
   as it is, on that ground.
 - SSO's `widened()` takes a client the widening can carry, or stops requiring a transaction on its storage connection.
 - `laravel-authentication` adds a namespace of its own to the context.
-- `laravel-authentication` changes what `Caller::$scopes` or `ContextualGuard::scopes()` answer, or
-  `laravel-authorization` changes what `Subject::$scopes` means or when `withSubject()` drops it: the subject resolver
-  and the session policy source change with it.
+- `laravel-authentication` changes what `Caller::$scopes` or `ContextualGuard::scopes()` answer, lets a session stand
+  behind a credential carrying scopes, or changes what `SessionService::session()` finds, or `laravel-authorization`
+  changes the order its session policy source contract answers in, what `Subject::$scopes` (`CredentialScopes`) means,
+  or when `withSubject()` drops it: the subject resolver, the session policy source and the audit access policy's
+  viewer change with it.
 - MFA adds an assurance level, or a requirement part.
 - Laravel stops turning an authorization exception into an HTTP exception before its render callbacks, or stops keeping
   it as the previous exception.

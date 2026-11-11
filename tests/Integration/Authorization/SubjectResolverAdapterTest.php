@@ -6,9 +6,11 @@ namespace Tests\Integration\Authorization;
 
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Auth;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Subject;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
@@ -271,6 +273,47 @@ final class SubjectResolverAdapterTest extends TestCase
 
         self::assertSubject(new Subject($person, $person, null, 'web', 'web'), $this->resolver()->resolve());
         self::assertSubject(new Subject($person, $person, null, 'web', 'web'), $this->resolver()->forUser($person));
+    }
+
+    /**
+     * On a default guard that is not `laravel-authentication`'s, a user signed
+     * in with the request's session carries no cap, since such a session
+     * carries no scopes, so the session policy source looks nothing up for it
+     * and caps nothing; a user with no session, and any other model, says
+     * nothing of its scopes and is its own subject as that resolver answers it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASessionOfAnotherKindOfGuardCarriesNoCap(): void
+    {
+        $person = $this->createPerson();
+        $staff  = Staff::query()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.test']);
+        $store  = $this->resolved('session.store');
+
+        self::assertInstanceOf(Store::class, $store);
+
+        $this->app?->make('config')->set('auth.guards.web', ['driver' => 'session', 'provider' => 'people']);
+
+        $store->start();
+        request()->setLaravelSession($store);
+
+        Auth::shouldUse('web');
+        Auth::guard()->login($person);
+
+        $subject = $this->resolver()->resolve();
+        $source  = $this->resolved(SessionPolicySource::class);
+
+        self::assertInstanceOf(SessionPolicySource::class, $source);
+        self::assertSame($store->getId(), $subject?->session);
+        self::assertFalse($subject->scopes?->isCapped() ?? true);
+        self::assertNull($source->scopesFor($subject));
+
+        $other = $this->resolver()->forUser($staff);
+
+        self::assertSubject(new Subject($staff, $staff, null, 'web', 'web'), $other);
+        self::assertNull($other->scopes);
     }
 
     /**
