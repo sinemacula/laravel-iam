@@ -9,6 +9,7 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\Access\DenyAllPolicy;
+use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy;
 use SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
@@ -110,7 +111,8 @@ final class AuditAccessSeamTest extends TestCase
     }
 
     /**
-     * The row is shared, over audit-log's `DenyAllPolicy`, and never mandatory.
+     * The row is shared, over audit-log's `DenyAllPolicy` as audit-log says,
+     * and never mandatory.
      *
      * @return void
      */
@@ -122,7 +124,7 @@ final class AuditAccessSeamTest extends TestCase
         self::assertSame(AuditAccessPolicyAdapter::class, $row->adapter);
         self::assertSame(Lifetime::SHARED, $row->lifetime);
         self::assertSame([DenyAllPolicy::class], $row->memberDefaults);
-        self::assertNull($row->holdsDefault);
+        self::assertSame(AuditLogServiceProvider::class, (new \ReflectionFunction($row->holdsDefault ?? self::fail('The row asks no member.')))->getClosureScopeClass()?->getName());
         self::assertFalse($row->isMandatory());
     }
 

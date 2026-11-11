@@ -278,7 +278,6 @@ final readonly class AuthorizationSeams implements ProvidesSeams
             $lifetime,
             appliesWhen: $appliesWhen,
             mandatory: $mandatory,
-            holdsDefault: AuthorizationServiceProvider::isPackageDefault(...),
             factory: $factory,
             declare: self::declaration($contract, $adapter, $default, $lifetime, $factory !== null),
         );
