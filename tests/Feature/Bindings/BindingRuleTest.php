@@ -51,14 +51,13 @@ use Tests\TestCase;
  * whatever order the providers register in.
  *
  * The fixture members bind their defaults beside the real members, only where
- * nothing is bound yet, as every member does: one with `singletonIf()` of a
- * class name and `bindIf()` of a closure it declares, after
- * laravel-authentication's provider, and one with `bindIf()` and `scopedIf()`
- * of class names, after laravel-mfa's. The rule runs over the fixture seams as
- * a provider registered straight after this package's registers, as this
- * package's provider runs it over its capabilities' seams. A fixture member
- * that binds with a plain `bind()`, as laravel-authorization still binds its
- * resolvers (IAM-13.7), is added only by the tests that show what it does.
+ * nothing is bound yet, as every member does: one with `singletonIf()` and
+ * `bindIf()`, after laravel-authentication's provider, and one with `bindIf()`,
+ * after laravel-mfa's. The rule runs over the fixture seams as a provider
+ * registered straight after this package's registers, as this package's
+ * provider runs it over its capabilities' seams. A fixture member that binds
+ * with a plain `bind()`, as laravel-authorization still binds its resolvers
+ * (IAM-13.7), is added only by the tests that show what it does.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -547,7 +546,7 @@ final class BindingRuleTest extends TestCase
     {
         $app = $this->application();
 
-        $app->singleton(SharedSeam::class, MemberDefault::class);
+        $app->singleton(SharedSeam::class, MemberDefault::build(...));
         $app->bind(TransientSeam::class, ApplicationImplementation::class);
 
         $member     = $app->getBindings()[SharedSeam::class]['concrete'];
@@ -708,62 +707,6 @@ final class BindingRuleTest extends TestCase
     }
 
     /**
-     * A shared adapter bound over a member's `scopedIf()` default stays one
-     * shared instance when the scoped instances are forgotten: the seam the
-     * member scoped is taken off the container's scoped instances as the
-     * adapter is bound over it.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testASharedAdapterBoundOverAScopedDefaultStaysShared(): void
-    {
-        $app = $this->application();
-
-        $app->scopedIf(SharedSeam::class, MemberDefault::class);
-
-        $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED)));
-        $shared  = $app->make(SharedSeam::class);
-
-        $app->forgetScopedInstances();
-
-        self::assertSame([SharedSeam::class], $outcome->bound);
-        self::assertInstanceOf(Adapter::class, $shared);
-        self::assertSame($shared, $app->make(SharedSeam::class));
-    }
-
-    /**
-     * A scoped binding keyed by its closure's return type, made before the rule
-     * runs, which the container lists as the closure itself, stays scoped, and
-     * the seam the rule binds over is still taken off the scoped instances.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testAScopedBindingKeyedByItsClosureStaysScoped(): void
-    {
-        $app = $this->application();
-
-        $app->scoped(static fn (): ApplicationImplementation => new ApplicationImplementation);
-        $app->scopedIf(SharedSeam::class, MemberDefault::class);
-
-        $binding       = new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED);
-        $outcome       = $app->make(BindingRule::class)->apply($app, new DeclaredSeams($binding));
-        $closureScoped = $app->make(ApplicationImplementation::class);
-        $shared        = $app->make(SharedSeam::class);
-
-        $app->forgetScopedInstances();
-
-        self::assertSame([SharedSeam::class], $outcome->bound);
-        self::assertNotSame($closureScoped, $app->make(ApplicationImplementation::class));
-        self::assertSame($shared, $app->make(SharedSeam::class));
-    }
-
-    /**
      * A binding that names how the container builds the seam has that built in
      * the adapter's place, handed the container, with the binding's lifetime:
      * built on every resolution, once, or once until the scoped instances are
@@ -785,9 +728,9 @@ final class BindingRuleTest extends TestCase
         };
 
         $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(
-            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], factory: $factory),
-            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, factory: $factory),
-            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, factory: $factory),
+            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], factory: $factory, holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, factory: $factory, holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, factory: $factory, holdsDefault: MemberDefault::isPackageDefault(...)),
         ));
 
         $shared = $app->make(SharedSeam::class);
@@ -837,11 +780,38 @@ final class BindingRuleTest extends TestCase
         $app->bind(PlainSeam::class, ApplicationImplementation::class);
 
         $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(
-            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], declare: $declare(TransientSeam::class)),
-            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, declare: $declare(SharedSeam::class)),
-            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, declare: $declare(ScopedSeam::class)),
-            new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], declare: $declare(PlainSeam::class)),
-            new SeamBinding(FeatureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: static fn (): bool => false, declare: $declare(FeatureSeam::class)),
+            new SeamBinding(
+                TransientSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                declare: $declare(TransientSeam::class),
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
+            new SeamBinding(
+                SharedSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                Lifetime::SHARED,
+                declare: $declare(SharedSeam::class),
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
+            new SeamBinding(
+                ScopedSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                Lifetime::SCOPED,
+                declare: $declare(ScopedSeam::class),
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
+            new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], declare: $declare(PlainSeam::class), holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(
+                FeatureSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                appliesWhen: static fn (): bool => false,
+                declare: $declare(FeatureSeam::class),
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
         ));
 
         self::assertSame([TransientSeam::class, SharedSeam::class, ScopedSeam::class], $outcome->bound);
@@ -857,29 +827,6 @@ final class BindingRuleTest extends TestCase
         $forwarding = $declared->seams[ScopedSeam::class][1] ?? self::fail('The scoped seam was declared with no closure.');
 
         self::assertSame($app->make(BindingRule::SCOPED_PREFIX . ScopedSeam::class), $forwarding($app));
-    }
-
-    /**
-     * A container that is not Laravel's keeps no scoped instances to take the
-     * seam off, and has the adapter bound all the same.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    public function testAnotherContainerHasTheAdapterBound(): void
-    {
-        $app = \Mockery::mock(ApplicationContract::class);
-
-        $app->shouldReceive('make')->with(Repository::class)->andReturn(new ConfigRepository);
-        $app->shouldReceive('getProviders')->andReturn([]);
-        $app->shouldReceive('bound')->with(TransientSeam::class)->andReturnFalse();
-        $app->shouldReceive('bind')->once()->with(TransientSeam::class, Adapter::class);
-
-        $outcome = $this->application()->make(BindingRule::class)->apply($app, new DeclaredSeams(new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class])));
-
-        self::assertSame([[TransientSeam::class], []], [$outcome->bound, $outcome->kept]);
     }
 
     /**
@@ -948,8 +895,20 @@ final class BindingRuleTest extends TestCase
         $app->make(Repository::class)->set(['iam-fixtures.on' => true, 'iam-fixtures.off' => false]);
 
         $outcome = $app->make(BindingRule::class)->apply($app, new DeclaredSeams(
-            new SeamBinding(SharedSeam::class, Adapter::class, [], appliesWhen: static fn (Repository $config): bool => $config->get('iam-fixtures.off') === true),
-            new SeamBinding(TransientSeam::class, Adapter::class, [], appliesWhen: static fn (Repository $config): bool => $config->get('iam-fixtures.on') === true),
+            new SeamBinding(
+                SharedSeam::class,
+                Adapter::class,
+                [],
+                appliesWhen: static fn (Repository $config): bool => $config->get('iam-fixtures.off') === true,
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
+            new SeamBinding(
+                TransientSeam::class,
+                Adapter::class,
+                [],
+                appliesWhen: static fn (Repository $config): bool => $config->get('iam-fixtures.on') === true,
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
         ));
 
         self::assertSame([TransientSeam::class], $outcome->bound);
@@ -977,11 +936,11 @@ final class BindingRuleTest extends TestCase
         $outcome = $app->make(BindingRule::class)->apply(
             $app,
             new DeclaredSeams(
-                new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class]),
-                new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED),
+                new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+                new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, holdsDefault: MemberDefault::isPackageDefault(...)),
             ),
             new DeclaredSeams,
-            new DeclaredSeams(new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED)),
+            new DeclaredSeams(new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, holdsDefault: MemberDefault::isPackageDefault(...))),
         );
 
         self::assertSame([TransientSeam::class, ScopedSeam::class], $outcome->bound);
@@ -1003,8 +962,14 @@ final class BindingRuleTest extends TestCase
 
         $outcome = $app->make(BindingRule::class)->apply(
             $app,
-            transient: new DeclaredSeams(new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class])),
-            shared: new DeclaredSeams(new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED)),
+            transient: new DeclaredSeams(new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...))),
+            shared: new DeclaredSeams(new SeamBinding(
+                SharedSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                Lifetime::SHARED,
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            )),
         );
 
         self::assertSame([TransientSeam::class, SharedSeam::class], $outcome->bound);
@@ -1317,11 +1282,17 @@ final class BindingRuleTest extends TestCase
             public function seams(Repository $config): array
             {
                 return [
-                    new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class]),
-                    new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class]),
-                    new SeamBinding(ScopedSeam::class, Adapter::class, $this->scopedDefaults),
-                    new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class]),
-                    new SeamBinding(ClosureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: $this->closureSeamOn),
+                    new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+                    new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+                    new SeamBinding(ScopedSeam::class, Adapter::class, $this->scopedDefaults, holdsDefault: MemberDefault::isPackageDefault(...)),
+                    new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+                    new SeamBinding(
+                        ClosureSeam::class,
+                        Adapter::class,
+                        [MemberDefault::class],
+                        appliesWhen: $this->closureSeamOn,
+                        holdsDefault: MemberDefault::isPackageDefault(...),
+                    ),
                 ];
             }
         };

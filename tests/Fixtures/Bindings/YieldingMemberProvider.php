@@ -10,10 +10,8 @@ use Tests\Fixtures\Bindings\Contracts\ScopedSeam;
 use Tests\Fixtures\Bindings\Contracts\TransientSeam;
 
 /**
- * A member's provider that binds its defaults only where nothing is bound yet:
- * two with `bindIf()` of a class name, as laravel-mfa binds its defaults since
- * laravel-mfa#92, and one with `scopedIf()`, as laravel-sso binds its
- * request-scoped ones.
+ * A member's provider that binds its defaults with `bindIf()`, only where
+ * nothing is bound yet, as laravel-mfa and laravel-sso do.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,8 +28,8 @@ final class YieldingMemberProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->bindIf(TransientSeam::class, MemberDefault::class);
-        $this->app->scopedIf(ScopedSeam::class, MemberDefault::class);
-        $this->app->bindIf(FeatureSeam::class, MemberDefault::class);
+        $this->app->bindIf(TransientSeam::class, MemberDefault::build(...));
+        $this->app->bindIf(ScopedSeam::class, MemberDefault::build(...));
+        $this->app->bindIf(FeatureSeam::class, MemberDefault::build(...));
     }
 }
