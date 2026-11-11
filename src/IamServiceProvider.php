@@ -8,7 +8,6 @@ use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Events\TransactionCommitted;
-use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -50,7 +49,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Transactions\CommittedWork;
-use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -68,11 +66,11 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * trail's mappers and codes, the `mfa` and `sso` authentication context
  * contributors, the rendering of `laravel-authorization`'s
  * insufficient-authentication exception as MFA's step-up, the listeners
- * counting outermost commits and releasing the work held for a commit to
- * finish, the listener provisioning SSO's unlinked results, the listeners
- * handing the operational events to the application's alerting, the listeners
- * carrying the caller into each queued job, the worker reset listeners, the
- * publishing tag and the `iam:install` and `iam:check` commands.
+ * releasing the work held for a commit to finish, the listener provisioning
+ * SSO's unlinked results, the listeners handing the operational events to the
+ * application's alerting, the listeners carrying the caller into each queued
+ * job, the worker reset listeners, the publishing tag and the `iam:install` and
+ * `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
  * `register()`, where the seam is unbound or still bound to the member's own
@@ -216,10 +214,10 @@ final class IamServiceProvider extends ServiceProvider
      * is not refused while a configuration command runs, as a member is not),
      * then queue the `mfa` and `sso` authentication context contributors'
      * registration for when every provider has booted, and bootstrap the
-     * listeners counting outermost commits and releasing the work held for a
-     * commit to finish, the listener provisioning SSO's unlinked results, the
-     * listeners handing the operational events to the application's alerting,
-     * the listeners carrying the caller into each queued job, the rendering of
+     * listeners releasing the work held for a commit to finish, the listener
+     * provisioning SSO's unlinked results, the listeners handing the
+     * operational events to the application's alerting, the listeners carrying
+     * the caller into each queued job, the rendering of
      * `laravel-authorization`'s insufficient-authentication exception as MFA's
      * step-up, the worker reset listeners, the publishing tag and the console
      * commands, and register this package's checks of
@@ -312,11 +310,9 @@ final class IamServiceProvider extends ServiceProvider
      * links contract answers from, the renewal a re-authentication records
      * before its one write, the refusals `laravel-authentication` reports
      * inside a transaction, held for the audit trail until the outermost one
-     * has ended, the outermost commits each connection has begun, which a
-     * standalone `link` reads to tell whether its attempt reached its commit
-     * before it failed, and the work held until a connection's commit has
-     * finished. Each is scoped, so it is one request's or one job's alone
-     * (IAM-8.1), under this package's own key for its scoped adapters, which
+     * has ended, and the work held until a connection's commit has finished.
+     * Each is scoped, so it is one request's or one job's alone (IAM-8.1),
+     * under this package's own key for its scoped adapters, which
      * `Iam::resetWorkerState()` forgets as it forgets every other one, and
      * resolved through that key, so the explicit reset never leaves a record
      * held where something still resolves it.
@@ -325,7 +321,7 @@ final class IamServiceProvider extends ServiceProvider
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, CommittedWork::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, CommittedWork::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 
@@ -471,29 +467,21 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Count every outermost commit a connection begins, in this request's or
-     * this job's record (`OutermostCommits`), release the work held until a
-     * connection's commit has finished, every callback queued on it run
-     * (`AfterConnectionCommits::committed()`), and release what a commit left
-     * held, a commit callback having failed, as the request, the console
-     * command or the queued job ends (`AfterConnectionCommits::settle()`). Each
-     * listener resolves what it calls from the application current when it
-     * runs, never from the events dispatcher's container: under Octane that is
-     * the worker's own application, while the request's records are its
-     * sandbox's. All are always on, whatever the worker reset's switch: a
-     * standalone `link` is never run again once its attempt has reached its
-     * commit, and an enforcement change's or a reported policy change's second
-     * pass waits for the change to commit.
+     * Release the work held until a connection's commit has finished, every
+     * callback queued on it run (`AfterConnectionCommits::committed()`), and
+     * release what a commit left held, a commit callback having failed, as the
+     * request, the console command or the queued job ends
+     * (`AfterConnectionCommits::settle()`). Each listener resolves what it
+     * calls from the application current when it runs, never from the events
+     * dispatcher's container: under Octane that is the worker's own
+     * application, while the request's records are its sandbox's. All are
+     * always on, whatever the worker reset's switch: an enforcement change's or
+     * a reported policy change's second pass waits for the change to commit.
      *
      * @return void
      */
     protected function registerCommitListeners(): void
     {
-        Event::listen(TransactionCommitting::class, static function (TransactionCommitting $event): void {
-
-            Container::getInstance()->make(OutermostCommits::class)->committing($event);
-        });
-
         Event::listen(TransactionCommitted::class, static function (TransactionCommitted $event): void {
 
             Container::getInstance()->make(AfterConnectionCommits::class)->committed($event);

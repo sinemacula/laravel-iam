@@ -60,7 +60,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
 use SineMacula\Laravel\Iam\Transactions\CommittedWork;
-use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -942,51 +941,6 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Every outermost commit a connection begins is counted in this request's
-     * record, once however many savepoints it holds, and never for a
-     * transaction rolled back.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testEachOutermostCommitIsCounted(): void
-    {
-        $commits    = $this->app?->make(OutermostCommits::class) ?? self::fail('The application has not booted.');
-        $connection = DB::connection();
-
-        DB::transaction(static fn (): mixed => DB::transaction(static fn (): null => null));
-
-        self::assertSame(1, $commits->count($connection));
-
-        DB::beginTransaction();
-        DB::rollBack();
-
-        self::assertSame(1, $commits->count($connection));
-
-        DB::transaction(static fn (): null => null);
-
-        self::assertSame(2, $commits->count($connection));
-    }
-
-    /**
-     * With the worker reset turned off, outermost commits are still counted.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DefineEnvironment('turnTheResetOff')]
-    public function testOutermostCommitsAreCountedWithTheWorkerResetOff(): void
-    {
-        $commits = $this->app?->make(OutermostCommits::class) ?? self::fail('The application has not booted.');
-
-        DB::transaction(static fn (): null => null);
-
-        self::assertSame(1, $commits->count(DB::connection()));
-    }
-
-    /**
      * Work held for a connection runs once that connection's commit has
      * finished, through the record this request keeps, with the worker reset
      * turned off too.
@@ -1067,10 +1021,9 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Under Octane, whose events dispatcher keeps the worker's application,
-     * each commit listener reaches the request's sandbox's own records: the
-     * work held in the sandbox runs once its commit has finished, and the
-     * commit is counted in the sandbox's record, not the worker's.
+     * Under Octane, whose events dispatcher keeps the worker's application, the
+     * commit listener reaches the request's sandbox's own record: the work held
+     * in the sandbox runs once its commit has finished.
      *
      * @return void
      *
@@ -1078,11 +1031,9 @@ final class IamServiceProviderTest extends TestCase
      */
     public function testTheCommitListenersReachAnOctaneSandboxsRecords(): void
     {
-        $worker = $this->application()->make(OutermostCommits::class);
-
         $this->application()->make(CommittedWork::class);
 
-        $this->inOctaneSandbox(function (FoundationApplication $sandbox) use ($worker): void {
+        $this->inOctaneSandbox(function (FoundationApplication $sandbox): void {
 
             $runs = 0;
 
@@ -1095,8 +1046,6 @@ final class IamServiceProviderTest extends TestCase
 
             self::assertSame(1, $runs, 'The work held in the sandbox never ran.');
             self::assertSame([], $sandbox->make(CommittedWork::class)->connections());
-            self::assertSame(1, $sandbox->make(OutermostCommits::class)->count(self::storage()));
-            self::assertSame(0, $worker->count(self::storage()), 'The commit was counted in the worker\'s record.');
         });
     }
 

@@ -8,11 +8,9 @@ use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\QueryExecuted;
-use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
@@ -242,10 +240,9 @@ final class RedemptionLockOrderTest extends TestCase
 
     /**
      * A `link` redeemed while another transaction holds the identity's guard
-     * waits for it and links the person: at READ COMMITTED, and on MySQL, in
-     * one attempt; on PostgreSQL at REPEATABLE READ it fails to serialise once
-     * the other commits, and is redeemed again from its start, standalone, in a
-     * second.
+     * waits for it and links the person: at READ COMMITTED, and on MySQL, at
+     * once; on PostgreSQL at REPEATABLE READ it fails to serialise once the
+     * other commits, with the code unspent, and the request retried links.
      *
      * @param  string  $level
      * @return void
@@ -253,7 +250,7 @@ final class RedemptionLockOrderTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testALinkRacingAHolderOfTheIdentitysGuardIsRedeemedAgain(string $level): void
+    public function testALinkRacingAHolderOfTheIdentitysGuardLinksOnceTheRequestIsRetried(string $level): void
     {
         self::requireAFork();
         self::useIsolationLevel($level);
@@ -269,20 +266,16 @@ final class RedemptionLockOrderTest extends TestCase
             static fn (): int => DB::table('sso_identity_guards')->where('identity_hash', $digest)->update(['identity_hash' => $digest]),
             function () use ($handoff, $person): string {
 
-                $attempts = 0;
-
-                Event::listen(TransactionBeginning::class, static function (TransactionBeginning $event) use (&$attempts): void {
-                    $attempts += $event->connectionName === self::RACER && $event->connection->transactionLevel() === 1 ? 1 : 0;
-                });
-
-                $linked = $this->redeemLink($handoff, $person);
-
-                return sprintf('%s in %d', $linked->status->value, $attempts);
+                try {
+                    return $this->redeemLink($handoff, $person)->status->value;
+                } catch (QueryException $exception) {
+                    return sprintf('%s, then %s', $exception->getCode(), $this->redeemLink($handoff, $person)->status->value);
+                }
             },
             $level,
         );
 
-        self::assertSame(sprintf('redeemed in %d', self::isSnapshotRetried($level) ? 2 : 1), $outcome);
+        self::assertSame(self::isSnapshotRetried($level) ? '40001, then redeemed' : 'redeemed', $outcome);
         self::assertCount(1, $this->app?->make(LinkService::class)->list($reference) ?? []);
     }
 
@@ -394,9 +387,9 @@ final class RedemptionLockOrderTest extends TestCase
     /**
      * A sign-in racing a connection disable whose last attempt fails to
      * serialise, on PostgreSQL at REPEATABLE READ with one attempt configured,
-     * throws the database's own `QueryException`, SQLSTATE 40001, which
-     * Laravel's detector recognises, so the caller retries the request; no
-     * session is written. At every other level it waits, and is refused.
+     * throws a failure Laravel's detector recognises, so the caller retries the
+     * request; no session is written. At every other level it waits, and is
+     * refused.
      *
      * @param  string  $level
      * @return void
@@ -404,7 +397,7 @@ final class RedemptionLockOrderTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testASignInWhoseLastAttemptFailsToSerialiseThrowsTheDatabasesFailure(string $level): void
+    public function testASignInWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure(string $level): void
     {
         self::useIsolationLevel($level);
 
@@ -436,10 +429,9 @@ final class RedemptionLockOrderTest extends TestCase
     /**
      * A re-authentication racing another for the same session whose last
      * attempt fails to serialise, on PostgreSQL at REPEATABLE READ with one
-     * attempt configured, throws the database's own `QueryException`, SQLSTATE
-     * 40001, which Laravel's detector recognises, and leaves its code unspent,
-     * so the request retried renews the session. At every other level it waits,
-     * and renews.
+     * attempt configured, throws a failure Laravel's detector recognises, and
+     * leaves its code unspent, so the request retried renews the session. At
+     * every other level it waits, and renews.
      *
      * @param  string  $level
      * @return void
@@ -447,7 +439,7 @@ final class RedemptionLockOrderTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testAReauthenticationWhoseLastAttemptFailsToSerialiseThrowsTheDatabasesFailure(string $level): void
+    public function testAReauthenticationWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure(string $level): void
     {
         self::useIsolationLevel($level);
 
@@ -488,10 +480,8 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Assert that what the redemption answered is the database's own failure to
-     * serialise, as PostgreSQL raises it: a `QueryException` with SQLSTATE
-     * 40001, not Laravel's `DeadlockException` around one, that Laravel's
-     * concurrency detector recognises.
+     * Assert that what the redemption answered is a failure to serialise that
+     * Laravel's concurrency detector recognises, the database's own behind it.
      *
      * @param  mixed  $answer
      * @return void
@@ -500,10 +490,17 @@ final class RedemptionLockOrderTest extends TestCase
      */
     private function assertRaisedBySerialisation(mixed $answer): void
     {
-        self::assertNotInstanceOf(DeadlockException::class, $answer);
-        self::assertInstanceOf(QueryException::class, $answer);
-        self::assertSame('40001', $answer->getCode());
+        self::assertInstanceOf(DeadlockException::class, $answer);
         self::assertTrue($this->app?->make(ConcurrencyErrorDetector::class)->causedByConcurrencyError($answer));
+
+        $raised = $answer;
+
+        while ($raised instanceof DeadlockException) {
+            $raised = $raised->getPrevious();
+        }
+
+        self::assertInstanceOf(QueryException::class, $raised);
+        self::assertSame('40001', $raised->getCode());
     }
 
     /**

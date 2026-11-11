@@ -607,7 +607,8 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     /**
      * The provisioning transaction is attempted once, never retried after a
      * concurrency failure, since the grant allows one use: the failure
-     * propagates, the provisioner having been asked once.
+     * propagates, as a concurrency failure, the provisioner having been asked
+     * once.
      *
      * @return void
      *
@@ -626,7 +627,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
             throw $failure;
         });
 
-        self::assertSame($failure, self::thrownBy(fn (): HandoffRedirect => $this->complete()));
+        self::assertSame($failure, self::thrownBy(fn (): HandoffRedirect => $this->complete())->getPrevious());
         self::assertSame(1, $asked);
         self::assertSame(0, Link::query()->count());
     }

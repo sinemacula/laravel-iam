@@ -38,8 +38,7 @@ final readonly class IamManager
 {
     /**
      * Run a change that spans members in one transaction on the storage
-     * connection, retrying the whole of it after a concurrency failure when no
-     * transaction is open there, and return what the work returns.
+     * connection, retried only when outermost.
      *
      * @template T
      *

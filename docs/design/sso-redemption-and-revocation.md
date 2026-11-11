@@ -231,42 +231,17 @@ run through are in `storage-and-transactions.md`.
     Called inside a transaction the caller holds open on the storage connection, SSO's `redeem()` is its `admit()`
     instead: the link is admitted, written in the caller's transaction, and commits or rolls back with it. Which path
     runs is SSO's; this package refuses neither.
-  - A standalone `link` whose transaction a concurrency failure ends before it commits (SQLSTATE 40001, a deadlock, a
-    lock wait timeout, or a second `LinkCandidatesChanged`) has been rolled back whole by SSO, its consumption
-    included, so `LinkRedemption` redeems it again from its start, still standalone, up to `iam.transactions.attempts`
-    (`RetrySettings`), after the failures `ConcurrencyFailures::isRetryable()` recognises. It is never wrapped in
-    `CrossMemberTransaction::run()`, which would make it an admitted redemption. On PostgreSQL at REPEATABLE READ, a
-    `link` that waited on another holder of the identity's guard (a second submission of the same callback, another
-    link of the same person's, a reservation's activation or a principal's widening) fails to serialise once the other
-    commits, and the next attempt sees what it committed. Each attempt is counted against the client's IP address, as
-    SSO counts every redemption.
-  - A standalone `link` attempt that reached its commit is never run again, whatever it then failed on, as
-    `CrossMemberTransaction` never runs an attempt again once it has committed: SSO dispatches `HandoffRedeemed`,
-    `LinkCreated` and its other events from the commit, and a listener's exception (a deadlock met writing an audit
-    row, say) propagates from it, after the link is written and the code spent, so a second attempt would only find
-    the code replayed, answer a refusal of a link that was made, report a spurious `FlowFailed(replayed)` and spend
-    another attempt. Laravel fires `TransactionCommitting` just before it commits an outermost transaction, and this
-    package counts each one for the request (`Transactions\OutermostCommits`, listened for in
-    `IamServiceProvider::registerCommitListeners()`); an attempt during which the storage connection's count moved
-    rethrows its failure as it was thrown. A commit that itself failed is counted too, which errs on the side of not
-    retrying: the caller retries the request.
-  - Inside a caller's transaction a `link` runs once, through `CrossMemberTransaction::run()`, in a savepoint of the
-    caller's transaction that is rolled back whenever it fails, after a concurrency failure included, on every
-    supported Laravel version (Laravel before 13.40 only lowers the level), so a caller that catches the failure and
-    commits keeps none of SSO's writes: not the consumption, the single-use record or the link. SSO still sees a
-    transaction open and admits the link. Its failure reaches the caller through `ConcurrencyFailures::forCaller()`,
-    in a form the caller's retry recognises.
-  - The code and the verifier reach the transaction's work in a sign-in, a re-authentication and a `link` inside a
-    caller's transaction wrapped in a `SensitiveParameterValue` and are unwrapped only inside it, so a trace of
-    anything thrown there, whose frames carry the work and what it captured, holds neither in the clear; a standalone
-    `link` captures neither in any closure.
+  - A `link` is not retried here (IAM-11.2): a concurrency failure reaches the caller, which retries the request.
+    Inside a caller's transaction SSO's own nested transaction is its savepoint, and the failure is the caller's.
+  - The code and the verifier reach the transaction's work in a sign-in and a re-authentication wrapped in a
+    `SensitiveParameterValue` and are unwrapped only inside it, so a trace of anything thrown there, whose frames carry
+    the work and what it captured, holds neither in the clear; a `link` captures neither in any closure.
   - SSO's flow starts and completions are never wrapped in a transaction.
 - Records for one request (IAM-8.1): `AdmittedRedemptions` holds at most one admitted redemption, with the identity and
   the link SSO resolved and the client SSO was handed for it (which the tenant authentication policy hands SSO's
   exemption gate while that sign-in or re-authentication is judged, `tenant-authentication-policy.md`),
-  `RenewalRecorder` at most one renewal, `Transactions\OutermostCommits` the outermost commits each connection has
-  begun, and `Transactions\CommittedWork` the work held until a connection's commit has finished (an enforcement
-  change's second pass, and a reported policy change's). All four are bound scoped under
+  `RenewalRecorder` at most one renewal, and `Transactions\CommittedWork` the work held until a connection's commit has
+  finished (an enforcement change's second pass, and a reported policy change's). All three are bound scoped under
   `BindingRule::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
   the worker reset forgets them, and every adapter, listener and redemption resolves them from the container on each
   call. Each commit listener, and the `iam` manager (`IamManager`), resolves what it calls from the application
@@ -401,9 +376,6 @@ run through are in `storage-and-transactions.md`.
   re-authentication is never called when SSO refused, and never from `renewAuthentication()`. A `reauthenticate` code
   admitted through SSO's own `admit()`, outside `Iam::reauthentications()`, throws the recorder's `LogicException`
   from SSO's admission, and the caller's transaction rolls back with the code unspent.
-- A standalone `link` whose commit, or anything run from it, fails is not redeemed again: the failure reaches the caller
-  as it was thrown, with the link written and the code spent when the commit itself succeeded, and no second
-  `FlowFailed` is reported.
 - An application that is no `jwt` guard throws `UnresolvedReferenceException(guard)` before the code is touched, a
   `link`'s as a sign-in's and a re-authentication's; a caller that cannot be named throws
   `UnresolvedReferenceException(identity)` before the link code is touched.
@@ -469,15 +441,12 @@ run through are in `storage-and-transactions.md`.
 - On PostgreSQL at REPEATABLE READ, a sign-in racing a connection disable or a link removal, and two re-authentications
   racing for one session, make the later of each pair fail to serialise; the retry helper runs it again from its start
   and it sees what the other committed. A `link` racing another holder of the identity's guard fails to serialise the
-  same way, and `LinkRedemption` redeems it again, standalone. On every other engine and level the later waits on the
-  earlier's locks.
-- A concurrency failure the attempts do not outlast (the last attempt's), and any other failure, reaches the caller as
-  the database raised it: from a redemption this package opened the transaction for, or a standalone `link`, the
-  database's `QueryException` (SQLSTATE 40001, or MySQL's 1213 or 1205), never the `DeadlockException` Laravel wraps
-  it in where a member's nested transaction met it, which loses both and which Laravel's detector cannot recognise
-  around PostgreSQL's serialisation failure (`ConcurrencyFailures::asRaised()`); inside a caller's transaction, the
-  failure as that caller's retry recognises it. The code stays unspent and nothing is reported, so the caller retries
-  the request, as it does for MFA's own transactions (`authentication-and-mfa.md`).
+  same way, and the caller retries the request. On every other engine and level the later waits on the earlier's
+  locks.
+- A concurrency failure the attempts do not outlast reaches the caller as a `DeadlockException` with SQLSTATE 40001,
+  which Laravel's detector recognises; a standalone `link`'s as SSO's transaction threw it. The code stays unspent and
+  nothing is reported, so the caller retries the request, as it does for MFA's own transactions
+  (`authentication-and-mfa.md`).
 - Gaps in the members that the adapters work around:
   - `laravel-sso`'s `ReauthenticationSessions::standing()` names no application although `StartEligibility` knows it,
     so every `jwt` guard is asked (one read per guard, at flow start only).
@@ -517,8 +486,6 @@ run through are in `storage-and-transactions.md`.
   `src/Sso/BoundLinkStorage.php`; `config/iam.php`: `adapters.sso`, `sso.evidence`;
   `src/IamServiceProvider.php`: `registerRedemptionRecords()`, `registerContextContributors()`,
   `registerContributor()`, `registerCommitListeners()`, `seamProviders()`;
-  `src/Transactions/OutermostCommits.php`: `committing()`, `count()`;
-  `src/Transactions/ConcurrencyFailures.php`: `asRaised()`, what a redemption's last failure reaches the caller as.
 - `src/Sso/SignInRedemption.php`, `src/Sso/ReauthenticationRedemption.php`, `src/Sso/LinkRedemption.php`: `redeem()`;
   `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`, forgetting the request's decisions once it renews;
   `src/IamManager.php`: `signIns()`, `reauthentications()`, `links()`; `src/Facades/Iam.php`.
@@ -606,11 +573,9 @@ run through are in `storage-and-transactions.md`.
   `testTheSwitchOffBindsNothing`,
   `testTheSwitchIsReadLeniently`, `testEachBindingsLifetimeDefaultsAndMandate`
 - `tests/Feature/Sso/RedemptionRecordsTest.php` `testTheRecordIsOneInstanceForTheUnitOfWork`,
-  `testTheWorkerResetForgetsTheRecord`; `tests/Feature/IamServiceProviderTest.php` `testEachOutermostCommitIsCounted`,
-  `testOutermostCommitsAreCountedWithTheWorkerResetOff`, `testHeldWorkRunsOnceTheConnectionCommits`,
-  `testWorkACommitLeftHeldRunsAsTheApplicationTerminates`, `testWorkACommitLeftHeldRunsAsAJobEnds`,
-  `testTheCommitListenersReachAnOctaneSandboxsRecords`; `tests/Unit/Transactions/OutermostCommitsTest.php`
-  `testEachCommitIsCountedForItsOwnConnection`
+  `testTheWorkerResetForgetsTheRecord`; `tests/Feature/IamServiceProviderTest.php`
+  `testHeldWorkRunsOnceTheConnectionCommits`, `testWorkACommitLeftHeldRunsAsTheApplicationTerminates`,
+  `testWorkACommitLeftHeldRunsAsAJobEnds`, `testTheCommitListenersReachAnOctaneSandboxsRecords`
 - `tests/Feature/IamManagerTest.php` `testEachRedemptionIsReachedThroughItsOwnService`,
   `testTheCallersAreNamedThroughTheirOwnService`, `testEachServiceIsResolvedFromTheCurrentApplication`;
   `tests/Feature/Facades/IamTest.php` `testTheRedemptionsAreReachedThroughTheFacade`,
@@ -631,22 +596,17 @@ run through are in `storage-and-transactions.md`.
   `testARenewalForgetsTheRequestsDecisions`, `testARefusalBySsoKeepsTheRequestsDecisions`
 - `tests/Integration/Sso/LinkRedemptionTest.php` `testTheCallerIsLinkedStandalone`,
   `testACodeStartedForAnotherIdentityLinksNobody`, `testACallerThatCannotBeNamedThrowsBeforeTheCodeIsTouched`,
-  `testAnApplicationThatIsNoSessionGuardThrowsBeforeTheCodeIsTouched`, `testSsosDefaultFreshnessRefusesEveryLink`, `testAConcurrencyFailureIsRedeemedAgainStandalone`,
-  `testTheLastAttemptsFailureReachesTheCaller`,
-  `testTheLastAttemptsFailureInANestedTransactionReachesTheCallerAsTheDatabaseRaisedIt`,
-  `testAFailureThatIsNoConcurrencyFailureIsNotRetried`, `testAFailureOnceTheAttemptHasCommittedIsNotRedeemedAgain`,
-  `testInsideTheCallersTransactionTheLinkCommitsWithIt`,
-  `testInsideTheCallersTransactionAConcurrencyFailureLeavesTheCodeUnspent`,
-  `testInsideTheCallersTransactionAFailureReachesTheCallerAsItsRetryRecognisesIt`
+  `testAnApplicationThatIsNoSessionGuardThrowsBeforeTheCodeIsTouched`, `testSsosDefaultFreshnessRefusesEveryLink`,
+  `testAStandaloneConcurrencyFailureReachesTheCaller`, `testInsideTheCallersTransactionTheLinkCommitsWithIt`,
+  `testInsideTheCallersTransactionAFailureToSerialiseReachesTheCaller`
 - `tests/Integration/Sso/RedemptionLockOrderTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE READ)
   `testASignInTakesSsosLocksThenTheConnectionGuardThenTheSession`, `testAReauthenticationLocksTheSessionLast`,
   `testASignInRacingAConnectionDisableNeverSignsIn`, `testASignInRacingALinkRemovalNeverSignsIn`,
   `testTwoReauthenticationsRacingForOneSessionBothRenew`, `testALinkTakesTheIdentitysGuardFirst`,
-  `testALinkRacingAHolderOfTheIdentitysGuardIsRedeemedAgain`,
-  `testASignInWhoseLastAttemptFailsToSerialiseThrowsTheDatabasesFailure`,
-  `testAReauthenticationWhoseLastAttemptFailsToSerialiseThrowsTheDatabasesFailure` (on PostgreSQL at REPEATABLE READ
-  with one attempt, the database's `QueryException`, SQLSTATE 40001, which Laravel's detector recognises, never
-  Laravel's `DeadlockException` around it)
+  `testALinkRacingAHolderOfTheIdentitysGuardLinksOnceTheRequestIsRetried`,
+  `testASignInWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure`,
+  `testAReauthenticationWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure` (on PostgreSQL at REPEATABLE READ
+  with one attempt, a failure Laravel's detector recognises)
 - `tests/Integration/Sso/ReauthenticationSessionsAdapterTest.php` `testASessionThroughTheConnectionStandsAsAFlowStarts`,
   `testASessionOfAnotherGuardStandsAsAFlowStarts`, `testAFlowsStartLocksAndWritesNothing`,
   `testTheLockedStandingLocksTheSessionsRowUntilTheTransactionEnds`, `testASessionWithoutLockedStandingIsNotSignedIn`,

@@ -207,12 +207,6 @@ final class GuideStatementsTest extends TestCase
             [],
         ];
 
-        yield 'a lock wait timeout is retried, as the operations guide says' => [
-            'docs/guides/configuration.md',
-            ['deadlocks, meets a lock wait timeout or finds SSO\'s link candidates changed'],
-            ['(SQLSTATE 40001), deadlocks or finds SSO\'s link candidates changed'],
-        ];
-
         yield 'a person who already holds a factor can be acted as, again and again' => [
             'docs/guides/testing.md',
             [
