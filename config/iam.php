@@ -36,9 +36,8 @@ return [
     | factor removal and reset, the return to pending, the proof store, the
     | first factor, the recorder of MFA's verified test sign-ins, code
     | challenges and their counters, the event context, the active tenant, the
-    | subject type, the active state and the application,
-    | MFA's tenant requirement, answered from `tenancy.mfa_requirement`, the
-    | passkey factor gate, while any MFA application offers the `passkey`
+    | subject type, the active state and the application, the passkey factor
+    | gate, while any MFA application offers the `passkey`
     | factor type, MFA's passkey ceremonies, and the `mfa` namespace of the
     | authentication context. Each adapter replaces only the member's own
     | default, never a binding of the application's, and a contributor the
@@ -76,12 +75,12 @@ return [
     |
     | While `sso` is on, the package also binds `laravel-authentication`'s
     | tenant authentication policy, answered from SSO's enforcement, SSO's
-    | exemptions and the tenant MFA requirement together, whatever `mfa` says:
+    | exemptions and MFA's tenant requirement together, whatever `mfa` says:
     | it finds the connection of a sign-in through the redemption this
     | package's SSO capability admitted, which nothing records with `sso` off.
     | With `sso` off, bind it yourself: it is mandatory while
-    | `sso.features.enforcement` is on or a tenant MFA requirement is named or
-    | bound, since `laravel-authentication`'s default requires nothing of any
+    | `sso.features.enforcement` is on or MFA's tenant requirement is bound,
+    | since `laravel-authentication`'s default requires nothing of any
     | tenant, so no enforcement and no requirement would reach a session.
     |
     | While `sso` is on and the application names its memberships
@@ -126,21 +125,14 @@ return [
     | Tenancy
     |---------------------------------------------------------------------------
     |
-    | `mfa_requirement` names the application's tenant MFA requirement, a
-    | class implementing `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement`:
-    | which further factors a session acting in a tenant must have, the
-    | application's own data. The package hands its one answer to MFA's tenant
-    | requirement while `adapters.mfa` is on, and to `laravel-authentication`'s
-    | tenant authentication policy while `adapters.sso` is on, which it
-    | answers from SSO's enforcement, SSO's exemptions and that requirement
-    | together, with a version that changes when any of them does. With
-    | `adapters.sso` off, bind that policy yourself (see Adapters); with both
-    | off nothing of the package's reads it: bind both seams yourself. It
-    | answers for exactly the tenant asked: the package applies no inheritance
-    | down a tenant tree. A requirement bound in the container counts as
-    | named. Name none (leave it null) and no tenant requires a further
-    | factor; SSO's enforcement still applies. Any value that is no class name
-    | (true, false, a number) fails closed.
+    | Which further factors a tenant requires is the application's own data:
+    | implement laravel-mfa's `TenantRequirement` and bind it. MFA asks it
+    | itself, and while `adapters.sso` is on the package reads it, on the write
+    | connection, into `laravel-authentication`'s tenant authentication policy,
+    | with SSO's enforcement and exemptions, at a version that changes when any
+    | of them does. An identity that is not `MultiFactorAuthenticatable` is
+    | refused once one is bound. Leave MFA's default and no tenant requires a
+    | further factor.
     |
     | Whenever a tenant's answer changes, report it so the sessions that no
     | longer meet it end: call `Iam::tenantPolicies()->changed($tenant)`
@@ -192,7 +184,7 @@ return [
     | `Iam::treeChanges()->changed($tenantId)` passes the move on to
     | `laravel-authorization` while `adapters.authorization` is on, and judges
     | the sessions of that tenant and every tenant below it while SSO's
-    | enforcement or a tenant MFA requirement is on. Name none and every tenant
+    | enforcement is on or MFA's tenant requirement is bound. Name none and every tenant
     | stands alone.
     |
     | Either bound in the container counts as named when it is bound by the
@@ -204,9 +196,8 @@ return [
     */
 
     'tenancy' => [
-        'mfa_requirement' => null,
-        'memberships'     => null,
-        'tree'            => null,
+        'memberships' => null,
+        'tree'        => null,
     ],
 
     /*

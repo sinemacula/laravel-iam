@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Requirements\LevelRequirement;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyVersion;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
@@ -22,9 +21,7 @@ use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
  * (IAM-4.5): the same inputs always give the same version, of exactly the
  * length a session records; a change to any one input (the enforcement's
  * requirement, its connections, its enforcing tenant or its rule's version, the
- * exemption's outcome, the application's rule's version or any part of its
- * requirement) gives another; and a rule that requires something but cannot be
- * versioned makes the whole version none.
+ * exemption's outcome or any part of the requirement) gives another.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,68 +42,62 @@ final class TenantPolicyVersionTest extends TestCase
      */
     public function testTheSameInputsGiveTheSameVersion(): void
     {
-        $version = TenantPolicyVersion::of(self::required(), null, self::rule());
+        $version = TenantPolicyVersion::of(self::required(), null, self::requirement());
 
-        self::assertNotNull($version);
         self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $version);
         self::assertSame(TenantRequirement::VERSION_MAX_LENGTH, strlen($version));
-        self::assertSame($version, TenantPolicyVersion::of(self::required(), null, self::rule()));
+        self::assertSame($version, TenantPolicyVersion::of(self::required(), null, self::requirement()));
     }
 
     /**
      * Rows of the version of an answer whose inputs differ from the base's in
      * exactly one.
      *
-     * @return iterable<string, array{0: \Closure(): ?string}>
+     * @return iterable<string, array{0: \Closure(): string}>
      */
     public static function provideChangedInputs(): iterable
     {
-        yield 'the enforcement no longer required' => [static fn (): ?string => self::versionOf(EnforcementPolicy::notRequired(self::TENANT, self::TENANT, 'enforcement-7'))];
+        yield 'the enforcement no longer required' => [static fn (): string => self::versionOf(EnforcementPolicy::notRequired(self::TENANT, self::TENANT, 'enforcement-7'))];
 
-        yield 'another satisfying connection' => [static fn (): ?string => self::versionOf(self::required(['connection-1', 'connection-3']))];
+        yield 'another satisfying connection' => [static fn (): string => self::versionOf(self::required(['connection-1', 'connection-3']))];
 
-        yield 'a satisfying connection disabled, the rule unchanged' => [static fn (): ?string => self::versionOf(self::required(['connection-1']))];
+        yield 'a satisfying connection disabled, the rule unchanged' => [static fn (): string => self::versionOf(self::required(['connection-1']))];
 
         yield 'another enforcing tenant' => [
-            static fn (): ?string => self::versionOf(EnforcementPolicy::required(self::TENANT, 'tenant-root', ['connection-1', 'connection-2'], 'enforcement-7')),
+            static fn (): string => self::versionOf(EnforcementPolicy::required(self::TENANT, 'tenant-root', ['connection-1', 'connection-2'], 'enforcement-7')),
         ];
 
-        yield 'another rule version' => [static fn (): ?string => self::versionOf(self::required(version: 'enforcement-8'))];
+        yield 'another rule version' => [static fn (): string => self::versionOf(self::required(version: 'enforcement-8'))];
 
-        yield 'the exemption asked, not exempt' => [static fn (): ?string => self::versionOf(exemption: ExemptionOutcome::NOT_EXEMPT)];
+        yield 'the exemption asked, not exempt' => [static fn (): string => self::versionOf(exemption: ExemptionOutcome::NOT_EXEMPT)];
 
-        yield 'the exemption asked, exempt' => [static fn (): ?string => self::versionOf(exemption: ExemptionOutcome::EXEMPT)];
+        yield 'the exemption asked, exempt' => [static fn (): string => self::versionOf(exemption: ExemptionOutcome::EXEMPT)];
 
-        yield 'another rule version of the application' => [static fn (): ?string => self::versionOf(rule: self::rule(version: 'mfa-2'))];
+        yield 'another maximum age' => [static fn (): string => self::versionOf(requirement: new Requirement(multifactor: new RequirementPart(600)))];
 
-        yield 'another maximum age' => [static fn (): ?string => self::versionOf(rule: self::rule(new Requirement(multifactor: new RequirementPart(600))))];
+        yield 'any age' => [static fn (): string => self::versionOf(requirement: new Requirement(multifactor: new RequirementPart))];
 
-        yield 'any age' => [static fn (): ?string => self::versionOf(rule: self::rule(new Requirement(multifactor: new RequirementPart)))];
-
-        yield 'another part' => [static fn (): ?string => self::versionOf(rule: self::rule(new Requirement(additionalVerification: new RequirementPart(300))))];
+        yield 'another part' => [static fn (): string => self::versionOf(requirement: new Requirement(additionalVerification: new RequirementPart(300)))];
 
         yield 'a part added' => [
-            static fn (): ?string => self::versionOf(rule: self::rule(new Requirement(multifactor: new RequirementPart(300), phishingResistance: new RequirementPart))),
+            static fn (): string => self::versionOf(requirement: new Requirement(multifactor: new RequirementPart(300), phishingResistance: new RequirementPart)),
         ];
 
-        yield 'a minimum level' => [static fn (): ?string => self::versionOf(rule: self::rule(new Requirement(minimumLevel: new LevelRequirement(AssuranceLevel::AAL2))))];
+        yield 'a minimum level' => [static fn (): string => self::versionOf(requirement: new Requirement(minimumLevel: new LevelRequirement(AssuranceLevel::AAL2)))];
 
-        yield 'nothing required' => [static fn (): ?string => self::versionOf(rule: TenantMfaRule::none('mfa-1'))];
+        yield 'nothing required' => [static fn (): string => self::versionOf(requirement: new Requirement)];
     }
 
     /**
      * A change to any one input gives another version.
      *
-     * @param  \Closure(): ?string  $changed
+     * @param  \Closure(): string  $changed
      * @return void
      */
     #[DataProvider('provideChangedInputs')]
     public function testAChangeToAnyInputGivesAnotherVersion(\Closure $changed): void
     {
-        $version = $changed();
-
-        self::assertNotNull($version);
-        self::assertNotSame(self::versionOf(), $version);
+        self::assertNotSame(self::versionOf(), $changed());
     }
 
     /**
@@ -117,7 +108,7 @@ final class TenantPolicyVersionTest extends TestCase
     public function testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion(): void
     {
         $versions = array_map(
-            static fn (LevelRequirement $level): ?string => TenantPolicyVersion::of(self::required(), null, self::rule(new Requirement(minimumLevel: $level))),
+            static fn (LevelRequirement $level): string => TenantPolicyVersion::of(self::required(), null, new Requirement(minimumLevel: $level)),
             [new LevelRequirement(AssuranceLevel::AAL2), new LevelRequirement(AssuranceLevel::AAL3), new LevelRequirement(AssuranceLevel::AAL2, 300)],
         );
 
@@ -135,42 +126,28 @@ final class TenantPolicyVersionTest extends TestCase
 
         foreach ($parts as $part) {
 
-            $sooner = self::versionOf(rule: self::rule(new Requirement(...[$part => new RequirementPart(60)])));
-            $later  = self::versionOf(rule: self::rule(new Requirement(...[$part => new RequirementPart(120)])));
+            $sooner = self::versionOf(requirement: new Requirement(...[$part => new RequirementPart(60)]));
+            $later  = self::versionOf(requirement: new Requirement(...[$part => new RequirementPart(120)]));
 
             self::assertNotSame($sooner, $later, $part);
         }
     }
 
     /**
-     * A rule that requires something but cannot be versioned makes the whole
-     * version none, which is never taken as already checked; a rule that
-     * requires nothing needs no version of its own.
-     *
-     * @return void
-     */
-    public function testAnUnversionedRequirementMakesTheVersionNone(): void
-    {
-        self::assertNull(TenantPolicyVersion::of(self::required(), null, new TenantMfaRule(new Requirement(multifactor: new RequirementPart(300)))));
-        self::assertNotNull(TenantPolicyVersion::of(self::required(), null, TenantMfaRule::none()));
-        self::assertNotNull(TenantPolicyVersion::of(EnforcementPolicy::notRequired(self::TENANT, self::TENANT), null, TenantMfaRule::none()));
-    }
-
-    /**
      * The version of the answer made of the inputs given, each the base's
      * unless another is given: the required policy, no exemption asked, and the
-     * application's rule.
+     * requirement.
      *
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome  $exemption
-     * @param  ?\SineMacula\Laravel\Iam\Tenancy\TenantMfaRule  $rule
-     * @return ?string
+     * @param  ?\SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
+     * @return string
      *
      * @throws \JsonException
      */
-    private static function versionOf(?EnforcementPolicy $policy = null, ?ExemptionOutcome $exemption = null, ?TenantMfaRule $rule = null): ?string
+    private static function versionOf(?EnforcementPolicy $policy = null, ?ExemptionOutcome $exemption = null, ?Requirement $requirement = null): string
     {
-        return TenantPolicyVersion::of($policy ?? self::required(), $exemption, $rule ?? self::rule());
+        return TenantPolicyVersion::of($policy ?? self::required(), $exemption, $requirement ?? self::requirement());
     }
 
     /**
@@ -187,15 +164,12 @@ final class TenantPolicyVersionTest extends TestCase
     }
 
     /**
-     * The application's rule: multifactor authentication within five minutes,
-     * unless another requirement is given, at the version given.
+     * Multifactor authentication within five minutes.
      *
-     * @param  ?\SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
-     * @param  string  $version
-     * @return \SineMacula\Laravel\Iam\Tenancy\TenantMfaRule
+     * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
      */
-    private static function rule(?Requirement $requirement = null, string $version = 'mfa-1'): TenantMfaRule
+    private static function requirement(): Requirement
     {
-        return new TenantMfaRule($requirement ?? new Requirement(multifactor: new RequirementPart(300)), $version);
+        return new Requirement(multifactor: new RequirementPart(300));
     }
 }

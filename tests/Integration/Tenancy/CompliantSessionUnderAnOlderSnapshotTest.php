@@ -14,12 +14,12 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyVersion;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
@@ -169,7 +169,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
         self::assertSame([], $this->exemptions()->asked(), 'The gate was asked for a session through a satisfying connection.');
         Event::assertNotDispatched(ExemptionUsed::class);
         self::assertNull($stored->getRevokedAt());
-        self::assertSame(TenantPolicyVersion::of($policy, null, TenantMfaRule::none()), $answer->version);
+        self::assertSame(TenantPolicyVersion::of($policy, null, new Requirement), $answer->version);
         self::assertSame($answer->version, $stored->getTenantPolicyVersion());
     }
 

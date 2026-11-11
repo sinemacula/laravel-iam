@@ -20,19 +20,19 @@ use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Config\Checks\EndpointsCheck;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 use Tests\Concerns\RunsChecks;
 use Tests\Fixtures\Authorization\OwnResourceTenants;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
@@ -60,7 +60,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
     /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
     private const string NO_TENANT_RESOLVER = 'SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to'
-        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, a tenant MFA requirement is named,'
+        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, MFA\'s tenant requirement is bound,'
         . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
         . ' bind a resolver that resolves every tenant id'
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
@@ -182,21 +182,17 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Rows of how a tenant comes to be resolved: a tenant MFA requirement
-     * named, one bound, SSO's enforcement turned on, and the authorization
-     * capability's switch on beside SSO's, so the grant hook names every tenant
-     * a widening grant holds in.
+     * Rows of how a tenant comes to be resolved: MFA's tenant requirement
+     * bound, SSO's enforcement turned on, and the authorization capability's
+     * switch on beside SSO's, so the grant hook names every tenant a widening
+     * grant holds in.
      *
      * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
     public static function provideTenantRules(): iterable
     {
-        yield 'a requirement named' => [static function (Application $app): void {
-            $app->make('config')->set('iam.tenancy.mfa_requirement', FakeTenantMfaRequirement::class);
-        }];
-
         yield 'a requirement bound' => [static function (Application $app): void {
-            $app->bind(TenantMfaRequirement::class, FakeTenantMfaRequirement::class);
+            $app->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
         }];
 
         yield 'SSO\'s enforcement on' => [static function (Application $app): void {

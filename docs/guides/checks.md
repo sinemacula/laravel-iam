@@ -179,16 +179,15 @@ The members' settings agree with each other.
   `sso.*` operations for every SSO application's guard, under `authentication.freshness` or the guard's own `freshness`
   block. See [laravel-authentication: configuration][authentication-configuration].
 - *SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to
-  SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO's enforcement is on, a tenant MFA requirement is
-  named, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
-  tree: ...*: MFA's tenant requirement, a tree's changes and SSO's revocation resolve a session's tenant through
+  SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO's enforcement is on, MFA's tenant requirement is
+  bound, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
+  tree: ...*: the tenant policy, a tree's changes and SSO's revocation resolve a session's tenant through
   `laravel-authentication`'s tenant resolver; while the authorization and SSO adapters are both on (the default), the
   grant hook resolves the tenant of every grant that widens an identity's scope through it; and while the authorization
   adapters are on and you name or bind a tenant tree, `laravel-authorization`'s tree resolves every tenant it asks about
-  through it. Its default resolves none, so every MFA-gated request from a session in a tenant, every grant to an
-  identity or a principal's first grant in a tenant, every tenant-scoped check and every move of a tenant would answer
-  a server error. Bind a resolver that resolves every tenant id to the tenant whose
-  `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
+  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, every
+  tenant-scoped check and every move of a tenant would answer a server error. Bind a resolver that resolves every tenant
+  id to the tenant whose `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). A resolver bound through a closure is
   not built, so the check passes it.
 - Note: *SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver is still

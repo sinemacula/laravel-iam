@@ -264,37 +264,29 @@ $code = $mailbox->lastCodeTo('person@example.test');
 A code `laravel-authentication` issues arrives when its queued delivery job runs, so run the queue synchronously in
 tests that read one.
 
-### Memberships, the tree and the tenant requirement
+### Memberships and the tree
 
-| Fake                       | Contract                                                | What the test tells it                                                                                         |
-|----------------------------|---------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| `FakeMemberships`          | `SineMacula\Laravel\Iam\Contracts\Memberships`          | `grant($identity, $membership)`, `revoke($identity, $tenantId)`, `incomplete($identity)`, `failFor($identity)` |
-| `FakeTenantTree`           | `SineMacula\Laravel\Iam\Contracts\TenantTree`           | `place($tenantId, $parentId = null)`, `remove($tenantId)`, `failFor($tenantId)`                                |
-| `FakeTenantMfaRequirement` | `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement` | `require($tenantId, $requirement)`, `requireNothing($tenantId)`, `failFor($tenantId)`                          |
+| Fake              | Contract                                       | What the test tells it                                                                                         |
+|-------------------|------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| `FakeMemberships` | `SineMacula\Laravel\Iam\Contracts\Memberships` | `grant($identity, $membership)`, `revoke($identity, $tenantId)`, `incomplete($identity)`, `failFor($identity)` |
+| `FakeTenantTree`  | `SineMacula\Laravel\Iam\Contracts\TenantTree`  | `place($tenantId, $parentId = null)`, `remove($tenantId)`, `failFor($tenantId)`                                |
 
 Each keeps what it was asked (`asked()`). Name `FakeMemberships` in `iam.tenancy.memberships`, or `FakeTenantTree` in
 `iam.tenancy.tree`, before the application boots, as well as calling `fake()`: bound only from the test, either is the
-one asked, but no SSO adapter is bound over SSO's defaults for it. A tenant MFA requirement bound in the container counts
-as named whenever it is bound.
+one asked, but no SSO adapter is bound over SSO's defaults for it.
 
 ```php
 use Carbon\CarbonImmutable;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 
 FakeMemberships::fake()->grant($user, Membership::of('tenant-1', CarbonImmutable::now()->subDay()));
-
-FakeTenantMfaRequirement::fake()->require('tenant-1', new Requirement(multifactor: new RequirementPart(300)));
 ```
 
-Change a tenant's requirement or move a tenant before the sessions it concerns are judged, or report the change after
-(`Iam::tenantPolicies()->changed()`, `Iam::treeChanges()->changed()`), as your application would. A faked tenant MFA requirement
-needs a tenant resolver in the test as in the application: bind your application's `TenantResolver`, or MFA's route
-gate throws `UnresolvedReferenceException` for a session in a tenant (see
-[Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)).
+The tenant MFA requirement is laravel-mfa's `TenantRequirement`: bind your own, or one a test scripts, and prove yours
+with laravel-mfa's `TenantRequirementTests` kit. Change a tenant's requirement or move a tenant before the sessions it
+concerns are judged, or report the change after (`Iam::tenantPolicies()->changed()`, `Iam::treeChanges()->changed()`),
+as your application would.
 
 ### The provisioner
 
@@ -332,16 +324,15 @@ FakeGroupMapping::fake()
 Each kit is a trait of PHPUnit tests that proves an implementation of one of this package's contracts keeps its
 promises. Use it in a test case of your own and implement its hooks against your implementation. The fakes above pass
 their kits. Each kit's checks are static assertions on the `Seams\*Contract` class beside its trait
-(`Seams\TenantTreeContract`, `Seams\TenantMfaRequirementContract`, and `Seams\EmailGatewayContract` and
-`Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can call one directly. The
-`Memberships`, `Provisioner` and `GroupMapping` contracts have fakes but no kits.
+(`Seams\TenantTreeContract`, and `Seams\EmailGatewayContract` and `Seams\SmsGatewayContract`, which share
+`Seams\GatewayContract`'s), so a test can call one directly. The `Memberships`, `Provisioner` and `GroupMapping`
+contracts have fakes but no kits.
 
 | Kit                                        | Proves                      | Hooks                                                                                                                           |
 |--------------------------------------------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------|
 | `Seams\Concerns\EmailGatewayTests`         | Your `EmailGateway`         | `codeGateway()`, `codeApplication()`, `codeRecipient()`, `codesDeliveredTo()`, `failCodeDelivery()`                             |
 | `Seams\Concerns\SmsGatewayTests`           | Your `SmsGateway`           | The same as the email kit                                                                                                       |
 | `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                  |
-| `Seams\Concerns\TenantMfaRequirementTests` | Your `TenantMfaRequirement` | `tenantMfaRequirement()`, `tenantMfaTenant()`, `tenantMfaApplication()`, `changeTenantMfaRequirement()`, `unanswerableTenant()` |
 
 ```php
 use App\Tenancy\DatabaseTenantTree;
