@@ -32,6 +32,7 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
+use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -52,6 +53,8 @@ use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
@@ -174,6 +177,23 @@ final class IamServiceProviderTest extends TestCase
         $app->forgetScopedInstances();
 
         self::assertNotSame($callers, $app->make(FactorCodeCallers::class));
+    }
+
+    /**
+     * Each record a redemption keeps for one request is bound scoped, under the
+     * package's own key for scoped adapters.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testEachRedemptionRecordIsBoundUnderTheScopedKey(): void
+    {
+        $app = $this->application();
+
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, CommittedWork::class] as $record) {
+            self::assertSame($app->make($record), $app->make(BindingRule::SCOPED_PREFIX . $record), $record);
+        }
     }
 
     /**

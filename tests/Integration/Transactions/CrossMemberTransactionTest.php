@@ -154,8 +154,8 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * After the configured or given attempts, the last failure is rethrown as
-     * one Laravel's detector recognises.
+     * After the given attempts, or 3 with none configured, the last failure is
+     * rethrown as one Laravel's detector recognises.
      *
      * @return void
      *
@@ -163,11 +163,11 @@ final class CrossMemberTransactionTest extends TestCase
      */
     public function testTheLastAttemptsFailureIsRethrownAsAConcurrencyFailure(): void
     {
-        Config::set('iam.transactions.attempts', 3);
+        Config::set('iam.transactions', []);
 
         $failure = LinkCandidatesChanged::retryWhole();
 
-        foreach ([[null, 3], [2, 2]] as [$given, $expected]) {
+        foreach ([[null, 3], [2, 2], [1, 1]] as [$given, $expected]) {
 
             [$attempts, $thrown] = $this->failingRun($failure, $given);
 
