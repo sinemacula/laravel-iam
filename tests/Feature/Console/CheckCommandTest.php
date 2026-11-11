@@ -192,6 +192,39 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
+     * A broken `laravel-authorization` setting does not stop `iam:check` at
+     * boot: `laravel-authorization` boots for diagnosis under it, and its own
+     * check reports the setting and fails the run.
+     *
+     * @return void
+     */
+    #[DefineEnvironment('breakAnAuthorizationSetting')]
+    public function testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot(): void
+    {
+        $this->configure();
+
+        [$code, $output] = $this->check();
+
+        self::assertSame(1, $code, $output);
+        self::assertStringContainsString('bulk.chunk_size', $output);
+        self::assertStringEndsWith('A check failed.' . PHP_EOL, $output);
+    }
+
+    /**
+     * Give `laravel-authorization` a bulk chunk size that is no number, with
+     * `iam:check` as the process's command, before any provider registers.
+     *
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return void
+     */
+    protected function breakAnAuthorizationSetting(Application $app): void
+    {
+        $this->withArguments(['artisan', CheckCommand::NAME]);
+
+        $app->make('config')->set('authorization.bulk.chunk_size', 'lots');
+    }
+
+    /**
      * Point MFA's storage at another connection, with `iam:check` as the
      * process's command, before any provider registers.
      *

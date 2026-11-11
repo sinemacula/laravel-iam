@@ -54,7 +54,10 @@ you run it yourself, and one that exits non-zero fails the run. `authorization:c
 settings, seams, grant hooks and connection, and exits `1` when it refuses a setting and `3` when it could not complete
 its report: either fails the run. Each adapter this package binds over one of `laravel-authorization`'s contracts is
 declared to that report, so its seam reads `declared by laravel-iam` while the adapter is still what the contract
-resolves to (see [Authorization](authorization.md#pruning-and-checks)). One that is not registered is reported as
+resolves to (see [Authorization](authorization.md#pruning-and-checks)). Run as the command itself (`php artisan
+iam:check`), `iam:check` also makes `laravel-authorization` boot for diagnosis, so a broken authorization setting is
+reported by `authorization:check` and fails the run rather than stopping the application before the check starts. One
+that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 

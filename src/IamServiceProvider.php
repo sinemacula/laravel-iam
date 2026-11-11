@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Authentication\Console\ConfigurationChecks;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
+use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
@@ -199,6 +200,12 @@ final class IamServiceProvider extends ServiceProvider
         SsoCheckRegistration::register($this->app);
         AuthenticationContextKeys::register($this->app);
         $this->registerStorageCheck();
+
+        // `iam:check` runs `authorization:check`, so laravel-authorization
+        // boots for diagnosis when it is the process's command: a broken
+        // authorization setting is then reported by the check, not thrown at
+        // boot before the check can run
+        Declarations::of($this->app)->composingCommand(CheckCommand::NAME);
     }
 
     /**
