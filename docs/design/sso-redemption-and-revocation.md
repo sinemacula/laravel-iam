@@ -593,7 +593,7 @@ run through are in `storage-and-transactions.md`.
   `testASignInTakesSsosLocksThenTheConnectionGuardThenTheSession`, `testAReauthenticationLocksTheSessionLast`,
   `testASignInRacingAConnectionDisableNeverSignsIn`, `testASignInRacingALinkRemovalNeverSignsIn`,
   `testTwoReauthenticationsRacingForOneSessionBothRenew`, `testALinkTakesTheIdentitysGuardFirst`,
-  `testALinkRacingAHolderOfTheIdentitysGuardLinksOnceTheRequestIsRetried`,
+  `testALinkRacingAHolderOfTheIdentitysGuardLinks`,
   `testASignInWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure`,
   `testAReauthenticationWhoseLastAttemptFailsToSerialiseThrowsAConcurrencyFailure` (on PostgreSQL at REPEATABLE READ
   with one attempt, a failure Laravel's detector recognises)

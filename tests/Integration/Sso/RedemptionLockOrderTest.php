@@ -240,9 +240,9 @@ final class RedemptionLockOrderTest extends TestCase
 
     /**
      * A `link` redeemed while another transaction holds the identity's guard
-     * waits for it and links the person: at READ COMMITTED, and on MySQL, at
-     * once; on PostgreSQL at REPEATABLE READ it fails to serialise once the
-     * other commits, with the code unspent, and the request retried links.
+     * waits for it and links the person in one call: on PostgreSQL at
+     * REPEATABLE READ it fails to serialise once the other commits, and SSO
+     * runs its standalone transaction again.
      *
      * @param  string  $level
      * @return void
@@ -250,7 +250,7 @@ final class RedemptionLockOrderTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideIsolationLevels')]
-    public function testALinkRacingAHolderOfTheIdentitysGuardLinksOnceTheRequestIsRetried(string $level): void
+    public function testALinkRacingAHolderOfTheIdentitysGuardLinks(string $level): void
     {
         self::requireAFork();
         self::useIsolationLevel($level);
@@ -264,18 +264,11 @@ final class RedemptionLockOrderTest extends TestCase
 
         $outcome = $this->raceForTheGuard(
             static fn (): int => DB::table('sso_identity_guards')->where('identity_hash', $digest)->update(['identity_hash' => $digest]),
-            function () use ($handoff, $person): string {
-
-                try {
-                    return $this->redeemLink($handoff, $person)->status->value;
-                } catch (QueryException $exception) {
-                    return sprintf('%s, then %s', $exception->getCode(), $this->redeemLink($handoff, $person)->status->value);
-                }
-            },
+            fn (): string => $this->redeemLink($handoff, $person)->status->value,
             $level,
         );
 
-        self::assertSame(self::isSnapshotRetried($level) ? '40001, then redeemed' : 'redeemed', $outcome);
+        self::assertSame('redeemed', $outcome);
         self::assertCount(1, $this->app?->make(LinkService::class)->list($reference) ?? []);
     }
 
