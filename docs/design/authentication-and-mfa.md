@@ -344,32 +344,30 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   at, and starts a session for the identity through `laravel-authentication`'s `start()` from a password first factor
   (`FirstFactor` on the `password` channel with the `pwd` value, the `password` method), as an application that checked
   a password itself starts one, with the clock held at that time while it starts, so the session's first factor is the
-  password proof MFA's helper would otherwise record, made at that time, and the helper keeps it. The identity's stored
-  credentials are never read or written. The start runs in `CrossMemberTransaction` from `CallerSignIn`'s client; a
-  refused sign-in, or one pending on anything but a further factor, throws a `LogicException` naming the reason inside
-  it, so it leaves nothing. A session that activates is acted on, as `actingOnSession()` does. One left pending on a
-  further factor (a person who holds a confirmed factor, under an application requiring one at sign-in, the person the
-  helper enrolled one for included, the next time) is kept pending, with its pending credential held by the recorder
-  until the helper's further proof completes it; MFA's contract lets a recorder complete a pending sign-in with that
-  proof, as long as the sign-in begun is the store's current one once it is recorded. That credential is the recorder's
-  only state, forgotten by the next `begin()`, and the binding is transient, so it never outlives the one sign-in MFA's
-  helper resolved the recorder for. Its `record()` keeps the sign-in's own first factor (through this store's `record()`
-  for an active session, and, for the pending session it began, when it is a password), and records the helper's further
-  proof as the level's evidence (`Testing\LevelEvidence::matching()`), with a confirmed factor of its type the identity
-  holds or a fixture one enrolled for it (`Testing\FixtureFactors`: an email factor for AAL1, an authenticator app for
-  AAL2, a passkey for AAL3), at the proof's own time, with the clock held there while it is recorded, so
-  `laravel-authentication` judges it then (a proof no earlier than the session's start, no later than now) and a pending
-  credential that would have expired since is still live: an active session is stepped up as `actingOnVerifiedSession()`
-  steps one up (`VerifiedSession::stepUp()`, shared by both), and the pending one is completed as `actingAsCaller()`
-  completes one (`CallerCompletion::satisfy()`, shared by both) and then acted on, each flagged multifactor as MFA's own
-  acceptance would flag it. A completion that leaves the sign-in pending all the same throws a `LogicException` and
-  rolls back. A proof of no level's evidence, or one bound neither to the pending sign-in it began nor to the identity's
-  current sign-in, is refused with MFA's `ProofRefusedException`. MFA's helper reads the proofs back and throws unless
-  its route gate would read the session at exactly the level. `actingOnVerifiedSession($session, $level)` verifies a
-  session the test already holds the same way, with the further proof made now, so a freshness test verifies the session
-  and then moves the clock on; without the recorder bound, the refusal `actingAsVerified()` meets names that helper. The
-  suite-wide `actingAsCaller()` (IAM-12.2) builds on `actingOnVerifiedSession()`; the application's side of all three is
-  in `docs/guides/testing.md`.
+  password proof MFA's helper would otherwise record, made at that time, and the helper keeps it. The identity's
+  stored credentials are never read or written. The start runs in `CrossMemberTransaction` from `CallerSignIn`'s
+  client; a refused sign-in, or one pending on anything but a further factor, throws a `LogicException` naming the
+  reason inside it, so it leaves nothing. A session that activates is acted on, as `actingOnSession()` does. One left
+  pending on a further factor (a person who holds a confirmed factor, under an application requiring one at sign-in,
+  the person the helper enrolled one for included, the next time) is kept pending, with its pending credential held by
+  the recorder until the helper's further proof completes it; MFA's contract lets a recorder complete a pending
+  sign-in with that proof, as long as the sign-in begun is the store's current one once it is recorded. That
+  credential is the recorder's only state, forgotten by the next `begin()`, and the binding is transient, so it never
+  outlives the one sign-in MFA's helper resolved the recorder for. Its `factorReference()` names the real factor the
+  helper's further proof (MFA's `Testing\LevelEvidence`) is made with: a confirmed factor of the level's type the
+  identity holds, or one enrolled for it (`Testing\FixtureFactors`: an email factor for AAL1, an authenticator app for
+  AAL2, a passkey for AAL3). Its `record()` keeps the sign-in's own first factor (through this store's `record()` for
+  an active session, and, for the pending session it began, when it is a password), and records the further proof as
+  it is, at the proof's own time, with the clock held there, so `laravel-authentication` judges it then: an active
+  session is stepped up with it, bound for a step-up (`VerifiedSession::stepUp()`), and the pending one is completed
+  with it (`CallerCompletion::satisfy()`) and then acted on, each flagged multifactor as MFA's own acceptance would
+  flag it. A completion that leaves the sign-in pending all the same throws a `LogicException` and rolls back. A proof
+  bound neither to the pending sign-in it began nor to the identity's current sign-in is refused with MFA's
+  `ProofRefusedException`. MFA's helper reads the proofs back and throws unless its route gate would read the session
+  at exactly the level. `actingOnVerifiedSession($session, $level)` verifies a session the test already holds the same
+  way, with the further proof made now, so a freshness test verifies the session and then moves the clock on; without
+  the recorder bound, the refusal `actingAsVerified()` meets names that helper. The suite-wide `actingAsCaller()`
+  (IAM-12.2) builds on `actingOnVerifiedSession()`; the application's side of all three is in `docs/guides/testing.md`.
 - `actingAsCaller($identity, $principal, $tenant, $guard, $session, $verified, $scopes)` is the testing helper's one
   core method, taking plain values only. A person is signed in for real (`Testing\CallerSignIn`, internal) and the test
   acts on the new session, so every adapter reads the caller from the session `laravel-authentication` wrote, never from
@@ -487,8 +485,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 - `src/Mfa/MfaContextContributor.php` (`contribute()`); `src/IamServiceProvider.php`: `registerContextContributors()`,
   `registerContributor()`; `src/Checks/ContextNamespacesCheck.php`.
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
-  (`verify()`, `stepUp()`), `src/Testing/VerifiedSignInRecorderAdapter.php` (`begin()`, `record()`),
-  `src/Testing/LevelEvidence.php` (`of()`, `matching()`, `proof()`), `src/Testing/CallerCompletion.php` (`complete()`,
+  (`verify()`, `stepUp()`), `src/Testing/VerifiedSignInRecorderAdapter.php` (`begin()`, `record()`,
+  `factorReference()`), `src/Testing/FixtureFactors.php` (`held()`), `src/Testing/CallerCompletion.php` (`complete()`,
   `satisfy()`).
 - `src/Exceptions/UnresolvedReferenceException.php` (`forGuard()`, `forSession()`, `forIdentity()`, `forMfaIdentity()`),
   `src/Exceptions/Enums/ReferenceKind.php`, `src/Exceptions/SessionMismatchException.php`.
@@ -622,9 +620,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `testThePersonsStoredCredentialsAreUntouched`, `testAVerifiedPersonCanBeVerifiedAgain`,
   `testARefusedSignInIsReportedAndLeavesNothing`, `testAFurtherProofThatLeavesTheSignInPendingIsRefusedAndRolledBack`,
   `testTheActiveSignInsOwnFirstFactorIsKeptAndAnotherRefused`,
-  `testThePendingSignInsOwnPasswordIsKeptAndAnotherFirstFactorRefused`, `testAProofOfNoLevelsEvidenceIsRefused`,
-  `testAProofBoundToAnotherSignInOrIdentityIsRefused`, `testOnlyThePendingSignInBegunLastIsCompletedForItsOwnIdentity`,
-  `testOnlyALevelsWholeEvidenceMatches`
+  `testThePendingSignInsOwnPasswordIsKeptAndAnotherFirstFactorRefused`,
+  `testAProofBoundToAnotherSignInOrIdentityIsRefused`, `testOnlyThePendingSignInBegunLastIsCompletedForItsOwnIdentity`
 - `tests/Feature/Testing/InteractsWithIamTest.php` `testMfasActingAsVerifiedIsRefusedByThisPackagesStoreWithoutItsRecorder`,
   `testAVerifiedSessionPassesMfasRouteGate`, `testTheFurtherProofIsRecordedWithAFactorThePersonHolds`,
   `testAPersonActsOnASessionTheySignedInTo`, `testTheTenantIsTheSessionsAndTheGuards`,
@@ -641,8 +638,8 @@ Update this note when:
   could then record and forget, and its kit could run without its hooks);
 - MFA stops leaving a removed factor's proofs out of the session it judges, or changes what a proof's reference names;
 - `laravel-mfa`'s `VerifiedSignIn` changes its recorder contract (the sequence of proofs, or whether a pending sign-in
-  may be completed with the further proof), or changes the evidence it records for a level
-  (`actingOnVerifiedSession()` records the same evidence, and the adapter records only that);
+  may be completed with the further proof), or changes `Testing\LevelEvidence` (`actingOnVerifiedSession()` and
+  `actingAsCaller()` prove with it too, and `VerifiedSession::AMR` holds the `amr` of each of its methods);
 - `laravel-authentication` changes how `start()` times a session's first factor, or how a step-up or a pending
   completion judges a proof's time or a pending credential's expiry (`VerifiedSignInRecorderAdapter` holds the clock at
   the helper's time for each);

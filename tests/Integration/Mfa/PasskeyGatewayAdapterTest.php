@@ -212,23 +212,19 @@ final class PasskeyGatewayAdapterTest extends TestCase
             'status'               => 'pending',
         ]);
 
-        self::assertSame([self::CREDENTIAL, self::OTHER_CREDENTIAL], $this->gateway()->credentialIds($person));
-        self::assertSame([], $this->gateway()->credentialIds($this->createPerson()));
+        self::assertSame([self::CREDENTIAL, self::OTHER_CREDENTIAL], $this->gateway()->credentialIds($person, self::GUARD));
+        self::assertSame([], $this->gateway()->credentialIds($this->createPerson(), self::GUARD));
     }
 
     /**
-     * The passkeys on the relying party of each guard of the `jwt` driver whose
-     * MFA application offers passkeys are listed, guard by guard in the order
-     * they are declared, and a passkey of a relying party two guards share
-     * once; a guard of the `jwt` driver whose application offers no passkeys,
-     * declared before one that does, and a guard of any other driver, list
-     * none.
+     * Each application lists only its own guard's passkeys, and none where it
+     * offers no passkeys.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testThePasskeysOfEveryGuardOfferingPasskeysAreListed(): void
+    public function testEachApplicationListsOnlyItsOwnGuardsPasskeys(): void
     {
         [$person] = $this->passkeyFactor();
 
@@ -252,7 +248,9 @@ final class PasskeyGatewayAdapterTest extends TestCase
         $this->authenticator()->origin = self::PARTNER_ORIGIN;
         $this->registerPasskey($person, self::PARTNER_CREDENTIAL, guard: self::PARTNER_GUARD);
 
-        self::assertSame([self::CREDENTIAL, self::ADMIN_CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person, self::GUARD));
+        self::assertSame([self::ADMIN_CREDENTIAL], $this->gateway()->credentialIds($person, self::ADMIN_GUARD));
+        self::assertSame([], $this->gateway()->credentialIds($person, self::PARTNER_GUARD));
     }
 
     /**
@@ -273,7 +271,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
         config()->set('authentication.passkeys.relying_party.id', null);
         config()->set('auth.guards.' . self::PARTNER_GUARD, ['driver' => 'jwt', 'provider' => 'people']);
 
-        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person));
+        self::assertSame([self::CREDENTIAL], $this->gateway()->credentialIds($person, self::GUARD));
         self::assertSame([$factor->id], array_map(static fn (FactorSummary $offered): string => $offered->id, Mfa::offeredFactors(self::servedCaller())));
 
         $request = Mfa::requestAssertion(self::servedCaller(), $factor->id, Purpose::STEP_UP);
@@ -299,7 +297,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        $this->gateway()->credentialIds($person);
+        $this->gateway()->credentialIds($person, self::ADMIN_GUARD);
     }
 
     /**

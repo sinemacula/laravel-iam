@@ -12,14 +12,12 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  *
  * The rule binds the adapter only where the seam is unbound or still bound to
  * one of the member's own defaults, so an application's binding is never
- * replaced. A member default is named by the concrete class a class-string
- * binding was given or, for a binding the member made with a closure, by the
- * member class that declares the closure. A member that says itself whether the
- * seam holds its default (`laravel-authorization`'s `isPackageDefault()`) is
- * asked instead (`$holdsDefault`), so a class the application names in its
- * configuration, which it binds through a closure of its own too, is never
- * taken for its default. A binding whose switch is off binds nothing, so a
- * feature the application leaves off changes nothing.
+ * replaced. The member whose contract the seam is says whether it holds its
+ * default (its `isPackageDefault()`, `$holdsDefault`); for SSO, which gives no
+ * answer, a default is named by the concrete class a class-string binding was
+ * given or the member class that declares a closure binding. A binding whose
+ * switch is off binds nothing, so a feature the application leaves off changes
+ * nothing.
  *
  * The switch reads the configuration as every member will hold it once
  * registered: the application's, with each member's packaged configuration
@@ -48,6 +46,9 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  */
 final readonly class SeamBinding
 {
+    /** @var ?\Closure(\Illuminate\Container\Container, string): bool Whether the seam holds its member's default, as the member says; `null` for a member that gives no answer. */
+    public ?\Closure $holdsDefault;
+
     /**
      * Constructor.
      *
@@ -85,15 +86,17 @@ final readonly class SeamBinding
         /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
         public array $accepted = [],
 
-        /** The member's own answer to whether the seam holds its default, asked in place of reading the class that declares the binding's closure; `null` for a member that gives none. */
-        public ?\Closure $holdsDefault = null,
+        // The answer given in place of the member's own `isPackageDefault()`.
+        ?\Closure $holdsDefault = null,
 
         /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
         public ?\Closure $factory = null,
 
         /** Declares the adapter to the member's own report once the rule has bound it, handed the container and the closure bound over the seam; `null` declares nothing. */
         public ?\Closure $declare = null,
-    ) {}
+    ) {
+        $this->holdsDefault = $holdsDefault ?? MemberDefaults::answerOf($abstract);
+    }
 
     /**
      * Whether the seam must be bound off its permissive default, asking the
