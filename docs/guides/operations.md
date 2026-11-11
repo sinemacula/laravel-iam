@@ -199,22 +199,21 @@ $member = Iam::transaction(function () use ($identity, $tenantId, $client): Memb
 
 Each member's own transaction inside it is a savepoint, so all of it commits or rolls back as one.
 
-- **When it is retried.** When the package opened the outermost transaction, a serialisation failure (SQLSTATE 40001),
-  a deadlock, a lock wait timeout or SSO's `LinkCandidatesChanged` runs the whole closure again, in a new transaction,
-  up to `iam.transactions.attempts` times, the first included (`IAM_TRANSACTION_ATTEMPTS`, 3 by default, at least 1),
-  or the attempts you pass as its second argument. The last failure is rethrown as the database raised it.
-- **Inside your own transaction** it runs once, in a savepoint rolled back whenever it fails, and rethrows the failure
-  in a form your own `DB::transaction($work, $attempts)` recognises, for your outermost transaction to retry.
-- **Keep the closure to database work.** On a retry everything in it runs again: a dispatched job, a request to a
-  provider or a mutated object is repeated. Dispatch what must happen once after the commit.
-- **Once committed, never again.** A failure after the commit (a commit callback, an after-commit job) is rethrown and
-  never retried, since running the work again would apply it twice.
-- **MFA's changes cannot be wrapped.** MFA opens the transaction of every verification, factor change, removal and
-  reset itself, and never retries: never run one inside `Iam::transaction()`, and retry the request when one fails to
-  serialise (see [Authentication and MFA](authentication-and-mfa.md#transactions-and-retries)).
+- **When it is retried.** It runs through Laravel's `transaction($work, $attempts)`, so only when it opens the outermost
+  transaction: a serialisation failure, a deadlock, a lock wait timeout or SSO's `LinkCandidatesChanged` runs the whole
+  closure again, up to `iam.transactions.attempts` (`IAM_TRANSACTION_ATTEMPTS`, 3 by default) or the attempts you pass.
+  The last one is rethrown as a `DeadlockException` with SQLSTATE 40001, the original as its previous.
+- **Inside your own transaction** it runs once and rethrows, in a form your own `DB::transaction($work, $attempts)`
+  recognises.
+- **Keep the closure to database work.** On a retry everything in it runs again. A failure after the commit is never
+  retried.
+- **Flows a member opens itself cannot be wrapped**: MFA's verifications, factor changes, removals and resets, and
+  `Iam::links()`, which SSO redeems in its own transaction. Retry the request when one fails to serialise (see
+  [Authentication and MFA](authentication-and-mfa.md#transactions-and-retries)).
 - **SSO's starts and completions** talk to the provider and refuse to run inside a transaction.
 
-The SSO redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried the same way.
+The sign-in and re-authentication redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried
+the same way.
 
 ## Workers and Octane
 
@@ -234,11 +233,8 @@ its last decision among them), this package's own scoped adapters and records (t
 scoped under the `iam.scoped:` prefix), and the facade roots that would keep them, so a long-running command that
 resets between tenants keeps none of the suite's decisions about the first tenant. It forgets only the suite's scoped
 state: a scoped binding your application made, over a seam or of its own, is kept, so a loop of your own forgets those
-with the container's `forgetScopedInstances()` (below). It keeps Laravel's `Context`, its deferred callbacks,
-audit-log's execution frames and the caller a queued job carried (`Iam\Audit\JobCallers`), which is frame state as
-audit-log's frames are: the queue worker and Octane forget it at their own boundaries, and a reset called by hand
-inside a job keeps it, so the job's later records, and the jobs it dispatches, still name the caller who dispatched
-it.
+with the container's `forgetScopedInstances()` (below). It keeps Laravel's `Context`, its deferred callbacks and
+audit-log's execution frames, so a reset called by hand inside a job keeps the actor the job carried.
 
 - **Octane.** Keep Octane's default listeners. Under Octane every listener and scoped record this package uses
   resolves from the request's sandbox, so nothing reaches another request. Leave the members' services out of
@@ -262,9 +258,6 @@ it.
       app()->forgetScopedInstances();
   }
   ```
-
-  It also releases any work this package held for a commit that finished without running it, such as the second pass
-  of a tenant policy change.
 
 Turn `iam.workers.reset` off only when the application performs the same reset itself. How the reset is built is in
 the [long-running processes design note](../design/long-running-processes.md).

@@ -146,10 +146,8 @@ The codes, categories, correlation and the events to alert on are in [The audit 
 |-----------------------------|---------|----------------------------|------------------------------------------------------------------------------|
 | `iam.transactions.attempts` | `3`     | `IAM_TRANSACTION_ATTEMPTS` | How many times a change that spans members is attempted, the first included. |
 
-At least 1, read as an integer. A change is retried as a whole when it fails to serialise (SQLSTATE 40001), deadlocks,
-meets a lock wait timeout or finds SSO's link candidates changed, and only when the package opened the outermost
-transaction: inside a transaction your application opened, the failure is rethrown for you to retry. See
-[Operations](operations.md#retries).
+At least 1. Only the outermost transaction retries; inside one your application opened, the failure is rethrown for
+you to retry. See [Operations](operations.md#retries).
 
 ```php
 use SineMacula\Laravel\Iam\Facades\Iam;

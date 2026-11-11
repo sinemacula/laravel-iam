@@ -42,13 +42,12 @@ use Tests\TestCase;
  * than the request's reports that session's verification, and one built in a
  * queued job, with no request and no guard bound, reports the session it names.
  * A session no longer live, a subject with no session and an identity that
- * cannot hold factors get the neutral context; a proof made with a factor since
- * removed does not count; a first factor older than every proof read still
- * counts; and inside a transaction the proofs are read current, so a removal
- * committed after the transaction's first read shows. The request's context is
- * built once and kept, so one built before a transaction is returned unchanged
- * inside it, as `laravel-authentication` keeps it, while MFA's own view is
- * asked afresh there.
+ * cannot hold factors get the neutral context; a first factor older than every
+ * proof read still counts; and inside a transaction the proofs are read
+ * current, so a removal committed after the transaction's first read shows. The
+ * request's context is built once and kept, so one built before a transaction
+ * is returned unchanged inside it, as `laravel-authentication` keeps it, while
+ * MFA's own view is asked afresh there.
  *
  * Each scenario that reads stored proofs runs at the connection's own level on
  * every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
@@ -288,34 +287,6 @@ final class MfaContextContributorTest extends TestCase
 
         self::assertSame(MfaContributor::neutral(), $this->contributor()->contribute(new ContributionSubject($context, $person, $person, null, null)));
         self::assertSame(MfaContributor::neutral(), $this->contributor()->contribute(new ContributionSubject($context, $stranger, $stranger, null, $session)));
-    }
-
-    /**
-     * A proof made with a factor the person no longer holds does not count,
-     * even before its proofs are voided.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAProofOfAFactorNoLongerHeldDoesNotCount(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $person  = $this->createPerson();
-        $session = $this->signInAndActOnSession($person);
-
-        $this->actingOnVerifiedSession($session);
-
-        Factor::query()->whereKey($this->factorOf($person))->delete();
-
-        $keys = $this->contributed($person, $session);
-
-        self::assertFalse($keys['accepted']);
-        self::assertSame([], $keys['factor_types']);
-        self::assertFalse($keys['has_confirmed_factor']);
     }
 
     /**

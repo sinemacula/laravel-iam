@@ -5,8 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Sso;
 
 use Illuminate\Auth\GenericUser;
-use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -32,17 +30,14 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use SineMacula\Laravel\Sso\Links\Enums\LinkState;
 use SineMacula\Laravel\Sso\Links\LinkService;
 use SineMacula\Laravel\Sso\Links\LinkSummary;
-use SineMacula\Laravel\Sso\Models\HandoffCode;
 use SineMacula\Laravel\Sso\SingleUse\DatabaseSingleUseStore;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
-use Tests\Fixtures\Sso\FailingFreshness;
 use Tests\Fixtures\Sso\FailingSingleUseStore;
 use Tests\Fixtures\Sso\Handoff;
-use Tests\Fixtures\Transactions\SavepointLeavingConnections;
 use Tests\TestCase;
 
 /**
@@ -51,10 +46,8 @@ use Tests\TestCase;
  * the caller is linked, no session is written and nothing is admitted; a code
  * started for another identity links nobody; a caller that cannot be named to
  * SSO throws before the code is touched; until freshness is bound, SSO's
- * default refuses every link; a concurrency failure is redeemed again,
- * standalone, until the attempts run out, but never once the attempt reached
- * its commit, and inside the caller's transaction reaches the caller once, as
- * its retry recognises it, with none of SSO's writes left in that transaction.
+ * default refuses every link; and a concurrency failure is the caller's to
+ * retry, inside its transaction or not.
  *
  * Each scenario that commits or rolls back runs at the connection's own level
  * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
@@ -72,9 +65,6 @@ final class LinkRedemptionTest extends TestCase
 
     /** @var string The message PostgreSQL fails a transaction that cannot be serialised with. */
     private const string SERIALISATION_FAILURE = 'SQLSTATE[40001]: Serialization failure: 7 ERROR:  could not serialize access due to concurrent update';
-
-    /** @var string The message MySQL fails a statement that waited too long for a lock with. */
-    private const string LOCK_WAIT_TIMEOUT = 'SQLSTATE[HY000]: General error: 1205 Lock wait timeout exceeded; try restarting transaction';
 
     /** @var \ArrayObject<int, object> What SSO reported of each redemption, in order. */
     private \ArrayObject $reported;
@@ -262,222 +252,32 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A standalone redemption whose transaction fails to serialise, rolled back
-     * whole by SSO, is redeemed again from its start, still standalone, and
-     * links the caller once, reported once.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAConcurrencyFailureIsRedeemedAgainStandalone(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person);
-        $store   = $this->failingStore(self::serialisationFailure(...), 1);
-        $linked  = $this->redeem($handoff, $person);
-
-        self::assertTrue($linked->isRedeemed());
-        self::assertFalse($linked->isAdmitted());
-        self::assertSame(2, $store->calls);
-        self::assertCount(1, $this->app?->make(LinkService::class)->list(self::referenceOf($person)) ?? []);
-        self::assertSame([HandoffRedeemed::class], $this->reportedEvents());
-    }
-
-    /**
-     * The last attempt's concurrency failure reaches the caller as it was
-     * thrown, after as many attempts as the retry helper is configured with,
-     * each of which SSO runs three times itself, and leaves the code unspent
-     * and nothing reported, so the request retried links the caller.
+     * A standalone redemption's concurrency failure is retried by SSO alone,
+     * three times in all whatever this package's attempts say, then reaches the
+     * caller with the code unspent and nothing reported, so the request retried
+     * links the caller.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testTheLastAttemptsFailureReachesTheCaller(): void
+    public function testAStandaloneConcurrencyFailureReachesTheCallerAfterSsosOwnAttempts(): void
     {
         Config::set('iam.transactions.attempts', 2);
 
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
-        $store   = $this->failingStore(self::serialisationFailure(...), 6);
+        $store   = $this->failingStore(self::serialisationFailure(...), 3);
 
         try {
             $this->redeem($handoff, $person);
 
-            self::fail('A redemption that failed on every attempt answered.');
+            self::fail('A redemption that failed to serialise answered.');
         } catch (QueryException $exception) {
             self::assertSame('40001', $exception->getCode());
         }
 
-        self::assertSame(6, $store->calls);
-        self::assertSame([], $this->reportedEvents());
-        self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
-    }
-
-    /**
-     * The last attempt's concurrency failure, met in a transaction SSO nests in
-     * its own and so wrapped in Laravel's `DeadlockException`, which loses its
-     * SQLSTATE, reaches the caller as the database raised it, a
-     * `QueryException` with SQLSTATE 40001, and leaves the code unspent.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheLastAttemptsFailureInANestedTransactionReachesTheCallerAsTheDatabaseRaisedIt(): void
-    {
-        Config::set('iam.transactions.attempts', 2);
-
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person);
-        $raised  = self::serialisationFailure();
-        $store   = $this->failingStore(static fn (): \Throwable => new DeadlockException($raised->getMessage(), 0, $raised), 6);
-
-        try {
-            $this->redeem($handoff, $person);
-
-            self::fail('A redemption that failed on every attempt answered.');
-        } catch (QueryException $exception) {
-            self::assertSame($raised, $exception);
-        }
-
-        self::assertSame(6, $store->calls);
-        self::assertSame([], $this->reportedEvents());
-        self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
-    }
-
-    /**
-     * A failure that is no concurrency failure reaches the caller from the
-     * first attempt, which is not run again.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAFailureThatIsNoConcurrencyFailureIsNotRetried(): void
-    {
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person);
-        $store   = $this->failingStore(static fn (): \Throwable => new \RuntimeException('The store is unavailable.'), 1);
-
-        try {
-            $this->redeem($handoff, $person);
-
-            self::fail('A redemption whose store failed answered.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('The store is unavailable.', $exception->getMessage());
-        }
-
-        self::assertSame(1, $store->calls);
-    }
-
-    /**
-     * A concurrency failure met once the standalone attempt has committed, as
-     * from a listener of an event SSO dispatches from its commit, reaches the
-     * caller as it was thrown and is not redeemed again: the link is made once,
-     * the code is spent, and no refusal of it is reported.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAFailureOnceTheAttemptHasCommittedIsNotRedeemedAgain(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person);
-        $thrown  = new \ArrayObject;
-
-        Event::listen(HandoffRedeemed::class, static function () use ($thrown): void {
-
-            if ($thrown->count() > 0) {
-                return;
-            }
-
-            $thrown->append(true);
-
-            throw self::serialisationFailure();
-        });
-
-        try {
-            $this->redeem($handoff, $person);
-
-            self::fail('A failure once the attempt had committed was swallowed.');
-        } catch (QueryException $exception) {
-            self::assertSame('40001', $exception->getCode());
-        }
-
-        self::assertSame(0, DB::connection()->transactionLevel());
-        self::assertCount(1, $this->app?->make(LinkService::class)->list(self::referenceOf($person)) ?? []);
-        self::assertSame(1, HandoffCode::query()->whereNotNull('redeemed_at')->count());
-        self::assertSame([HandoffRedeemed::class], $this->reportedEvents());
-    }
-
-    /**
-     * Rows of `[whether the connection leaves the savepoint]`: the installed
-     * Laravel, and Laravel before 13.40, which only lowers the transaction
-     * level after a concurrency failure in a nested transaction.
-     *
-     * @return iterable<string, array{0: bool}>
-     */
-    public static function provideSavepointHandling(): iterable
-    {
-        yield 'as the installed Laravel handles it' => [false];
-
-        yield 'as Laravel before 13.40 handles it' => [true];
-    }
-
-    /**
-     * Inside the caller's transaction, a concurrency failure the database met
-     * on one statement alone, after SSO consumed the code (as freshness is
-     * asked), undoes everything SSO wrote, on every supported Laravel version:
-     * a caller that catches the failure and commits leaves the code unspent, so
-     * it still links the caller.
-     *
-     * @param  bool  $leavesTheSavepoint
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideSavepointHandling')]
-    public function testInsideTheCallersTransactionAConcurrencyFailureLeavesTheCodeUnspent(bool $leavesTheSavepoint): void
-    {
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person);
-
-        if ($leavesTheSavepoint) {
-            SavepointLeavingConnections::replace($this->app?->make(DatabaseManager::class) ?? self::fail('The application has not booted.'), self::CONNECTION);
-        }
-
-        $app       = $this->app ?? self::fail('The application has not booted.');
-        $freshness = new FailingFreshness($app->make(Freshness::class), static fn (): \Throwable => new \RuntimeException(self::LOCK_WAIT_TIMEOUT), 1);
-        $thrown    = null;
-
-        $app->instance(Freshness::class, $freshness);
-
-        DB::beginTransaction();
-
-        try {
-            $this->redeem($handoff, $person);
-        } catch (DeadlockException $thrown) {
-            // Asserted below, beside what the caller's transaction kept.
-        }
-
-        self::assertInstanceOf(DeadlockException::class, $thrown);
-        self::assertSame(1, DB::transactionLevel());
-
-        DB::commit();
-
-        self::assertSame(1, $freshness->calls);
-        self::assertSame(0, HandoffCode::query()->whereNotNull('redeemed_at')->count());
+        self::assertSame(3, $store->calls);
         self::assertSame([], $this->reportedEvents());
         self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
     }
@@ -508,15 +308,13 @@ final class LinkRedemptionTest extends TestCase
 
     /**
      * Inside the caller's transaction, a failure to serialise is not retried:
-     * it reaches the caller once, as the failure itself rather than Laravel's
-     * wrapper of it that its detector cannot recognise, so the caller's own
-     * retry retries its whole transaction.
+     * it reaches the caller from the one attempt, with nothing linked.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testInsideTheCallersTransactionAFailureReachesTheCallerAsItsRetryRecognisesIt(): void
+    public function testInsideTheCallersTransactionAFailureToSerialiseReachesTheCaller(): void
     {
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
@@ -527,9 +325,7 @@ final class LinkRedemptionTest extends TestCase
 
             self::fail('A redemption that failed to serialise answered.');
         } catch (\Throwable $exception) {
-            self::assertNotInstanceOf(DeadlockException::class, $exception);
-            self::assertInstanceOf(QueryException::class, $exception);
-            self::assertSame('40001', $exception->getCode());
+            self::assertStringContainsString('could not serialize access', $exception->getMessage());
         }
 
         self::assertSame(1, $store->calls);

@@ -305,12 +305,9 @@ return [
     | Transactions
     |---------------------------------------------------------------------------
     |
-    | How many times a change that spans members is attempted, the first run
-    | included, when it fails to serialise (SQLSTATE 40001), deadlocks or finds
-    | SSO's link candidates changed. It is retried as a whole, and only when the
-    | package opened the outermost transaction: inside a transaction the
-    | application opened, the failure is rethrown for that transaction's owner
-    | to retry. At least 1.
+    | How many times `Iam::transaction()` attempts a change after a concurrency
+    | failure, the first run included. Only the outermost transaction retries;
+    | inside the application's own, the failure is rethrown. At least 1.
     |
     */
 

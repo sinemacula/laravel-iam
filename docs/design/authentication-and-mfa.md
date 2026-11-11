@@ -54,9 +54,9 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   - MFA's application is the guard of the same name, which must be a declared guard of the `jwt` driver. MFA hands every
     self-service seam its caller as plain values (`CallerContext`: the identity, a pending session or nobody, the
     application and the client), and a removal its application, and those are what the adapters act on, never the
-    guard's current user. Only where MFA names no application (the pending session resolver's `fromRequest()`, a reset,
-    `forgetFactor()`) is it the default guard, as `Auth::shouldUse()` leaves it, which is also what MFA names its
-    application after when it reads a caller through no guard of its own. The event context reads no guard: it names
+    guard's current user. Only where MFA names no application (the pending session resolver's `fromRequest()`, a reset)
+    is it the default guard, as `Auth::shouldUse()` leaves it, which is also what MFA names its application after when
+    it reads a caller through no guard of its own. The event context reads no guard: it names
     the session of the sign-in MFA hands it on the application MFA hands it, read by its key, and MFA names the event's
     application itself.
   - MFA's sign-in id is the session's key as a string (`SignIn::reference()`), which is always its primary key. A key
@@ -209,32 +209,23 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   - `SessionTransitionAdapter` (IAM-3.8) calls `factorChanged()` on the sign-in MFA names and returns the
     `FactorChangeResult` as MFA's completion. The session is judged against the requirement `laravel-authentication`
     resolves, never MFA's `outstanding`.
-  - `ProofStoreAdapter` and `FirstFactorResolverAdapter` (IAM-3.11) are `laravel-authentication`'s session proofs,
-    read through `Auth::sessions()->proofs()` and `firstFactor()`. `currentSession()` is the guard's current session,
+  - `ProofStoreAdapter` and `FirstFactorResolverAdapter` (IAM-3.11) are `laravel-authentication`'s session proofs, read
+    through `Auth::sessions()->proofs()` and `firstFactor()`. `currentSession()` is the guard's current session,
     `proofs()` its counting proofs oldest first, and the first-factor resolver its first factor. `begin()` and
-    `forget()` write nothing. `record()` checks, in a transaction on the storage connection, that the proof is
-    bound to the identity's current sign-in and that the session is live (`firstFactor() !== null`), and keeps only the
-    sign-in's own first factor, which the session already holds; anything else throws MFA's `ProofRefusedException`.
-    `laravel-authentication` is the only writer of a session's proofs. A proof that names a factor counts only while
-    the identity still holds that factor in MFA's factor table, read on the write connection and only when a proof
-    names one: MFA deletes a factor before it calls `forgetFactor()`, so the factor's proofs stop counting at once,
-    inside MFA's own transaction, before the revoker's `factorRemoved()` voids them, and the proofs MFA reads back
-    between the two already leave them out. Nothing is kept, so a removal that rolls back counts them again. A factor
-    the identity still holds when `forgetFactor()` is called (MFA never forgets a factor it has not deleted, but the
-    contract allows it) is reported to `factorRemoved()` on the default guard's current session, or with no session
-    when that guard holds none of the identity's, so its proofs stop counting all the same. A deleted factor is not
-    reported there: the revoker reports it, and a second report would judge the current session twice and lose the
-    pending credential the first judgement issued. Both read only through `laravel-authentication`'s public readers
-    (IAM-13.9) and no `@internal` class of its. MFA hands every call the identity, and `proofs()` the sign-in it asked
-    `currentSession()` about; the guard's current session is read only to answer which sign-in is current, as MFA's
-    contract asks, so `proofs()` of a sign-in that is no longer current answers none, and `record()` refuses a proof
-    whose binding the identity it is handed does not own.
+    `forget()` write nothing. `record()` checks, in a transaction on the storage connection, that the proof is bound to
+    the identity's current sign-in and that the session is live (`firstFactor() !== null`), and keeps only the sign-in's
+    own first factor, which the session already holds; anything else throws MFA's `ProofRefusedException`.
+    `laravel-authentication` is the only writer of a session's proofs. `forgetFactor()` writes nothing: MFA has deleted
+    the factor and leaves its proofs out of the session it judges, and the revoker's `factorRemoved()` voids them. Both
+    read only through `laravel-authentication`'s public readers (IAM-13.9) and no `@internal` class of its. MFA hands
+    every call the identity, and `proofs()` the sign-in it asked `currentSession()` about; the guard's current session
+    is read only to answer which sign-in is current, as MFA's contract asks, so `proofs()` of a sign-in that is no
+    longer current answers none, and `record()` refuses a proof whose binding the identity it is handed does not own.
   - `SignInProofs` translates a session's recorded proofs, handed in oldest first, to MFA's proofs of the sign-in: bound
     to the identity, the application and the session's key, stamped with the identity's current verification
     generation, an external provider's proof naming its connection only under `ProviderTrust::accepted()` for the
-    session's tenant, a proof MFA cannot express left out, and a proof naming a factor the identity no longer holds
-    left out (MFA's factor table read on the write connection, and only when a proof names a factor). The proof store
-    and the `mfa` contributor both read through it, so they count a session's proofs alike.
+    session's tenant, and a proof MFA cannot express left out. The proof store and the `mfa` contributor both read
+    through it, so they count a session's proofs alike.
 - `Mfa\MfaContextContributor` fills the `mfa` namespace of `laravel-authentication`'s authentication context (IAM-3.12,
   MFA-10.11, AUTH-11.8) with MFA's own `AuthenticationContextContributor::contributeFor()`, the one builder MFA has
   since IAM-13.4, so the keys are MFA's own eight, exactly what `Mfa::authenticationContext()` answers for the same
@@ -243,15 +234,15 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `proofs()` and `firstFactor()`, which read the subject's session and never the request's. So a context built for
   another session, or in a queued job with no guard bound and no request, reports that session; nothing reads the
   request, a guard's state or `Auth::user()`. MFA's caller obligations are met here: the newest
-  `RequirementSubject::MAX_LIMIT` proofs, reversed to oldest first, with the first factor ahead of them when it is
-  older than all of them (MFA reports evidence only after exactly one first factor); a proof made with a factor since
-  removed left out (`SignInProofs`); and the neutral context, without asking MFA, for an identity that is no
-  `MultiFactorAuthenticatable`, a subject with no session, and a session the subject's readers answer nothing for
-  (pending, revoked, ended, of another guard, or no Eloquent session). MFA itself gives a machine and an inactive
-  identity the neutral context. It is registered under `mfa` from the service provider's `booted()` callback, beside
-  the `sso` contributor and on the same terms: only while `iam.adapters.mfa` was on when the binding rule read it, and
-  only while nothing holds `mfa`, so an application's own contributor is kept (IAM-8.4). `ContextNamespacesCheck`
-  requires the namespace in every application (IAM-10.2), naming `iam.adapters.mfa` when nothing holds it.
+  `RequirementSubject::MAX_LIMIT` proofs, reversed to oldest first, with the first factor ahead of them when it is older
+  than all of them (MFA reports evidence only after exactly one first factor); and the neutral context, without asking
+  MFA, for an identity that is no `MultiFactorAuthenticatable`, a subject with no session, and a session the subject's
+  readers answer nothing for (pending, revoked, ended, of another guard, or no Eloquent session). MFA itself gives a
+  machine and an inactive identity the neutral context. It is registered under `mfa` from the service provider's
+  `booted()` callback, beside the `sso` contributor and on the same terms: only while `iam.adapters.mfa` was on when the
+  binding rule read it, and only while nothing holds `mfa`, so an application's own contributor is kept (IAM-8.4).
+  `ContextNamespacesCheck` requires the namespace in every application (IAM-10.2), naming `iam.adapters.mfa` when
+  nothing holds it.
   - Read mode: the subject's readers choose it, as `Auth::sessions()->proofs()` does, and only while the context is
     being built. `laravel-authentication`'s guard builds `Auth::context()` once per request and keeps it
     (`HoldsAuthenticationContext`), forgetting it only when the guard binds another identity, principal or session, or
@@ -343,19 +334,14 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   identity until the check arranges its password first factor, which the guard then acts on, as the bearer request
   after a sign-in does, and which the store keeps when the check's proof is recorded through it. A further factor is
   recorded through `stepUp()`, with a factor enrolled in MFA's factor table; a sign-in ends through `signOut()`, and a
-  void is `factorReset()`. Every check runs, none skipped: the factor check forgets a factor the identity still
-  holds, which the store reports to `factorRemoved()`, and `ProofStoreAdapterTest` checks MFA's own order as well (a
-  deleted factor stops counting as soon as it is forgotten, `testAForgottenFactorStopsCountingAtOnce`).
-- A proof made with a factor the identity never held, or no longer holds, does not count, whatever
-  `laravel-authentication` recorded: an application that hands `laravel-authentication` a step-up itself must name one
-  of MFA's factors in it.
-- MFA's test helper `InteractsWithMfa::actingAsVerified()` (`Testing\VerifiedSignIn`) cannot record through this
-  store: by default it records its further proof through `record()`, which refuses it, and the proof names a synthetic
-  factor, which `proofs()` would leave out. MFA closed that member gap with a recorder hook in `VerifiedSignIn`
-  (`Testing\Contracts\VerifiedSignInRecorder`, which the helper uses whenever it is bound), and this package binds it,
-  under the capability's switch and outside tests too, since MFA reads it only from its helper, to
-  `Testing\VerifiedSignInRecorderAdapter`. Its `begin()` is handed the time the helper makes its proofs at, and starts
-  a session for the identity through `laravel-authentication`'s `start()` from a password first factor
+  void is `factorReset()`.
+- A step-up an application hands `laravel-authentication` itself counts as recorded, whatever factor it names.
+- MFA's test helper `InteractsWithMfa::actingAsVerified()` (`Testing\VerifiedSignIn`) cannot record through this store:
+  by default it records its further proof through `record()`, which refuses it. MFA closed that member gap with a
+  recorder hook in `VerifiedSignIn` (`Testing\Contracts\VerifiedSignInRecorder`, which the helper uses whenever it is
+  bound), and this package binds it, under the capability's switch and outside tests too, since MFA reads it only from
+  its helper, to `Testing\VerifiedSignInRecorderAdapter`. Its `begin()` is handed the time the helper makes its proofs
+  at, and starts a session for the identity through `laravel-authentication`'s `start()` from a password first factor
   (`FirstFactor` on the `password` channel with the `pwd` value, the `password` method), as an application that checked
   a password itself starts one, with the clock held at that time while it starts, so the session's first factor is the
   password proof MFA's helper would otherwise record, made at that time, and the helper keeps it. The identity's
@@ -495,7 +481,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   (`fromRequest()`, `revalidate()`, `fromCredential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
   `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
   `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`),
-  `FirstFactorResolverAdapter.php`, `SignInProofs.php` (`of()`, `holds()`, `holdsAFirstFactor()`, `factorReference()`).
+  `FirstFactorResolverAdapter.php`, `SignInProofs.php` (`of()`, `holdsAFirstFactor()`, `factorReference()`).
 - `src/Mfa/MfaContextContributor.php` (`contribute()`); `src/IamServiceProvider.php`: `registerContextContributors()`,
   `registerContributor()`; `src/Checks/ContextNamespacesCheck.php`.
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
@@ -572,13 +558,11 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   rolls back) and recorded as the session's last use, and a caller with no pending session refused; MFA's
   `PendingCompletionTests` run on a cookie guard with a same-site caller
 - `tests/Integration/Mfa/FactorRemovalTest.php` `testTheOutstandingRequirementAgreesWithTheJudgedSession`,
-  `testTheRemovedFactorStopsCountingInsideMfasTransaction`: a removal through MFA with every adapter bound reports a
-  requirement outstanding exactly when `laravel-authentication` returned the session to pending
-- `tests/Integration/Mfa/ProofStoreAdapterTest.php` `testAForgottenFactorStopsCountingAtOnce`,
-  `testAFirstFactorMadeWithAFactorNoLongerHeldIsNone`, `testTheFactorsAreReadOnlyWhenAProofNamesOne`,
-  `testForgettingAHeldFactorVoidsItsProofsThroughAuthentication`,
-  `testForgettingAHeldFactorWithoutASessionEndsEverySession`;
-  `SessionRevokerAdapterTest.php` `testAResetMadeWhereTheDefaultGuardHoldsNoSessionsEndsEverySession`,
+  `testTheRemovedFactorsProofNoLongerCountsOnTheSession`, `testTheRemovedFactorStopsCountingInsideMfasTransaction`: a
+  removal through MFA with every adapter bound reports a requirement outstanding exactly when `laravel-authentication`
+  returned the session to pending, and the removed factor's proof stops counting;
+  `tests/Integration/Mfa/SessionRevokerAdapterTest.php`
+  `testAResetMadeWhereTheDefaultGuardHoldsNoSessionsEndsEverySession`,
   `testAResetGoesThroughTheDefaultGuardWhenItHoldsSessions`, `testAResetWithNoSessionGuardDeclaredIsUnresolved`
 - `tests/Integration/Mfa/FactorChangeLockOrderTest.php` `testAStepUpWaitingOnARemovalResumesAgainstIt`,
   `testARemovalWaitingOnAStepUpResumesAgainstIt`, `testAFactorChangeWaitingOnARemovalResumesAgainstIt`,
@@ -604,12 +588,11 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 - `tests/Integration/Mfa/StatelessVerificationTest.php` `testAVerificationCountsOnTheNextRequestWithTheSameToken`
 - `tests/Integration/Mfa/MfaContextContributorTest.php` `testTheRequestsContextIsMfasOwnView`,
   `testAnotherSessionsContextIsItsOwn`, `testAJobsContextIsTheNamedSessions`, `testASessionNoLongerLiveIsNeutral`,
-  `testNoSessionAndAnIdentityThatCannotHoldFactorsAreNeutral`, `testAProofOfAFactorNoLongerHeldDoesNotCount`,
-  `testAFirstFactorOlderThanEveryProofReadStillCounts`, `testASessionWhoseFirstFactorNoLongerCountsReportsNoEvidence`,
-  `testTheAgeIsTheNewestVerifications`, `testProofsMadeAtOneInstantKeepTheirOrder`,
-  `testInsideATransactionTheProofsAreReadCurrent`; `tests/Integration/Mfa/SignInProofsTest.php`
-  `testProofsNamingNoFactorAreAllKeptWithoutReadingTheFactors`, `testAProofOfAFactorStillHeldIsKept`,
-  `testAProofOfAFactorNoLongerHeldIsLeftOut`, `testAFactorIsNamedByItsIdentifierAsText`
+  `testNoSessionAndAnIdentityThatCannotHoldFactorsAreNeutral`, `testAFirstFactorOlderThanEveryProofReadStillCounts`,
+  `testASessionWhoseFirstFactorNoLongerCountsReportsNoEvidence`, `testTheAgeIsTheNewestVerifications`,
+  `testProofsMadeAtOneInstantKeepTheirOrder`, `testInsideATransactionTheProofsAreReadCurrent`;
+  `tests/Integration/Mfa/SignInProofsTest.php` `testProofsAreKeptInTheOrderHandedIn`,
+  `testAFactorIsNamedByItsIdentifierAsText`
 - `tests/Feature/Sso/ContextContributorRegistrationTest.php` `testTheContributorsAreRegisteredInEveryProviderOrder`,
   `testTheMfaSwitchOffRegistersNothingUnderMfa`, `testTheMfaSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn`,
   `testAnApplicationsEarlierMfaContributorIsKept`, `testAnApplicationsLaterMfaContributorIsKept`;
@@ -653,14 +636,13 @@ Update this note when:
 - a member renames, adds or removes one of the seams in the table, or changes a default's class or binding style;
 - `laravel-authentication` gains a public write path for a session's proofs, or a single-factor void (the proof store
   could then record and forget, and its kit could run without its hooks);
-- MFA stops deleting a factor before it calls `forgetFactor()`, or changes what a proof's reference names;
+- MFA stops leaving a removed factor's proofs out of the session it judges, or changes what a proof's reference names;
 - `laravel-mfa`'s `VerifiedSignIn` changes its recorder contract (the sequence of proofs, or whether a pending sign-in
   may be completed with the further proof), or changes `Testing\LevelEvidence` (`actingOnVerifiedSession()` and
   `actingAsCaller()` prove with it too, and `VerifiedSession::AMR` holds the `amr` of each of its methods);
 - `laravel-authentication` changes how `start()` times a session's first factor, or how a step-up or a pending
   completion judges a proof's time or a pending credential's expiry (`VerifiedSignInRecorderAdapter` holds the clock at
   the helper's time for each);
-- MFA names an application on `ProofStore::forgetFactor()` (which then stops using the default guard);
 - `laravel-authentication` gains a public read of a session of a guard by the identity and its id
   (`CurrentSession::named()` then reads through it in place of the identity's `sessions()` relation), or either member
   changes what its `ClientContext` carries (`ClientTranslator` follows);

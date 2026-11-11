@@ -5,21 +5,16 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Database\Events\TransactionCommitted;
-use Illuminate\Database\Events\TransactionCommitting;
-use Illuminate\Queue\Events\JobExceptionOccurred;
-use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
-use SineMacula\Laravel\Iam\Audit\CarryCallerIntoJobs;
+use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
-use SineMacula\Laravel\Iam\Audit\JobCallers;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -43,9 +38,6 @@ use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
-use SineMacula\Laravel\Iam\Transactions\AfterConnectionCommits;
-use SineMacula\Laravel\Iam\Transactions\CommittedWork;
-use SineMacula\Laravel\Iam\Transactions\OutermostCommits;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
 use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
@@ -55,16 +47,14 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 /**
  * Package service provider: registers the package's configuration, the `iam`
  * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * records SSO's redemptions keep for one request, the callers queued jobs
- * carried, the grant half of SSO's principal scope, the storage connection's
- * alignment, the seam bindings, the authentication context's keys on
- * `laravel-authorization`'s key catalogue, the storage check's booting and
+ * records SSO's redemptions keep for one request, the held actor reader
+ * audit-log asks, the grant half of SSO's principal scope, the storage
+ * connection's alignment, the seam bindings, the authentication context's keys
+ * on `laravel-authorization`'s key catalogue, the storage check's booting and
  * booted callbacks, the audit trail's mappers and codes, the `mfa` and `sso`
  * authentication context contributors, the rendering of
  * `laravel-authorization`'s insufficient-authentication exception as MFA's
- * step-up, the listeners counting outermost commits and releasing the work held
- * for a commit to finish, the listener provisioning SSO's unlinked results, the
- * listeners carrying the caller into each queued job, the worker reset
+ * step-up, the listener provisioning SSO's unlinked results, the worker reset
  * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
  *
  * Everything this package binds over a member's seam is bound once, in
@@ -155,14 +145,14 @@ final class IamServiceProvider extends ServiceProvider
     private bool $authorizationOn = false;
 
     /**
-     * Register the configuration, the manager, the request's records, the
-     * frames of the queued jobs running and the grant half of SSO's principal
-     * scope, write the shared storage connection into every member key that is
-     * unset and whose member has registered, apply the binding rule to every
-     * seam binding, register the declaration of the authentication context's
-     * keys on `laravel-authorization`'s key catalogue, and register the
-     * callback that aligns and checks the storage connections once every
-     * provider has registered.
+     * Register the configuration, the manager, the request's records, the held
+     * actor reader audit-log asks and the grant half of SSO's principal scope,
+     * write the shared storage connection into every member key that is unset
+     * and whose member has registered, apply the binding rule to every seam
+     * binding, register the declaration of the authentication context's keys on
+     * `laravel-authorization`'s key catalogue, and register the callback that
+     * aligns and checks the storage connections once every provider has
+     * registered.
      *
      * @return void
      *
@@ -179,12 +169,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerFactorCodeCallers();
         $this->registerRedemptionRecords();
 
-        // The frames of the queued jobs running are frame state, as audit-log's
-        // own job frames are: scoped, so the queue worker and Octane forget
-        // them between jobs and requests, but outside this package's key for
-        // scoped adapters, so the explicit reset a job calls between its own
-        // units of work keeps the caller it carried (IAM-9.7)
-        $this->app->scoped(JobCallers::class, static fn (): JobCallers => new JobCallers);
+        $this->app->singleton(HeldActorReader::class, AuthenticationActorReader::class);
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
@@ -207,9 +192,7 @@ final class IamServiceProvider extends ServiceProvider
      * is not refused while a configuration command runs, as a member is not),
      * then queue the `mfa` and `sso` authentication context contributors'
      * registration for when every provider has booted, and bootstrap the
-     * listeners counting outermost commits and releasing the work held for a
-     * commit to finish, the listener provisioning SSO's unlinked results, the
-     * listeners carrying the caller into each queued job, the rendering of
+     * listener provisioning SSO's unlinked results, the rendering of
      * `laravel-authorization`'s insufficient-authentication exception as MFA's
      * step-up, the worker reset listeners, the publishing tag and the console
      * commands.
@@ -228,9 +211,7 @@ final class IamServiceProvider extends ServiceProvider
         $this->settle();
         AuditRegistrations::register($this->app, !self::isRunningUncheckedCommand($this->app));
         $this->registerContextContributors();
-        $this->registerCommitListeners();
         ProvisionOnUnlinkedResult::listen();
-        CarryCallerIntoJobs::listen($this->app);
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();
@@ -294,10 +275,7 @@ final class IamServiceProvider extends ServiceProvider
      * links contract answers from, the renewal a re-authentication records
      * before its one write, the refusals `laravel-authentication` reports
      * inside a transaction, held for the audit trail until the outermost one
-     * has ended, the outermost commits each connection has begun, which a
-     * standalone `link` reads to tell whether its attempt reached its commit
-     * before it failed, and the work held until a connection's commit has
-     * finished. Each is scoped, so it is one request's or one job's alone
+     * has ended. Each is scoped, so it is one request's or one job's alone
      * (IAM-8.1), under this package's own key for its scoped adapters, which
      * `Iam::resetWorkerState()` forgets as it forgets every other one, and
      * resolved through that key, so the explicit reset never leaves a record
@@ -307,7 +285,7 @@ final class IamServiceProvider extends ServiceProvider
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class, OutermostCommits::class, CommittedWork::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class] as $record) {
 
             $key = BindingRule::SCOPED_PREFIX . $record;
 
@@ -450,46 +428,6 @@ final class IamServiceProvider extends ServiceProvider
         Event::listen(ResetWhenWorkerStarts::EVENT, ResetWhenWorkerStarts::class);
         Event::listen(ResetBetweenRequests::EVENT, ResetBetweenRequests::class);
         Event::listen(JobProcessing::class, ResetBeforeJob::class);
-    }
-
-    /**
-     * Count every outermost commit a connection begins, in this request's or
-     * this job's record (`OutermostCommits`), release the work held until a
-     * connection's commit has finished, every callback queued on it run
-     * (`AfterConnectionCommits::committed()`), and release what a commit left
-     * held, a commit callback having failed, as the request, the console
-     * command or the queued job ends (`AfterConnectionCommits::settle()`). Each
-     * listener resolves what it calls from the application current when it
-     * runs, never from the events dispatcher's container: under Octane that is
-     * the worker's own application, while the request's records are its
-     * sandbox's. All are always on, whatever the worker reset's switch: a
-     * standalone `link` is never run again once its attempt has reached its
-     * commit, and an enforcement change's or a reported policy change's second
-     * pass waits for the change to commit.
-     *
-     * @return void
-     */
-    protected function registerCommitListeners(): void
-    {
-        Event::listen(TransactionCommitting::class, static function (TransactionCommitting $event): void {
-
-            Container::getInstance()->make(OutermostCommits::class)->committing($event);
-        });
-
-        Event::listen(TransactionCommitted::class, static function (TransactionCommitted $event): void {
-
-            Container::getInstance()->make(AfterConnectionCommits::class)->committed($event);
-        });
-
-        Event::listen([JobProcessed::class, JobExceptionOccurred::class], static function (): void {
-
-            self::settleHeldWork();
-        });
-
-        $this->app->terminating(static function (): void {
-
-            self::settleHeldWork();
-        });
     }
 
     /**
@@ -658,19 +596,6 @@ final class IamServiceProvider extends ServiceProvider
 
             return [];
         }
-    }
-
-    /**
-     * Release the work a commit left held, as a unit of work ends, through the
-     * application current then.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private static function settleHeldWork(): void
-    {
-        Container::getInstance()->make(AfterConnectionCommits::class)->settle();
     }
 
     /**

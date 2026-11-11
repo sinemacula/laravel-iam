@@ -74,8 +74,7 @@ use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
  * so the session's reauthentication at its provider is read here as MFA's own
  * route gate reads it (`ProofStoreAdapter`). A pending, revoked or ended
  * session has none, so nothing but an empty requirement could be met. They are
- * translated and filtered as the proof store's are (`SignInProofs`), a proof
- * made with a factor the identity no longer holds left out, a provider's proof
+ * translated as the proof store's are (`SignInProofs`), a provider's proof
  * naming its connection only under the evidence SSO accepted and the trust of
  * the session's tenant (`ProviderTrust::accepted()`), and MFA's check judges
  * each part on the newest proof meeting it within its maximum age, so a fresh

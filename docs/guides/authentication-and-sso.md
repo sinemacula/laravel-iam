@@ -245,7 +245,8 @@ The package ships no routes. SSO's start, completion and metadata routes are SSO
 ## Transactions and locks
 
 - The sign-in and re-authentication redemptions run in one transaction on the storage connection, retried whole; a
-  `link` runs through SSO's standalone redemption.
+  `link` runs through SSO's standalone redemption, in SSO's own transaction, so retry the request when it fails to
+  serialise.
 - SSO's starts and completions talk to the provider and refuse to run inside a transaction: never wrap them.
 - Every adapter takes its locks in SSO's lock order, with `laravel-authentication`'s session row last. Your own
   contracts that SSO asks under its locks (memberships, link eligibility) come after SSO's, so take no lock on rows

@@ -8,13 +8,8 @@ process calls it.
 
 ## Invariants
 
-- Before `reset()` (or `Iam::resetWorkerState()`) forgets anything, it releases the work this package held for a
-  commit that finished without running it, a commit callback having failed
-  (`Transactions\AfterConnectionCommits::settle()`, a policy change's second pass among it), on every connection with
-  no transaction open, reporting what it throws; the request's or the command's termination and a queued job's end
-  release it the same way (`sso-redemption-and-revocation.md`).
-- The `iam` manager, and this package's commit listeners, resolve every service and record from the application
-  current when they run, never from a container kept since, so a manager resolved in the worker's application before
+- The `iam` manager resolves every service and record from the application
+  current when it runs, never from a container kept since, so a manager resolved in the worker's application before
   Octane clones it, and the events dispatcher Octane keeps on the worker's application, still reach each request's
   sandbox and its scoped records.
 - One reset flushes every member's request state, `Workers\WorkerReset::reset()` (or `Iam::resetWorkerState()`), in
@@ -95,11 +90,6 @@ process calls it.
     a weak key, so nothing in it outlives the code's send or check; forgetting it on the explicit reset as well means a
     caller kept for a binding something still references is never read back after a reset called between units of
     work.
-  - `Audit\JobCallers`, the caller each queued job running carried from whoever dispatched it (`audit-mapping.md`), is
-    frame state, as `laravel-audit-log`'s execution frames are, not a unit of work's request state: it is scoped under
-    its own class, outside the `iam.scoped:` prefix, so the queue worker and Octane forget it at their own boundaries
-    and a job's frames are its own, while a reset called by hand between a job's own units of work keeps the caller
-    the job carried, for its later records and the jobs it dispatches, as it keeps audit-log's job frame.
 - `laravel-mfa` keeps no container instance of any seam between requests (since laravel-mfa#92 every default is bound
   with `bindIf()` and its `mfa` manager with `singletonIf()`, none of them holding request state), so its bindings need
   no reset; its request state is the session-held proofs above, and the identity the guards resolve.
@@ -182,7 +172,7 @@ process calls it.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
-  `src/IamManager.php`: `resetWorkerState()`; `src/Transactions/AfterConnectionCommits.php`: `settle()`;
+  `src/IamManager.php`: `resetWorkerState()`;
   `config/iam.php`: `workers`.
 
 ## Authoritative Tests
@@ -199,11 +189,8 @@ process calls it.
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` `testEachJobInAWorkerIsDecidedAboutItsOwnCaller`
 - `tests/Feature/Workers/WorkerResetTest.php` `testResetForgetsEveryScopedInstanceTheMembersBind` (every scoped
   binding of `laravel-authentication`, `laravel-authorization`, `laravel-mfa`, `laravel-sso` and this package, as the
-  installed members make them, but this package's job frames), `testResetKeepsEveryOtherScopedInstance`
-  (`laravel-audit-log`'s, this package's `Audit\JobCallers` and Laravel's own),
+  installed members make them), `testResetKeepsEveryOtherScopedInstance` (`laravel-audit-log`'s and Laravel's own),
   `testResetRunsTheWorkACommitLeftHeldFirst`
-- `tests/Feature/Audit/CarryCallerIntoJobsTest.php` `testAResetInsideAJobKeepsTheCarriedCaller`,
-  `testTheJobCallersAreScopedAndKeptByTheExplicitReset`
 - `tests/Feature/IamManagerTest.php` `testEachServiceIsResolvedFromTheCurrentApplication`,
   `testResettingTheWorkerStateForgetsTheAuthorizationRequestState`,
   `testResettingTheWorkerStateForgetsTheDecisionTheAuthorizationFacadeHolds`,

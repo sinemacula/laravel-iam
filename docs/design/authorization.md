@@ -394,22 +394,21 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   once, so a check later in the transaction reads the new proofs, and again should any transaction open on the storage
   connection roll back, since a check made between the change and the rollback read proofs that were never committed.
   `forgetDecisionsFor()` knows nothing of the transaction, so the second pass is this package's: a rollback callback of
-  every transaction open there that callbacks apply to (`Transactions\OpenTransactions`), not only the innermost, as
-  `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
+  every transaction open there that callbacks apply to (`Transactions\ConnectionTransactions::open()`), not only the
+  innermost, as `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
   transaction's rollback, so MFA's transaction, a savepoint of the caller's, would otherwise leave the decisions
   standing once the caller's rolls back. A commit needs no second pass: what was checked after the change read what
   committed. The manager, the connection and the transactions open are resolved on every call, so the request's or the
   job's own manager, an Octane sandbox's included, is the one that forgets.
 
-  Nowhere else does the package make a change `laravel-authorization` asks to be told of at a point it can tell it
-  from. `ProofStoreAdapter::record()` records nothing (the session already holds the first factor it keeps), and
-  `forgetFactor()` reports a factor still held to `laravel-authentication` only outside MFA's own removal and reset,
-  each of which the session revoker reports next. An SSO sign-in (`SignInRedemption`) is bound to the guard by
-  `laravel-authentication` only once the outermost transaction commits. SSO's revocations (`SessionRevocationAdapter`)
-  and a tenant's policy change (`TenantPolicyChanges`, `SubtreePolicyChanges`) end sessions named by a tenant, a
-  connection or a link rather than by session, the tenant's second pass after the commit. The package switches no
-  tenant. After those, and after its own sign-ins and sign-outs, the application calls `forgetDecisionsFor()` where the
-  request or job goes on to check.
+  Nowhere else does the package make a change `laravel-authorization` asks to be told of at a point it can tell it from.
+  `ProofStoreAdapter::record()` and `forgetFactor()` record nothing: the session already holds the first factor
+  `record()` keeps, and the session revoker voids a removed factor's proofs. An SSO sign-in (`SignInRedemption`) is
+  bound to the guard by `laravel-authentication` only once the outermost transaction commits. SSO's revocations
+  (`SessionRevocationAdapter`) and a tenant's policy change (`TenantPolicyChanges`, `SubtreePolicyChanges`) end sessions
+  named by a tenant, a connection or a link rather than by session, the tenant's second pass after the commit. The
+  package switches no tenant. After those, and after its own sign-ins and sign-outs, the application calls
+  `forgetDecisionsFor()` where the request or job goes on to check.
 - `laravel-authorization`'s connection (IAM-2.3). Its key is `authorization.connection` (`AUTHORIZATION_DB_CONNECTION`),
   read on every query, migration and transaction of its own (`Database\AuthorizationConnection`), not a
   `storage.connection` like the other members'. It joins `Storage\StorageConnection::MEMBER_KEYS`, and
@@ -644,8 +643,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - No resource tenant resolver is named by `iam:install` (the last row of part (a)'s waiting list, named in neither the
   plan nor FEATURES): a record's tenant is the application's to say, and a configured class cannot be told from the
   default by its binding. `CrossMemberConfigurationCheck` notes the default instead, while people act in tenants.
-- `Transactions\OpenTransactions`, which the manifest does not list, holds the transactions a rollback callback must
-  wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
+- `Transactions\ConnectionTransactions`, which the manifest does not list, holds the transactions a rollback
+  callback must wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
 - IAM-13.7 (decision Q15) is stale on every count at the commit this package requires: the resolvers are bound with
   `bindIf()` over scoped keys rather than a plain `singleton()`, so they give way to anything bound before or after,
   change events fire after commit, the connection setting exists, the authentication context is a contract, and the
@@ -687,7 +686,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `permissions()`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
   `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`.
 - `src/Authorization/DecisionCacheInvalidation.php`: `authenticationChanged()`, `forget()`;
-  `src/Transactions/OpenTransactions.php`: `manager()`, `on()`;
+  `src/Transactions/ConnectionTransactions.php`: `open()`;
   `src/Mfa/SessionRevokerAdapter.php`: `factorRemoved()`, `revokeAll()`; `src/Mfa/SessionTransitionAdapter.php`:
   `factorChanged()`; `src/Mfa/PendingCompletionAdapter.php`: `complete()`; `src/Mfa/StepUpAdapter.php`: `stepUp()`;
   `src/Sso/ReauthenticationRedemption.php`: `reauthenticate()`.
