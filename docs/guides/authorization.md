@@ -320,9 +320,9 @@ on too (see [Bindings](bindings.md#authorization)).
   on, `Iam::treeChanges()->changed()` reports everyone holding a live grant in the moved subtree to SSO's scope
   widening, in the move's transaction, which suspends their links by a verified domain in every other tenant and
   revokes the sessions established through them (see
-  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). It takes every one of their SSO identity
-  guards first, in SSO's lock order, so a grant, reservation or activation of one of them made at the same time waits
-  for the move, or the move for it, and neither is aborted for a deadlock.
+  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). It reports them all in one widening, so SSO
+  takes their identity guards first, in its lock order, and a grant, reservation or activation of one of them made at
+  the same time waits for the move, or the move for it, and neither is aborted for a deadlock.
 - **Group mapping.** A provider's groups map to grants at provisioning, and, where you opt in, again at each later
   sign-in, once the sign-in commits (see [Provisioning and tenancy](provisioning-and-tenancy.md)).
 

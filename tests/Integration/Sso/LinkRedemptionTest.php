@@ -291,8 +291,8 @@ final class LinkRedemptionTest extends TestCase
     /**
      * The last attempt's concurrency failure reaches the caller as it was
      * thrown, after as many attempts as the retry helper is configured with,
-     * and leaves the code unspent and nothing reported, so the request retried
-     * links the caller.
+     * each of which SSO runs three times itself, and leaves the code unspent
+     * and nothing reported, so the request retried links the caller.
      *
      * @return void
      *
@@ -304,7 +304,7 @@ final class LinkRedemptionTest extends TestCase
 
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
-        $store   = $this->failingStore(self::serialisationFailure(...), 2);
+        $store   = $this->failingStore(self::serialisationFailure(...), 6);
 
         try {
             $this->redeem($handoff, $person);
@@ -314,7 +314,7 @@ final class LinkRedemptionTest extends TestCase
             self::assertSame('40001', $exception->getCode());
         }
 
-        self::assertSame(2, $store->calls);
+        self::assertSame(6, $store->calls);
         self::assertSame([], $this->reportedEvents());
         self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
     }
@@ -336,7 +336,7 @@ final class LinkRedemptionTest extends TestCase
         $person  = $this->createPerson();
         $handoff = $this->handoff(Purpose::LINK, $person);
         $raised  = self::serialisationFailure();
-        $store   = $this->failingStore(static fn (): \Throwable => new DeadlockException($raised->getMessage(), 0, $raised), 2);
+        $store   = $this->failingStore(static fn (): \Throwable => new DeadlockException($raised->getMessage(), 0, $raised), 6);
 
         try {
             $this->redeem($handoff, $person);
@@ -346,7 +346,7 @@ final class LinkRedemptionTest extends TestCase
             self::assertSame($raised, $exception);
         }
 
-        self::assertSame(2, $store->calls);
+        self::assertSame(6, $store->calls);
         self::assertSame([], $this->reportedEvents());
         self::assertTrue($this->redeem($handoff, $person)->isRedeemed());
     }

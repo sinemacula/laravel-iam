@@ -133,23 +133,16 @@ package's: see [laravel-sso: managing connections][sso-custom-attributes] and
 
 ## Audit
 
-| Key                                       | Default | Environment         | What it does                                        |
-|-------------------------------------------|---------|---------------------|-----------------------------------------------------|
-| `iam.audit.mappers`                       | `true`  | `IAM_AUDIT_MAPPERS` | Records the members' events in `laravel-audit-log`. |
-| `iam.audit.alerts.audit_write_failed`     | `[]`    | None                | Listeners for audit-log's `AuditWriteFailed`.       |
-| `iam.audit.alerts.audit_capture_failed`   | `[]`    | None                | Listeners for audit-log's `AuditCaptureFailed`.     |
-| `iam.audit.alerts.integrity_check_failed` | `[]`    | None                | Listeners for audit-log's `IntegrityCheckFailed`.   |
-| `iam.audit.alerts.key_nearing_expiry`     | `[]`    | None                | Listeners for SSO's `KeyNearingExpiry`.             |
+| Key                 | Default | Environment         | What it does                                        |
+|---------------------|---------|---------------------|-----------------------------------------------------|
+| `iam.audit.mappers` | `true`  | `IAM_AUDIT_MAPPERS` | Records the members' events in `laravel-audit-log`. |
 
 `iam.audit.mappers` is read leniently, as the adapter switches are, and as the package boots, so a change takes effect
 on the next boot. Turn it off only to map the members' events yourself. Whatever it says, `iam:check` requires every
 `jwt` and `api_key` guard excluded from audit-log's own capture (`audit-log.capture.laravel.except_guards`), its Gate
 capture off and `audit-log.definitions.require_registered` on; `iam:install` writes the first and the last.
 
-Each alert names a listener class, or a list of them. Each is resolved from the container and handed the event
-through its `handle()` method, or invoked, synchronously, in the order named. With none named nobody is told, and a
-value that names no listener is refused at dispatch and by `iam:check`. Alert by other means than the audit log, such
-as a notification or a log channel. The codes, categories and correlation are in [The audit trail](audit-trail.md).
+The codes, categories, correlation and the events to alert on are in [The audit trail](audit-trail.md).
 
 ## Transactions
 

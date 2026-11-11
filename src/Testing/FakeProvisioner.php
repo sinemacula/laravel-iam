@@ -11,24 +11,9 @@ use SineMacula\Laravel\Iam\Contracts\Provisioner;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
- * A provisioner for tests (IAM-7.1): each identity it is asked for is made by
- * the closure the test hands it, which inserts one of the application's own
- * identity models, with its model events on, and each membership is kept, and
- * written by a second closure when the test hands it one. A test can have
- * either refuse (`refuseIdentities()`, `refuseMemberships()`), as an
- * application's provisioner that declines a result throws.
- *
- * Every identity and membership it made is kept (`identities()`,
- * `memberships()`: the identity and the tenant), in order, whether or not the
- * listener's transaction then committed: what is stored is the database's to
- * tell, so a test reads the rows to see what a rollback undid.
- *
- * Call `FakeProvisioner::fake($create)`, which binds a fresh instance as the
- * application's provisioner and returns it; a provisioner bound in the
- * container counts as named in `iam.provisioning.provisioner`, whenever it is
- * bound, so provisioning is on from then. It satisfies this package's own
- * `Seams\Concerns\ProvisionerTests` kit while the closure creates a new
- * identity each time. Not for production use.
+ * A provisioner for tests (IAM-7.1): each identity is made by the test's
+ * closure, each membership is kept (and written by a second closure when
+ * given), and either can be told to refuse. `fake()` binds a fresh instance.
  *
  * @api
  *

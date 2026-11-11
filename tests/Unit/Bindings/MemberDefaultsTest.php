@@ -8,7 +8,16 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
+use SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
+use SineMacula\Laravel\Mfa\Contracts\ProofStore;
+use SineMacula\Laravel\Mfa\MfaServiceProvider;
+use SineMacula\Laravel\Sso\Contracts\Linker;
 use Tests\Fixtures\Bindings\Adapter;
 use Tests\Fixtures\Bindings\ApplicationImplementation;
 use Tests\Fixtures\Bindings\Contracts\PlainSeam;
@@ -382,5 +391,33 @@ final class MemberDefaultsTest extends TestCase
         self::assertFalse((new MemberDefaults)->isReplaceable($other, PlainSeam::class, [], $says));
         self::assertFalse((new MemberDefaults)->holdsDefault($other, PlainSeam::class, $says));
         self::assertSame(0, $asked);
+    }
+
+    /**
+     * Each member that answers whether a seam holds its default is asked for
+     * its own contracts; SSO and any other give no answer.
+     *
+     * @return void
+     *
+     * @throws \ReflectionException
+     */
+    public function testEachContractIsAnsweredByItsOwnMember(): void
+    {
+        $members = [
+            TenantResolver::class    => AuthenticationServiceProvider::class,
+            TenantTree::class        => AuthorizationServiceProvider::class,
+            ProofStore::class        => MfaServiceProvider::class,
+            AuditAccessPolicy::class => AuditLogServiceProvider::class,
+        ];
+
+        foreach ($members as $contract => $provider) {
+            $answer = new \ReflectionFunction(MemberDefaults::answerOf($contract) ?? self::fail($contract . ' has no answer.'));
+
+            self::assertSame('isPackageDefault', $answer->getName());
+            self::assertSame($provider, $answer->getClosureScopeClass()?->getName());
+        }
+
+        self::assertNull(MemberDefaults::answerOf(Linker::class));
+        self::assertNull(MemberDefaults::answerOf(PlainSeam::class));
     }
 }
