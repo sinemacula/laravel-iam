@@ -6,22 +6,16 @@ namespace Tests\Feature\Checks;
 
 use Illuminate\Config\Repository;
 use PHPUnit\Framework\Attributes\CoversClass;
-use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
-use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
-use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
-use SineMacula\Laravel\Iam\IamServiceProvider;
-use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use Tests\Concerns\RunsChecks;
 use Tests\Fixtures\Checks\IdentityElsewhere;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Feature tests for the storage check (IAM-2.3) at deploy: every member
- * registered, every member key on the shared connection, the shared connection
- * configured, every identity model on it, and audit-log's connection noted when
- * it is another.
+ * Feature tests for the storage check (IAM-2.3) at deploy: every member key on
+ * the shared connection, the shared connection configured, every identity model
+ * on it, and audit-log's connection noted when it is another.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -91,29 +85,6 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * A member that never registered is reported, where `iam:check` runs, as
-     * boot stands its refusal aside for it.
-     *
-     * @return void
-     */
-    public function testAMemberThatNeverRegisteredIsReported(): void
-    {
-        $this->withArguments(['artisan', 'iam:check']);
-        $this->reorderProviders([
-            AuthenticationServiceProvider::class,
-            AuthorizationServiceProvider::class,
-            MfaServiceProvider::class,
-            AuditLogServiceProvider::class,
-            IamServiceProvider::class,
-        ]);
-
-        $problems = self::problems($this->check()->checks());
-
-        self::assertCount(1, $problems);
-        self::assertStringContainsString('sso.storage.connection', $problems[0]);
-    }
-
-    /**
      * An identity model on another connection, or no Eloquent model at all, is
      * reported once, however many guards sign people in through it; a guard of
      * another driver, or one whose provider names no model, is not read.
@@ -172,31 +143,6 @@ final class StorageCheckTest extends TestCase
         $config->set('auth.defaults.provider', ['elsewhere']);
 
         self::assertSame([], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * `laravel-authentication`'s side is the identity model of each guard, read
-     * for that guard alone: none for a guard of another driver, one whose
-     * provider names no model, or one not configured.
-     *
-     * @return void
-     */
-    public function testLaravelAuthenticationsSideIsEachGuardsIdentityModel(): void
-    {
-        $config = $this->config();
-
-        $config->set('auth.providers.elsewhere', ['driver' => 'model', 'model' => IdentityElsewhere::class]);
-        $config->set('auth.guards.elsewhere', ['driver' => 'jwt', 'provider' => 'elsewhere']);
-        $config->set('auth.guards.web', ['driver' => 'session', 'provider' => 'elsewhere']);
-
-        self::assertSame([], $this->check()->authenticationChecks());
-        self::assertCount(1, $this->check()->guardChecks('api'));
-        self::assertSame([], self::problems($this->check()->guardChecks('api')));
-        self::assertSame([
-            'The identity model ' . IdentityElsewhere::class . ' lives on another connection than `iam.storage.connection` names.',
-        ], self::problems($this->check()->guardChecks('elsewhere')));
-        self::assertSame([], $this->check()->guardChecks('web'));
-        self::assertSame([], $this->check()->guardChecks('unknown'));
     }
 
     /**

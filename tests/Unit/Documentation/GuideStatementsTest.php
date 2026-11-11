@@ -292,16 +292,6 @@ final class GuideStatementsTest extends TestCase
             ['never a configured value'],
         ];
 
-        yield 'audit-log\'s prune is noted on its own terms' => [
-            'docs/guides/checks.md',
-            [
-                '`audit-log:seal --sweep` and `audit-log:verify`): turn',
-                'though its retention can delete entries.*: shown only while audit-log\'s retention can delete entries',
-                '*audit-log cannot judge whether its retention can delete entries (...), and no event on the schedule runs `audit-log:prune`; ...*',
-            ],
-            ['`audit-log:verify` and `audit-log:prune`): turn'],
-        ];
-
         yield 'moving onto the package replaces the SSO redemption controllers' => [
             'docs/guides/installation.md',
             [
@@ -329,7 +319,6 @@ final class GuideStatementsTest extends TestCase
             [
                 'Yours is kept. An implementation that answers `within_tenant` for a person whose grants (platform-wide ones included) reach beyond the tenant',
                 'lets that tenant\'s verified domain link the person, so its provider can sign in as them',
-                'and takes this one out of SSO\'s boot',
             ],
             ['None of them is yours to replace', 'until `laravel-authorization`\'s grant scope query is bound'],
         ];

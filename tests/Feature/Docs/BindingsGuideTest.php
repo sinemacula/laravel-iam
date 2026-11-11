@@ -16,7 +16,6 @@ use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
-use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
 use Tests\TestCase;
 
 /**
@@ -40,8 +39,8 @@ use Tests\TestCase;
  * Everything else the provider binds or registers is documented in the table of
  * other bindings: the container keys an application with the package holds and
  * one with the members alone does not (each scoped record under its own name),
- * the seams aside, and the contributors and checks it registers with the
- * members, so a binding added later cannot be left out.
+ * the seams aside, and the contributors it registers with the members, so a
+ * binding added later cannot be left out.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -100,15 +99,11 @@ final class BindingsGuideTest extends TestCase
     private const array KEPT = [
         '`Iam\Tenancy\Contracts\GrantScope`',
         'The `sso` context namespace',
-        'SSO\'s `iam` check',
         '`Iam\Audit\CallerContextContributor`, audit-log\'s context contributor',
     ];
 
     /** @var string How the table of other bindings names a context namespace the package registers with `laravel-authentication`. */
     private const string CONTEXT_NAMESPACE = 'The `%s` context namespace';
-
-    /** @var string How the table of other bindings names a check the package registers with SSO. */
-    private const string SSO_CHECK = 'SSO\'s `%s` check';
 
     /**
      * Every seam binding is documented, once, with its adapter, its defaults
@@ -262,9 +257,9 @@ final class BindingsGuideTest extends TestCase
     /**
      * Every row of the table of the package's other bindings says whether the
      * binding may be replaced (IAM-12.3), and every binding whose replacement
-     * the package keeps (the grant scope, the `sso` context contributor and
-     * SSO's `iam` check) says what replacing it risks rather than only that it
-     * is not the application's to replace.
+     * the package keeps (the grant scope and the `sso` context contributor)
+     * says what replacing it risks rather than only that it is not the
+     * application's to replace.
      *
      * @return void
      */
@@ -327,7 +322,7 @@ final class BindingsGuideTest extends TestCase
      * Everything the provider binds or registers that is not a seam is a row of
      * the table of other bindings (IAM-12.3): each container key an application
      * with the package holds and one with the members alone does not, and each
-     * contributor and check it registers with the members.
+     * contributor it registers with the members.
      *
      * @return void
      */
@@ -345,7 +340,6 @@ final class BindingsGuideTest extends TestCase
         self::assertArrayHasKey('iam.audit.registered', $made);
         self::assertArrayHasKey('Iam\Audit\CallerContextContributor', $made);
         self::assertArrayHasKey(sprintf(self::CONTEXT_NAMESPACE, 'sso'), $made);
-        self::assertArrayHasKey(sprintf(self::SSO_CHECK, 'iam'), $made);
         self::assertSame([], self::undocumented(self::guide(), $made));
     }
 
@@ -375,9 +369,8 @@ final class BindingsGuideTest extends TestCase
      * each keyed by its name and listing how the table of other bindings may
      * name it: every container key, a key scoped under this package's prefix
      * by the name it is scoped for, a class relative to the root namespace;
-     * every contributor audit-log runs; every namespace of
-     * `laravel-authentication`'s authentication context; and every subject of
-     * SSO's configuration checks.
+     * every contributor audit-log runs; and every namespace of
+     * `laravel-authentication`'s authentication context.
      *
      * @return array<string, list<string>>
      */
@@ -403,10 +396,6 @@ final class BindingsGuideTest extends TestCase
 
         foreach (array_keys($app->make(ContextContributors::class)->registered()) as $namespace) {
             $registrations[sprintf(self::CONTEXT_NAMESPACE, $namespace)] = [sprintf(self::CONTEXT_NAMESPACE, $namespace)];
-        }
-
-        foreach (array_keys($app->make(ConfigurationChecks::class)->all()) as $subject) {
-            $registrations[sprintf(self::SSO_CHECK, $subject)] = [sprintf(self::SSO_CHECK, $subject)];
         }
 
         return $registrations;
