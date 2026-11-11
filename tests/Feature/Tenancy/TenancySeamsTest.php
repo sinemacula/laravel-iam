@@ -6,6 +6,7 @@ namespace Tests\Feature\Tenancy;
 
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Container\Container as ContainerContract;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -17,7 +18,6 @@ use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Contracts\Memberships;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
@@ -31,10 +31,10 @@ use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
 use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
@@ -49,6 +49,7 @@ use Tests\Fixtures\Providers\BindsTenancyWhileBooting;
 use Tests\Fixtures\Providers\BindsTenancyWhileRegistering;
 use Tests\Fixtures\Providers\TurnsSsoOffWhileRegistering;
 use Tests\Fixtures\Providers\TurnsSsoOnWhileRegistering;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
@@ -57,11 +58,12 @@ use Tests\TestCase;
  * default in every provider order; an application's own binding is kept or wins
  * as the binding rule says (IAM-8.4); it is bound while the SSO capability's
  * switch is on, whatever MFA's, and not while it is off, MFA's on or not; and
- * it is mandatory while SSO's enforcement is on or the application names or
- * binds a tenant MFA requirement. SSO's tenant membership, link eligibility and
- * principal scope are bound while the switch is on and the application names or
- * binds its memberships by the time every provider has registered (in its own
- * provider's `register()`, which Laravel runs after the packages', included),
+ * it is mandatory while SSO's enforcement is on or the application binds MFA's
+ * tenant requirement off MFA's default. SSO's tenant membership, link
+ * eligibility and principal scope are bound while the switch is on and the
+ * application names or binds its memberships by the time every provider has
+ * registered (in its own provider's `register()`, which Laravel runs after the
+ * packages', included),
  * and SSO's enforcement inheritance while it names or binds a tenant tree;
  * otherwise, or once they are bound only from a `boot()`, SSO's defaults stay,
  * and the application's own bindings are kept. The grant half of the principal
@@ -161,7 +163,7 @@ final class TenancySeamsTest extends TestCase
 
     /**
      * With MFA's switch on and SSO's off, nothing is bound and
-     * `laravel-authentication`'s default stays, a tenant MFA requirement named
+     * `laravel-authentication`'s default stays, MFA's tenant requirement bound
      * or not: the adapter would find no sign-in's connection, which only the
      * SSO capability records, so the policy is the application's to bind.
      *
@@ -171,9 +173,10 @@ final class TenancySeamsTest extends TestCase
      */
     #[WithConfig(MfaSeams::SWITCH, true, defer: false)]
     #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
-    #[WithConfig(TenantMfaRequirements::KEY, FakeTenantMfaRequirement::class, defer: false)]
     public function testMfaOnWithSsoOffBindsNothing(): void
     {
+        ScriptedTenantRequirement::bind($this->app);
+
         self::assertInstanceOf(RequireNothingOfTenants::class, $this->resolved(TenantAuthenticationPolicy::class));
 
         $outcome = $this->resolved(BindingOutcome::class);
@@ -236,9 +239,8 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, mandatory]`: SSO's enforcement and the
-     * application's tenant MFA requirement as configured, and whether the
-     * binding is mandatory.
+     * Rows of `[configuration, mandatory]`: SSO's enforcement as configured,
+     * and whether the binding is mandatory.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: bool}>
      */
@@ -251,46 +253,45 @@ final class TenancySeamsTest extends TestCase
         yield 'enforcement on' => [[TenancySeams::ENFORCEMENT => true], true];
 
         yield 'enforcement on, as an environment variable fills it' => [[TenancySeams::ENFORCEMENT => 'true'], true];
-
-        yield 'a requirement named' => [[TenantMfaRequirements::KEY => FakeTenantMfaRequirement::class], true];
-
-        yield 'a blank requirement' => [[TenantMfaRequirements::KEY => ' '], false];
     }
 
     /**
-     * The binding is mandatory while SSO's enforcement is on or the application
-     * names a tenant MFA requirement.
+     * With MFA's default tenant requirement, the binding is mandatory while
+     * SSO's enforcement is on.
      *
      * @param  array<string, mixed>  $values
      * @param  bool  $mandatory
      * @return void
      */
     #[DataProvider('provideMandates')]
-    public function testTheBindingIsMandatoryWhileEnforcementOrARequirementIsOn(array $values, bool $mandatory): void
+    public function testTheBindingIsMandatoryWhileEnforcementIsOn(array $values, bool $mandatory): void
     {
-        $config = new Repository;
+        $config    = new Repository;
+        $container = self::container();
+
+        $container->bind(TenantRequirement::class, NoTenantRequirement::class);
 
         foreach ($values as $key => $value) {
             $config->set($key, $value);
         }
 
-        self::assertSame($mandatory, (new TenancySeams(new Container))->seams($config)[0]->mandatory);
+        self::assertSame($mandatory, (new TenancySeams($container))->seams($config)[0]->isMandatory());
     }
 
     /**
-     * A tenant MFA requirement the application binds makes the binding
-     * mandatory, as one it names does.
+     * MFA's tenant requirement bound off MFA's default makes the binding
+     * mandatory, read only when the mandate is asked.
      *
      * @return void
      */
     public function testARequirementBoundMakesTheBindingMandatory(): void
     {
-        $container = new Container;
+        $container = self::container();
+        $binding   = (new TenancySeams($container))->seams(new Repository)[0];
 
-        FakeTenantMfaRequirement::fake($container);
+        ScriptedTenantRequirement::bind($container);
 
-        self::assertTrue($container->bound(TenantMfaRequirement::class));
-        self::assertTrue((new TenancySeams($container))->seams(new Repository)[0]->mandatory);
+        self::assertTrue($binding->isMandatory());
     }
 
     /**
@@ -750,5 +751,19 @@ final class TenancySeamsTest extends TestCase
         self::assertInstanceOf(BindingOutcome::class, $outcome);
         self::assertSame($bound, in_array(TenantAuthenticationPolicy::class, $outcome->bound, true));
         self::assertSame(!$bound, in_array(TenantAuthenticationPolicy::class, $outcome->kept, true));
+    }
+
+    /**
+     * A container that resolves its own contract, as the application's does.
+     *
+     * @return \Illuminate\Container\Container
+     */
+    private static function container(): Container
+    {
+        $container = new Container;
+
+        $container->instance(ContainerContract::class, $container);
+
+        return $container;
     }
 }

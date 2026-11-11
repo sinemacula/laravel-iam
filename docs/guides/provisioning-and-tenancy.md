@@ -11,8 +11,8 @@ package asks you for each answer once, through a contract of its own, and routes
 | `SineMacula\Laravel\Iam\Contracts\GroupResync`               | `iam.provisioning.groups.resync`  | whether, and how, a later sign-in brings a person's roles into line with the groups it reports                                                                            |
 | `SineMacula\Laravel\Iam\Contracts\Memberships`               | `iam.tenancy.memberships`         | SSO's tenant membership, link eligibility and the membership half of principal scope                                                                                      |
 | `SineMacula\Laravel\Iam\Contracts\TenantTree`                | `iam.tenancy.tree`                | SSO's enforcement inheritance, `laravel-authorization`'s tree, and which sessions a change reaches                                                                        |
-| `SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement`      | `iam.tenancy.mfa_requirement`     | MFA's tenant requirement and the tenant's part of the tenant policy                                                                                                       |
-| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                     | every tenant id to its tenant, owed with a tenant MFA requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
+| `SineMacula\Laravel\Mfa\Contracts\TenantRequirement`         | None: bind it                     | MFA's tenant requirement and the tenant's part of the tenant policy (see [The tenant MFA requirement](#the-tenant-mfa-requirement))                                       |
+| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                     | every tenant id to its tenant, owed with MFA's tenant requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
 
 Name each by its class in `config/iam.php`, or bind it in the container in a service provider's `register()`.
 Memberships or a tree bound only from a `boot()` are still the ones asked, but bind no adapter, so SSO's own defaults
@@ -32,19 +32,19 @@ The testing fakes and contract kits for this package's own contracts are in [Tes
 
 `laravel-authentication`'s `SineMacula\Laravel\Authentication\Contracts\TenantResolver` is not this package's contract,
 but the package depends on it: granting anything in a tenant through `laravel-authorization` while the authorization
-and SSO adapters are on (`iam.adapters.authorization` and `iam.adapters.sso`, both on by default), naming a tenant MFA
+and SSO adapters are on (`iam.adapters.authorization` and `iam.adapters.sso`, both on by default), binding MFA's tenant
 requirement, or turning SSO's enforcement on (with or without a tenant tree), requires binding a resolver that resolves
-every tenant id to the tenant whose `getTenantIdentifier()` is exactly that id. MFA's tenant requirement
-(`Iam\Mfa\TenantRequirementAdapter`), `Iam::treeChanges()->changed()` and SSO's revocation all resolve a session's
+every tenant id to the tenant whose `getTenantIdentifier()` is exactly that id. The tenant policy,
+`Iam::treeChanges()->changed()` and SSO's revocation all resolve a session's
 tenant id through it, and the [grant hook](authorization.md#grants-the-tree-and-sso) the tenant of every grant that
 widens an identity's scope: a grant to the identity always widens, and so does a principal's first grant in a tenant,
 so an ordinary role assignment in a tenant needs it even with linking by a verified domain off. This applies even when
 your principals only ever act in their own tenant: `laravel-authentication` admits a principal's own tenant without
 asking a resolver, so an application that never needed one before needs one now. Under `laravel-authentication`'s
 default, `SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant`, each of them throws
-`SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every MFA-gated request from a session in a tenant,
-and every such grant, answers a server error. Bind yours in a service provider's `register()`; `iam:check` refuses
-`ResolveNoTenant` while the authorization and SSO adapters are both on, a tenant MFA requirement is named or SSO's
+`SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every such grant, tree move or revocation answers a
+server error. Bind yours in a service provider's `register()`; `iam:check` refuses
+`ResolveNoTenant` while the authorization and SSO adapters are both on, MFA's tenant requirement is bound or SSO's
 enforcement is on (see [Checks](checks.md#configuration)), and `laravel-authentication`'s
 [extending guide][auth-extending] describes the contract.
 
@@ -316,7 +316,7 @@ Iam::transaction(function () use ($organisation, $parentId): void {
 });
 ```
 
-While SSO's enforcement is on or a tenant MFA requirement is named, it judges the sessions of the moved tenant and its
+While SSO's enforcement is on or MFA's tenant requirement is bound, it judges the sessions of the moved tenant and its
 whole subtree, once in the transaction and once more after it commits; otherwise no session can have changed, and it
 judges none. A report made before the write would judge the tree as it was. It resolves each tenant through your
 [tenant resolver](#the-tenant-resolver), and throws `UnresolvedReferenceException` under `ResolveNoTenant`.
@@ -350,46 +350,42 @@ your resolver then too. Do not call `Authorization::treeChanged()` yourself besi
 
 ## The tenant MFA requirement
 
-Which tenants require which further factors is yours to answer, once, for exactly the tenant asked:
+Which tenants require which further factors is yours to answer: implement laravel-mfa's `TenantRequirement` and bind
+it in a service provider's `register()`.
 
 ```php
 use App\Models\Organisation;
-use SineMacula\Laravel\Authentication\Contracts\Tenant;
-use SineMacula\Laravel\Authentication\Database\WriteConnection;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
+use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
-final readonly class OrganisationRequirements implements TenantMfaRequirement
+final readonly class OrganisationRequirements implements TenantRequirement
 {
-    public function requirementFor(Tenant $tenant, string $application): TenantMfaRule
+    public function requirementFor(MultiFactorAuthenticatable $identity, string $application, string $tenant): Requirement
     {
-        $organisation = WriteConnection::query(Organisation::query())->findOrFail($tenant->getTenantIdentifier());
-        $version      = 'mfa-' . $organisation->mfa_revision;
-
-        return $organisation->requires_mfa
-            ? new TenantMfaRule(new Requirement(multifactor: new RequirementPart(maxAgeSeconds: 43200)), $version)
-            : TenantMfaRule::none($version);
+        return Organisation::query()->findOrFail($tenant)->requires_mfa
+            ? Requirement::none()->withMultifactor(43200)
+            : Requirement::none();
     }
 }
+
+$this->app->bind(TenantRequirement::class, OrganisationRequirements::class);
 ```
 
-The package hands the one answer to MFA's tenant requirement and to `laravel-authentication`'s tenant authentication
-policy, so the two never disagree about a tenant. It applies no inheritance down the tree: a tenant that inherits a
-requirement is worked out here. It is asked at sign-in, at a choice of principal, at activation, on every refresh and
-switch, and while MFA works out a session's requirement, sometimes under the session's row lock: take no lock and
-write nothing.
+MFA asks it itself. While `iam.adapters.sso` is on, the package also reads it into `laravel-authentication`'s tenant
+authentication policy, inside `WriteConnection::during()` for the tenant, so the two members never disagree about a
+tenant. The policy's version is a digest of the answer, so it changes whenever the answer does. Once you bind one, an
+identity that is not `MultiFactorAuthenticatable` acting in a tenant is refused with `UnresolvedReferenceException`.
+It applies no inheritance down the tree, and it is asked under the session's row lock at times: take no lock and write
+nothing. Test it with laravel-mfa's `TenantRequirementTests` kit.
 
-The rule's version must change whenever the answer does, and stay the same while it does not, so a session recorded at
-the version is not judged again for nothing; a `null` version is never taken as already checked. When the answer
-changes, report it inside the transaction that publishes it:
+When the answer changes, report it inside the transaction that publishes it:
 
 ```php
 use SineMacula\Laravel\Iam\Facades\Iam;
 
 Iam::transaction(function () use ($organisation, $tenant): void {
-    $organisation->update(['requires_mfa' => true, 'mfa_revision' => $organisation->mfa_revision + 1]);
+    $organisation->update(['requires_mfa' => true]);
 
     Iam::tenantPolicies()->changed($tenant);
 });
@@ -401,11 +397,10 @@ never recheck a tenant's policy, so without the report a session that no longer 
 until they expire. Calling `Auth::sessions()->tenantPolicyChanged($tenant)` yourself, call it twice the same way: once
 inside the transaction and once after it commits.
 
-A tenant MFA requirement needs your [tenant resolver](#the-tenant-resolver): MFA's requirement resolves the session's
-tenant through it, and under `laravel-authentication`'s default `ResolveNoTenant` every MFA-gated request from a
-session in a tenant throws `UnresolvedReferenceException`, even when the session acts in its principal's own tenant.
+A bound requirement needs your [tenant resolver](#the-tenant-resolver): the tenant policy resolves the session's tenant
+through it.
 
-With no requirement named, no tenant requires a further factor; SSO's enforcement still applies. How the answer meets
+With MFA's default left bound, no tenant requires a further factor; SSO's enforcement still applies. How the answer meets
 SSO's enforcement is in [Authentication and SSO](authentication-and-sso.md#the-tenant-policy).
 
 The same report, `Iam::tenantPolicies()->changed($tenant)`, is owed whenever your `EnforcementExemption` grants or

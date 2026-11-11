@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
@@ -15,14 +16,11 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
-use SineMacula\Laravel\Iam\Exceptions\TenantMfaRequirementMisconfiguredException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
-use SineMacula\Laravel\Iam\Tenancy\TenantMfaRule;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement as MfaTenantRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Enforcement\DatabaseEnforcement;
@@ -38,12 +36,13 @@ use Tests\Fixtures\Tenancy\ExemptsIdentities;
 use Tests\Fixtures\Tenancy\LandlordTenant;
 use Tests\Fixtures\Tenancy\ReadsLandlordRequirements;
 use Tests\Fixtures\Tenancy\ScriptedEnforcement;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
  * Integration tests for `laravel-authentication`'s tenant authentication
  * policy, answered from SSO's enforcement, SSO's exemption gate and the
- * application's tenant MFA requirement (IAM-4.5): an enforced tenant requires
+ * application's MFA tenant requirement (IAM-4.5): an enforced tenant requires
  * its satisfying connections, of a session and of a sign-in alike, judged by
  * the connection the context names, asked for only when the rule requires one; the gate is asked only for a session the rule would refuse, and
  * an exempt identity then needs no connection and its exemption is reported
@@ -52,7 +51,8 @@ use Tests\TestCase;
  * stays while none does; nothing is cached; the application's requirement is
  * read on the write connection; the adapter takes no lock of its own, under the
  * session's lock or outside a transaction, at either isolation level; and a
- * tenant that cannot be named, or a requirement that cannot be built, throws.
+ * tenant that cannot be named, or an identity MFA holds no factors for once a
+ * requirement is bound, throws.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -104,8 +104,8 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * With SSO's enforcement off and no tenant MFA requirement, nothing is
-     * required, at a version, and nothing is read.
+     * With SSO's enforcement off and MFA's default tenant requirement, nothing
+     * is required, at a version, and nothing is read.
      *
      * @return void
      */
@@ -322,14 +322,15 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The application's tenant MFA requirement for exactly the tenant asked is
-     * the further factor, whatever SSO's enforcement says.
+     * The application's MFA tenant requirement for exactly the tenant asked is
+     * the further factor, whatever SSO's enforcement says, and a tenant it
+     * requires nothing of has none.
      *
      * @return void
      */
     public function testTheApplicationsRequirementIsTheFurtherFactor(): void
     {
-        $fake = FakeTenantMfaRequirement::fake($this->app)->require(self::SSO_TENANT, self::multifactor());
+        $fake = $this->scriptedRequirement()->require(self::SSO_TENANT, MfaRequirement::none()->withMultifactor(300));
 
         $person = $this->createPerson();
 
@@ -347,7 +348,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
      */
     public function testTheVersionChangesWhenAnyInputChanges(): void
     {
-        $fake    = FakeTenantMfaRequirement::fake($this->app);
+        $fake    = $this->scriptedRequirement();
         $person  = $this->createPerson();
         $session = $this->signIn($person)->record;
         $seen    = [];
@@ -371,34 +372,14 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
         $ask();
         $this->exemptions()->exempt(self::referenceOf($person));
         self::assertNull($ask()->connections);
-        $fake->require(self::SSO_TENANT, self::multifactor());
+        $fake->require(self::SSO_TENANT, MfaRequirement::none()->withMultifactor(300));
         self::assertFalse($ask()->factor->isEmpty());
-        $fake->require(self::SSO_TENANT, new Requirement(multifactor: new RequirementPart(60)));
+        $fake->require(self::SSO_TENANT, MfaRequirement::none()->withMultifactor(60));
         $ask();
         $this->enforcement()->requireNothing();
         $ask();
 
-        self::assertCount(8, array_unique(array_filter($seen, static fn (?string $version): bool => $version !== null)));
-    }
-
-    /**
-     * An application's requirement that requires something but cannot be
-     * versioned makes the answer's version none, so it is never taken as
-     * already checked.
-     *
-     * @return void
-     */
-    public function testAnUnversionedRequirementIsAnsweredAtNoVersion(): void
-    {
-        $requirement = \Mockery::mock(TenantMfaRequirement::class);
-
-        $requirement->allows('requirementFor')->andReturn(new TenantMfaRule(self::multifactor()));
-
-        $this->app?->instance(TenantMfaRequirement::class, $requirement);
-
-        $person = $this->createPerson();
-
-        self::assertNull($this->ask($person, $this->signIn($person)->record)->version);
+        self::assertCount(8, array_unique($seen));
     }
 
     /**
@@ -428,7 +409,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
 
         $requirement = new ReadsLandlordRequirements;
 
-        $this->app?->instance(TenantMfaRequirement::class, $requirement);
+        $this->app?->instance(MfaTenantRequirement::class, $requirement);
 
         $person  = $this->createPerson();
         $session = $this->signIn($person)->record;
@@ -524,20 +505,27 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant MFA requirement named that is no requirement throws, rather than
-     * answer that the tenant requires nothing.
+     * Once a requirement is bound, an identity MFA holds no factors for is
+     * refused rather than answered as requiring nothing; with MFA's default it
+     * is not asked about.
      *
      * @return void
+     *
+     * @throws \Throwable
      */
-    public function testARequirementThatCannotBeBuiltThrows(): void
+    public function testAnIdentityMfaHoldsNoFactorsForIsRefusedOnceARequirementIsBound(): void
     {
-        $this->app?->make('config')->set(TenantMfaRequirements::KEY, \stdClass::class);
+        $identity = \Mockery::mock(Identity::class);
+        $policy   = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
+        $context  = new TenantPolicyContext(self::GUARD, $identity, $this->createPerson(), new ClaimedTenant(self::SSO_TENANT), null, static fn (): ?string => null);
 
-        $this->expectException(TenantMfaRequirementMisconfiguredException::class);
+        self::assertTrue($policy->requirementFor($context)->factor->isEmpty());
 
-        $person = $this->createPerson();
+        $this->scriptedRequirement()->require(self::SSO_TENANT, MfaRequirement::none()->withMultifactor());
 
-        $this->ask($person, $this->signIn($person)->record);
+        $this->expectException(UnresolvedReferenceException::class);
+
+        $policy->requirementFor($context);
     }
 
     /**
@@ -604,6 +592,16 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
         $call();
 
         return $count;
+    }
+
+    /**
+     * MFA's tenant requirement, scripted and bound for the test.
+     *
+     * @return \Tests\Fixtures\Tenancy\ScriptedTenantRequirement
+     */
+    private function scriptedRequirement(): ScriptedTenantRequirement
+    {
+        return ScriptedTenantRequirement::bind($this->app);
     }
 
     /**

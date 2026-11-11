@@ -168,7 +168,7 @@ final class ContextSeamsTest extends TestCase
 
         foreach ($bindings as $binding) {
             self::assertSame(Lifetime::TRANSIENT, $binding->lifetime, $binding->abstract);
-            self::assertFalse($binding->mandatory, $binding->abstract);
+            self::assertFalse($binding->isMandatory(), $binding->abstract);
             self::assertSame(self::MEMBER_DEFAULTS[$binding->abstract], $binding->memberDefaults, $binding->abstract);
         }
     }

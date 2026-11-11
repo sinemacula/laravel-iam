@@ -9,8 +9,6 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Http\PresentedRefreshToken;
-use SineMacula\Laravel\Authentication\Requirements\Requirement;
-use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Authentication\Sessions\RefreshResult;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
@@ -18,7 +16,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
-use SineMacula\Laravel\Iam\Testing\FakeTenantMfaRequirement;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use Tests\Concerns\MigratesSso;
@@ -26,6 +24,7 @@ use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\Performance\PerformanceContractTestCase;
 
 /**
@@ -109,7 +108,7 @@ final class TenantPolicyQueryBudgetTest extends PerformanceContractTestCase
      */
     public function testAPasswordSignInWithATenantRequirement(): void
     {
-        FakeTenantMfaRequirement::fake($this->app)->require(self::TENANT, new Requirement(multifactor: new RequirementPart));
+        ScriptedTenantRequirement::bind($this->app)->require(self::TENANT, MfaRequirement::none()->withMultifactor());
 
         // Reads (8): as with nothing on, less the proofs the active session's
         // context reads, plus MFA's own read of the verification generation for
