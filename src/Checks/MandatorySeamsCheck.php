@@ -22,7 +22,7 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  * Which seams are mandatory, and when, is the binding rule's own data: each
  * capability's rows (`SeamBinding::isMandatory()`), declared again from the
  * configuration and the container as they stand when the check runs, so a
- * mandate that follows a setting (SSO's enforcement, a tenant MFA requirement,
+ * mandate that follows a setting (SSO's enforcement, MFA's tenant requirement,
  * a tenant tree, SSO in use, the machine credentials the bound application
  * policy accepts) is read as it is now. A mandatory seam is checked whatever
  * this package's capability switch says: with the switch off, the application

@@ -10,9 +10,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Events\Enums\RevocationReason;
-use SineMacula\Laravel\Iam\Contracts\TenantMfaRequirement;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges;
+use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
@@ -24,8 +24,8 @@ use Tests\Fixtures\Tenancy\ReadsStoredRequirements;
 use Tests\TestCase;
 
 /**
- * Integration tests for a change of the application's tenant MFA requirement
- * reported as its contract asks (IAM-4.5), against the strict cut-off
+ * Integration tests for a change of the application's MFA tenant requirement
+ * reported as IAM-4.5 asks, against the strict cut-off
  * `laravel-authentication`'s `tenantPolicyChanged()` asks for: the application
  * changes its own data so the tenant requires a further factor and reports the
  * change inside the same transaction; a password sign-in in the tenant, which
@@ -49,7 +49,7 @@ final class RequirementChangeSecondPassTest extends TestCase
 
     /**
      * Arrange a tenancy in which everyone may act in every tenant, and the
-     * application's tenant MFA requirement, kept in its own table, under which
+     * application's MFA tenant requirement, kept in its own table, under which
      * the tenant requires no further factor yet.
      *
      * @return void
@@ -63,11 +63,11 @@ final class RequirementChangeSecondPassTest extends TestCase
 
         ReadsStoredRequirements::createTable(self::CONNECTION);
 
-        DB::table(ReadsStoredRequirements::TABLE)->insert(['tenant_id' => self::TENANT, 'multifactor' => false, 'version' => 1]);
+        DB::table(ReadsStoredRequirements::TABLE)->insert(['tenant_id' => self::TENANT, 'multifactor' => false]);
 
         $this->app?->instance(TenantResolver::class, new OpenTenancy);
         $this->app?->instance(TenantAccess::class, new OpenTenancy);
-        $this->app?->instance(TenantMfaRequirement::class, new ReadsStoredRequirements);
+        $this->app?->instance(TenantRequirement::class, new ReadsStoredRequirements);
     }
 
     /**
@@ -116,7 +116,7 @@ final class RequirementChangeSecondPassTest extends TestCase
 
         Iam::transaction(static function (): void {
 
-            DB::table(ReadsStoredRequirements::TABLE)->where('tenant_id', self::TENANT)->update(['multifactor' => true, 'version' => 2]);
+            DB::table(ReadsStoredRequirements::TABLE)->where('tenant_id', self::TENANT)->update(['multifactor' => true]);
 
             Iam::tenantPolicies()->changed(new ClaimedTenant(self::TENANT));
         });

@@ -9,8 +9,7 @@ use Illuminate\Contracts\Container\Container;
 
 /**
  * Finds the application's implementation of one of its contracts that it may
- * either bind in the container or name in the configuration: the tenant MFA
- * requirement (`Tenancy\TenantMfaRequirements`), the provisioner
+ * either bind in the container or name in the configuration: the provisioner
  * (`Provisioning\ProvisioningSettings`), the memberships and the tenant tree
  * (`Tenancy\TenancyContracts`).
  *

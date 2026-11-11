@@ -16,42 +16,12 @@ use SineMacula\Laravel\Authorization\Database\LiveGrants;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
+use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 
 /**
  * The identities whose `laravel-authorization` grants are rooted in a tenant's
- * subtree (IAM-6.7, IAM-7.5): those a move of that tenant can take beyond a
- * tenant they were within, which no grant reports, since none is written.
- *
- * The subtree is the one `laravel-authorization` reads, the application's tree
- * through `TenantTreeAdapter`, read once, as it stands, and every tenant of it
- * resolved through `laravel-authentication`'s tenant resolver
- * (`TenantTreeAdapter::tenantsIn()`): one of another type than the moved
- * tenant's is refused (`TenancyMisconfiguredException`), as a tree that nests
- * tenants of two types is, so the move rolls back rather than report too few of
- * the identities granted below it; one that cannot be resolved throws
- * `UnresolvedReferenceException` (IAM-8.2) the same way. The grants are
- * `laravel-authorization`'s own rows, read on its connection
- * (`authorization.connection`) through its write connection: each live role,
- * permission and policy grant (an expired one holds nowhere) whose tenant is in
- * the subtree, in chunks, so a large subtree never binds more values to one
- * statement than an engine takes. A boundary only ever narrows a scope, so its
- * rows are not read. The tables are those `authorization.tables` names, read
- * through `laravel-authorization`'s own reader of them (`TableNames`), so each
- * resolves exactly as `laravel-authorization` resolves it: a table the block
- * leaves out is named by its key, and a block or a name that is no name is
- * refused (`InvalidAuthorizationConfigException`), never read as the default
- * table.
- *
- * Each grantee is resolved through the morph map on its own write connection:
- * an identity is itself, and a principal its identity, as
- * `laravel-authentication` names it (`Principal::getIdentity()`). A grantee of
- * any other kind (a role, which `laravel-authorization` says widens nobody's
- * scope) and one whose row is gone hold no identity whose scope the move
- * widens, and are passed over. Each identity is answered once, however many
- * grants it holds there. It takes no lock: it is read inside the move's
- * transaction, and SSO's scope widening, which each identity answered is
- * reported to, takes the locks that matter (`Tenancy\TreeChanges`). Stateless
- * (IAM-8.1).
+ * subtree, which a move of that tenant can widen without a grant being written
+ * (IAM-6.7, IAM-7.5).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -69,15 +39,15 @@ final readonly class SubtreeGrantees
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Iam\Authorization\TenantTreeAdapter  $tree
+     * @param  \SineMacula\Laravel\Iam\Tenancy\TenancyContracts  $contracts
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \Illuminate\Contracts\Config\Repository  $config
      */
     public function __construct(
 
-        /** Lists the tenant's subtree as `laravel-authorization` reads it. */
-        private TenantTreeAdapter $tree,
+        /** Lists the tenant's subtree from `laravel-authorization`'s tenant tree. */
+        private TenancyContracts $contracts,
 
         /** Names the tenant as `laravel-authorization` names it. */
         private TenantTranslator $tenants,
@@ -96,9 +66,7 @@ final readonly class SubtreeGrantees
      * @param  string  $tenantId
      * @return list<\SineMacula\Laravel\Authentication\Contracts\Identity>
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \LogicException
      * @throws \Throwable
      */
     public function of(string $tenantId): array
@@ -122,8 +90,8 @@ final readonly class SubtreeGrantees
     }
 
     /**
-     * The grantee of each live grant rooted at the tenant or below it, in every
-     * grant table, as its morph type and key.
+     * The grantee of each live grant rooted at the tenant or below it, of
+     * whatever type, in every grant table, as its morph type and key.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
      * @return list<array{string, string}>
@@ -133,12 +101,17 @@ final readonly class SubtreeGrantees
     private function granteesBelow(Reference $tenant): array
     {
         $grantees = [];
+        $subtree  = [];
 
-        $subtree = array_map(static fn (Reference $below): string => $below->id, $this->tree->tenantsIn($tenant));
+        foreach ($this->contracts->subtree($tenant) as $below) {
+            $subtree[$below->type][] = $below->id;
+        }
 
-        foreach (array_chunk($subtree, self::CHUNK) as $chunk) {
-            foreach (self::TABLES as $table) {
-                $grantees = [...$grantees, ...self::granteesIn($this->tableNamed($table), $tenant->type, $chunk)];
+        foreach ($subtree as $type => $ids) {
+            foreach (array_chunk($ids, self::CHUNK) as $chunk) {
+                foreach (self::TABLES as $table) {
+                    $grantees = [...$grantees, ...self::granteesIn($this->tableNamed($table), $type, $chunk)];
+                }
             }
         }
 

@@ -38,10 +38,8 @@ The current note set is:
 - `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
   `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
   `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
-  subject type and application MFA reads from the validated session; how both members' codes reach the application's
-  email and SMS gateways as one neutral `CodeMessage`, routed by identifier type or factor channel; where each delivery
-  runs, inside MFA's transaction or from `laravel-authentication`'s queued job once the code has committed, and so
-  what a gateway that throws rolls back; and the locks each path takes.
+  subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
+  to the application's `OneTimeCodeSender`; and the locks each path takes.
 - `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
   store as its linker, and the handoff issuer left on SSO's default; how a `sign_in`, a
   `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
@@ -51,9 +49,9 @@ The current note set is:
   evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
   link e-mail matching on verified identifiers, link confirmation from how the caller's session signed in, and the
   `sso` context namespace; SSO's lock order; and the gaps in the members the adapters work around.
-- `tenant-authentication-policy.md`: the application's one tenant MFA requirement and its rule, routed to MFA's
-  tenant requirement and into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's
-  enforcement, SSO's exemption gate and that requirement together; the version that changes whenever any of them does;
+- `tenant-authentication-policy.md`: the application's implementation of laravel-mfa's `TenantRequirement`, read
+  into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's enforcement, SSO's
+  exemption gate and that requirement together; the version that changes whenever any of them does;
   when the exemption gate is asked; the reads it makes and the lock it never takes; how an enforcement change and a
   changed requirement reach existing sessions; the testing kit and fake for the application's requirement; and the gaps
   in the members the adapters work around.
@@ -63,10 +61,10 @@ The current note set is:
   PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
   rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
   its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
-  and tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose grant half is
-  `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and enforcement
-  inheritance, and behind `laravel-authorization`'s tree; how an enforcement change and a reported move of a tenant
-  judge its whole subtree, a broken tree refused, and how the move reaches `laravel-authorization`; how a provider's
+  and `laravel-authorization`'s tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose
+  grant half is `laravel-authorization`'s grant scope query, over the principals `laravel-authentication` lists) and
+  enforcement inheritance; how an enforcement change and a reported move of a tenant judge its whole subtree, and how
+  the move reaches `laravel-authorization`; how a provider's
   groups map to grants at provisioning and, where the application opts in, at later sign-ins; the testing kits and
   fakes for the application's contracts; and the gaps in the members the adapters work around.
 
@@ -91,10 +89,10 @@ The current note set is:
   members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
   the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
-  and `sso` namespaces, the audit trail's settings, the senders' gateways, the configuration that crosses the members,
-  SSO's side while SSO is in use and the schedule, every one reported under `iam:check` alone; what
-  `laravel-authorization`'s glue adds, its prune and its resource tenant resolver's note among them; and the gaps in
-  the members installation and the checks work around.
+  and `sso` namespaces, the audit trail's settings, the configuration that crosses the members, SSO's side while SSO is
+  in use and the schedule, every one reported under `iam:check` alone; what `laravel-authorization`'s glue adds, its
+  prune and its resource tenant resolver's note among them; and the gaps in the members installation and the checks
+  work around.
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the

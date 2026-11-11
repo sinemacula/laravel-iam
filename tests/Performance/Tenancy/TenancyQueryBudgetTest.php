@@ -22,7 +22,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Iam\Testing\FakeTenantTree;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
 use SineMacula\Laravel\Sso\Contracts\TenantMembership;
@@ -35,19 +34,20 @@ use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\Performance\PerformanceContractTestCase;
 
 /**
  * The statements SSO's judgements answered from the application's memberships
  * and tenant tree make (IAM-6.8, IAM-7.4, IAM-7.5), and what an enforcement
  * change and a reported move cost across a subtree, so a read an adapter adds
- * is seen here.
+ * is seen here. The tests' tree is stored, so its own reads are counted too:
+ * one per ancestor walked, and one per tenant whose children a subtree lists.
  *
  * A membership judgement reads the identity once, by its key on the write
  * connection; the application's memberships cost whatever its own reads cost,
  * and the fake's none. The enforcement inheritance reads one stored rule per
- * tenant on the path, nearest first, and stops at the first that is on; the
- * application's tree costs whatever its own reads cost, and the fake's none. A
+ * tenant on the path, nearest first, and stops at the first that is on. A
  * change across a subtree judges each tenant's sessions twice, with
  * `laravel-authentication`'s strict cut-off: its cost grows with the tenants in
  * the subtree and the sessions in them, never with any other tenant's.
@@ -63,7 +63,7 @@ use Tests\Performance\PerformanceContractTestCase;
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(TreeChanges::class)]
 #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
-#[WithConfig(TenancyContracts::TREE, FakeTenantTree::class, defer: false)]
+#[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 {
     use MigratesAuthorization, RunsSsoFlows, SignsInPeople;
@@ -76,9 +76,6 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
     /** @var string The region's branch, the tests' tenant's parent. */
     private const string BRANCH = 'branch';
-
-    /** @var ?\SineMacula\Laravel\Iam\Testing\FakeTenantTree The application's tree. */
-    private ?FakeTenantTree $tree = null;
 
     /**
      * Arrange SSO, the tree (a root, its region, the region's branch and the
@@ -94,7 +91,10 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         $this->arrangeSso();
 
-        $this->tree = FakeTenantTree::fake($this->app)->place(self::ROOT)->place(self::REGION, self::ROOT)->place(self::BRANCH, self::REGION)->place(self::TENANT, self::BRANCH);
+        StoredTenantTree::place(self::ROOT);
+        StoredTenantTree::place(self::REGION, self::ROOT);
+        StoredTenantTree::place(self::BRANCH, self::REGION);
+        StoredTenantTree::place(self::TENANT, self::BRANCH);
 
         $this->app?->instance(TenantResolver::class, new OpenTenancy);
         $this->app?->instance(TenantAccess::class, new OpenTenancy);
@@ -123,11 +123,12 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         self::assertNotNull($standing->acceptedAt);
 
-        // Reads (3): the person; the grant half, `laravel-authorization`'s
+        // Reads (4): the person; the grant half, `laravel-authorization`'s
         // grant scope query, reads the person again through the identity
-        // directory, and every grant of the person and its principals in one
-        // query, in a savepoint of its own. Writes: none.
-        $judged = $this->assertQueryBudget(3, 0, static fn (): ScopeVerdict => $scope->judge(self::reference($person), self::TENANT), begins: 1, commits: 1);
+        // directory, the stored tree's children of the tenant, and every grant
+        // of the person and its principals in one query, in a savepoint of its
+        // own. Writes: none.
+        $judged = $this->assertQueryBudget(4, 0, static fn (): ScopeVerdict => $scope->judge(self::reference($person), self::TENANT), begins: 1, commits: 1);
 
         self::assertSame(ScopeVerdict::WITHIN_TENANT, $judged);
     }
@@ -144,15 +145,15 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
     {
         $inheritance = $this->app?->make(EnforcementInheritance::class) ?? self::fail('The application has not booted.');
 
-        // Reads (4): each tenant's stored rule on the path, the tenant's, its
-        // branch's, region's and root's, none on; the fake tree reads nothing.
-        self::assertSame(self::TENANT, $this->assertQueryBudget(4, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
+        // Reads (8): the tenant's stored rule; the stored tree's four reads up
+        // to the root; then the branch's, region's and root's rules, none on.
+        self::assertSame(self::TENANT, $this->assertQueryBudget(8, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
 
         $this->ruleOn(self::BRANCH);
 
-        // Reads (2): the tenant's rule, then its branch's, which is on: the
-        // walk stops there.
-        self::assertSame(self::BRANCH, $this->assertQueryBudget(2, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
+        // Reads (6): the tenant's rule, the stored tree's four reads, then its
+        // branch's rule, which is on: the walk stops there.
+        self::assertSame(self::BRANCH, $this->assertQueryBudget(6, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
     }
 
     /**
@@ -168,36 +169,38 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         $person  = $this->createPerson();
         $subtree = ['moved', 'moved-child', 'moved-grandchild'];
 
-        $this->tree()->place('moved')->place('moved-child', 'moved')->place('moved-grandchild', 'moved-child');
+        StoredTenantTree::place('moved');
+        StoredTenantTree::place('moved-child', 'moved');
+        StoredTenantTree::place('moved-grandchild', 'moved-child');
 
         foreach ($subtree as $tenantId) {
             $this->signInWithPassword($person, $tenantId);
         }
 
         $this->ruleOn(self::ROOT);
-        $this->tree()->place('moved', self::ROOT);
+        StoredTenantTree::place('moved', self::ROOT);
 
         $move = static fn (): int => DB::transaction(static fn (): int => Iam::treeChanges()->changed('moved'));
 
-        // The report to laravel-authorization first. Reads (4): the moved
-        // subtree, as laravel-authorization reads it, then the live grants
-        // rooted in it, one read of each of its three grant tables, which hold
-        // none, so SSO's scope widening is handed no identity, in a savepoint
-        // of its own. First passes, one savepoint per tenant, nearest the moved
-        // tenant first. Reads (9, 10, 11): the tenant's live sessions' keys,
-        // locked, and the sessions; the person, twice; the policy's reads of
-        // the rule up the path (the tenant's own, each ancestor's up to the
-        // enforcing root's, then the root's rule again with its connections, so
-        // one more for each level down); and the session's provenance
-        // connection, once, shared by the policy and laravel-authentication's
-        // judgement.
-        // Writes (1 each): the session revoked. laravel-authentication's second
-        // passes, once the move commits, one transaction per tenant: each reads
-        // the tenant's live sessions' keys and finds none left (3); the subtree
-        // listed again gains no tenant, so nothing more is judged.
-        // Transactions: the move's, the widening's savepoint, and six of
-        // laravel-authentication's.
-        $revoked = $this->assertQueryBudget(37, 3, $move, begins: 8, commits: 8);
+        // The stored tree lists a subtree in four reads: each tenant's
+        // children, then the typed rows. The report to laravel-authorization
+        // first. Reads (7): the moved subtree, then the live grants rooted in
+        // it, one read of each of its three grant tables, which hold none, so
+        // SSO's scope widening is handed no identity, in a savepoint of its
+        // own. The subtree again (4). First passes, one savepoint per tenant,
+        // nearest the moved tenant first. Reads (11, 13, 15): the tenant's live
+        // sessions' keys, locked, and the sessions; the person, twice; the
+        // policy's reads of the rule up the path (the tenant's own, the stored
+        // tree's walk to the root, each ancestor's up to the enforcing root's,
+        // then the root's rule again with its connections); and the session's
+        // provenance connection, once, shared by the policy and
+        // laravel-authentication's judgement. Writes (1 each): the session
+        // revoked. laravel-authentication's second passes, once the move
+        // commits, one transaction per tenant: each reads the tenant's live
+        // sessions' keys and finds none left (3); the subtree listed again (4)
+        // gains no tenant, so nothing more is judged. Transactions: the move's,
+        // the widening's savepoint, and six of laravel-authentication's.
+        $revoked = $this->assertQueryBudget(57, 3, $move, begins: 8, commits: 8);
 
         self::assertSame(3, $revoked);
     }
@@ -236,16 +239,6 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         $context = new SignInContext(self::client(), tenant: TenantSelection::of($tenantId));
 
         self::assertTrue($this->sessions()->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD], $context)->isSignedIn());
-    }
-
-    /**
-     * The application's tree.
-     *
-     * @return \SineMacula\Laravel\Iam\Testing\FakeTenantTree
-     */
-    private function tree(): FakeTenantTree
-    {
-        return $this->tree ?? self::fail('The tree is not arranged.');
     }
 
     /**

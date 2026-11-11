@@ -29,7 +29,7 @@ php artisan iam:install
 php artisan migrate
 ```
 
-The install command ends with what your application still owes: its gateways, its tenancy contracts, its provisioner,
+The install command ends with what your application still owes: its code sender, its tenancy contracts, its provisioner,
 its routes (following [An example application](example-application.md), which redeems SSO's handoffs through
 `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`), a definition registered with `AuditLog::define()`
 for every audit code it records itself (audit-log refuses an unregistered one once you turn
@@ -47,7 +47,7 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 
 Run the scheduler, and run a queue worker for `laravel-authentication`'s delivery of one-time codes
 (`authentication.delivery.queue.connection` and `authentication.delivery.queue.name`): every code it sends, MFA's email
-and SMS codes among them once the gateways are named, waits on that queue until a worker takes it. While SSO is in use,
+and SMS codes among them, waits on that queue until a worker takes it. While SSO is in use,
 the same worker, or one of its own, runs SSO's metadata refresh on `sso.metadata.queue` (see
 [Operations](operations.md#queues)).
 
