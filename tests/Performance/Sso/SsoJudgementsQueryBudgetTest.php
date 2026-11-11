@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Performance\Sso;
 
+use Illuminate\Contracts\Config\Repository;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\ExternalEvidencePolicy;
 use SineMacula\Laravel\Authentication\External\EvidenceSubject;
@@ -109,8 +110,9 @@ final class SsoJudgementsQueryBudgetTest extends PerformanceContractTestCase
      */
     public function testAnApplicationsExternalSignIn(): void
     {
-        $policy      = $this->app?->make(ApplicationPolicy::class) ?? self::fail('The application has not booted.');
-        $application = Application::fromSettings(self::GUARD, ['redirect_uri' => 'https://app.iam.test/sso']);
+        $app         = $this->app ?? self::fail('The application has not booted.');
+        $policy      = $app->make(ApplicationPolicy::class);
+        $application = Application::fromSettings($app->make(Repository::class), self::GUARD, ['redirect_uri' => 'https://app.iam.test/sso']);
 
         // Reads (0): the guard's methods are configuration.
         $this->assertQueryBudget(0, 0, static fn (): mixed => $policy->externalSignIn($application));

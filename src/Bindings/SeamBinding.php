@@ -11,13 +11,10 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  * binding rule applies every binding in one place.
  *
  * The rule binds the adapter only where the seam is unbound or still bound to
- * one of the member's own defaults, so an application's binding is never
- * replaced. The member whose contract the seam is says whether it holds its
- * default (its `isPackageDefault()`, `$holdsDefault`); for SSO, which gives no
- * answer, a default is named by the concrete class a class-string binding was
- * given or the member class that declares a closure binding. A binding whose
- * switch is off binds nothing, so a feature the application leaves off changes
- * nothing.
+ * the member's own default, as the member whose contract the seam is says (its
+ * `isPackageDefault()`, `$holdsDefault`), so an application's binding is never
+ * replaced. A binding whose switch is off binds nothing, so a feature the
+ * application leaves off changes nothing.
  *
  * The switch reads the configuration as every member will hold it once
  * registered: the application's, with each member's packaged configuration
@@ -46,8 +43,8 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  */
 final readonly class SeamBinding
 {
-    /** @var ?\Closure(\Illuminate\Container\Container, string): bool Whether the seam holds its member's default, as the member says; `null` for a member that gives no answer. */
-    public ?\Closure $holdsDefault;
+    /** @var \Closure(\Illuminate\Container\Container, string): bool Whether the seam holds its member's default, as the member says. */
+    public \Closure $holdsDefault;
 
     /**
      * Constructor.
@@ -58,7 +55,6 @@ final readonly class SeamBinding
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
      * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  bool|\Closure(): bool  $mandatory
-     * @param  list<class-string>  $accepted
      * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
      * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
      * @param  ?\Closure(\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null): void  $declare
@@ -71,7 +67,7 @@ final readonly class SeamBinding
         /** This package's implementation of the contract. */
         public string $adapter,
 
-        /** The member's own default concretes, or the member classes that declare its closure bindings. */
+        /** The member's own default classes. */
         public array $memberDefaults,
 
         /** How long the container keeps the adapter. */
@@ -82,9 +78,6 @@ final readonly class SeamBinding
 
         /** Whether the seam must be bound off its permissive default for the suite to be safe, as the checks report; a closure is asked only when they read it (`isMandatory()`). */
         public bool|\Closure $mandatory = false,
-
-        /** The member's own classes that implement the seam in earnest, which the checks accept on a mandatory seam as they accept the adapter. */
-        public array $accepted = [],
 
         // The answer given in place of the member's own `isPackageDefault()`.
         ?\Closure $holdsDefault = null,

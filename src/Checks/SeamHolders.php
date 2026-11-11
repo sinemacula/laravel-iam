@@ -47,7 +47,7 @@ use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 final readonly class SeamHolders
 {
     /** @var list<string> The namespaces of the members' own classes. */
-    public const array MEMBER_NAMESPACES = [
+    private const array MEMBER_NAMESPACES = [
         'SineMacula\Laravel\Authentication\\',
         'SineMacula\Laravel\Authorization\\',
         'SineMacula\Laravel\Mfa\\',
@@ -82,17 +82,6 @@ final readonly class SeamHolders
     public function of(Container $container, string $abstract): ?string
     {
         return $this->follow($container, $abstract, self::MAX_DEPTH);
-    }
-
-    /**
-     * Whether the class named is one of a member's own.
-     *
-     * @param  string  $class
-     * @return bool
-     */
-    public static function isMembersOwn(string $class): bool
-    {
-        return array_filter(self::MEMBER_NAMESPACES, static fn (string $namespace): bool => str_starts_with($class, $namespace)) !== [];
     }
 
     /**
@@ -150,14 +139,15 @@ final readonly class SeamHolders
      */
     private function named(IlluminateContainer $container, string $abstract, \Closure $closure, int $depth): ?string
     {
-        $function = new \ReflectionFunction($closure);
-        $scope    = $function->getClosureScopeClass()?->getName();
-        $used     = $function->getClosureUsedVariables();
+        $function  = new \ReflectionFunction($closure);
+        $scope     = $function->getClosureScopeClass()?->getName();
+        $used      = $function->getClosureUsedVariables();
+        $isMembers = $scope !== null && array_filter(self::MEMBER_NAMESPACES, static fn (string $namespace): bool => str_starts_with($scope, $namespace)) !== [];
 
         return match (true) {
             $scope === IlluminateContainer::class && is_string($used['concrete'] ?? null) => $this->concrete($container, $abstract, $used['concrete'], $depth),
             $scope === BindingRule::class         && is_string($used['key'] ?? null)      => $this->follow($container, $used['key'], $depth - 1),
-            $scope !== null                       && self::isMembersOwn($scope)           => $scope,
+            $isMembers                                                                    => $scope,
             default                                                                       => null,
         };
     }

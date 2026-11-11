@@ -63,12 +63,19 @@ final class FixtureSeams implements ProvidesSeams
         $this->switches = new ConfigRepository($config->all());
 
         return [
-            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class]),
-            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED),
-            new SeamBinding(ScopedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SCOPED, self::isScopedSeamOn(...)),
-            new SeamBinding(ClosureSeam::class, Adapter::class, [ConditionalBindingMemberProvider::class]),
-            new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class]),
-            new SeamBinding(FeatureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: self::isFeatureOn(...)),
+            new SeamBinding(TransientSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(SharedSeam::class, Adapter::class, [MemberDefault::class], Lifetime::SHARED, holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(
+                ScopedSeam::class,
+                Adapter::class,
+                [MemberDefault::class],
+                Lifetime::SCOPED,
+                self::isScopedSeamOn(...),
+                holdsDefault: MemberDefault::isPackageDefault(...),
+            ),
+            new SeamBinding(ClosureSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(PlainSeam::class, Adapter::class, [MemberDefault::class], holdsDefault: MemberDefault::isPackageDefault(...)),
+            new SeamBinding(FeatureSeam::class, Adapter::class, [MemberDefault::class], appliesWhen: self::isFeatureOn(...), holdsDefault: MemberDefault::isPackageDefault(...)),
         ];
     }
 
