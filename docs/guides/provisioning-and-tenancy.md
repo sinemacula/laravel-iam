@@ -102,9 +102,8 @@ identity, its membership and its link stay made, and the person's next sign-in r
 - **Always a new identity.** Never look one up by the result's email address, subject or any other attribute: whoever
   controls the connection's attributes could take over an existing account. An existing person joins a connection
   through SSO's `link` purpose or a verified domain instead.
-- **Insert it in the call, with its model events on.** The listener witnesses the `created` event of the model the call
-  inserts, so an instance inserted before the call, a fresh copy of the row, or one inserted quietly
-  (`createQuietly()`, `saveQuietly()`, `withoutEvents()`) is refused with a `LogicException` and rolled back.
+- **Answer the Eloquent model you just inserted.** One whose `wasRecentlyCreated` is false is refused with a
+  `LogicException` and rolled back.
 - **Take no lock on rows other writers share** (a tenant-wide row, say): SSO takes its own locks next, and a shared lock
   taken before them inverts its order. Guarding the new identity's own rows is safe.
 - **Register no provisioning listener of your own beside it.** Every listener shares SSO's one grant.

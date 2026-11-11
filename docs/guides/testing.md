@@ -330,20 +330,16 @@ FakeGroupMapping::fake()
 Each kit is a trait of PHPUnit tests that proves an implementation of one of this package's contracts keeps its
 promises. Use it in a test case of your own and implement its hooks against your implementation. The fakes above pass
 their kits. Each kit's checks are static assertions on the `Seams\*Contract` class beside its trait
-(`Seams\MembershipsContract`, `Seams\TenantTreeContract`, `Seams\TenantMfaRequirementContract`,
-`Seams\ProvisionerContract`, `Seams\GroupMappingContract`, and `Seams\EmailGatewayContract` and
-`Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can call one directly, such as
-`Seams\MembershipsContract::assertNeverCompleteWhenUnreadable()`.
+(`Seams\TenantTreeContract`, `Seams\TenantMfaRequirementContract`, and `Seams\EmailGatewayContract` and
+`Seams\SmsGatewayContract`, which share `Seams\GatewayContract`'s), so a test can call one directly. The
+`Memberships`, `Provisioner` and `GroupMapping` contracts have fakes but no kits.
 
-| Kit                                        | Proves                      | Hooks                                                                                                                                                                                                                                     |
-|--------------------------------------------|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Seams\Concerns\EmailGatewayTests`         | Your `EmailGateway`         | `codeGateway()`, `codeApplication()`, `codeRecipient()`, `codesDeliveredTo()`, `failCodeDelivery()`                                                                                                                                       |
-| `Seams\Concerns\SmsGatewayTests`           | Your `SmsGateway`           | The same as the email kit                                                                                                                                                                                                                 |
-| `Seams\Concerns\MembershipsTests`          | Your `Memberships`          | `memberships()`, `memberIdentity()`, `membershipTenant()`, `membershipAcceptedAt()`, `invitedIdentity()`, `revokeMembership()`, `partlyReadableIdentity()`, `widelyHeldIdentity()`, `otherMembershipTenant()`, `holdsPlatformPrincipal()` |
-| `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                                                                                                                            |
-| `Seams\Concerns\TenantMfaRequirementTests` | Your `TenantMfaRequirement` | `tenantMfaRequirement()`, `tenantMfaTenant()`, `tenantMfaApplication()`, `changeTenantMfaRequirement()`, `unanswerableTenant()`                                                                                                           |
-| `Seams\Concerns\ProvisionerTests`          | Your `Provisioner`          | `provisioner()`, `provisionedResult()`, `existingIdentity()`, `resultMatching()`, `declinedResult()`, `isMemberOf()`                                                                                                                      |
-| `Seams\Concerns\GroupMappingTests`         | Your `GroupMapping`         | `groupMapping()`, `connectionId()`, `tenantId()`, `mappedGroups()`, `unmappedGroups()`, `expectedGrants()`, `declinedQuestion()`                                                                                                          |
+| Kit                                        | Proves                      | Hooks                                                                                                                           |
+|--------------------------------------------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `Seams\Concerns\EmailGatewayTests`         | Your `EmailGateway`         | `codeGateway()`, `codeApplication()`, `codeRecipient()`, `codesDeliveredTo()`, `failCodeDelivery()`                             |
+| `Seams\Concerns\SmsGatewayTests`           | Your `SmsGateway`           | The same as the email kit                                                                                                       |
+| `Seams\Concerns\TenantTreeTests`           | Your `TenantTree`           | `tenantTree()`, `treeLeaf()`, `treeLeafAncestors()`, `treeOutsider()`, `treeRootDescendants()`                                  |
+| `Seams\Concerns\TenantMfaRequirementTests` | Your `TenantMfaRequirement` | `tenantMfaRequirement()`, `tenantMfaTenant()`, `tenantMfaApplication()`, `changeTenantMfaRequirement()`, `unanswerableTenant()` |
 
 ```php
 use App\Tenancy\DatabaseTenantTree;

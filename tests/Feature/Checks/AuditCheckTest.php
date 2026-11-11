@@ -13,21 +13,19 @@ use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
-use SineMacula\Laravel\Iam\Audit\OperationalAlerts;
 use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Concerns\RunsChecks;
-use Tests\Fixtures\Audit\HearsNoAlerts;
 use Tests\TestCase;
 
 /**
  * Feature tests for the audit trail's checks (IAM-9, IAM-2.5): the mappers
  * registered while they are on; every `jwt` and `api_key` guard excluded from
  * audit-log's own capture, its Gate capture off, its refusal of unregistered
- * codes on and the operational alerts whatever they say (decision Q5 (a)).
+ * codes on whatever they say (decision Q5 (a)).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -178,8 +176,7 @@ final class AuditCheckTest extends TestCase
     /**
      * With the mappers off, audit-log is still held to IAM-2.5 (decision Q5
      * (a)): every guard excluded, Gate capture off and unregistered codes
-     * refused; only the mappers' registration is no longer required, and the
-     * alerts are still checked.
+     * refused; only the mappers' registration is no longer required.
      *
      * @param  mixed  $off
      * @return void
@@ -201,43 +198,6 @@ final class AuditCheckTest extends TestCase
         $config?->set(CaptureExclusions::GATE_KEY, false);
 
         self::assertSame([], self::problems($this->check()->checks()));
-
-        $config?->set(OperationalAlerts::KEY, ['nobody_told' => []]);
-
-        self::assertCount(1, self::problems($this->check()->checks()));
-    }
-
-    /**
-     * An alert that does not exist, or a listener that is neither bound nor a
-     * class, is refused.
-     *
-     * @return void
-     */
-    public function testAMalformedAlertFails(): void
-    {
-        $this->install();
-
-        $this->app?->make('config')->set(OperationalAlerts::KEY . '.audit_write_failed', 'App\Listeners\Nowhere');
-
-        self::assertSame(['A listener named in `iam.audit.alerts.audit_write_failed` is neither bound nor a class.'], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * A listener class that could not be handed the event, with neither
-     * `handle()` nor `__invoke()`, fails the check before the event it alerts
-     * on is ever dispatched.
-     *
-     * @return void
-     */
-    public function testAListenerThatCannotBeHandedTheEventFails(): void
-    {
-        $this->install();
-
-        $this->app?->make('config')->set(OperationalAlerts::KEY . '.integrity_check_failed', [HearsNoAlerts::class]);
-
-        $refusal = 'The listener named in `iam.audit.alerts.integrity_check_failed` has neither a handle() method nor __invoke().';
-
-        self::assertSame([$refusal], self::problems($this->check()->checks()));
     }
 
     /**

@@ -15,7 +15,7 @@ use SineMacula\Laravel\Iam\Checks\SsoCheckRegistration;
 use SineMacula\Laravel\Sso\Config\Checks\FeaturesCheck;
 use SineMacula\Laravel\Sso\Config\ConfigurationChecker;
 use SineMacula\Laravel\Sso\Config\ConfigurationChecks;
-use SineMacula\Laravel\Sso\Contracts\LinkStorage;
+use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Links\NoLinks;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\RunsChecks;
@@ -97,7 +97,7 @@ final class SsoBridgeFallbackCheckTest extends TestCase
     {
         $this->useSso();
 
-        $this->app?->bind(LinkStorage::class, NoLinks::class);
+        $this->app?->bind(Linker::class, NoLinks::class);
 
         $takeOut($this->application());
 
@@ -106,7 +106,7 @@ final class SsoBridgeFallbackCheckTest extends TestCase
         self::assertFalse(SsoCheckRegistration::isInForce($this->application()));
         self::assertTrue($this->check()->applies());
         self::assertSame([self::NO_EXTERNAL_SIGN_IN, self::UNLINKED], array_slice($problems, 0, 2));
-        self::assertCount(1, array_filter($problems, static fn (string $problem): bool => str_starts_with($problem, LinkStorage::class . ' is still bound to ' . NoLinks::class)));
+        self::assertCount(1, array_filter($problems, static fn (string $problem): bool => str_starts_with($problem, Linker::class . ' is still bound to ' . NoLinks::class)));
         self::assertSame([], self::problems($this->seams()->checks()));
     }
 
