@@ -10,7 +10,6 @@ use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Database\RequiredWork;
 use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
-use SineMacula\Laravel\Iam\Audit\JobCallers;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use Tests\TestCase;
@@ -40,9 +39,6 @@ final class WorkerResetTest extends TestCase
     /** @var list<string> The first segment of the string keys those members, and this package, bind under. */
     private const array MEMBER_KEYS = ['authentication', 'authorization', 'mfa', 'sso', 'iam'];
 
-    /** @var list<string> This package's frame state, the frames of the queued jobs running, which the reset keeps as it keeps audit-log's. */
-    private const array FRAMES = [JobCallers::class];
-
     /** @var string The namespace of `laravel-audit-log`, whose scoped execution frames it enters and leaves itself, and which the reset keeps. */
     private const string AUDIT_LOG_NAMESPACE = 'SineMacula\Laravel\AuditLog\\';
 
@@ -58,7 +54,7 @@ final class WorkerResetTest extends TestCase
      */
     public function testResetForgetsEveryScopedInstanceTheMembersBind(): void
     {
-        $abstracts = array_values(array_filter($this->scopedAbstracts(), self::isRequestState(...)));
+        $abstracts = array_values(array_filter($this->scopedAbstracts(), self::isMembers(...)));
 
         self::assertContains(KeptSessions::class, $abstracts);
         self::assertContains(RequiredWork::class, $abstracts);
@@ -74,10 +70,8 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset keeps every other scoped instance: `laravel-audit-log`'s, which
-     * it enters and leaves itself as each unit of work starts and ends, this
-     * package's frames of the queued jobs running, which it keeps as it keeps
-     * audit-log's, and Laravel's own.
+     * The reset keeps every other scoped instance: `laravel-audit-log`'s and
+     * Laravel's own.
      *
      * @return void
      *
@@ -85,10 +79,9 @@ final class WorkerResetTest extends TestCase
      */
     public function testResetKeepsEveryOtherScopedInstance(): void
     {
-        $abstracts = array_values(array_filter($this->scopedAbstracts(), static fn (string $abstract): bool => !self::isRequestState($abstract)));
+        $abstracts = array_values(array_filter($this->scopedAbstracts(), static fn (string $abstract): bool => !self::isMembers($abstract)));
 
         self::assertNotEmpty(array_filter($abstracts, static fn (string $abstract): bool => str_starts_with($abstract, self::AUDIT_LOG_NAMESPACE)));
-        self::assertContains(JobCallers::class, $abstracts);
 
         $before = array_map(fn (string $abstract): mixed => $this->app?->make($abstract), $abstracts);
 
@@ -119,19 +112,6 @@ final class WorkerResetTest extends TestCase
         $app->instance('auth', $auth);
 
         (new WorkerReset($app))->reset();
-    }
-
-    /**
-     * Whether the scoped abstract holds request state the reset forgets: one an
-     * installed member, other than `laravel-audit-log`, or this package binds,
-     * but for this package's frame state.
-     *
-     * @param  string  $abstract
-     * @return bool
-     */
-    private static function isRequestState(string $abstract): bool
-    {
-        return self::isMembers($abstract) && !in_array($abstract, self::FRAMES, true);
     }
 
     /**

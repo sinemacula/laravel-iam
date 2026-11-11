@@ -60,14 +60,6 @@ use SineMacula\Laravel\Sso\Contracts\SsoEvent;
  * code audit-log ships, so no code is ever defined twice. With it off nothing
  * is mapped or defined.
  *
- * The caller's context contributor (`CallerContextContributor`, IAM-9.7) is
- * registered whatever the switch says: it fills only the gaps of a record,
- * whoever describes it (a mapper of this package's or of the application's, or
- * the application's own record), from the caller a package guard already holds,
- * which audit-log's own actor contributor cannot read. It runs after
- * audit-log's own contributors and before any the application registers from a
- * later provider's `boot()`.
- *
  * A registration repeated identically changes nothing, so a provider booted
  * twice is harmless. Once the application has booted, audit-log refuses any
  * registration: a provider booted again then (forced) finds this package's part
@@ -104,14 +96,7 @@ final readonly class AuditRegistrations
     public const string REGISTERED = 'iam.audit.registered';
 
     /**
-     * Register the caller's context contributor while the application is still
-     * booting, and the mappers and the codes they record while the mappers'
-     * switch is on too, at once when audit-log's provider has registered and
-     * once the application has booted when it has not; once it has booted,
-     * nothing more when they are registered already, and a refusal when they
-     * are not. An audit-log that has still not registered once the application
-     * has booted refuses the boot only while `$refusesMissing` is true, which
-     * the provider makes false while a configuration command runs.
+     * Register this package's part with audit-log, at once or once booted.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  bool  $refusesMissing
@@ -197,9 +182,7 @@ final readonly class AuditRegistrations
     }
 
     /**
-     * Register the caller's context contributor with the application's
-     * audit-log, and the mappers and the codes they record while the mappers'
-     * switch is on, and record that this package's part is registered.
+     * Register the mappers and their codes while switched on, and record it.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -210,12 +193,8 @@ final readonly class AuditRegistrations
      */
     private static function registerWith(Application $app): void
     {
-        $recorder = $app->make(Recorder::class);
-
-        $recorder->contribute(CallerContextContributor::class);
-
         if ($app->make(AuditSettings::class)->mapsEvents()) {
-            self::registerMappers($recorder);
+            self::registerMappers($app->make(Recorder::class));
         }
 
         $app->instance(self::REGISTERED, true);

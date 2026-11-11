@@ -233,11 +233,8 @@ its last decision among them), this package's own scoped adapters and records (t
 scoped under the `iam.scoped:` prefix), and the facade roots that would keep them, so a long-running command that
 resets between tenants keeps none of the suite's decisions about the first tenant. It forgets only the suite's scoped
 state: a scoped binding your application made, over a seam or of its own, is kept, so a loop of your own forgets those
-with the container's `forgetScopedInstances()` (below). It keeps Laravel's `Context`, its deferred callbacks,
-audit-log's execution frames and the caller a queued job carried (`Iam\Audit\JobCallers`), which is frame state as
-audit-log's frames are: the queue worker and Octane forget it at their own boundaries, and a reset called by hand
-inside a job keeps it, so the job's later records, and the jobs it dispatches, still name the caller who dispatched
-it.
+with the container's `forgetScopedInstances()` (below). It keeps Laravel's `Context`, its deferred callbacks and
+audit-log's execution frames, so a reset called by hand inside a job keeps the actor the job carried.
 
 - **Octane.** Keep Octane's default listeners. Under Octane every listener and scoped record this package uses
   resolves from the request's sandbox, so nothing reaches another request. Leave the members' services out of
