@@ -262,10 +262,8 @@ run through are in `storage-and-transactions.md`.
   - `renewing()`, for a re-authentication: the same, with `authenticatedAt` and the evidence of the renewal SSO
     recorded, and no provider context.
 - The re-authentication sessions adapter (`ReauthenticationSessionsAdapter`):
-  - `standing()`, as a flow starts and outside any transaction, asks `externalStanding()` with no link on every
-    declared `jwt` guard (`CurrentSession::sessionGuards()`), and answers `signed_in` when any answers `null`. SSO
-    names no application there, and a session stands only on its own guard (any other answers
-    `session_guard_mismatch`), so asking the default guard alone would refuse every other guard's sessions.
+  - `standing()`, as a flow starts and outside any transaction, asks `externalStanding()` with no link on the
+    application's guard, the same application the redemption later hands `lockedStanding()`.
   - `lockedStanding()`, inside the redemption's transaction and after SSO's locks, asks `externalStanding()` through
     exactly the link on the application's guard, which locks the session's row until the transaction ends.
     `laravel-authentication` compares the session's guard with the application's itself, so no comparison of the
@@ -427,8 +425,6 @@ run through are in `storage-and-transactions.md`.
   nothing is reported, so the caller retries the request, as it does for MFA's own transactions
   (`authentication-and-mfa.md`).
 - Gaps in the members that the adapters work around:
-  - `laravel-sso`'s `ReauthenticationSessions::standing()` names no application although `StartEligibility` knows it,
-    so every `jwt` guard is asked (one read per guard, at flow start only).
   - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, and nothing lists the tenants that
     inherit its rule: the adapter judges every tenant below it in the application's tree, so without a tree (an
     inheritance of the application's own) those tenants are left unjudged.

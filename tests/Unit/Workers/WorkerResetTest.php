@@ -105,11 +105,11 @@ final class WorkerResetTest extends TestCase
 
     /**
      * Rows of `[abstract]`: each scoped binding `laravel-authentication`,
-     * `laravel-sso` and `laravel-authorization` keep request state in,
-     * authorization's manager, what its previews know, the schema its query
-     * scope reads and the keys that hold its scoped defaults, each found by
-     * their prefix, the console subject resolver its explanations resolve
-     * through among them.
+     * `laravel-sso` and `laravel-authorization` keep request state in: the keys
+     * that hold SSO's scoped defaults, authorization's manager, what its
+     * previews know, the schema its query scope reads and the keys that hold
+     * its scoped defaults, each found by their prefix, the console subject
+     * resolver its explanations resolve through among them.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -120,14 +120,14 @@ final class WorkerResetTest extends TestCase
             KeptSessions::class,
             RequiredWork::class,
             WatchedSessions::class,
-            SingleUseStore::class,
-            SecretEncrypter::class,
-            Fetcher::class,
-            AttemptLimiter::class,
-            DnsResolver::class,
-            Enforcement::class,
-            EndpointResolver::class,
-            HandoffIssuer::class,
+            'sso.default:' . SingleUseStore::class,
+            'sso.default:' . SecretEncrypter::class,
+            'sso.default:' . Fetcher::class,
+            'sso.default:' . AttemptLimiter::class,
+            'sso.default:' . DnsResolver::class,
+            'sso.default:' . Enforcement::class,
+            'sso.default:' . EndpointResolver::class,
+            'sso.default:' . HandoffIssuer::class,
             DriverScope::class,
             ResolvedTenant::class,
             ResolutionCache::class,
@@ -275,15 +275,15 @@ final class WorkerResetTest extends TestCase
         $container = new Container;
 
         $container->scoped(ContextRepository::class, static fn (): \stdClass => new \stdClass);
-        $container->scoped(SingleUseStore::class, static fn (): \stdClass => new \stdClass);
+        $container->scoped(Rehashing::class, static fn (): \stdClass => new \stdClass);
 
         $context = $container->make(ContextRepository::class);
-        $before  = $container->make(SingleUseStore::class);
+        $before  = $container->make(Rehashing::class);
 
         (new WorkerReset($container))->reset();
 
         self::assertSame($context, $container->make(ContextRepository::class));
-        self::assertNotSame($before, $container->make(SingleUseStore::class));
+        self::assertNotSame($before, $container->make(Rehashing::class));
     }
 
     /**
@@ -300,15 +300,15 @@ final class WorkerResetTest extends TestCase
         $container = new Container;
 
         $container->scoped(static fn (): \stdClass => new \stdClass);
-        $container->scoped(SingleUseStore::class, static fn (): \stdClass => new \stdClass);
+        $container->scoped(Rehashing::class, static fn (): \stdClass => new \stdClass);
 
         $closureScoped = $container->make(\stdClass::class);
-        $before        = $container->make(SingleUseStore::class);
+        $before        = $container->make(Rehashing::class);
 
         (new WorkerReset($container))->reset();
 
         self::assertSame($closureScoped, $container->make(\stdClass::class));
-        self::assertNotSame($before, $container->make(SingleUseStore::class));
+        self::assertNotSame($before, $container->make(Rehashing::class));
     }
 
     /**
@@ -402,7 +402,7 @@ final class WorkerResetTest extends TestCase
 
     /**
      * The reset keeps an instance the application bound over a member's scoped
-     * seam with no scoped binding beneath it, as one bound before the member
+     * binding with no scoped binding beneath it, as one bound before the member
      * registered, which the member's `scopedIf()` then left alone: it is the
      * application's, not request state, and nothing could rebuild it.
      *
@@ -415,32 +415,32 @@ final class WorkerResetTest extends TestCase
         $container = new Container;
         $instance  = new \stdClass;
 
-        $container->instance(Fetcher::class, $instance);
+        $container->instance(Rehashing::class, $instance);
 
         (new WorkerReset($container))->reset();
 
-        self::assertSame($instance, self::resolve($container, Fetcher::class));
+        self::assertSame($instance, self::resolve($container, Rehashing::class));
     }
 
     /**
-     * The reset keeps a shared instance of a member's scoped seam the
+     * The reset keeps a shared instance of a member's scoped binding the
      * application bound as a singleton of its own, so it is never rebuilt.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testResetKeepsASingletonOverAMembersScopedSeam(): void
+    public function testResetKeepsASingletonOverAMembersScopedBinding(): void
     {
         $container = new Container;
 
-        $container->singleton(Fetcher::class, static fn (): \stdClass => new \stdClass);
+        $container->singleton(Rehashing::class, static fn (): \stdClass => new \stdClass);
 
-        $before = $container->make(Fetcher::class);
+        $before = $container->make(Rehashing::class);
 
         (new WorkerReset($container))->reset();
 
-        self::assertSame($before, $container->make(Fetcher::class));
+        self::assertSame($before, $container->make(Rehashing::class));
     }
 
     /**
