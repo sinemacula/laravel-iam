@@ -31,8 +31,8 @@ use Tests\TestCase;
 /**
  * Integration tests for SSO's reauthentication sessions through
  * `laravel-authentication` (IAM-4.2): a flow's start answered from the
- * session's external standing through the connection by any link, on whichever
- * guard holds the session, locking nothing; the redemption's locked standing
+ * session's external standing through the connection by any link, on the
+ * application's guard, locking nothing; the redemption's locked standing
  * through exactly the link, on the application's guard, locking the session's
  * row last until the redemption's transaction ends; any reason
  * `laravel-authentication` gives answered `not_signed_in`, never thrown; what
@@ -71,24 +71,24 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
         $person  = $this->createPerson();
         $session = $this->signInThrough($person);
 
-        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::connection()));
+        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::GUARD, self::connection()));
     }
 
     /**
-     * A session SSO names with no application stands on whichever guard holds
-     * it, though the other guards answer it is not theirs.
+     * A session stands as a flow starts only for the application whose guard
+     * holds it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testASessionOfAnotherGuardStandsAsAFlowStarts(): void
+    public function testASessionStandsOnlyForItsOwnApplicationAsAFlowStarts(): void
     {
         $person  = $this->createPerson();
         $session = $this->signInThrough($person, guard: self::ADMIN);
 
-        self::assertSame(self::ADMIN, $session->getGuard());
-        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::connection()));
+        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::ADMIN, self::connection()));
+        self::assertSame(SessionStanding::NOT_SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::GUARD, self::connection()));
     }
 
     /**
@@ -125,7 +125,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
         $person    = $this->createPerson();
         $sessionId = $this->sessionWithoutStanding($person, $case);
 
-        self::assertSame(SessionStanding::NOT_SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), $sessionId, self::connection()));
+        self::assertSame(SessionStanding::NOT_SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), $sessionId, self::GUARD, self::connection()));
     }
 
     /**
@@ -149,7 +149,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
 
         DB::enableQueryLog();
 
-        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::connection()));
+        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::GUARD, self::connection()));
 
         $writes = array_filter(DB::getQueryLog(), static fn (array $query): bool => preg_match(self::WRITES_OR_LOCKS, $query['query']) === 1);
 
@@ -254,7 +254,8 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
 
     /**
      * An application that is no guard holding sessions cannot be resolved, so
-     * the locked standing throws inside the redemption's transaction (IAM-8.2).
+     * the standing throws as a flow starts and inside the redemption's
+     * transaction alike (IAM-8.2).
      *
      * @return void
      *
@@ -264,16 +265,22 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     {
         $person  = $this->createPerson();
         $session = $this->signInThrough($person);
+        $adapter = $this->adapter();
+        $locked  = static fn (): SessionStanding => $adapter->lockedStanding(self::referenceOf($person), self::keyOf($session), 'web', self::connection(), self::LINK);
+        $asks    = [
+            static fn (): SessionStanding => $adapter->standing(self::referenceOf($person), self::keyOf($session), 'web', self::connection()),
+            static fn (): SessionStanding => DB::connection(StorageConnection::name())->transaction($locked),
+        ];
 
-        try {
-            DB::connection(StorageConnection::name())->transaction(function () use ($person, $session): void {
-                $this->adapter()->lockedStanding(self::referenceOf($person), self::keyOf($session), 'web', self::connection(), self::LINK);
-            });
+        foreach ($asks as $ask) {
+            try {
+                $ask();
 
-            self::fail('An application that is no session guard was answered.');
-        } catch (UnresolvedReferenceException $exception) {
-            self::assertSame(ReferenceKind::GUARD, $exception->kind);
-            self::assertSame('web', $exception->application);
+                self::fail('An application that is no session guard was answered.');
+            } catch (UnresolvedReferenceException $exception) {
+                self::assertSame(ReferenceKind::GUARD, $exception->kind);
+                self::assertSame('web', $exception->application);
+            }
         }
     }
 
@@ -294,7 +301,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
         $adapter  = $this->adapter();
         $locked   = static fn (): SessionStanding => $adapter->lockedStanding($stranger, self::keyOf($session), self::GUARD, self::connection(), self::LINK);
         $asks     = [
-            static fn (): SessionStanding => $adapter->standing($stranger, self::keyOf($session), self::connection()),
+            static fn (): SessionStanding => $adapter->standing($stranger, self::keyOf($session), self::GUARD, self::connection()),
             static fn (): SessionStanding => DB::connection(StorageConnection::name())->transaction($locked),
         ];
 

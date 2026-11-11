@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Sso\Applications\ConfiguredApplicationPolicy;
+use SineMacula\Laravel\Sso\Config\Features;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
@@ -111,12 +112,6 @@ final readonly class SsoSeams implements ProvidesSeams
     /** @var string The switch that binds SSO's per-connection evidence policy, while the capability's is on. */
     public const string EVIDENCE_SWITCH = 'iam.sso.evidence';
 
-    /** @var list<string> SSO's protocol switches, any of which puts SSO in use. */
-    public const array PROTOCOLS = ['sso.features.saml2', 'sso.features.oidc'];
-
-    /** @var list<mixed> The values SSO reads a switch as off from; any other value is on, or malformed, and so may have been meant to be. */
-    private const array OFF = [false, 0, '0', 'false'];
-
     /**
      * Constructor.
      *
@@ -178,23 +173,14 @@ final readonly class SsoSeams implements ProvidesSeams
     }
 
     /**
-     * Whether SSO is in use, read as SSO's own `Config\Features::isInUse()`
-     * reads it, from the configuration given: a protocol is switched on, or its
-     * switch is malformed, and so may have been meant to be.
+     * Whether SSO is in use, as SSO itself reads the configuration given.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
      */
     public static function isInUse(Repository $config): bool
     {
-        foreach (self::PROTOCOLS as $key) {
-
-            if (!in_array($config->get($key, false), self::OFF, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return Features::isInUse($config);
     }
 
     /**

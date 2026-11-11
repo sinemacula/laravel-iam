@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Sso;
 
+use Illuminate\Config\Repository;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -93,6 +94,6 @@ final class ApplicationPolicyAdapterTest extends TestCase
      */
     private static function application(string $name, bool $externalSignIn): Application
     {
-        return Application::fromSettings($name, ['redirect_uri' => 'https://app.iam.test/sso', 'external_sign_in' => $externalSignIn]);
+        return Application::fromSettings(new Repository, $name, ['redirect_uri' => 'https://app.iam.test/sso', 'external_sign_in' => $externalSignIn]);
     }
 }
