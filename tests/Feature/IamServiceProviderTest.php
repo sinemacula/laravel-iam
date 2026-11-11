@@ -31,6 +31,7 @@ use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
+use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -141,6 +142,19 @@ final class IamServiceProviderTest extends TestCase
     public function testTheConfigurationIsMergedUnderIam(): void
     {
         self::assertSame(require self::configurationFile(), $this->config()->get('iam'));
+    }
+
+    /**
+     * `iam:check` is declared to `laravel-authorization` as composing its
+     * check, so `laravel-authorization` boots for diagnosis under it.
+     *
+     * @return void
+     */
+    public function testIamCheckIsDeclaredAsComposingAuthorizationsCheck(): void
+    {
+        $app = $this->app ?? self::fail('The application has not booted.');
+
+        self::assertTrue(Declarations::of($app)->isComposing(CheckCommand::NAME));
     }
 
     /**

@@ -126,7 +126,11 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `laravel-authorization`'s settings, seams, grant hooks and connection, and exits `1` on a refused setting and `3` on a
   report it could not complete, and is required like the rest), `mfa:check`, `sso:check` and `audit-log:check`. Glue,
   not policy: their checks stay theirs, each prints in its own words, and one that exits non-zero fails the run, so a
-  refusal and an incomplete report alike fail it closed. One that throws is its
+  refusal and an incomplete report alike fail it closed. `IamServiceProvider::register()` declares `iam:check` to
+  `laravel-authorization` as a command that composes `authorization:check`
+  (`Diagnostics\Declarations::composingCommand()`), so when it is the process's command `laravel-authorization` boots
+  for diagnosis: a broken authorization setting throws nothing at boot and is reported by `authorization:check`, which
+  exits `1` and fails the run. One that throws is its
   member's defect and stops the run with that exception, which fails closed. Every one is required (IAM-1.3): one that
   is not registered fails the run.
 - This package's own checks follow, each behind the internal `Checks\Contracts\Check` contract, which mirrors SSO's
@@ -480,7 +484,9 @@ extensions this package declares (IAM-2.8); how `iam:check` runs every member's 
   `testAnyOtherDeliveryModeSchedulesNoDrain`, `testAuditLogsOwnSchedulesAreNeverRegisteredAgain`
 - `tests/Feature/Console/CheckCommandTest.php` `testAConfiguredApplicationPasses`,
   `testAProblemOfThePackagesOwnFailsTheRun`, `testAMembersFailureFailsTheRun`,
-  `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`, `testSsosSideIsCheckedWhenSsosCheckDoesNotRunIt`
+  `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`,
+  `testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot`,
+  `testSsosSideIsCheckedWhenSsosCheckDoesNotRunIt`
 - `tests/Unit/Checks/CheckerTest.php` `testEveryCheckRunsAndTheRunPasses`, `testAMemberCommandFailingFailsTheRun`,
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
   `testEachCheckIsReported`, `testTheMembersCommandsRunMarked`
