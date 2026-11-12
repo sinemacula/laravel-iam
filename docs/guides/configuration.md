@@ -72,17 +72,12 @@ session, so it is `stale`. See [Authentication and SSO](authentication-and-sso.m
 
 ## Tenancy
 
-| Key                       | Default | Environment | What it does                                                        |
-|---------------------------|---------|-------------|---------------------------------------------------------------------|
-| `iam.tenancy.memberships` | `null`  | None        | Your memberships, a class implementing `Iam\Contracts\Memberships`. |
-
-Classes are named relative to `SineMacula\Laravel\`. It is optional, and a class bound in the container by the time
-every service provider has registered counts as named. Any value that is no class name fails closed. The tenant MFA
-requirement is no key: implement laravel-mfa's `TenantRequirement` and bind it (see [Provisioning and
+Tenancy has no keys. Bind your memberships, `SineMacula\Laravel\Iam\Contracts\Memberships`, in a service provider's
+`register()`, and laravel-mfa's `TenantRequirement` for the tenant MFA requirement (see [Provisioning and
 tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)).
 
 - The memberships answer SSO's tenant membership, link eligibility and the membership half of its principal scope.
-  Name none and SSO's defaults stay: no membership, no `link`, no linking by a verified domain.
+  Bind none and SSO's defaults stay: no membership, no `link`, no linking by a verified domain.
 - The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`); this package reads it for SSO's
   enforcement inheritance and the tree changes (see [Provisioning and
   tenancy](provisioning-and-tenancy.md#the-tenant-tree)). A tree needs a tenant resolver, which `iam:check` requires.
@@ -95,21 +90,19 @@ answer keep acting in the tenant.
 
 ## Provisioning
 
-| Key                               | Default | Environment | What it does                                                                                                                                                          |
-|-----------------------------------|---------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `iam.provisioning.provisioner`    | `null`  | None        | Your provisioner, a class implementing `Iam\Contracts\Provisioner`.                                                                                                   |
-| `iam.provisioning.groups.mapping` | `null`  | None        | Your group mapping, a class implementing `Iam\Contracts\GroupMapping`: the roles a provider's groups give a person in the connection's tenant.                        |
-| `iam.provisioning.groups.map`     | `[]`    | None        | While no mapping is named or bound, each group name mapped to a role's name or a list of them, granted in the connection's tenant alone.                              |
-| `iam.provisioning.groups.resync`  | `null`  | None        | Your re-sync of the groups at a later sign-in, a class implementing `Iam\Contracts\GroupResync`, such as `Iam\Provisioning\MappedGroupResync`; none re-syncs nothing. |
+| Key                           | Default | Environment | What it does                                                                                                                                         |
+|-------------------------------|---------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.provisioning.groups.map` | `[]`    | None        | While no `Iam\Contracts\GroupMapping` is bound, each group name mapped to a role's name or a list of them, granted in the connection's tenant alone. |
 
-A provisioner bound in the container counts as named, whenever it is bound. Name none and provisioning is off: a
-sign-in through SSO that resolves to no identity ends as SSO's `unlinked`. What the provisioner is asked, and in which
-transaction, is in [Provisioning and tenancy](provisioning-and-tenancy.md).
+Bind your provisioner, `Iam\Contracts\Provisioner`, in the container; bind none and provisioning is off: a sign-in
+through SSO that resolves to no identity ends as SSO's `unlinked`. Bind `Iam\Contracts\GroupMapping` to map groups
+yourself, and `Iam\Contracts\GroupResync` (`Iam\Provisioning\MappedGroupResync`, say) to re-sync them at later
+sign-ins. Classes are named relative to `SineMacula\Laravel\`. What the provisioner is asked, and in which transaction,
+is in [Provisioning and tenancy](provisioning-and-tenancy.md).
 
-A group mapping or re-sync bound in the container counts as named too. The roles the groups map to are granted to the
-new identity in the provisioning's transaction, never beyond the connection's tenant; a role that does not exist, or a
-mapping that throws, rolls the provisioning back. A value that is no class name, or a map that is no map of group names
-to role names, fails closed. Mapping and re-syncing groups is in
+The roles the groups map to are granted to the new identity in the provisioning's transaction, never beyond the
+connection's tenant; a role that does not exist, or a mapping that throws, rolls the provisioning back. A map that is
+no map of group names to role names fails closed. Mapping and re-syncing groups is in
 [Provisioning and tenancy](provisioning-and-tenancy.md#group-mapping).
 
 ## SSO

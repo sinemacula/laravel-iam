@@ -428,7 +428,7 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   record's tenant: from a model's `QueryableResource` declaration, an `AuthorizableResource`'s own answer, or the bound
   `ResourceTenantResolver`, whose default, `NoResourceTenant`, knows none. Which tenant owns a record is the
   application's own rule (IAM-1.2), on its own models, which this package cannot read, so nothing here binds a resolver
-  and `iam:install` names none. While the application has memberships (`TenancyContracts::hasMemberships()`), so its
+  and `iam:install` names none. While the application binds `Contracts\Memberships`, so its
   people act in tenants, `CrossMemberConfigurationCheck` notes, never fails, a resolver left on the default, as
   `laravel-authorization` says (`isPackageDefault()`): a class the
   application names in `authorization.resource_tenant_resolver` is no default, so no key is read. A note, since models
@@ -597,9 +597,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the new identity in the
   connection's tenant, never the plan's `(role, ?tenantId)`: a connection's groups are only as trustworthy as the
   connection, so they never grant beyond its tenant. `Provisioning\GroupSettings`, `Provisioning\GroupGrants`,
-  `Provisioning\MappedGroupResync` and `Exceptions\GroupMappingMisconfiguredException`, which the manifest does not
-  list, find the mapping, make the grants, ship the re-sync an application may name, and refuse a mapping
-  misconfigured (`provisioning-and-tenancy.md`).
+  and `Provisioning\MappedGroupResync`, which the manifest does not list, find the mapping, make the grants and ship
+  the re-sync an application may bind (`provisioning-and-tenancy.md`).
 - `tests/Integration/Authorization/GrantWideningTransactionTest.php` is not created: provisioning with groups in one
   transaction is `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php`, and a refusal rolling the grant and the
   widening back, inside `laravel-authorization`'s transaction and inside the application's, is

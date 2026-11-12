@@ -18,8 +18,8 @@ use SineMacula\Laravel\Authentication\Events\EventContext as AuthenticationEvent
 use SineMacula\Laravel\Authentication\Events\ExternalResultUnlinked;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Iam\Contracts\Provisioner;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Provisioning\RefusedLink;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
@@ -93,7 +93,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ProvisionOnUnlinkedResult::class)]
-#[CoversClass(ProvisioningSettings::class)]
 #[CoversClass(RefusedLink::class)]
 #[CoversClass(ScopeWidenings::class)]
 final class ProvisionOnUnlinkedResultTest extends TestCase
@@ -641,8 +640,8 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * With no provisioner bound or named, nothing is provisioned: the sign-in
-     * ends as SSO's `unlinked`.
+     * With no provisioner bound, nothing is provisioned: the sign-in ends as
+     * SSO's `unlinked`.
      *
      * @return void
      *
@@ -685,7 +684,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     {
         $this->app?->instance(ProvisionsPeople::class, new ProvisionsPeople($observe));
 
-        $this->app?->make('config')->set(ProvisioningSettings::KEY, ProvisionsPeople::class);
+        $this->app?->bind(Provisioner::class, ProvisionsPeople::class);
     }
 
     /**

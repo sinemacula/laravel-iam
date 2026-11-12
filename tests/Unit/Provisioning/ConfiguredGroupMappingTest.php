@@ -9,10 +9,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Contracts\GroupMapping;
-use SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException;
 use SineMacula\Laravel\Iam\Provisioning\ConfiguredGroupMapping;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
-use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
 
 /**
  * Unit tests for the group mapping read from configuration (IAM-7.2).
@@ -76,8 +74,8 @@ final class ConfiguredGroupMappingTest extends TestCase
     #[DataProvider('provideMisconfiguredMaps')]
     public function testAMisconfiguredMapThrows(mixed $map): void
     {
-        $this->expectException(GroupMappingMisconfiguredException::class);
-        $this->expectExceptionMessage(GroupSettings::MAP);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('iam.provisioning.groups.map must map each non-empty group name to a role\'s name or a list of them.');
 
         (new ConfiguredGroupMapping(new Repository(['iam' => ['provisioning' => ['groups' => ['map' => $map]]]])))->grantsFor('connection-1', 'tenant-1', ['finance']);
     }

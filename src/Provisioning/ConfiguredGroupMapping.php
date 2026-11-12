@@ -6,33 +6,11 @@ namespace SineMacula\Laravel\Iam\Provisioning;
 
 use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Contracts\GroupMapping;
-use SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException;
 
 /**
- * The group mapping read from configuration (IAM-7.2):
- * `iam.provisioning.groups.map` maps each group name, as a provider reports it,
- * to the name of a role or a list of them, and every connection's groups are
- * mapped by it alike, each role granted in the connection's tenant alone
- * (`GrantInstruction::role()`).
- *
- * ```php
- * 'groups' => [
- *     'map' => [
- *         'finance'     => 'invoices.viewer',
- *         'finance-ops' => ['invoices.viewer', 'invoices.approver'],
- *     ],
- * ],
- * ```
- *
- * Groups are compared byte for byte, and a group the map does not name maps to
- * nothing. Each role is answered once, in the order the groups first name it. A
- * map that is no array, a list rather than a map, or one that holds an empty
- * group name, or a role that is no non-empty string, throws
- * `GroupMappingMisconfiguredException` when it is read, inside the transaction
- * asking it, rather than map those groups to nothing. The map is read on every
- * call, and nothing is kept between calls (IAM-8.1). A mapping that tells one
- * connection's groups from another's, or grants a role across the tenant's
- * subtree, is the application's own `Contracts\GroupMapping`.
+ * The group mapping read from `iam.provisioning.groups.map` (IAM-7.2): each
+ * group name to a role's name or a list of them, granted in the connection's
+ * tenant alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,6 +19,9 @@ use SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException;
  */
 final readonly class ConfiguredGroupMapping implements GroupMapping
 {
+    /** @var string Why a malformed map is refused. */
+    private const string MALFORMED = GroupSettings::MAP . ' must map each non-empty group name to a role\'s name or a list of them.';
+
     /**
      * Constructor.
      *
@@ -60,7 +41,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
      * @param  list<string>  $groups
      * @return list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \LogicException
      */
     #[\Override]
     public function grantsFor(string $connectionId, string $tenantId, array $groups): array
@@ -81,14 +62,14 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
      *
      * @return array<array-key, list<string>>
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \LogicException
      */
     private function map(): array
     {
         $map = $this->config->get(GroupSettings::MAP);
 
         if (!is_array($map) || ($map !== [] && array_is_list($map))) {
-            throw GroupMappingMisconfiguredException::forMap(GroupSettings::MAP);
+            throw new \LogicException(self::MALFORMED);
         }
 
         $roles = [];
@@ -108,7 +89,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
      * @param  mixed  $named
      * @return list<string>
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \LogicException
      */
     private static function rolesOf(int|string $group, mixed $named): array
     {
@@ -116,7 +97,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
 
         return $group !== '' && is_array($listed) && array_is_list($listed) && self::areRoles($listed)
             ? $listed
-            : throw GroupMappingMisconfiguredException::forMap(GroupSettings::MAP);
+            : throw new \LogicException(self::MALFORMED);
     }
 
     /**

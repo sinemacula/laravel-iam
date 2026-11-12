@@ -5,27 +5,15 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Provisioning;
 
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Iam\Contracts\GroupMapping;
 use SineMacula\Laravel\Iam\Contracts\GroupResync;
-use SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException;
 
 /**
- * The re-sync this package ships for the application to opt into (IAM-7.2): at
- * each later sign-in, the identity's own roles in the connection's tenant
- * become exactly those the group mapping now answers for the groups the
- * provider reports, so a group added at the provider grants its roles, and a
- * group removed there revokes them.
- *
- * Name it in `iam.provisioning.groups.resync`. It grants and revokes only the
- * roles of the identity itself in the connection's tenant
- * (`GroupGrants::sync()`): a role an administrator granted the identity there
- * is revoked too, unless the mapping answers it, while a role of the identity's
- * principals, of another tenant or platform-wide is never touched; grant an
- * administrator's roles to the principal, or implement `Contracts\GroupResync`
- * to keep them. It never grants a role the mapping does not answer. A
- * connection that reports no groups at all revokes every role the groups gave.
- * With no mapping configured it throws `GroupMappingMisconfiguredException`,
- * refusing the sign-in, rather than revoke every role for want of one. It keeps
- * nothing between calls (IAM-8.1).
+ * The re-sync this package ships for the application to bind (IAM-7.2): the
+ * identity's own roles in the connection's tenant become exactly those the
+ * group mapping answers for the groups the provider now reports. A role an
+ * administrator granted the identity there is revoked unless the mapping
+ * answers it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,12 +47,14 @@ final readonly class MappedGroupResync implements GroupResync
      * @param  list<string>  $groups
      * @return void
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
+     * @throws \LogicException
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     #[\Override]
     public function resync(Identity $identity, string $connectionId, string $tenantId, array $groups): void
     {
-        $mapping = $this->settings->mapping() ?? throw GroupMappingMisconfiguredException::forNoMapping(GroupSettings::MAPPING);
+        $message = '%s is unbound and %s maps no group; a re-sync without a mapping would revoke every role.';
+        $mapping = $this->settings->mapping() ?? throw new \LogicException(sprintf($message, GroupMapping::class, GroupSettings::MAP));
 
         $this->grants->sync($identity, $tenantId, $mapping->grantsFor($connectionId, $tenantId, $groups));
     }

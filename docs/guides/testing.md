@@ -258,10 +258,10 @@ tests that read one.
 |-------------------|------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
 | `FakeMemberships` | `SineMacula\Laravel\Iam\Contracts\Memberships` | `grant($identity, $membership)`, `revoke($identity, $tenantId)`, `incomplete($identity)`, `failFor($identity)` |
 
-It keeps what it was asked (`asked()`). Name `FakeMemberships` in `iam.tenancy.memberships` before the application
-boots, as well as calling `fake()`: bound only from the test, it is the one asked, but no SSO adapter is bound over
-SSO's defaults for it. The tenant tree is `laravel-authorization`'s: bind your own tree, or a small one a test seeds,
-and prove yours with `laravel-authorization`'s `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract`.
+It keeps what it was asked (`asked()`). Call `fake()` before the application boots (in `defineEnvironment()`, say):
+bound only once it has booted, it is the one asked, but no SSO adapter is bound over SSO's defaults for it. The tenant
+tree is `laravel-authorization`'s: bind your own tree, or a small one a test seeds, and prove yours with
+`laravel-authorization`'s `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract`.
 
 ```php
 use Carbon\CarbonImmutable;

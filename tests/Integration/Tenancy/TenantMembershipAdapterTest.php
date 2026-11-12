@@ -8,8 +8,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
-use SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\IdentityMemberships;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
@@ -201,19 +201,19 @@ final class TenantMembershipAdapterTest extends TestCase
     }
 
     /**
-     * Asked with no memberships configured, the adapter throws rather than
-     * answer no membership.
+     * Asked with no memberships bound, the adapter throws rather than answer no
+     * membership.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testNoMembershipsConfiguredThrows(): void
+    public function testNoMembershipsBoundThrows(): void
     {
         $person = $this->createPerson();
 
-        $this->expectException(TenancyMisconfiguredException::class);
-        $this->expectExceptionMessage('iam.tenancy.memberships');
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(Memberships::class . ' is unbound');
 
         $this->adapter()->standing(self::referenceOf($person), self::TENANT);
     }

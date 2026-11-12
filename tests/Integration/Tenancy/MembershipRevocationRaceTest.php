@@ -8,14 +8,13 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\IdentityMemberships;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
@@ -59,7 +58,6 @@ use Tests\TestCase;
  */
 #[CoversClass(TenantMembershipAdapter::class)]
 #[CoversClass(IdentityMemberships::class)]
-#[WithConfig(TenancyContracts::MEMBERSHIPS, GuardedMemberships::class, defer: false)]
 final class MembershipRevocationRaceTest extends TestCase
 {
     use LinksByVerifiedDomain, MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -156,6 +154,20 @@ final class MembershipRevocationRaceTest extends TestCase
 
         self::assertSame(LinkOrigin::VERIFIED_DOMAIN->value, $link->provenance);
         self::assertSame([self::keyOf($session)], $this->revokeAndFindSessions($person));
+    }
+
+    /**
+     * Bind the application's memberships before the seams are bound.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        $app->bind(Memberships::class, GuardedMemberships::class);
     }
 
     /**

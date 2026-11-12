@@ -6,7 +6,6 @@ namespace SineMacula\Laravel\Iam\Authorization;
 
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Laravel\AuditLog\Access\AccessScope;
@@ -28,9 +27,9 @@ use SineMacula\Laravel\Authorization\Support\AuthorizationScope;
 use SineMacula\Laravel\Authorization\Support\Reference as TenantReference;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\IdentityMemberships;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
 
 /**
@@ -154,7 +153,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     {
         $ids = $subject->tenant instanceof Tenant ? [IdentifierCoercion::stringify($subject->tenant->getTenantIdentifier())] : [];
 
-        if ($subject->identity instanceof Identity && TenancyContracts::hasMemberships($container, $container->make(Repository::class))) {
+        if ($subject->identity instanceof Identity && $container->bound(Memberships::class)) {
             foreach ($container->make(IdentityMemberships::class)->of($subject->identity)->memberships as $membership) {
                 $ids[] = $membership->tenantId;
             }

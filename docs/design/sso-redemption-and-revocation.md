@@ -406,7 +406,7 @@ run through are in `storage-and-transactions.md`.
   freshness at its start. A plain read inside
   SSO's own transaction may answer as of its snapshot, which a `link` redemption takes as it starts, a moment before.
   Link eligibility is answered from the application's memberships (`Tenancy\LinkEligibilityAdapter`,
-  `provisioning-and-tenancy.md`) once they are named or bound; without them SSO's default refuses every link
+  `provisioning-and-tenancy.md`) once they are bound; without them SSO's default refuses every link
   (`link_ineligible`). The redemption tests stand in a fixture that lets everyone link where eligibility is not their
   subject, and SSO's `Testing\FakeFreshness` where freshness is not.
 - Evidence from a connection a tenant does not trust never meets that tenant's requirement, however MFA's policy judges

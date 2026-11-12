@@ -68,7 +68,7 @@ final readonly class IdentityMemberships
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return \SineMacula\Laravel\Iam\Tenancy\MembershipSet
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
+     * @throws \LogicException
      * @throws \Throwable
      */
     public function of(Identity $identity): MembershipSet

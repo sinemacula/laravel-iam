@@ -13,12 +13,12 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\EnforcementInheritanceAdapter;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\PrincipalScopeAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
@@ -62,7 +62,6 @@ use Tests\Performance\PerformanceContractTestCase;
 #[CoversClass(EnforcementInheritanceAdapter::class)]
 #[CoversClass(SessionRevocationAdapter::class)]
 #[CoversClass(TreeChanges::class)]
-#[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
 #[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 {
@@ -204,6 +203,20 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         $revoked = $this->assertQueryBudget(54, 3, $move, begins: 9, commits: 9);
 
         self::assertSame(3, $revoked);
+    }
+
+    /**
+     * Bind the application's memberships before the seams are bound.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        $app->bind(Memberships::class, FakeMemberships::class);
     }
 
     /**

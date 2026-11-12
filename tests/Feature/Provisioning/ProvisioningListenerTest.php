@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Iam\IamServiceProvider;
-use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Testing\FakeProvisioner;
 use SineMacula\Laravel\Sso\Events\EventContext;
@@ -28,7 +27,7 @@ use Tests\TestCase;
 /**
  * Feature tests for the registration of the listener that provisions SSO's
  * unlinked results (IAM-7.1): it is registered on SSO's event whatever any
- * switch says, does nothing at all while no provisioner is configured, asks the
+ * switch says, does nothing at all while no provisioner is bound, asks the
  * provisioner bound when the event is dispatched, never one kept since, and
  * resolves the listener and its collaborators from the application current at
  * the dispatch, so under Octane the request's sandbox's provisioner is the one
@@ -41,7 +40,6 @@ use Tests\TestCase;
  */
 #[CoversClass(IamServiceProvider::class)]
 #[CoversClass(ProvisionOnUnlinkedResult::class)]
-#[CoversClass(ProvisioningSettings::class)]
 final class ProvisioningListenerTest extends TestCase
 {
     use RunsInOctaneSandboxes;
@@ -57,8 +55,8 @@ final class ProvisioningListenerTest extends TestCase
     }
 
     /**
-     * With no provisioner bound or named, a dispatch does nothing: no
-     * transaction is opened and nothing is read or written.
+     * With no provisioner bound, a dispatch does nothing: no transaction is
+     * opened and nothing is read or written.
      *
      * @return void
      */

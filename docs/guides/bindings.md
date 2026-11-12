@@ -153,11 +153,10 @@ off ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 ## Tenancy
 
 Bound while `iam.adapters.sso` is on. With it off, bind `laravel-authentication`'s tenant authentication policy
-yourself. The membership rows are bound while memberships are named in `iam.tenancy.memberships` or bound, and are
-applied a second time from the booting phase, so memberships you bind in your own provider's `register()` still get
-them. The inheritance row reads `laravel-authorization`'s tenant tree. All are transient. SSO's own defaults for the
-membership rows refuse, so leaving them unbound is never open. See [Provisioning and
-tenancy](provisioning-and-tenancy.md).
+yourself. The membership rows are bound while `Iam\Contracts\Memberships` is bound, and are applied a second time from
+the booting phase, so memberships you bind in your own provider's `register()` still get them. The inheritance row reads
+`laravel-authorization`'s tenant tree. All are transient. SSO's own defaults for the membership rows refuse, so leaving
+them unbound is never open. See [Provisioning and tenancy](provisioning-and-tenancy.md).
 
 | Contract                                              | Bound to                                        | Replaces                                         | Mandatory                                                          | Replacing it                                                                                                                                                                         |
 |-------------------------------------------------------|-------------------------------------------------|--------------------------------------------------|--------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
