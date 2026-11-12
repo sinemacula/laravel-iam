@@ -25,15 +25,9 @@ enum SsoActivity: string implements ListsProperties
     case RESULT_VERIFIED = 'sso.result_verified';
 
     // A verified sign-in resolved to no identity
-    case RESULT_UNLINKED = 'sso.result_unlinked';
-
-    // A handoff code was issued
-    case HANDOFF_ISSUED = 'sso.handoff_issued';
-
-    // A handoff code was redeemed
-    case HANDOFF_REDEEMED = 'sso.handoff_redeemed';
-
-    // A reauthentication through the provider was completed
+    case RESULT_UNLINKED            = 'sso.result_unlinked';
+    case HANDOFF_ISSUED             = 'sso.handoff_issued';
+    case HANDOFF_REDEEMED           = 'sso.handoff_redeemed';
     case REAUTHENTICATION_COMPLETED = 'sso.reauthentication_completed';
 
     // A flow's start, response, callback or redemption was refused
@@ -41,84 +35,42 @@ enum SsoActivity: string implements ListsProperties
 
     // An unsolicited response was answered by starting a flow afresh
     case UNSOLICITED_RESPONSE_REINITIATED = 'sso.unsolicited_response_reinitiated';
-
-    // A link was created
-    case LINK_CREATED = 'sso.link_created';
-
-    // A link was removed
-    case LINK_REMOVED = 'sso.link_removed';
-
-    // A link was activated
-    case LINK_ACTIVATED = 'sso.link_activated';
-
-    // A link was confirmed
-    case LINK_CONFIRMED = 'sso.link_confirmed';
-
-    // A link was suspended
-    case LINK_SUSPENDED = 'sso.link_suspended';
-
-    // A connection was created
-    case CONNECTION_CREATED = 'sso.connection_created';
-
-    // A connection's settings were changed
-    case CONNECTION_UPDATED = 'sso.connection_updated';
-
-    // A connection was enabled
-    case CONNECTION_ENABLED = 'sso.connection_enabled';
-
-    // A connection was disabled
-    case CONNECTION_DISABLED = 'sso.connection_disabled';
-
-    // A connection was deleted
-    case CONNECTION_DELETED = 'sso.connection_deleted';
-
-    // A domain was claimed
-    case DOMAIN_CLAIMED = 'sso.domain_claimed';
-
-    // A domain was verified
-    case DOMAIN_VERIFIED = 'sso.domain_verified';
-
-    // A verified domain's recheck failed
-    case DOMAIN_RECHECK_FAILED = 'sso.domain_recheck_failed';
+    case LINK_CREATED                     = 'sso.link_created';
+    case LINK_REMOVED                     = 'sso.link_removed';
+    case LINK_ACTIVATED                   = 'sso.link_activated';
+    case LINK_CONFIRMED                   = 'sso.link_confirmed';
+    case LINK_SUSPENDED                   = 'sso.link_suspended';
+    case CONNECTION_CREATED               = 'sso.connection_created';
+    case CONNECTION_UPDATED               = 'sso.connection_updated';
+    case CONNECTION_ENABLED               = 'sso.connection_enabled';
+    case CONNECTION_DISABLED              = 'sso.connection_disabled';
+    case CONNECTION_DELETED               = 'sso.connection_deleted';
+    case DOMAIN_CLAIMED                   = 'sso.domain_claimed';
+    case DOMAIN_VERIFIED                  = 'sso.domain_verified';
+    case DOMAIN_RECHECK_FAILED            = 'sso.domain_recheck_failed';
 
     // A domain whose recheck failed passed it again
-    case DOMAIN_RESTORED = 'sso.domain_restored';
-
-    // A domain lapsed
-    case DOMAIN_LAPSED = 'sso.domain_lapsed';
-
-    // A domain was removed
-    case DOMAIN_REMOVED = 'sso.domain_removed';
-
-    // A tenant's enforcement rule changed
+    case DOMAIN_RESTORED     = 'sso.domain_restored';
+    case DOMAIN_LAPSED       = 'sso.domain_lapsed';
+    case DOMAIN_REMOVED      = 'sso.domain_removed';
     case ENFORCEMENT_CHANGED = 'sso.enforcement_changed';
 
     // A session was established under an enforcement exemption
     case EXEMPTION_USED = 'sso.exemption_used';
 
     // A key or certificate was added
-    case KEY_ADDED = 'sso.key_added';
-
-    // A key was made current
+    case KEY_ADDED        = 'sso.key_added';
     case KEY_MADE_CURRENT = 'sso.key_made_current';
 
     // A key or certificate was retired
     case KEY_RETIRED = 'sso.key_retired';
 
     // A key or certificate is nearing the end of its validity
-    case KEY_NEARING_EXPIRY = 'sso.key_nearing_expiry';
-
-    // A connection's metadata was refreshed
-    case METADATA_REFRESHED = 'sso.metadata_refreshed';
-
-    // A refresh of a connection's metadata failed
+    case KEY_NEARING_EXPIRY      = 'sso.key_nearing_expiry';
+    case METADATA_REFRESHED      = 'sso.metadata_refreshed';
     case METADATA_REFRESH_FAILED = 'sso.metadata_refresh_failed';
-
-    // A connection's JWKS was refreshed
-    case JWKS_REFRESHED = 'sso.jwks_refreshed';
-
-    // A refresh of a connection's JWKS failed
-    case JWKS_REFRESH_FAILED = 'sso.jwks_refresh_failed';
+    case JWKS_REFRESHED          = 'sso.jwks_refreshed';
+    case JWKS_REFRESH_FAILED     = 'sso.jwks_refresh_failed';
 
     /** @var string The category of the flows, links, exemptions, expiry warnings and refreshes. */
     private const string SECURITY = 'security';

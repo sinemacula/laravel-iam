@@ -22,12 +22,8 @@ enum AuthenticationActivity: string implements ListsProperties
     case SIGN_IN_FAILED_CONCEALED = 'authentication.sign_in_failed_concealed';
 
     // A request's access token was refused
-    case REQUEST_REJECTED = 'authentication.request_rejected';
-
-    // A request's API key was refused
-    case API_KEY_REJECTED = 'authentication.api_key_rejected';
-
-    // A client credentials exchange was refused
+    case REQUEST_REJECTED          = 'authentication.request_rejected';
+    case API_KEY_REJECTED          = 'authentication.api_key_rejected';
     case CLIENT_CREDENTIALS_FAILED = 'authentication.client_credentials_failed';
 
     // A request for a one-time code was refused
@@ -46,19 +42,13 @@ enum AuthenticationActivity: string implements ListsProperties
     case FACTOR_CODE_FAILED = 'authentication.factor_code_failed';
 
     // A change or an establishment of the password was refused
-    case PASSWORD_CHANGE_FAILED = 'authentication.password_change_failed';
-
-    // An external provider's result was redeemed
+    case PASSWORD_CHANGE_FAILED   = 'authentication.password_change_failed';
     case EXTERNAL_RESULT_REDEEMED = 'authentication.external_result_redeemed';
 
     // An external provider's result linked to no identity
-    case EXTERNAL_RESULT_UNLINKED = 'authentication.external_result_unlinked';
-
-    // A change of identifier was requested
+    case EXTERNAL_RESULT_UNLINKED    = 'authentication.external_result_unlinked';
     case IDENTIFIER_CHANGE_REQUESTED = 'authentication.identifier_change_requested';
-
-    // An identifier was changed
-    case IDENTIFIER_CHANGED = 'authentication.identifier_changed';
+    case IDENTIFIER_CHANGED          = 'authentication.identifier_changed';
 
     // An identifier other than an email address was verified
     case IDENTIFIER_VERIFIED = 'authentication.identifier_verified';
@@ -70,27 +60,13 @@ enum AuthenticationActivity: string implements ListsProperties
     case PASSWORD_CHANGED = 'authentication.password_changed';
 
     // A signed-in identity with no password established one
-    case PASSWORD_ESTABLISHED = 'authentication.password_established';
-
-    // A passkey was added
-    case PASSKEY_ADDED = 'authentication.passkey_added';
-
-    // A passkey was removed
-    case PASSKEY_REMOVED = 'authentication.passkey_removed';
-
-    // A passkey was used
-    case PASSKEY_USED = 'authentication.passkey_used';
-
-    // An API key was issued
-    case API_KEY_ISSUED = 'authentication.api_key_issued';
-
-    // An API key was revoked
-    case API_KEY_REVOKED = 'authentication.api_key_revoked';
-
-    // An API key was rotated
-    case API_KEY_ROTATED = 'authentication.api_key_rotated';
-
-    // A client credentials exchange granted an access token
+    case PASSWORD_ESTABLISHED       = 'authentication.password_established';
+    case PASSKEY_ADDED              = 'authentication.passkey_added';
+    case PASSKEY_REMOVED            = 'authentication.passkey_removed';
+    case PASSKEY_USED               = 'authentication.passkey_used';
+    case API_KEY_ISSUED             = 'authentication.api_key_issued';
+    case API_KEY_REVOKED            = 'authentication.api_key_revoked';
+    case API_KEY_ROTATED            = 'authentication.api_key_rotated';
     case CLIENT_CREDENTIALS_GRANTED = 'authentication.client_credentials_granted';
 
     /** @var string The category every authentication code is stored under. */

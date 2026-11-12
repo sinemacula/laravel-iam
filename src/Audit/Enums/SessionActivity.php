@@ -25,9 +25,7 @@ enum SessionActivity: string implements ListsProperties
     case PENDING = 'session.pending';
 
     // A session that returned to pending was activated again
-    case ACTIVATED = 'session.activated';
-
-    // An active session returned to pending
+    case ACTIVATED           = 'session.activated';
     case RETURNED_TO_PENDING = 'session.returned_to_pending';
 
     // A session was revoked, for any reason but its user's own sign-out
@@ -40,27 +38,15 @@ enum SessionActivity: string implements ListsProperties
     case REFRESHED = 'session.refreshed';
 
     // A session switched the principal it acts as, its active tenant, or both
-    case SWITCHED = 'session.switched';
-
-    // A session was stepped up with a further factor
-    case STEPPED_UP = 'session.stepped_up';
-
-    // A session was reauthenticated
+    case SWITCHED        = 'session.switched';
+    case STEPPED_UP      = 'session.stepped_up';
     case REAUTHENTICATED = 'session.reauthenticated';
-
-    // A refresh-token exchange was refused
-    case REFRESH_FAILED = 'session.refresh_failed';
-
-    // A switch of principal or tenant was refused
-    case SWITCH_FAILED = 'session.switch_failed';
+    case REFRESH_FAILED  = 'session.refresh_failed';
+    case SWITCH_FAILED   = 'session.switch_failed';
 
     // A sign-out by refresh credential was refused
-    case SIGN_OUT_FAILED = 'session.sign_out_failed';
-
-    // A step-up was refused
-    case STEP_UP_FAILED = 'session.step_up_failed';
-
-    // A reauthentication was refused
+    case SIGN_OUT_FAILED         = 'session.sign_out_failed';
+    case STEP_UP_FAILED          = 'session.step_up_failed';
     case REAUTHENTICATION_FAILED = 'session.reauthentication_failed';
 
     // A session failed its recheck after a factor was removed or changed

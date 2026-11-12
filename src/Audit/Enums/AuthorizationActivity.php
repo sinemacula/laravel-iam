@@ -18,7 +18,6 @@ use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
  */
 enum AuthorizationActivity: string implements ListsProperties
 {
-    // A check was denied
     case ACCESS_DENIED = 'authorization.access_denied';
 
     // A check was allowed by a break-glass grant
@@ -26,51 +25,29 @@ enum AuthorizationActivity: string implements ListsProperties
 
     // A check was previewed for another principal
     case ACCESS_PREVIEWED = 'authorization.access_previewed';
-
-    // A role was created
-    case ROLE_CREATED = 'authorization.role_created';
-
-    // A role was updated
-    case ROLE_UPDATED = 'authorization.role_updated';
-
-    // A role was deleted
-    case ROLE_DELETED = 'authorization.role_deleted';
+    case ROLE_CREATED     = 'authorization.role_created';
+    case ROLE_UPDATED     = 'authorization.role_updated';
+    case ROLE_DELETED     = 'authorization.role_deleted';
 
     // Two roles were declared mutually exclusive
     case ROLE_EXCLUSION_DECLARED = 'authorization.role_exclusion_declared';
 
     // A pair of mutually exclusive roles was removed
     case ROLE_EXCLUSION_REMOVED = 'authorization.role_exclusion_removed';
-
-    // A permission was created
-    case PERMISSION_CREATED = 'authorization.permission_created';
-
-    // A permission was updated
-    case PERMISSION_UPDATED = 'authorization.permission_updated';
-
-    // A permission was deleted
-    case PERMISSION_DELETED = 'authorization.permission_deleted';
-
-    // A policy was created
-    case POLICY_CREATED = 'authorization.policy_created';
-
-    // A policy was updated
-    case POLICY_UPDATED = 'authorization.policy_updated';
-
-    // A policy was deleted
-    case POLICY_DELETED = 'authorization.policy_deleted';
+    case PERMISSION_CREATED     = 'authorization.permission_created';
+    case PERMISSION_UPDATED     = 'authorization.permission_updated';
+    case PERMISSION_DELETED     = 'authorization.permission_deleted';
+    case POLICY_CREATED         = 'authorization.policy_created';
+    case POLICY_UPDATED         = 'authorization.policy_updated';
+    case POLICY_DELETED         = 'authorization.policy_deleted';
 
     // A permission was granted to a role
     case PERMISSION_GRANTED = 'authorization.permission_granted';
 
     // A permission was revoked from a role
     case PERMISSION_REVOKED = 'authorization.permission_revoked';
-
-    // A role was assigned to a grantee
-    case ROLE_ASSIGNED = 'authorization.role_assigned';
-
-    // A role was unassigned from a grantee
-    case ROLE_UNASSIGNED = 'authorization.role_unassigned';
+    case ROLE_ASSIGNED      = 'authorization.role_assigned';
+    case ROLE_UNASSIGNED    = 'authorization.role_unassigned';
 
     // A permission was assigned to a grantee
     case PERMISSION_ASSIGNED = 'authorization.permission_assigned';
@@ -82,30 +59,14 @@ enum AuthorizationActivity: string implements ListsProperties
     case POLICY_ATTACHED = 'authorization.policy_attached';
 
     // A policy was detached from a grantee
-    case POLICY_DETACHED = 'authorization.policy_detached';
-
-    // A grantee's permission boundary was set
-    case BOUNDARY_SET = 'authorization.boundary_set';
-
-    // A grantee's permission boundary was removed
-    case BOUNDARY_REMOVED = 'authorization.boundary_removed';
-
-    // A guardrail was set
-    case GUARDRAIL_SET = 'authorization.guardrail_set';
-
-    // A guardrail was removed
-    case GUARDRAIL_REMOVED = 'authorization.guardrail_removed';
-
-    // A grant expired
-    case GRANT_EXPIRED = 'authorization.grant_expired';
-
-    // A grant's expiry changed
-    case GRANT_EXPIRY_CHANGED = 'authorization.grant_expiry_changed';
-
-    // A policy was attached to a resource
+    case POLICY_DETACHED          = 'authorization.policy_detached';
+    case BOUNDARY_SET             = 'authorization.boundary_set';
+    case BOUNDARY_REMOVED         = 'authorization.boundary_removed';
+    case GUARDRAIL_SET            = 'authorization.guardrail_set';
+    case GUARDRAIL_REMOVED        = 'authorization.guardrail_removed';
+    case GRANT_EXPIRED            = 'authorization.grant_expired';
+    case GRANT_EXPIRY_CHANGED     = 'authorization.grant_expiry_changed';
     case RESOURCE_POLICY_ATTACHED = 'authorization.resource_policy_attached';
-
-    // A policy was detached from a resource
     case RESOURCE_POLICY_DETACHED = 'authorization.resource_policy_detached';
 
     // A protected record was changed by a system override
