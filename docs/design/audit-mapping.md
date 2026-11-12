@@ -131,8 +131,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `session_principal_id`); a passkey removed names none. The subject is
   the identity, SSO's connection for a connection's, a key's or a refresh's event, its domain for a domain's (by SSO's
   own model's type), and nothing for an enforcement change.
-- The guard, session and client are filled from the event before any contributor runs, through audit-log's fillers,
-  since a mapper has no explicit setter for them; MFA's and SSO's application stands for the guard, which is the same
+- The guard, session and client are the event's when it names them (`viaGuard()`, `inSession()`, `fromClient()`), and
+  a part it names none of is left to the contributors; the IP and user agent are set together, so the event's IP never
+  sits beside another request's user agent. MFA's and SSO's application stands for the guard, which is the same
   name in this package. The credential is `laravel-authentication`'s `credential_id` (`usingCredential()`) when it is
   the credential the activity used (a passkey used, an API key, bearer or client credentials refusal, a client
   credentials grant); a passkey added or removed and an API key issued, revoked or rotated name the credential they
@@ -421,8 +422,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   - MFA's event context has `tenant_id` and no tenant type, and SSO's `tenant_id` and `connection_tenant_id` none
     either; a morph class beside each would let a tenant be named through the morph map rather than as the one type
     `tenant`.
-  - Audit-log offers a mapper no explicit setter of the guard, the session or the client, only the fillers its own
-    capture uses and its documentation reserves to the recorder and `Contribution`; the mappers fill through them.
   - Audit-log's `Contribution` has no credential filler, so the credential IAM-9.7 lists comes from the mappers alone
     (`usingCredential()`); a `fillCredential()` with `usingCredential()`'s rule would let audit-log fill it.
   - Audit-log's check of a user left over on a guard in a job reads only a guard using Laravel's `GuardHelpers`, so

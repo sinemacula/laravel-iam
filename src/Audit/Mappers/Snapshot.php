@@ -13,35 +13,15 @@ use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Sso\Events\EventContext as SsoContext;
 
 /**
- * Who and what a member's event is about, read from the event's own context
- * alone and translated to one shape for every member (IAM-9.5): the identity,
- * the principal and the tenant as references (`Audit\References`), the guard,
- * the session and the client.
+ * Who and what a member's event is about, read from its context alone and
+ * written onto a record in one shape for every member (IAM-9.5).
  *
- * `laravel-authentication` names the guard; MFA and SSO name the application,
- * which in this package is the guard of the same name, so it stands for the
- * guard. SSO names the active tenant (`tenant_id`) and the connection's own
- * (`connection_tenant_id`): the record's tenant is the active one, else the
- * connection's, the tenant the activity happened in either way.
- *
- * `attribute()` writes it onto a record: the subject given, the actor as the
- * event's attribution says, and the principal and tenant beside it. An actor
- * taken from the event (the identity, explicitly no one, or an operator the
- * event names) is the record's whatever the contributors would fill, and so is
- * the principal and tenant of the identity's own action, explicitly none when
- * the event names none, so an unrelated caller's never lands on it. An actor
- * left to the contributors (`Attribution::CALLER`) leaves the principal to them
- * too, since it is the actor's, and a mapper keeps the event's own principal as
- * properties where it is what the activity was done to; the tenant is the
- * event's when it names one, the boundary the activity happened in. An
- * operator's principal is likewise left to the contributors. The guard, the
- * session and the client are filled before any contributor runs, so the event's
- * win over the request being served, which under a queue or a later commit may
- * be another's, and a part the event lacks is left for them.
- *
- * Audit-log offers a mapper no explicit setter of the guard, the session or the
- * client, only the fillers its own capture uses for the same, so they are
- * filled through those.
+ * MFA's and SSO's application stands for the guard of the same name, and SSO's
+ * tenant is the active one, else the connection's. An actor taken from the
+ * event brings its principal and tenant, explicitly none when the event names
+ * none; an actor left to the caller, or an operator, leaves the principal to
+ * the contributors. The event's guard, session and client beat the
+ * contributors'; a part the event names none of is left to them.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -151,10 +131,7 @@ final readonly class Snapshot
     }
 
     /**
-     * Start the record of an event: its code, and of the properties it
-     * describes itself with exactly those the code's definition keeps, so none
-     * is carried only to be dropped. A code audit-log ships keeps none of them:
-     * its few columns say it all.
+     * Start the record with the event's code and the properties it keeps.
      *
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @param  \BackedEnum  $code
@@ -172,9 +149,7 @@ final readonly class Snapshot
     }
 
     /**
-     * Write the snapshot onto the record: the subject, the actor as the
-     * attribution says or the operator given, the principal, the tenant, the
-     * guard, the session and the client.
+     * Write the subject, actor, principal, tenant, guard, session and client.
      *
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution  $attribution
@@ -201,9 +176,18 @@ final readonly class Snapshot
             $record->forTenant($this->tenant);
         }
 
-        $record->fillGuard($this->guard);
-        $record->fillSession($this->sessionId);
-        $record->fillClient($this->ip, $this->userAgent);
+        if ($this->guard !== null) {
+            $record->viaGuard($this->guard);
+        }
+
+        if ($this->sessionId !== null) {
+            $record->inSession($this->sessionId);
+        }
+
+        // Both at once, never mixing the event's client with the request's.
+        if ($this->ip !== null || $this->userAgent !== null) {
+            $record->fromClient($this->ip, $this->userAgent);
+        }
 
         return $record;
     }
