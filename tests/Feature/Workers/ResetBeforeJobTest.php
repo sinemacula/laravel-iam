@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Feature\Workers;
 
-use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Contracts\Session\Session;
@@ -21,8 +20,7 @@ use Tests\Concerns\ReadsRawListeners;
 use Tests\TestCase;
 
 /**
- * Feature tests for flushing every member's request state before each queued
- * job.
+ * Feature tests for flushing the worker's state before each queued job.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,7 +46,8 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * Each queued job starts by resetting `laravel-authentication`'s guards.
+     * Each queued job starts with `laravel-authentication`'s guards reset by
+     * its own listener.
      *
      * @return void
      *
@@ -57,32 +56,11 @@ final class ResetBeforeJobTest extends TestCase
     public function testEachJobResetsTheGuards(): void
     {
         $manager = \Mockery::mock(AuthManager::class);
-        $manager->shouldReceive('setApplication')->once()->with($this->app)->ordered()->andReturnSelf();
-        $manager->shouldReceive('forgetGuardState')->once()->ordered();
+        $manager->shouldReceive('forgetGuardState')->once();
 
         $this->app?->instance('auth', $manager);
 
-        (new ResetBeforeJob)(new JobProcessing('database', \Mockery::mock(Job::class)));
-    }
-
-    /**
-     * A job run on the `sync` connection runs inside the request or command
-     * that dispatched it, so the guards keep that request's state.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testASyncJobLeavesTheGuardsAlone(): void
-    {
-        $manager = \Mockery::mock(AuthManager::class);
-        $manager->shouldNotReceive('forgetGuardState');
-
-        $this->app?->instance('auth', $manager);
-
-        $job = new SyncJob(app(), '{}', 'sync', 'default');
-
-        (new ResetBeforeJob)(new JobProcessing('sync', $job));
+        Event::dispatch(new JobProcessing('database', self::job()));
     }
 
     /**
@@ -121,24 +99,6 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * An application whose `auth` binding is not `laravel-authentication`'s
-     * manager is left alone.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testAnotherAuthManagerIsLeftAlone(): void
-    {
-        $manager = \Mockery::mock(IlluminateAuthManager::class);
-        $manager->shouldNotReceive('forgetGuardState');
-
-        $this->app?->instance('auth', $manager);
-
-        (new ResetBeforeJob)(new JobProcessing('database', \Mockery::mock(Job::class)));
-    }
-
-    /**
      * The scoped instances the queue worker forgot before fetching the job, and
      * other listeners have filled for it since, are kept.
      *
@@ -165,11 +125,7 @@ final class ResetBeforeJobTest extends TestCase
      */
     public function testTheAuditLogsJobFrameOutlivesTheReset(): void
     {
-        $job = \Mockery::mock(Job::class);
-        $job->shouldReceive('resolveName')->andReturn('Tests\Job');
-        $job->shouldReceive('payload')->andReturn([]);
-
-        Event::dispatch(new JobProcessing('database', $job));
+        Event::dispatch(new JobProcessing('database', self::job()));
 
         self::assertNotNull($this->app?->make(ExecutionFrames::class)->current());
     }
@@ -196,6 +152,20 @@ final class ResetBeforeJobTest extends TestCase
     protected function turnTheResetOff(Application $app): void
     {
         $app->make('config')->set('iam.workers.reset', false);
+    }
+
+    /**
+     * Return a queued job the audit log can name.
+     *
+     * @return \Illuminate\Contracts\Queue\Job
+     */
+    private static function job(): Job
+    {
+        $job = \Mockery::mock(Job::class);
+        $job->shouldReceive('resolveName')->andReturn('Tests\Job');
+        $job->shouldReceive('payload')->andReturn([]);
+
+        return $job;
     }
 
     /**

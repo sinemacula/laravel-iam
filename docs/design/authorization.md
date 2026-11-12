@@ -122,9 +122,8 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   subject through `forUser()`, and a sign-in or refresh route names no guard, so a principal answered as its own
   identity in no tenant there would lose its identity's grants, denials, boundaries and inactive state only because
   another guard was the default. `laravel-authentication` keeps the caller on the request's attributes, and a queue
-  worker's jobs share one request, so the worker reset drops those attributes between units of work
-  (`WorkerReset::forgetMemberState()`, `long-running-processes.md`): without it every later job would be decided about
-  the first job's caller.
+  worker's jobs share one request, so its `AuthManager::forgetGuardState()` forgets them between units of work
+  (`long-running-processes.md`): without it every later job would be decided about the first job's caller.
 - The context (`AuthenticationContextAdapter`). Its namespaces are a fixed list, `authentication`, `mfa` and `sso`:
   `laravel-authorization` reads them as it boots and builds its key catalogue once, both before this package registers
   its `mfa` and `sso` contributors once every provider has booted, and a namespace missing then would leave its
@@ -655,7 +654,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `src/Authorization/ScopeRegistryAdapter.php`: `rejected()`; `src/Authorization/ApplicationAccessAdapter.php`:
   `mayUse()`; `src/Authorization/AccessMandates.php`: `acceptsMachineCredentials()`, `isMachineGuard()`,
   `namesApplicationAccess()`, `MACHINE_METHODS`, `APPLICATION_ACCESS`.
-- `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetCallers()`.
+- `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`.
 - `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
   `src/Authorization/GrantScopeAdapter.php`: `judge()`;
@@ -781,7 +780,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAPrincipalIsAdmittedOnItsIdentitysGrantWhicheverGuardIsTheDefault`,
   `testAMachineIsAdmittedOnAnApplicationTheMapNamesOnItsGrants`
 - `tests/Unit/Workers/WorkerResetTest.php` `testResetForgetsTheMembersScopedState`,
-  `testResetForgetsThePackagesScopedAdapters`, `testForgettingTheMemberStateDropsTheRequestsCallers`
+  `testResetForgetsThePackagesScopedAdapters`
 - `tests/Feature/Authorization/GrantSeamsTest.php` `testTheGrantHookIsBoundWhateverHooksAreListed`,
   `testADirectoryNamedInAuthorizationsConfigurationIsKept`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
   `testWithTheSwitchOffNothingIsBound`, `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`,

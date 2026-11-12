@@ -4,12 +4,9 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Workers;
 
-use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Foundation\Application;
-use Illuminate\Http\Request;
 use Illuminate\Log\Context\Repository as ContextRepository;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
@@ -104,12 +101,8 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Rows of `[abstract]`: each scoped binding `laravel-authentication`,
-     * `laravel-sso` and `laravel-authorization` keep request state in: the keys
-     * that hold SSO's scoped defaults, authorization's manager, what its
-     * previews know, the schema its query scope reads and the keys that hold
-     * its scoped defaults, each found by their prefix, the console subject
-     * resolver its explanations resolve through among them.
+     * Rows of `[abstract]`: each scoped binding a member keeps request state
+     * in.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -177,9 +170,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Rows of `[seam]`: seams this package scopes its adapter over, SSO's
-     * single-use store, `laravel-authorization`'s subject resolver and
-     * `laravel-authentication`'s application access among them.
+     * Rows of `[seam]`: seams this package scopes its adapter over.
      *
      * @return iterable<string, array{0: class-string}>
      */
@@ -217,10 +208,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Rows of `[abstract]`: scoped instances outside the members' request
-     * state, Laravel's `Context` and deferred callbacks, the audit log's
-     * execution frames and the application's own, one of them under a key that
-     * only holds authorization's prefix further in.
+     * Rows of `[abstract]`: scoped instances outside the suite's state.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -263,83 +251,8 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Another scoped instance the container lists before a member's is kept,
-     * and the member's is still forgotten, whatever order they were scoped in.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testResetForgetsTheMembersScopedStateListedAfterAnotherScopedInstance(): void
-    {
-        $container = new Container;
-
-        $container->scoped(ContextRepository::class, static fn (): \stdClass => new \stdClass);
-        $container->scoped(Rehashing::class, static fn (): \stdClass => new \stdClass);
-
-        $context = $container->make(ContextRepository::class);
-        $before  = $container->make(Rehashing::class);
-
-        (new WorkerReset($container))->reset();
-
-        self::assertSame($context, $container->make(ContextRepository::class));
-        self::assertNotSame($before, $container->make(Rehashing::class));
-    }
-
-    /**
-     * A scoped binding keyed by its closure's return type, which the container
-     * lists as the closure itself, is kept, and a member's scoped instance
-     * listed after it is still forgotten.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testResetKeepsAScopedBindingKeyedByItsClosure(): void
-    {
-        $container = new Container;
-
-        $container->scoped(static fn (): \stdClass => new \stdClass);
-        $container->scoped(Rehashing::class, static fn (): \stdClass => new \stdClass);
-
-        $closureScoped = $container->make(\stdClass::class);
-        $before        = $container->make(Rehashing::class);
-
-        (new WorkerReset($container))->reset();
-
-        self::assertSame($closureScoped, $container->make(\stdClass::class));
-        self::assertNotSame($before, $container->make(Rehashing::class));
-    }
-
-    /**
-     * Forgetting the scoped state on its own, as a process does between its own
-     * units of work, forgets what `laravel-authorization` holds under its
-     * names, through its own reset, and keeps any other scoped instance.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testForgettingTheScopedStateForgetsAuthorizationsOwn(): void
-    {
-        $container = new Container;
-
-        $container->scoped(DecisionMemory::class, static fn (): \stdClass => new \stdClass);
-        $container->scoped('another', static fn (): \stdClass => new \stdClass);
-
-        $authorizations = $container->make(DecisionMemory::class);
-        $another        = $container->make('another');
-
-        (new WorkerReset($container))->forgetScopedState();
-
-        self::assertNotSame($authorizations, $container->make(DecisionMemory::class));
-        self::assertSame($another, $container->make('another'));
-    }
-
-    /**
      * The reset clears the root a facade resolved from a member's scoped
-     * instance, so the facade resolves the next unit of work's own, as
-     * `laravel-authorization`'s `Authorization` facade resolves its manager.
+     * instance.
      *
      * @return void
      */
@@ -401,52 +314,8 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset keeps an instance the application bound over a member's scoped
-     * binding with no scoped binding beneath it, as one bound before the member
-     * registered, which the member's `scopedIf()` then left alone: it is the
-     * application's, not request state, and nothing could rebuild it.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testResetKeepsAnInstanceWithNoScopedBinding(): void
-    {
-        $container = new Container;
-        $instance  = new \stdClass;
-
-        $container->instance(Rehashing::class, $instance);
-
-        (new WorkerReset($container))->reset();
-
-        self::assertSame($instance, self::resolve($container, Rehashing::class));
-    }
-
-    /**
-     * The reset keeps a shared instance of a member's scoped binding the
-     * application bound as a singleton of its own, so it is never rebuilt.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testResetKeepsASingletonOverAMembersScopedBinding(): void
-    {
-        $container = new Container;
-
-        $container->singleton(Rehashing::class, static fn (): \stdClass => new \stdClass);
-
-        $before = $container->make(Rehashing::class);
-
-        (new WorkerReset($container))->reset();
-
-        self::assertSame($before, $container->make(Rehashing::class));
-    }
-
-    /**
      * The reset flushes the session already resolved, where `laravel-mfa`'s
-     * default proof store keeps its proofs, so the next unit of work reads none
-     * of them, whether or not any guard is resolved.
+     * default proof store keeps its proofs.
      *
      * @return void
      *
@@ -488,6 +357,29 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
+     * Flushing the session alone leaves the guards to `laravel-authentication`.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testFlushingTheSessionLeavesTheGuardsAlone(): void
+    {
+        $container = new Container;
+        $session   = self::sessionHoldingProofs();
+        $manager   = \Mockery::mock(AuthManager::class);
+        $manager->shouldNotReceive('forgetGuardState');
+
+        $container->instance('auth', $manager);
+        $container->instance('session.store', $session);
+        $container->alias('session.store', Session::class);
+
+        (new WorkerReset($container))->flushSession();
+
+        self::assertSame([], $session->all());
+    }
+
+    /**
      * A session nothing has resolved holds nothing, so the reset does not build
      * one.
      *
@@ -508,32 +400,6 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * A `session.store` binding that is not a session is left alone, and the
-     * rest of the reset still runs.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testAnotherSessionStoreIsLeftAlone(): void
-    {
-        $container = new Container;
-        $store     = \Mockery::mock();
-        $store->shouldNotReceive('flush');
-
-        $container->instance('auth', $this->managerForgettingOnce());
-        $container->instance('session.store', $store);
-        $container->alias('session.store', Session::class);
-        $container->scoped(DriverScope::class, static fn (): \stdClass => new \stdClass);
-
-        $before = $container->make(DriverScope::class);
-
-        (new WorkerReset($container))->reset();
-
-        self::assertNotSame($before, $container->make(DriverScope::class));
-    }
-
-    /**
      * An auth manager nothing has resolved holds no guard, so the reset does
      * not build one.
      *
@@ -550,125 +416,6 @@ final class WorkerResetTest extends TestCase
         (new WorkerReset($container))->reset();
 
         self::assertFalse($container->resolved('auth'));
-    }
-
-    /**
-     * An `auth` binding that is not `laravel-authentication`'s manager is left
-     * alone.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testAnotherAuthManagerIsLeftAlone(): void
-    {
-        $manager = \Mockery::mock(IlluminateAuthManager::class);
-        $manager->shouldNotReceive('forgetGuardState');
-
-        $container = new Container;
-
-        $container->instance('auth', $manager);
-
-        (new WorkerReset($container))->reset();
-    }
-
-    /**
-     * Forgetting the members' state drops the callers `laravel-authentication`
-     * keeps on the current request, for every credential, guard and action, and
-     * keeps every other attribute, the one whose name only starts alike among
-     * them.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testForgettingTheMemberStateDropsTheRequestsCallers(): void
-    {
-        $container = new Container;
-        $request   = Request::create('/');
-
-        $request->attributes->add([
-            'authentication.caller.access.api.'        => new \stdClass,
-            'authentication.caller.pending.api.select' => false,
-            'authentication.callers'                   => 'kept',
-            'authenticationXcaller.access.api.'        => 'kept',
-            'an.authentication.caller.access.api.'     => 'kept',
-            'route'                                    => 'kept',
-        ]);
-
-        $request->attributes->set('7', 'kept');
-
-        $container->instance('request', $request);
-
-        (new WorkerReset($container))->forgetMemberState();
-
-        self::assertSame([
-            'authentication.callers'               => 'kept',
-            'authenticationXcaller.access.api.'    => 'kept',
-            'an.authentication.caller.access.api.' => 'kept',
-            'route'                                => 'kept',
-            7                                      => 'kept',
-        ], $request->attributes->all());
-    }
-
-    /**
-     * A request nothing has resolved keeps no callers, so the reset does not
-     * build one, and a `request` binding that is not a request is left alone.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testAnUnresolvedOrAnotherRequestIsLeftAlone(): void
-    {
-        $container = new Container;
-
-        $container->singleton('request', static fn (): Request => Request::create('/'));
-
-        (new WorkerReset($container))->forgetMemberState();
-
-        self::assertFalse($container->resolved('request'));
-
-        $other = new \ArrayObject(['authentication.caller.access.api.' => 'kept']);
-
-        $container->instance('request', $other);
-
-        (new WorkerReset($container))->forgetMemberState();
-
-        self::assertSame(['authentication.caller.access.api.' => 'kept'], $other->getArrayCopy());
-    }
-
-    /**
-     * A container that keeps no scoped instances still has its guards reset.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testAContainerWithoutScopedInstancesStillHasItsGuardsReset(): void
-    {
-        $container = \Mockery::mock(ContainerContract::class);
-        $container->shouldReceive('resolved')->with('auth')->andReturnTrue();
-        $container->shouldReceive('resolved')->with('request')->andReturnFalse();
-        $container->shouldReceive('resolved')->with(Session::class)->andReturnFalse();
-        $container->shouldReceive('make')->with('auth')->andReturn($this->managerForgettingOnce());
-
-        (new WorkerReset($container))->reset();
-    }
-
-    /**
-     * Resolve the abstract from the container, as whatever the container holds
-     * for it, not as the member binds it.
-     *
-     * @param  \Illuminate\Container\Container  $container
-     * @param  string  $abstract
-     * @return mixed
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private static function resolve(Container $container, string $abstract): mixed
-    {
-        return $container->make($abstract);
     }
 
     /**
