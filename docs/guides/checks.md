@@ -28,7 +28,7 @@ authentication:check
 ...
 iam
 [storage] OK
-[seams] note: SineMacula\Laravel\Mfa\Contracts\StepUp keeps the application's binding, not this package's adapter.
+[seams] OK
 [sso] not applied
 [audit] Guards [admin] are missing from `audit-log.capture.laravel.except_guards`, ...
 A check failed.
@@ -82,19 +82,14 @@ The check cannot see your principal models, which no setting names: keep them on
 
 ## seams
 
-Every mandatory seam is bound to something that does its duty ([Bindings](bindings.md) lists which seams are
-mandatory, and when). The check reads the live binding without building anything.
+Every mandatory seam is bound off its member's default ([Bindings](bindings.md) lists which seams are mandatory, and
+when). Each member says whether its seam still holds its default; anything else passes.
 
 - *... is unbound; bind ..., or an implementation of your own, to it.*: bind the adapter it names, usually by turning
   the capability's switch back on (`iam.adapters.mfa`, `iam.adapters.sso` or `iam.adapters.authorization`), or bind
   your own implementation.
-- *... is still bound to ..., its member's permissive or inert default; ...*: the member's default would leave the duty
+- *... is still bound to its member's permissive or inert default; ...*: the member's default would leave the duty
   undone. Turn the switch on, or bind your own implementation.
-- *... is bound through a closure, whose implementation cannot be read without building it; ...*: bind the seam by
-  class name or as an instance, so the check can tell what it is.
-- Note: *... keeps the application's binding, not this package's adapter.*: a binding of yours was in place before
-  this package registered, so the adapter was never bound. Make sure your implementation keeps the adapter's duties
-  ([Bindings](bindings.md#replacing-a-binding)).
 
 `laravel-authentication`'s scope registry and `laravel-authorization`'s session policy source are mandatory while a
 guard accepts `api_key` or `client_credentials`, as the bound `ApplicationPolicy` says (yours, if you replace it to read
@@ -173,8 +168,8 @@ The members' settings agree with each other.
   through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, and
   every move of a tenant, would answer a server error. Bind a resolver that resolves every tenant
   id to the tenant whose `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
-  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). A resolver bound through a closure is
-  not built, so the check passes it.
+  [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). Only `laravel-authentication`'s own
+  default is refused, as it says.
 - Note: *SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver is still
   SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant while people act in tenants: ...*: shown while your
   memberships are bound or named. `laravel-authorization`'s default resolver knows no record's tenant, so a grant in

@@ -182,9 +182,6 @@ are in `sso-redemption-and-revocation.md`, and the binding rule that applies eve
     exemption has no version (`EnforcementExemption`), so the adapter versions SSO's whole serialised policy and the
     gate's outcome rather than SSO's version alone.
   - Neither member ships a contract kit for `TenantAuthenticationPolicy`.
-  - laravel-mfa offers no public way to tell its own default binding from the application's, so a requirement is in use
-    while the binding does not resolve to `NoTenantRequirement`; it switches to `MfaServiceProvider::isPackageDefault()`
-    once laravel-mfa ships it.
 
 ## Implementation Anchors
 
@@ -236,15 +233,14 @@ are in `sso-redemption-and-revocation.md`, and the binding rule that applies eve
   change committed on another connection after the redemption read its code and before it locked)
   `testARuleThatNoLongerAdmitsTheConnectionRefusesTheSignIn`,
   `testARuleThatStillAdmitsTheConnectionSignsInAndIsJudgedAsItIsNow`
-- `tests/Feature/Tenancy/TenancySeamsTest.php` `testTheAdapterIsBoundOverTheDefaultInEveryProviderOrder`,
-  `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
-  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testBothSwitchesOffBindNothing`,
-  `testMfaOnWithSsoOffBindsNothing`, `testTheBindingIsOnWhileTheSsoSwitchIs`, `testTheBindingIsTransientOverTheDefault`,
+- `tests/Feature/Tenancy/TenancySeamsTest.php` `testThePolicyAdapterIsBoundOverTheDefault`,
+  `testTheSsoSwitchOffBindsNothing`,
+  `testTheTenancyRowsFollowTheSwitchAndTheApplicationsTenancy`, `testEveryRowIsTransientAndOptionalWithoutATenantsRule`,
   `testTheBindingIsMandatoryWhileEnforcementIsOn`, `testARequirementBoundMakesTheBindingMandatory`;
-  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`
+  `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefault`
 - `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
   `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`;
-  `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,
+  `tests/Feature/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,
   `testTheBindingIsAskedAndItsAnswerTranslated`, `testWithMfasDefaultNothingIsRequired`,
   `testAnIdentityMfaHoldsNoFactorsForIsRefused`; `tests/Unit/Sso/AdmittedRedemptionsTest.php`
   `testASignInsClientIsAnsweredForItsIdentityAndNoSessionAlone`,
@@ -262,7 +258,7 @@ Update this note when:
   policy as a session is written (the second pass of every policy change may then be dropped);
 - SSO changes `Enforcement::policy()`, `EnforcementPolicy`, its version's meaning or `ExemptionGate::admit()`, or
   starts versioning or watching exemptions (the application's obligation to report a changed exemption then goes);
-- MFA changes `TenantRequirement` or ships `MfaServiceProvider::isPackageDefault()`;
+- MFA changes `TenantRequirement` or what `MfaServiceProvider::isPackageDefault()` answers for it;
 - a reported tree move (`Iam::treeChanges()`, `provisioning-and-tenancy.md`) stops judging the moved tenant's whole
   subtree through `SubtreePolicyChanges` while SSO's enforcement or a requirement is on (Decision Q7), or inheritance of
   a requirement down the tree is decided otherwise than Q6 (a);

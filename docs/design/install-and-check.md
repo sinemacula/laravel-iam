@@ -85,22 +85,11 @@ and the gaps in the members it works around.
     repeats). Audit-log's storage connection, when another, is a note
     (`audit-mapping.md`).
   - `MandatorySeamsCheck` (IAM-10.2): every row the capabilities declare mandatory now (`SeamBinding::isMandatory()`,
-    read again from the configuration and the container as they stand) is bound, its member does not say it holds the
-    member's default (`SeamBinding::$holdsDefault`), and its live binding (`Checks\SeamHolders`, never building anything
-    new) names none of the row's member defaults. A row is checked whatever this
-    package's capability switch says, as the tenant policy's note has it: with the switch off the application binds the
-    seam, under the same mandate. The binding rule's outcome adds a note for each seam it kept with the application's
-    binding. A binding whose implementation cannot be read without building it (a closure of the application's own,
-    which `SeamHolders` names nothing for: the class declaring a closure does not tell what it returns) fails too, since
-    the check takes nothing on trust; the application binds a mandatory seam by class name or as an instance, or the
-    shared instance something has already resolved is read. An anonymous class is judged by what it is, not by its
-    debug name, which starts with the contract it implements and so would read the application's implementation of a
-    member's contract as the member's own (decision recorded here): one extending a class is named by that class, whose
-    behaviour it inherits, so an anonymous subclass of a member's default still fails; one extending nothing is the
-    application's own, named by the file and line it is declared at, and passes. No member declares an anonymous
-    default, so where the class is declared is not read. While SSO is in use, the rows of
-    `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the bridge, so `iam:check` reports each
-    mandatory seam once; while SSO is not in use, the bridge
+    read again from the configuration and the container as they stand) is bound, and its member does not say it still
+    holds the member's default (`SeamBinding::holdsDefault()`); any other binding passes. A row is checked whatever
+    this package's capability switch says: with the switch off the application binds the seam, under the same mandate.
+    While SSO is in use, the rows of `SsoBridgeCheck::CAPABILITIES` (`SsoSeams`, `TenancySeams`) are left to the
+    bridge, so `iam:check` reports each mandatory seam once; while SSO is not in use, the bridge
     does not apply, and they are checked here. The mandates: SSO's session revocation, MFA's session revoker and the
     passkey factor gate always; the external identity links and the linker while SSO is in use; the
     re-authentication sessions, the tenant authentication policy and MFA's active tenant resolver while SSO's
@@ -123,13 +112,6 @@ and the gaps in the members it works around.
     off, whatever maps the members' events still records a sign-in beside audit-log's own capture, and the bullets
     stand unconditionally in IAM-2.5. Only the mappers' registration with audit-log (`AuditRegistrations::REGISTERED`)
     follows their switch.
-  - `SendersCheck`: the routes name channels; every code sign-in method a `jwt` guard allows has its identifier type
-    routed to a channel while `laravel-authentication`'s sender is this package's or unbound, since a code of a type
-    the routes leave out can be delivered by no gateway and `authentication:check` sees a sender bound and passes; a
-    gateway named where none is bound implements its contract, judged by
-    its class, never built; and a channel has a gateway while something sends on it through this package, a `jwt`
-    guard allowing `email_code` or `phone_code` routed to it, or an MFA application enabling `sms` or `email`, while
-    the member's sender is this package's, the member's null default or unbound.
   - `CrossMemberConfigurationCheck` (IAM-2.5): every MFA application names a guard of the `jwt` driver, the one that
     holds sessions, so one on an `api_key` or `session` guard, which every MFA adapter refuses at runtime
     (`Mfa\CurrentSession`), is refused at deploy instead; every operation MFA names (`Mfa\Enums\Operation`) is declared
@@ -138,26 +120,23 @@ and the gaps in the members it works around.
     on or a tenant MFA requirement is named or bound (`TenancySeams::isEnforcedOrRequired()`), or the authorization and
     SSO adapters are both on, so the grant hook reports `laravel-authorization`'s grants to SSO's scope widening
     (`AuthorizationSeams::reportsWidenings()`), or the authorization adapters are on while the application names or
-    binds a tenant tree (`AuthorizationSeams::isOn()` and `TenancyContracts::hasTree()`), since `TenantTreeAdapter`
-    resolves every tenant `laravel-authorization` asks about through it, `laravel-authentication`'s `TenantResolver` is
-    no longer its `ResolveNoTenant`, read through `SeamHolders` without building it, since MFA's tenant requirement, the
-    tree's changes and SSO's revocation resolve the session's tenant through it, the grant hook the tenant of every
-    grant that widens and the tree adapter every tenant it is asked about (`Tenancy\TenantReferences`), while
-    `laravel-authentication` admits a principal's own tenant without one (a resolver bound through a closure cannot be
-    read, so it passes). SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
-    `Sso\SsoBridgeCheck`, `sso.endpoints.base_url` by
-    SSO's own `EndpointsCheck` (which `sso:check` runs while SSO is in use, refusing more than an unset value), and
-    `sso.storage.connection` by the storage alignment, at boot and in `StorageCheck`; audit-log's are `AuditCheck`'s, so
-    nothing is reported twice; `laravel-authorization`'s seams are bound through the container, so none of its resolver
-    keys is required to name an adapter. While the application has memberships (`TenancyContracts::hasMemberships()`),
-    so its people act in tenants, `laravel-authorization`'s resource tenant resolver left on its default is a note,
-    never a failure, as `laravel-authorization` says whether the contract still holds its default
-    (`AuthorizationServiceProvider::isPackageDefault()`, asked through `MemberDefaults::holdsDefault()`): a class the
-    application names in `authorization.resource_tenant_resolver` it binds as no default, so no key is read. A model
-    declaring its tenancy (`QueryableResource`) or naming its tenant (`AuthorizableResource`) needs no resolver, which
-    no check can see, and which tenant owns a record is the application's rule (`authorization.md`). A provider
-    attribute beyond SSO's standard mapping depends on each connection's mapping, a database row, so it stays with the
-    guides (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
+    binds a tenant tree (`AuthorizationSeams::isOn()` and `TenancyContracts::hasTree()`), `laravel-authentication`'s
+    `TenantResolver` is no longer its default, as `isPackageDefault()` says, since MFA's tenant requirement, the tree's
+    changes and SSO's revocation resolve the session's tenant through it, and the grant hook the tenant of every grant
+    that widens (`Tenancy\TenantReferences`), while `laravel-authentication` admits a principal's own tenant without
+    one. SSO's own bullets are each held once: the applications' sign-in method and unlinked handoffs by
+    `Sso\SsoBridgeCheck`, `sso.endpoints.base_url` by SSO's own `EndpointsCheck` (which `sso:check` runs while SSO is in
+    use, refusing more than an unset value), and `sso.storage.connection` by the storage alignment, at boot and in
+    `StorageCheck`; audit-log's are `AuditCheck`'s, so nothing is reported twice; `laravel-authorization`'s seams are
+    bound through the container, so none of its resolver keys is required to name an adapter. While the application has
+    memberships (`TenancyContracts::hasMemberships()`), so its people act in tenants, `laravel-authorization`'s resource
+    tenant resolver left on its default is a note, never a failure, as `laravel-authorization` says whether the contract
+    still holds its default (`AuthorizationServiceProvider::isPackageDefault()`): a class the application names in
+    `authorization.resource_tenant_resolver` it binds as no default, so no key is read. A model declaring its tenancy
+    (`QueryableResource`) or naming its tenant (`AuthorizableResource`) needs no resolver, which no check can see, and
+    which tenant owns a record is the application's rule (`authorization.md`). A provider attribute beyond SSO's
+    standard mapping depends on each connection's mapping, a database row, so it stays with the guides
+    (`docs/guides/authentication-and-sso.md`, Mapped attributes, and `checks.md`), as SSO's routes do
     (`docs/guides/example-application.md`).
   - `SchedulesCheck` (IAM-2.6): a note, never a failure, naming each run `IamSchedule` registers (`mfa:prune` and
     `authorization:prune`; `audit-log:drain --until-empty` while delivery is through the outbox) that no event on the
@@ -172,7 +151,7 @@ and the gaps in the members it works around.
 - Its first part (decision Q8) binds `laravel-authorization`'s seams (`Authorization\AuthorizationSeams`, see
   `authorization.md`): `laravel-authentication`'s scope registry and application access join the mandatory rows
   `MandatorySeamsCheck` reads, under the mandates `Authorization\AccessMandates` declares. `laravel-authorization`'s
-  subject resolver, requirement checker and session policy source are bound through the container by the binding rule
+  subject resolver, requirement checker and session policy source are bound through the container by this package
   rather than named in its configuration, so `iam:install` writes none of `authorization.subject_resolver`,
   `authorization.requirement_checker` or `authorization.session.source`, `CrossMemberConfigurationCheck` requires none
   of them, and a class the application names there is kept. `authorization:check` already runs inside `iam:check`.
@@ -187,7 +166,7 @@ and the gaps in the members it works around.
   named by `iam:install`: a record's tenant is the application's to say, which this package cannot read from its models
   (`authorization.md`). `iam:install` still writes none of `laravel-authorization`'s resolver keys, and
   `authorization:check` already ran inside `iam:check`, where its refusal (exit `1`) and its incomplete report (exit
-  `3`) fail the run as any member's non-zero exit does. Its report names each adapter the binding rule bound over one of
+  `3`) fail the run as any member's non-zero exit does. Its report names each adapter this package bound over one of
   `laravel-authorization`'s contracts as declared by `laravel-iam` (`authorization.md`).
 
 ## Success Path
@@ -222,12 +201,11 @@ and the gaps in the members it works around.
   `laravel-authorization`'s configuration validation in its `boot()` throw before `iam:check` can run, so a
   configuration either refuses stops `iam:check` with that member's message and a non-zero exit: it fails closed,
   though without this package's report.
-- A member that renames a default, or moves a closure binding to another class of its own, is still caught as a member
-  default by its namespace; a binding that names no class (a closure of the application's own, or one declared
-  outside any class) fails, as its implementation cannot be read without building it.
+- A seam is a member's default only when the member says so: an application that binds a member's default class by
+  name is refused only by a member whose `isPackageDefault()` counts it (MFA's does).
 - An application keeping each tenant's rule to itself while it keeps a tree binds an inheritance class of its own:
-  SSO's `OwnTenantInheritance`, bound by the application, is kept by the binding rule but reported by the check while
-  SSO's enforcement is on (decision recorded here).
+  SSO's `OwnTenantInheritance`, bound by the application, is kept and, since SSO does not count it as its default,
+  passes the check.
 - Gaps in the members that installation and the checks work around:
   - SSO's `OperationsSchedule::register()` throws on a malformed cadence as the schedule is built, while audit-log's
     `IntegritySchedule` never throws from its own, so one malformed SSO cadence stops the application's whole schedule,
@@ -240,9 +218,6 @@ and the gaps in the members it works around.
   - MFA's boot check stands aside for `mfa:check` and the configuration commands only, and `laravel-authorization`
     validates its configuration in `boot()` for every command, so a configuration either refuses stops `iam:check`
     before it reports; standing aside for a composing package's check command too would let `iam:check` report it.
-  - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
-    (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
-    public constant would let it read them.
   - `laravel-authorization`'s prefix rule lives in its `@internal` `TableConfigValidator`, so `InstallCommand` repeats
     it; a public check of a prefix would let it ask the member.
   - No member publishes its migrations through `publishesMigrations()`, and `vendor:publish` compares only a whole file
@@ -256,10 +231,9 @@ and the gaps in the members it works around.
 - `src/Scheduling/IamSchedule.php`: `register()`; `src/IamManager.php`: `schedule()`.
 - `src/Console/CheckCommand.php`: `handle()`; `src/Checks/Checker.php`: `run()`, `MEMBER_COMMANDS`, `CHECKS`;
   `src/Checks/Contracts/Check.php`.
-- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `holderOf()`),
-  `src/Bindings/SeamBinding.php` (`$holdsDefault`), `src/Checks/SeamHolders.php` (`of()`),
-  `src/Checks/Sso/SsoBridgeCheck.php` (`CAPABILITIES`), `src/Checks/ContextNamespacesCheck.php`,
-  `src/Checks/AuditCheck.php`, `src/Checks/SendersCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`,
+- `src/Checks/StorageCheck.php`, `src/Checks/MandatorySeamsCheck.php` (`checksFor()`, `assertBound()`),
+  `src/Bindings/SeamBinding.php` (`holdsDefault()`), `src/Checks/Sso/SsoBridgeCheck.php` (`CAPABILITIES`),
+  `src/Checks/ContextNamespacesCheck.php`, `src/Checks/AuditCheck.php`, `src/Checks/CrossMemberConfigurationCheck.php`,
   `src/Checks/SchedulesCheck.php`.
 - The mandates: `src/Sso/SsoSeams.php` (`isInUse()`), `src/Mfa/ContextSeams.php`, `src/Tenancy/TenancySeams.php`
   (`isEnforcedOrRequired()`); `src/IamServiceProvider.php`: `seamProviders()`, `UNCHECKED_COMMANDS`,
@@ -286,28 +260,17 @@ and the gaps in the members it works around.
   `testTheDrainIsScheduledEveryMinuteWhileDeliveryIsThroughTheOutbox`,
   `testAnyOtherDeliveryModeSchedulesNoDrain`, `testAuditLogsOwnSchedulesAreNeverRegisteredAgain`
 - `tests/Feature/Console/CheckCommandTest.php` `testAConfiguredApplicationPasses`,
-  `testAProblemOfThePackagesOwnFailsTheRun`, `testAMembersFailureFailsTheRun`,
+  `testMfasDefaultLeftOnAMandatorySeamFailsTheRun`, `testAMembersFailureFailsTheRun`,
   `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`,
   `testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot`, `testAMemberThatNeverRegisteredFailsTheRun`,
   `testSsosSideIsChecked`
 - `tests/Unit/Checks/CheckerTest.php` `testEveryCheckRunsAndTheRunPasses`, `testAMemberCommandFailingFailsTheRun`,
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
   `testEachCheckIsReported`
-- `tests/Feature/Authorization/AuthorizationSeamsTest.php`
-  `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
-- `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testASeamLeftOnItsMembersDefaultFails`,
-  `testAMandatorySeamIsCheckedWithItsCapabilityOff`, `testAResolvedMemberDefaultFails`,
-  `testAnyClassOfAMembersOwnFails`, `testAnApplicationsClosureFails`, `testAnUnboundMandatorySeamFails`,
-  `testAnAnonymousImplementationOfTheApplicationsOwnPasses`, `testAnAnonymousSubclassOfAMembersDefaultFails`,
-  `testTheSeamsSsosCheckHoldsAreLeftToIt`,
-  `testTheLinksAreMandatoryWhileSsoIsInUse`,
-  `testASeamIsMandatoryWhileATenantsRuleIsOn`, `testTheInheritanceIsMandatoryWhileATreeAndEnforcementAreOn`,
-  `testEachSeamTheRuleKeptIsNoted`
-- `tests/Unit/Checks/SeamHoldersTest.php` `testAClassStringBindingNamesItsClass`, `testAnInstanceNamesItsClass`,
-  `testAScopedAdapterNamesTheAdapter`, `testBindingsLeadingBackToEachOtherNameNothing`,
-  `testAChainLongerThanTheLimitNamesNothing`, `testAMembersClosureNamesItsDeclarer`,
-  `testAnApplicationsClosureNamesNothing`, `testAClosureUsingTheContainersNamesNamesItsDeclarer`,
-  `testAnAnonymousImplementationIsTheApplicationsOwn`, `testAnAnonymousSubclassNamesTheClassItExtends`
+- `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testTheMembersDefaultsFail`, `testAResolvedMembersDefaultFails`,
+  `testTheApplicationsOwnBindingPasses`, `testMfasRegisteredDefaultFails`, `testAnUnboundMandatorySeamFails`,
+  `testTheSeamsSsosCheckHoldsAreLeftToIt`, `testTheLinksAreMandatoryWhileSsoIsInUse`,
+  `testTheTenantSeamsAreMandatoryWhileATenantsRuleIsOn`, `testTheInheritanceIsMandatoryWhileEnforcingOverATree`
 - `tests/Feature/IamServiceProviderTest.php` `testTheCommandsAreRegisteredInTheConsole`,
   `testEveryCapabilitysSeamsAreProvided`
 - `tests/Feature/Checks/StorageCheckTest.php` `testAMemberKeyOnAnotherConnectionFails`,
@@ -317,9 +280,6 @@ and the gaps in the members it works around.
   `testANamespaceNobodyRegisteredFails`, `testAnMfaNamespaceNobodyRegisteredFails`
 - `tests/Feature/Checks/AuditCheckTest.php` `testAuditLogAsItShipsFails`, `testTheOwedValuesPass`,
   `testWithTheMappersOffAuditLogsValuesAreStillEnforced`, `testGateCaptureOnFails`
-- `tests/Feature/Checks/SendersCheckTest.php` `testACodeMethodNeedsAGatewayOnItsChannel`,
-  `testACodeMethodWhoseTypeIsUnroutedIsRefused`,
-  `testACodeFactorNeedsAGatewayOnItsChannel`, `testANamedGatewayMustImplementTheContract`
 - `tests/Feature/Checks/CrossMemberConfigurationCheckTest.php` `testMfasOperationsMustBeDeclared`,
   `testEveryMfaApplicationMustBeAGuard`, `testEveryMfaApplicationMustBeAJwtGuard`,
   `testSsosOperationsMustBeDeclaredWhileSsoIsInUse`,
@@ -330,7 +290,7 @@ and the gaps in the members it works around.
   `testAResourceTenantResolverTheApplicationNamesIsNotNoted`
 - `tests/Feature/Checks/SchedulesCheckTest.php` `testThePrunesAreNotedUntilThePackageSchedulesThem`,
   `testTheDrainIsNotedWhileTheOutboxIsOn`, `testAScheduleThatCannotBeBuiltIsAProblem`
-- `tests/Unit/Checks/Sso/SsoBridgeCheckTest.php` `testItAppliesOnlyWhileSsoIsInUse`, `testEachApplicationIsChecked`,
+- `tests/Feature/Checks/Sso/SsoBridgeCheckTest.php` `testItAppliesOnlyWhileSsoIsInUse`, `testEachApplicationIsChecked`,
   `testTheBaseUrlAndTheStorageConnectionAreLeftToTheirOwners`, `testTheMandatorySeamsAreChecked`
 
 ## Change Triggers

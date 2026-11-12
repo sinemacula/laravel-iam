@@ -18,9 +18,7 @@ use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
-use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
@@ -56,30 +54,17 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  * step-up, the listener provisioning SSO's unlinked results, the worker reset
  * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
  *
- * Everything this package binds over a member's seam is bound once, in
- * `register()`, where the seam is unbound or still bound to the member's own
- * default (IAM-8.4). Every member binds its defaults only where nothing is
- * bound yet, so a member registering after this package keeps the adapter, and
- * one registered before it is recognised as the member's default and replaced;
- * an application binding made in a `register()` before this package's is kept,
- * and one made in a later `register()` or in any `boot()` replaces the adapter.
- * The bindings' switches are read with every member's packaged configuration
- * beneath the application's, so a member that has not merged its configuration
- * yet switches them as it will once it has.
+ * Every adapter is bound over a member's seam once every provider has
+ * registered and before any boots, where the member says the seam still holds
+ * its own default (IAM-8.4), so an application's binding from any `register()`
+ * is kept and one from a `boot()` replaces the adapter.
  *
- * Two more steps wait for the booting phase, from a `booting()` callback that
- * runs once every provider has registered and before any boots. The first is
- * SSO's seams answered from the application's memberships, whose switches read
- * whether the application has bound them, which it does in its own provider's
- * `register()`, after the packages': the rule is applied to them once more
- * there, over the very bindings of SSO's defaults it reserved in `register()`
- * only, so an application's binding of one of them made in between is kept. The
- * second is the storage connection. A member key can be written only once its
- * member has merged its configuration, which a member registering after this
- * package does only then, since a key written before would replace the member's
- * whole `storage` block; and an application provider registered later may name
- * another shared connection. So the member keys are aligned again and checked
- * there, before any provider boots. A provider registered once the booting
+ * The storage connection is settled in the same step. A member key can be
+ * written only once its member has merged its configuration, which a member
+ * registering after this package does only then, since a key written before
+ * would replace the member's whole `storage` block; and an application provider
+ * registered later may name another shared connection. So the member keys are
+ * aligned again and checked there. A provider registered once the booting
  * callbacks have run settles from its own `boot()`, which Laravel runs for it
  * at once.
  *
@@ -134,30 +119,28 @@ final class IamServiceProvider extends ServiceProvider
     /** @var bool Whether the storage connections have been settled, and their check once the application has booted queued. */
     private bool $settled = false;
 
-    /** @var bool Whether the SSO capability's switch was on when the binding rule read it, which the `sso` contributor's registration follows. */
+    /** @var bool Whether the SSO capability's switch was on when the seams were bound, which the `sso` contributor follows. */
     private bool $ssoOn = false;
 
-    /** @var bool Whether the MFA capability's switch was on when the binding rule read it, which the `mfa` contributor's registration and the step-up's rendering follow. */
+    /** @var bool Whether the MFA capability's switch was on when the seams were bound, which the `mfa` contributor and the step-up follow. */
     private bool $mfaOn = false;
 
-    /** @var bool Whether the authorization capability's switch was on when the binding rule read it, which the step-up's rendering follows with the MFA capability's. */
+    /** @var bool Whether the authorization capability's switch was on when the seams were bound, which the step-up follows. */
     private bool $authorizationOn = false;
 
     /**
-     * Register the configuration, the manager, the request's records, the held
-     * actor reader audit-log asks and the grant half of SSO's principal scope,
-     * write the shared storage connection into every member key that is unset
-     * and whose member has registered, apply the binding rule to every seam
-     * binding, register the declaration of the authentication context's keys on
+     * Register the configuration, the manager, the request's records and the
+     * held actor reader audit-log asks, write the shared storage connection
+     * into every member key that is unset and whose member has registered,
+     * register the declaration of the authentication context's keys on
      * `laravel-authorization`'s key catalogue, and register the callback that
-     * aligns and checks the storage connections once every provider has
-     * registered.
+     * binds the seams and checks the storage connections once every provider
+     * has registered.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[\Override]
     public function register(): void
@@ -172,9 +155,8 @@ final class IamServiceProvider extends ServiceProvider
 
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
-        $this->registerSeams();
         AuthenticationContextKeys::register($this->app);
-        $this->registerStorageCheck();
+        $this->registerSettlement();
 
         // `iam:check` runs `authorization:check`, so laravel-authorization
         // boots for diagnosis when it is the process's command: a broken
@@ -184,17 +166,17 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Settle the storage connections if the booting phase passed before this
-     * provider registered (it was registered while the application booted, or
-     * after), register this package's part of the audit trail with audit-log
-     * before it stops taking registrations (an audit-log that never registers
-     * is not refused while a configuration command runs, as a member is not),
-     * then queue the `mfa` and `sso` authentication context contributors'
-     * registration for when every provider has booted, and bootstrap the
-     * listener provisioning SSO's unlinked results, the rendering of
-     * `laravel-authorization`'s insufficient-authentication exception as MFA's
-     * step-up, the worker reset listeners, the publishing tag and the console
-     * commands.
+     * Bind the seams and settle the storage connections if the booting phase
+     * passed before this provider registered (it was registered while the
+     * application booted, or after), register this package's part of the audit
+     * trail with audit-log before it stops taking registrations (an audit-log
+     * that never registers is not refused while a configuration command runs,
+     * as a member is not), then queue the `mfa` and `sso` authentication
+     * context contributors' registration for when every provider has booted,
+     * and bootstrap the listener provisioning SSO's unlinked results, the
+     * rendering of `laravel-authorization`'s insufficient-authentication
+     * exception as MFA's step-up, the worker reset listeners, the publishing
+     * tag and the console commands.
      *
      * @return void
      *
@@ -203,7 +185,6 @@ final class IamServiceProvider extends ServiceProvider
      * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
      * @throws \LogicException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function boot(): void
     {
@@ -217,9 +198,8 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Return the capabilities whose seam bindings the binding rule applies,
-     * which `iam:check` reads the mandatory seams from too; each later
-     * milestone adds its capability's `*Seams` class here.
+     * Return the capabilities whose seams are bound, which `iam:check` reads
+     * the mandatory seams from too.
      *
      * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
      *
@@ -262,7 +242,7 @@ final class IamServiceProvider extends ServiceProvider
      */
     protected function registerFactorCodeCallers(): void
     {
-        $key = BindingRule::SCOPED_PREFIX . FactorCodeCallers::class;
+        $key = SeamBinding::SCOPED_PREFIX . FactorCodeCallers::class;
 
         $this->app->scoped($key, static fn (): FactorCodeCallers => new FactorCodeCallers);
         $this->app->bind(FactorCodeCallers::class, static fn (Application $app): mixed => $app->make($key));
@@ -278,7 +258,7 @@ final class IamServiceProvider extends ServiceProvider
     {
         foreach ([AdmittedRedemptions::class, RenewalRecorder::class] as $record) {
 
-            $key = BindingRule::SCOPED_PREFIX . $record;
+            $key = SeamBinding::SCOPED_PREFIX . $record;
 
             $this->app->scoped($key, static fn (): object => new $record);
             $this->app->bind($record, static fn (Application $app): mixed => $app->make($key));
@@ -288,13 +268,13 @@ final class IamServiceProvider extends ServiceProvider
     /**
      * Register this package's contributors of the `mfa` and `sso` namespaces
      * with `laravel-authentication`'s authentication context, each once, while
-     * its capability's switch is on (IAM-3.12, IAM-4.8), as the binding rule
-     * read it when this package registered, so each contributor and its
-     * capability's adapters are bound together or not at all, whatever a later
-     * provider writes to the switch, from a `booted()` callback, which runs
-     * once every provider has booted (at once when the application already
-     * has). `laravel-authentication` asks for a registration from `boot()`, and
-     * a member may be registered from another provider's `boot()`, after this
+     * its capability's switch is on (IAM-3.12, IAM-4.8), as it read when the
+     * seams were bound, so each contributor and its capability's adapters are
+     * bound together or not at all, whatever a later provider writes to the
+     * switch, from a `booted()` callback, which runs once every provider has
+     * booted (at once when the application already has).
+     * `laravel-authentication` asks for a registration from `boot()`, and a
+     * member may be registered from another provider's `boot()`, after this
      * package's has run: its provider binds its contributors only then, so a
      * registration made from this package's `boot()` would go to an instance
      * nobody keeps and be lost without a word. A contributor the application
@@ -316,76 +296,14 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Apply the binding rule to every capability's seam bindings, and keep its
-     * outcome for the checks, and whether the MFA, SSO and authorization
-     * capabilities' switches were on for the `mfa` and `sso` contributors'
-     * registration and the step-up's rendering; and bind the default of this
-     * package's own port for the grant half of SSO's principal scope (IAM-6.8),
-     * only while nothing is bound to it, so an application's or a test's
-     * binding, made before or after, is kept: while the authorization
-     * capability's switch is on, `laravel-authorization`'s grant scope query
-     * (AUTHZ-14.2, `GrantScopeAdapter`), transient, since it resolves the query
-     * on every call; with it off, `UnknownGrantScope`, which answers `unknown`
-     * for everyone, shared, since it reads and keeps nothing, so nobody is
-     * `within_tenant` on the memberships alone. It is no member's seam, so the
-     * binding rule has no default of a member's to tell it from.
-     *
-     * While the SSO capability's switch is on, the seams answered from the
-     * application's memberships that the rule left off are reserved for the
-     * rule applied again once every provider has registered
-     * (`BindingRule::reserve()`): the exact binding of SSO's default each holds
-     * is recorded, SSO's default bound there first where SSO has not registered
-     * yet, as SSO would bind it, so that only a seam still holding it then is
-     * bound over, and any binding the application makes over it meanwhile is
-     * kept.
-     *
-     * The rule reads the bindings and their switches from the configuration
-     * every member will hold once registered, whichever of them has not
-     * registered yet, so every provider order, and a cached configuration, bind
-     * the same. The switch is this package's own, merged before the rule runs,
-     * so it reads the same here as the rule reads it: a value a later provider
-     * writes comes too late for either.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
-     */
-    protected function registerSeams(): void
-    {
-        $app          = $this->app;
-        $capabilities = array_map(static fn (string $provider): ProvidesSeams => $app->make($provider), self::seamProviders());
-
-        $rule    = $app->make(BindingRule::class);
-        $outcome = $rule->apply($app, ...$capabilities);
-        $config  = $app->make(ConfigRepository::class);
-
-        $this->ssoOn           = SsoSeams::isOn($config);
-        $this->mfaOn           = MfaSeams::isOn($config);
-        $this->authorizationOn = AuthorizationSeams::isOn($config);
-
-        if ($this->ssoOn) {
-            $outcome = $rule->reserve($app, $outcome, $app->make(TenancySeams::class));
-        }
-
-        $app->instance(BindingOutcome::class, $outcome);
-
-        if ($this->authorizationOn) {
-            $app->bindIf(GrantScope::class, GrantScopeAdapter::class);
-        } else {
-            $app->singletonIf(GrantScope::class, UnknownGrantScope::class);
-        }
-    }
-
-    /**
-     * Register the callback that settles the storage connections in the booting
-     * phase. When the application has already booted, the callback would never
-     * run, and none is registered: Laravel boots a provider registered then at
-     * once, and `boot()` settles.
+     * Register the callback that binds the seams and settles the storage
+     * connections in the booting phase. When the application has already
+     * booted, the callback would never run, and none is registered: Laravel
+     * boots a provider registered then at once, and `boot()` settles.
      *
      * @return void
      */
-    protected function registerStorageCheck(): void
+    protected function registerSettlement(): void
     {
         /** @var \Illuminate\Foundation\Application $app */
         $app = $this->app;
@@ -442,7 +360,7 @@ final class IamServiceProvider extends ServiceProvider
 
     /**
      * Register this package's contributor under the namespace while its
-     * capability's switch was on when the binding rule read it and nothing else
+     * capability's switch was on when the seams were bound and nothing else
      * holds the namespace.
      *
      * @param  bool  $on
@@ -469,23 +387,43 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Apply the binding rule once more to the seams answered from the
-     * application's memberships, then align the storage connections again and
-     * refuse a mismatch, once only, whichever phase reaches it first, and queue
-     * the same once more for when the application has booted, refusing then a
-     * member that has still not registered.
+     * Bind every capability's adapters over the members' defaults, and this
+     * package's own grant scope port (IAM-6.8) where nothing is bound to it:
+     * `laravel-authorization`'s grant scope query while the authorization
+     * capability is on, otherwise `UnknownGrantScope`.
      *
-     * The seams answered from the memberships are applied again only while the
-     * SSO capability's switch was on when the binding rule first read it, and
-     * follow the switch as it read then, whatever a provider registering later
-     * wrote, so they and SSO's other seams are bound together or not at all: a
-     * membership contract the application binds in its own provider's
-     * `register()`, which Laravel runs after the packages', is bound only by
-     * now, and binds the adapters it answers over the very bindings of SSO's
-     * defaults reserved as the rule first ran, never over a binding of SSO's
-     * seam the application has made meanwhile, even one of SSO's own default
-     * class. The outcome kept for the checks gains whatever this binds or
-     * keeps.
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function bindSeams(): void
+    {
+        /** @var \Illuminate\Foundation\Application $app */
+        $app    = $this->app;
+        $config = $app->make(ConfigRepository::class);
+
+        $this->ssoOn           = SsoSeams::isOn($config);
+        $this->mfaOn           = MfaSeams::isOn($config);
+        $this->authorizationOn = AuthorizationSeams::isOn($config);
+
+        foreach (self::seamProviders() as $provider) {
+            foreach ($app->make($provider)->seams($config) as $binding) {
+                $binding->apply($app);
+            }
+        }
+
+        if ($this->authorizationOn) {
+            $app->bindIf(GrantScope::class, GrantScopeAdapter::class);
+        } else {
+            $app->singletonIf(GrantScope::class, UnknownGrantScope::class);
+        }
+    }
+
+    /**
+     * Bind the seams, then align the storage connections again and refuse a
+     * mismatch, once only, whichever phase reaches it first, and queue the same
+     * once more for when the application has booted, refusing then a member
+     * that has still not registered.
      *
      * Neither can be done in `register()` alone: a member that registers after
      * this package merges its configuration only then, so its key can be
@@ -499,7 +437,6 @@ final class IamServiceProvider extends ServiceProvider
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException
@@ -510,13 +447,7 @@ final class IamServiceProvider extends ServiceProvider
             return;
         }
 
-        if ($this->ssoOn) {
-            $tenancy = $this->app->make(TenancySeams::class, ['ssoOn' => $this->ssoOn]);
-            $outcome = $this->app->make(BindingRule::class)->applyAgain($this->app, $this->app->make(BindingOutcome::class), $tenancy);
-
-            $this->app->instance(BindingOutcome::class, $outcome);
-        }
-
+        $this->bindSeams();
         $this->checkStorage(false);
 
         $this->settled = true;

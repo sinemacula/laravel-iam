@@ -6,31 +6,15 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Authentication\Contracts\PasskeyFactorGate;
-use SineMacula\Laravel\Authentication\Passkeys\NoPasskeyFactors;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
-use SineMacula\Laravel\Mfa\Passkeys\UnavailablePasskeyGateway;
 
 /**
- * The seams passkeys become MFA factors through (IAM-3.10): MFA's passkey
- * gateway runs its ceremonies through `laravel-authentication`'s passkeys, and
- * `laravel-authentication`'s passkey factor gate calls MFA's passkey change
- * gate inside the passkey transaction.
- *
- * MFA's passkey gateway binds only while MFA's capability switch
- * (`iam.adapters.mfa`) is on and an MFA application offers the `passkey` factor
- * type (`mfa.applications.*.types`), read from the configuration every member
- * will hold once registered; otherwise MFA keeps its own default, and no
- * ceremony runs (IAM-1.3). The passkey factor gate binds, and is mandatory,
- * whenever the switch is on, whether or not the type is offered now: a passkey
- * enrolled as a factor while the type was offered stays one once it is
- * withdrawn, and left on `laravel-authentication`'s default, removing it would
- * leave its factor and association standing. MFA's change gate asks nothing of
- * a registration without a binding or of an application that does not enable
- * passkeys, and removes nothing for a credential with no association, so the
- * gate changes nothing else while the type is not offered. Each adapter
- * replaces the member's own default only (IAM-8.4), and is transient (IAM-8.1).
+ * The seams passkeys become MFA factors through (IAM-3.10). MFA's passkey
+ * gateway is bound only while an MFA application offers the `passkey` type. The
+ * factor gate is bound, and mandatory, whenever the capability is on: a passkey
+ * enrolled while the type was offered stays a factor once it is withdrawn.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,9 +30,7 @@ final readonly class PasskeySeams implements ProvidesSeams
     private const string APPLICATIONS = 'mfa.applications';
 
     /**
-     * Return the bindings of passkeys as MFA factors: the passkey gateway on
-     * while MFA's capability switch is and an MFA application offers passkeys,
-     * and the passkey factor gate on, and mandatory, while the switch is.
+     * Return the bindings of passkeys as MFA factors.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -56,11 +38,11 @@ final readonly class PasskeySeams implements ProvidesSeams
     #[\Override]
     public function seams(Repository $config): array
     {
-        $offered = static fn (Repository $switches): bool => MfaSeams::isOn($switches) && self::isOffered($switches);
+        $on = MfaSeams::isOn($config);
 
         return [
-            new SeamBinding(PasskeyGateway::class, PasskeyGatewayAdapter::class, [UnavailablePasskeyGateway::class], appliesWhen: $offered),
-            new SeamBinding(PasskeyFactorGate::class, PasskeyFactorGateAdapter::class, [NoPasskeyFactors::class], appliesWhen: MfaSeams::isOn(...), mandatory: true),
+            new SeamBinding(PasskeyGateway::class, PasskeyGatewayAdapter::class, $on && self::isOffered($config)),
+            new SeamBinding(PasskeyFactorGate::class, PasskeyFactorGateAdapter::class, $on, mandatory: true),
         ];
     }
 

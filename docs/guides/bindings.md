@@ -23,24 +23,23 @@ or call an adapter.
 
 ## The binding rule
 
-- A seam is bound to its adapter only while it is unbound or still bound to its member's own default. Your
-  application's binding always wins: one made before this package registers is kept, and one made after it, in your
-  own provider's `register()` or `boot()`, replaces the adapter as any later binding does. The order the service
-  providers register in changes nothing.
-- The rule runs in `register()`. Three switches turn whole groups of bindings off: `iam.adapters.mfa` (authentication
-  and MFA, passkeys, MFA's context), `iam.adapters.sso` (authentication and SSO, tenancy) and
-  `iam.adapters.authorization` (authorization). See [Configuration](configuration.md).
+- A seam is bound to its adapter only while it is unbound or its member says it still holds that member's own default.
+  Your application's binding always wins: one made in any provider's `register()` is kept, and one made in a `boot()`
+  replaces the adapter. The order the service providers register in changes nothing.
+- The rule runs once every provider has registered, before any boots. Three switches turn whole groups of bindings
+  off: `iam.adapters.mfa` (authentication and MFA, passkeys, MFA's context), `iam.adapters.sso` (authentication and
+  SSO, tenancy) and `iam.adapters.authorization` (authorization). See [Configuration](configuration.md).
 - Adapters are transient: each reads what it needs afresh on every call. An adapter that keeps request state is bound
   scoped, under a key of this package's own (`iam.scoped:` followed by the seam), with the seam itself bound to a
   closure that resolves that key. Laravel's queue worker and Octane forget scoped instances between jobs and requests,
   and `Iam::resetWorkerState()` forgets them for any other long-lived process (see [Operations](operations.md)).
-- A seam marked mandatory below is one `iam:check` fails on while it is unbound, still on its member's permissive or
-  inert default, or bound through a closure it cannot read. `Always` means under every configuration; `While ...`
-  names the configuration that makes it so. See [Checks](checks.md#seams).
+- A seam marked mandatory below is one `iam:check` fails on while it is unbound or its member says it is still on its
+  permissive or inert default. `Always` means under every configuration; `While ...` names the configuration that
+  makes it so. See [Checks](checks.md#seams).
 
 ## Replacing a binding
 
-Bind the contract in your own service provider, by class name or as an instance:
+Bind the contract in your own service provider:
 
 ```php
 use App\Auth\AuditedStepUp;
@@ -52,10 +51,8 @@ public function register(): void
 }
 ```
 
-A binding in place before this package registers is kept, and `iam:check` notes it (`note: ... keeps the
-application's binding`); one made later replaces the adapter silently. Either way the check reads the live binding of
-every mandatory seam. On a mandatory seam, bind a class name or an instance, never a closure: the check cannot tell
-what a closure returns, so it refuses it.
+A binding made in any `register()` is kept and one made in a `boot()` replaces the adapter. `iam:check` asks each
+member whether a mandatory seam still holds its default, so a closure of your own passes.
 
 Whatever you bind in an adapter's place takes on the adapter's duties, which the members' guides describe and this
 package's adapters keep:
@@ -208,7 +205,6 @@ of those breaks what the row says it holds. Three keep a binding or registration
 | `Iam\Mfa\FactorCodeCallers`                                           | Itself                                | Scoped, under `iam.scoped:`                              | The caller each factor code was sent for.                                                                                                                                                                      | Do not replace it.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | The `mfa` context namespace                                           | `Iam\Mfa\MfaContextContributor`       | Registered once booted                                   | Registered only while `iam.adapters.mfa` is on and no `mfa` contributor is registered, so yours is kept.                                                                                                       | Yours supplies the `mfa.*` keys of `Auth::context()` (`mfa.accepted`, `mfa.level` and the rest) that a policy reading the context relies on. One that answers them from anything but the proofs of the subject's own session (the request's, or a guard's, say) reports one session's verification for another's.                                                                                                                                                |
 | The `sso` context namespace                                           | `Iam\Sso\SsoContextContributor`       | Registered once booted                                   | Registered only while `iam.adapters.sso` is on and no `sso` contributor is registered, so yours is kept.                                                                                                       | Yours supplies the `sso.*` keys of `Auth::context()` (`sso.connection` and `sso.link_provenance` among them) that anything reading the context relies on, a link confirmation of yours among them. One that answers them from anything but the provenance SSO stored with the session lets a session claim a connection or a link it never had.                                                                                                                  |
-| `Iam\Bindings\BindingOutcome`                                         | Itself                                | Shared instance                                          | Which seams the package bound and which kept the application's binding, read by `iam:check` for its notes and mandatory seams.                                                                                 | Do not replace it: `iam:check` would then report seams from a binding the package never made.                                                                                                                                                                                                                                                                                                                                                                    |
 | `Authorization\Diagnostics\Declarations`                              | `laravel-authorization`'s own         | Instance, once an adapter is declared                    | What each package declared of the adapters it bound over `laravel-authorization`'s contracts, which `authorization:check` reads; this package declares each adapter it binds there.                            | Do not replace it: `authorization:check` would then name adapters from declarations nobody made. Binding over a declared contract is yours to do, and the report then shows the declaration overridden.                                                                                                                                                                                                                                                          |
 | `'iam.audit.registered'` (`Iam\Audit\AuditRegistrations::REGISTERED`) | `true`                                | Instance, once the package has registered with audit-log | Read by the audit check, which reports *The audit mappers are not registered with laravel-audit-log* without it.                                                                                               | Do not bind it: the audit check would then pass an application whose mappers never registered.                                                                                                                                                                                                                                                                                                                                                                   |
 | `AuditLog\Contracts\HeldActorReader`                                  | `Iam\Audit\AuthenticationActorReader` | Shared                                                   | Gives audit-log the caller a `jwt` or `api_key` guard holds as a record's actor, with its principal, tenant and session.                                                                                       | Do not replace it: audit-log then names no actor for a caller of `laravel-authentication`'s guards.                                                                                                                                                                                                                                                                                                                                                              |

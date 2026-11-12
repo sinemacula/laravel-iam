@@ -256,12 +256,9 @@ publishing anything twice.
    Replace every such controller with `Iam::signIns()->redeem()`, `Iam::reauthentications()->redeem()` and
    `Iam::links()->redeem()`, as [Signing in through SSO](example-application.md#signing-in-through-sso) shows.
 6. Remove the glue you wrote. Your own binding of a member's contract always wins over this package's adapter, so an
-   adapter you wrote for a seam this package binds keeps running in its place. `iam:check` cannot find all of them:
-   it notes only a binding made before this package registers (`note: ... keeps the application's binding`), and
-   package providers register before your application's, so a binding in your own service provider's `register()` or
-   `boot()`, the usual place, replaces the adapter silently, and is checked only if the seam is mandatory. Search your
-   providers for every contract [Bindings](bindings.md) lists, and remove each binding yourself unless you mean to keep
-   it. In particular remove:
+   adapter you wrote for a seam this package binds keeps running in its place, silently. `iam:check` checks it only if
+   the seam is mandatory. Search your providers for every contract [Bindings](bindings.md) lists, and remove each
+   binding yourself unless you mean to keep it. In particular remove:
    - your own listener of SSO's `ResultUnlinked` that provisions people: name your provisioner instead (see
      [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)), and register no provisioning listener
      beside the package's;

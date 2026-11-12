@@ -14,13 +14,9 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
  * Boots the application with this package's provider first, last and between
- * the members', and with the application's own bindings made before any
- * provider registers, as a provider registered ahead of the packages makes
- * them, or once every provider has registered, as an application provider's
- * `register()` makes them, Laravel registering the application's providers
- * after the packages'. The binding rule's tests prove IAM-8.4 through it. A
- * binding made in a provider of the test's own, in `register()` or `boot()`,
- * lands where the test puts that provider in the order.
+ * the members', with the application's own bindings made before any provider
+ * registers or once every provider has registered, as an application provider's
+ * `register()` makes them.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

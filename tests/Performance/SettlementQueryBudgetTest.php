@@ -5,8 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Performance;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
-use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
@@ -14,9 +13,7 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
 
 /**
  * The statements this package makes as an application starts and as a worker
- * moves between requests and jobs: none, since aligning the storage
- * connections, checking them and applying the binding rule read configuration
- * and the container only, and so does the worker reset.
+ * moves between requests and jobs: none.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -26,8 +23,7 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
 #[CoversClass(IamServiceProvider::class)]
 #[CoversClass(ConnectionAlignment::class)]
 #[CoversClass(StorageConnection::class)]
-#[CoversClass(BindingRule::class)]
-#[CoversClass(MemberDefaults::class)]
+#[CoversClass(SeamBinding::class)]
 #[CoversClass(WorkerReset::class)]
 final class SettlementQueryBudgetTest extends PerformanceContractTestCase
 {

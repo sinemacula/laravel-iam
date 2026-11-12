@@ -8,13 +8,10 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\ExternalEvidencePolicy;
 use SineMacula\Laravel\Authentication\Contracts\ExternalIdentityLinks;
-use SineMacula\Laravel\Authentication\External\InsufficientEvidence as InsufficientExternalEvidence;
-use SineMacula\Laravel\Authentication\External\NoExternalLinks;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
-use SineMacula\Laravel\Sso\Applications\ConfiguredApplicationPolicy;
 use SineMacula\Laravel\Sso\Config\Features;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
@@ -25,78 +22,14 @@ use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy;
-use SineMacula\Laravel\Sso\Evidence\InsufficientEvidence;
-use SineMacula\Laravel\Sso\Flows\NoReauthenticationSessions;
-use SineMacula\Laravel\Sso\Freshness\RefusingFreshness;
-use SineMacula\Laravel\Sso\Linking\NoEmailMatches;
-use SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation;
 use SineMacula\Laravel\Sso\Links\LinkStore;
-use SineMacula\Laravel\Sso\Links\NoLinks;
-use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 
 /**
  * The seams `laravel-authentication`, SSO and MFA join through for SSO (IAM-4.2
- * to IAM-4.4, IAM-4.6, IAM-4.7, IAM-4.9, IAM-4.10, IAM-5.1): re-authentication
- * sessions, session revocation, the external identity links, SSO's own link
- * store, the provider's evidence, freshness, the application's external
- * sign-in, the link email matcher and link confirmation.
- *
- * - SSO's `ReauthenticationSessions` is answered from
- *   `laravel-authentication`'s external standing, with its renewal recorded for
- *   the redemption's one write (`ReauthenticationSessionsAdapter`). It is
- *   mandatory while SSO's enforcement is on or the application binds MFA's
- *   tenant requirement (IAM-10.2): left on SSO's default then, nobody held to a
- *   tenant's rule could renew a session through the connection the rule names.
- * - SSO's `SessionRevocation` ends `laravel-authentication`'s sessions inside
- *   SSO's change (`SessionRevocationAdapter`). It is mandatory: left on SSO's
- *   default, an enforcement change, a disabled or deleted connection, a removed
- *   link or a widened scope would leave every session it concerns standing.
- * - `laravel-authentication`'s `ExternalIdentityLinks` answers from the
- *   redemption SSO admitted in this request alone
- *   (`ExternalIdentityLinksAdapter`). It is mandatory while SSO is in use, a
- *   protocol switched on (IAM-10.2): left on the default, no sign-in through
- *   SSO would find its identity.
- * - SSO's `Linker` is SSO's own `Links\LinkStore`, scoped, which SSO also reads
- *   as its link storage. It is mandatory while SSO is in use.
- * - `laravel-authentication`'s `ExternalEvidencePolicy` is answered from the
- *   evidence SSO accepted, with MFA's `CombinationPolicy` as the second gate
- *   (`ExternalEvidencePolicyAdapter`), so a provider's `amr` is not multifactor
- *   authentication unless MFA's policy is rebound to trust the connection.
- * - SSO's `EvidencePolicy`, the first gate, is bound to SSO's own
- *   `Evidence\ConnectionEvidencePolicy` only while `iam.sso.evidence` is on as
- *   well, read strictly, since accepting a provider's evidence widens what a
- *   session can satisfy: only `true`, `1`, `on` and `yes` turn it on. Off, SSO
- *   keeps its default, which accepts nothing. It keeps nothing of one call for
- *   the next but holds the settings it reads, so it is scoped, as SSO's own
- *   documentation binds it.
- * - SSO's `Freshness` asks `laravel-authentication`'s freshness policy with
- *   SSO's maximum age as the caller's requirement (`FreshnessAdapter`).
- * - SSO's `ApplicationPolicy` is answered by `laravel-authentication`'s sign-in
- *   methods for the guard of the same name (`ApplicationPolicyAdapter`).
- * - SSO's `LinkEmailMatcher` matches the identities' verified email addresses
- *   through `laravel-authentication`'s normaliser (`LinkEmailMatcherAdapter`).
- * - SSO's `LinkConfirmation` is answered from how the caller's session was
- *   signed in, read through `laravel-authentication`'s public reader of a
- *   session's proofs: a password, a passkey or the application's own recovery
- *   is independent of a verified domain link, and nothing else is
- *   (`LinkConfirmationAdapter`). It is not mandatory: SSO's default refuses
- *   every such `link`, which is never looser.
- *
- * The `sso` namespace of `laravel-authentication`'s authentication context is
- * no seam: its contributor (`SsoContextContributor`) is registered in the
- * service provider's `boot()`, under the same switch. The tenant authentication
- * policy SSO's enforcement folds into is declared apart
- * (`Tenancy\TenancySeams`), since MFA's tenant requirement is its source too.
- *
- * SSO's handoff issuer is never bound: SSO issues and redeems its own handoff
- * codes, so it keeps its default, `Handoffs\DatabaseHandoffStore`.
- *
- * Each adapter replaces the member's own default only; an application's binding
- * is kept (IAM-8.4). The adapters keep nothing and resolve the records this
- * package keeps for a redemption (`AdmittedRedemptions`, `RenewalRecorder`) on
- * every call, so each is transient. The whole capability is switched by
- * `iam.adapters.sso`: off, nothing here binds, and each member keeps its own
- * default.
+ * to IAM-4.4, IAM-4.6, IAM-4.7, IAM-4.9, IAM-4.10, IAM-5.1), switched by
+ * `iam.adapters.sso`. SSO's `Linker` and, while `iam.sso.evidence` is on, its
+ * `EvidencePolicy` are bound to SSO's own `LinkStore` and
+ * `ConnectionEvidencePolicy`, scoped.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -118,16 +51,12 @@ final readonly class SsoSeams implements ProvidesSeams
      */
     public function __construct(
 
-        /** Tells whether the application has bound MFA's tenant requirement, which the re-authentication sessions' mandate reads; with none, only the configuration is read. */
+        /** Tells whether the application binds MFA's tenant requirement; with none, only the configuration is read. */
         private ?Container $container = null,
     ) {}
 
     /**
-     * Return the bindings between `laravel-authentication` and SSO, each on
-     * while the capability's switch is; session revocation always mandatory,
-     * the links and the link store while SSO is in use, and the
-     * re-authentication sessions while SSO's enforcement or a tenant MFA
-     * requirement is on.
+     * Return the bindings between `laravel-authentication` and SSO.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -135,31 +64,27 @@ final readonly class SsoSeams implements ProvidesSeams
     #[\Override]
     public function seams(Repository $config): array
     {
-        $on       = static fn (Repository $switches): bool => self::isOn($switches);
-        $evidence = static fn (Repository $switches): bool => self::isOn($switches) && self::isEvidenceOn($switches);
+        $on       = self::isOn($config);
         $inUse    = self::isInUse($config);
         $enforced = fn (): bool => TenancySeams::isEnforcedOrRequired($config, $this->container);
 
         return [
-            new SeamBinding(ReauthenticationSessions::class, ReauthenticationSessionsAdapter::class, [NoReauthenticationSessions::class], appliesWhen: $on, mandatory: $enforced),
-            new SeamBinding(SessionRevocation::class, SessionRevocationAdapter::class, [NoSessionRevocation::class], appliesWhen: $on, mandatory: true),
-            new SeamBinding(ExternalIdentityLinks::class, ExternalIdentityLinksAdapter::class, [NoExternalLinks::class], appliesWhen: $on, mandatory: $inUse),
-            new SeamBinding(Linker::class, LinkStore::class, [NoLinks::class], Lifetime::SCOPED, $on, $inUse),
-            new SeamBinding(ExternalEvidencePolicy::class, ExternalEvidencePolicyAdapter::class, [InsufficientExternalEvidence::class], appliesWhen: $on),
-            new SeamBinding(Freshness::class, FreshnessAdapter::class, [RefusingFreshness::class], appliesWhen: $on),
-            new SeamBinding(ApplicationPolicy::class, ApplicationPolicyAdapter::class, [ConfiguredApplicationPolicy::class], appliesWhen: $on),
-            new SeamBinding(LinkEmailMatcher::class, LinkEmailMatcherAdapter::class, [NoEmailMatches::class], appliesWhen: $on),
-            new SeamBinding(LinkConfirmation::class, LinkConfirmationAdapter::class, [RefusingLinkConfirmation::class], appliesWhen: $on),
-            new SeamBinding(EvidencePolicy::class, ConnectionEvidencePolicy::class, [InsufficientEvidence::class], Lifetime::SCOPED, $evidence),
+            new SeamBinding(ReauthenticationSessions::class, ReauthenticationSessionsAdapter::class, $on, mandatory: $enforced),
+            new SeamBinding(SessionRevocation::class, SessionRevocationAdapter::class, $on, mandatory: true),
+            new SeamBinding(ExternalIdentityLinks::class, ExternalIdentityLinksAdapter::class, $on, mandatory: $inUse),
+            new SeamBinding(Linker::class, LinkStore::class, $on, Lifetime::SCOPED, $inUse),
+            new SeamBinding(ExternalEvidencePolicy::class, ExternalEvidencePolicyAdapter::class, $on),
+            new SeamBinding(Freshness::class, FreshnessAdapter::class, $on),
+            new SeamBinding(ApplicationPolicy::class, ApplicationPolicyAdapter::class, $on),
+            new SeamBinding(LinkEmailMatcher::class, LinkEmailMatcherAdapter::class, $on),
+            new SeamBinding(LinkConfirmation::class, LinkConfirmationAdapter::class, $on),
+            new SeamBinding(EvidencePolicy::class, ConnectionEvidencePolicy::class, $on && self::isEvidenceOn($config), Lifetime::SCOPED),
         ];
     }
 
     /**
-     * Whether the capability's switch leaves its bindings on, read leniently,
-     * as the members read a switch an environment variable fills: `false`, as a
-     * boolean or as text, `0`, `off` and `no` turn it off; anything else, a
-     * missing or empty value included, leaves it on, since the package requires
-     * every member and binds them together unless told not to.
+     * Whether the switch is on: `false`, `0`, `off` and `no` turn it off, and
+     * anything else, a missing value included, leaves it on.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -183,11 +108,8 @@ final readonly class SsoSeams implements ProvidesSeams
     }
 
     /**
-     * Whether the evidence switch binds SSO's per-connection evidence policy,
-     * read strictly, since it widens what a provider's assertion can count
-     * for: `true`, as a boolean or as text, `1`, `on` and `yes` turn it on;
-     * anything else, a missing, empty or unrecognised value included, leaves it
-     * off.
+     * Whether the evidence switch is on, read strictly since it widens what a
+     * provider's assertion counts for.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
