@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
@@ -20,6 +19,7 @@ use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 
@@ -97,14 +97,14 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
     ) {}
 
     /**
-     * The parts of the requirement the subject's proofs leave unmet, as MFA's
-     * requirement check judges them.
+     * The parts of the requirement the subject's proofs leave unmet.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\RequirementSubject  $subject
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     #[\Override]
     public function evaluate(RequirementSubject $subject, Requirement $requirement): RequirementEvaluation
@@ -117,7 +117,7 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
 
         $translated = $this->requirements->toMfa($requirement);
         $reference  = $subject->session === null ? SignIn::UNNAMED : SignIn::reference($subject->session, $subject->application);
-        $signIn     = new SignIn(IdentityReference::of($identity), $subject->application, $reference, VerificationGeneration::current($identity));
+        $signIn     = new SignIn(ProofOwner::of($identity), $subject->application, $reference, VerificationGeneration::current($identity));
 
         $further = array_reverse($subject->proofs(self::since($translated, $subject->now), self::FURTHER_KINDS, RequirementSubject::MAX_LIMIT));
         $proofs  = array_map(fn (RecordedProof $proof): Proof => $this->proofs->toMfa($proof, $signIn, ProviderTrust::withheld()), [$subject->firstFactor, ...$further]);

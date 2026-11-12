@@ -16,10 +16,10 @@ use SineMacula\Laravel\Iam\Mfa\FirstFactorResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Concerns\MigratesMembers;
@@ -144,7 +144,7 @@ final class StatelessVerificationTest extends TestCase
         return Factor::query()->create([
             ...AuthenticatorApp::FACTOR,
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($person)->key,
+            'authenticatable_id'   => ProofOwner::of($person)->key,
             'status'               => 'confirmed',
             'confirmed_at'         => CarbonImmutable::now(),
             'application'          => self::GUARD,

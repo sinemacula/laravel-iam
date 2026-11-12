@@ -19,7 +19,6 @@ use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Iam\Mfa\EventContextResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\PasskeyFactorGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\PasskeyGatewayAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MfaEvent;
@@ -33,6 +32,7 @@ use SineMacula\Laravel\Mfa\Events\PasskeyAssociated;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Models\PasskeyAssociation;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Concerns\MigratesMembers;
@@ -276,7 +276,7 @@ final class PasskeyFactorsTest extends TestCase
         $kept = Factor::query()->create([
             ...AuthenticatorApp::FACTOR,
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($person)->key,
+            'authenticatable_id'   => ProofOwner::of($person)->key,
             'label'                => 'Phone',
             'status'               => FactorStatus::CONFIRMED->value,
             'application'          => self::GUARD,

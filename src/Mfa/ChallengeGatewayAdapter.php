@@ -11,7 +11,6 @@ use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Attempts\ChallengeOutcome;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
@@ -25,6 +24,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * MFA's challenge gateway, sending and checking SMS and email factor codes
@@ -162,20 +162,19 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     }
 
     /**
-     * The factor's owner, when the factor is stored and owned by the binding's
-     * identity.
+     * The factor's owner, when it is the binding's identity.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @return ?\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private static function owner(Factor $factor, ProofBinding $binding): ?MultiFactorAuthenticatable
     {
         $owner = $factor instanceof EloquentFactor ? $factor->authenticatable()->getResults() : null;
 
-        return $owner instanceof MultiFactorAuthenticatable && IdentityReference::of($owner)->owns($binding) ? $owner : null;
+        return $owner instanceof MultiFactorAuthenticatable && ProofOwner::of($owner)->owns($binding) ? $owner : null;
     }
 
     /**

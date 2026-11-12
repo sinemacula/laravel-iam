@@ -10,7 +10,6 @@ use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Codes\PackageChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
@@ -19,6 +18,7 @@ use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Testing\FakeEmailSender;
@@ -132,7 +132,7 @@ final class MultifactorEvidenceTest extends TestCase
             'type'                 => 'email',
             'destination'          => self::DESTINATION,
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($person)->key,
+            'authenticatable_id'   => ProofOwner::of($person)->key,
             'status'               => FactorStatus::CONFIRMED->value,
             'application'          => self::GUARD,
             'confirmed_at'         => CarbonImmutable::now(),

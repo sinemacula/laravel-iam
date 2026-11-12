@@ -5,9 +5,9 @@ declare(strict_types = 1);
 namespace Tests\Fixtures\Mfa\Codes\Concerns;
 
 use Carbon\CarbonImmutable;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use Tests\Fixtures\Models\Person;
 
 /**
@@ -90,7 +90,7 @@ trait ArrangesDeliveredFactors
             'type'                 => $type,
             'destination'          => $destination ?? self::deliveredDestination($person, $type),
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($person)->key,
+            'authenticatable_id'   => ProofOwner::of($person)->key,
             'label'                => $type === 'email' ? 'Email' : 'Phone',
             'status'               => $status->value,
             'application'          => self::GUARD,

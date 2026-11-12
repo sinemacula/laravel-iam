@@ -8,13 +8,13 @@ use SineMacula\Laravel\Authentication\Contracts\AdditionalFactorPolicy;
 use SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementPolicy;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
@@ -74,13 +74,13 @@ final readonly class AdditionalFactorPolicyAdapter implements AdditionalFactorPo
     ) {}
 
     /**
-     * The further factor the sign-in or session must prove, as MFA's
-     * requirement policy asks for it.
+     * The further factor MFA's policy asks the sign-in or session for.
      *
      * @param  \SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext  $context
      * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     #[\Override]
     public function requirementFor(AdditionalFactorContext $context): Requirement
@@ -91,7 +91,7 @@ final readonly class AdditionalFactorPolicyAdapter implements AdditionalFactorPo
             throw UnresolvedReferenceException::forMfaIdentity($identity::class);
         }
 
-        $signIn      = new SignIn(IdentityReference::of($identity), $context->application, SignIn::UNNAMED, VerificationGeneration::current($identity));
+        $signIn      = new SignIn(ProofOwner::of($identity), $context->application, SignIn::UNNAMED, VerificationGeneration::current($identity));
         $firstFactor = $this->proofs->toMfa($context->firstFactor, $signIn, ProviderTrust::accepted($context->provenSession?->getTenantId()));
 
         return $this->requirements->toAuthentication($this->policy->requirementFor($identity, $context->application, $firstFactor));

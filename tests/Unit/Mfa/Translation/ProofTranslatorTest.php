@@ -20,7 +20,6 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthPurpose;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties as AuthenticationProperties;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
@@ -36,6 +35,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
@@ -490,7 +490,7 @@ final class ProofTranslatorTest extends TestCase
      */
     private static function signIn(): SignIn
     {
-        return new SignIn(IdentityReference::of(new GenericUser(['id' => 7])), self::APPLICATION, self::SESSION, self::GENERATION);
+        return new SignIn(ProofOwner::of(new GenericUser(['id' => 7])), self::APPLICATION, self::SESSION, self::GENERATION);
     }
 
     /**

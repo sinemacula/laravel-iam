@@ -7,17 +7,17 @@ namespace SineMacula\Laravel\Iam\Testing;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
+use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
-use SineMacula\Laravel\Mfa\Context\SessionFirstFactor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
@@ -44,7 +44,7 @@ final readonly class VerifiedSession
      * @param  \SineMacula\Laravel\Iam\Testing\FixtureFactors  $factors
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $current
      * @param  \SineMacula\Laravel\Iam\Mfa\StepUpAdapter  $stepUp
-     * @param  \SineMacula\Laravel\Mfa\Context\SessionFirstFactor  $proofs
+     * @param  \SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\RequirementCheck  $check
      */
     public function __construct(
@@ -61,8 +61,8 @@ final readonly class VerifiedSession
         /** Steps the session up through `laravel-authentication`. */
         private StepUpAdapter $stepUp,
 
-        /** Reads the session's proofs as MFA reads them. */
-        private SessionFirstFactor $proofs,
+        /** Reads the session's first factor. */
+        private ProofStoreAdapter $store,
 
         /** Evaluates the proofs as MFA does. */
         private RequirementCheck $check,
@@ -78,6 +78,7 @@ final readonly class VerifiedSession
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     public function verify(AssuranceLevel $level): void
@@ -87,7 +88,7 @@ final readonly class VerifiedSession
         $application = $this->current->defaultGuard();
         $identity    = $this->current->caller($application);
         $signIn      = SignIn::reference($this->current->current($identity, $application), $application);
-        $owner       = IdentityReference::of($identity);
+        $owner       = ProofOwner::of($identity);
         $binding     = new ProofBinding($owner->type, $owner->key, $application, $signIn, Purpose::STEP_UP);
         $factor      = $this->factors->held($identity, $application, $level);
 
@@ -97,8 +98,7 @@ final readonly class VerifiedSession
     }
 
     /**
-     * Step the identity's current session up with the proof, judged with its
-     * first factor as MFA judges a step-up.
+     * Step the identity's current session up with the proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
@@ -106,12 +106,13 @@ final readonly class VerifiedSession
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     public function stepUp(MultiFactorAuthenticatable $identity, Proof $proof): void
     {
         $application = $proof->binding->application;
-        $judged      = $this->check->check(Requirement::none(), ...array_filter([$this->proofs->current($identity, $application), $proof]));
+        $judged      = $this->check->check(Requirement::none(), ...array_filter([$this->store->firstFactor($identity, $application), $proof]));
 
         $this->stepUp->stepUp(CallerContext::forIdentity($identity, $application), VerificationResult::verified(
             $proof,

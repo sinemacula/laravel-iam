@@ -23,7 +23,6 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
@@ -38,6 +37,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\StepUpTests;
@@ -672,7 +672,7 @@ final class StepUpAdapterTest extends TestCase
         bool $wholeSession = true,
         ?CarbonImmutable $provedAt = null,
     ): VerificationResult {
-        $reference = IdentityReference::of($person);
+        $reference = ProofOwner::of($person);
 
         $proof = new Proof(
             ProofKind::ADDITIONAL_FACTOR,
@@ -709,7 +709,7 @@ final class StepUpAdapterTest extends TestCase
      */
     private static function pendingOf(Person $person, string $signIn): PendingContext
     {
-        $reference = IdentityReference::of($person);
+        $reference = ProofOwner::of($person);
 
         $firstFactor = new Proof(
             ProofKind::FIRST_FACTOR,

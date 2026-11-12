@@ -8,6 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * One of `laravel-authentication`'s sessions as MFA names a sign-in: the
@@ -35,7 +36,7 @@ final readonly class SignIn
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference  $identity
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofOwner  $identity
      * @param  string  $application
      * @param  string  $session
      * @param  int  $generation
@@ -43,7 +44,7 @@ final readonly class SignIn
     public function __construct(
 
         /** The identity that signed in. */
-        public IdentityReference $identity,
+        public ProofOwner $identity,
 
         /** The application (the guard's name) it signed in on. */
         public string $application,
