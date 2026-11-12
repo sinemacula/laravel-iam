@@ -24,49 +24,8 @@ use SineMacula\Laravel\Mfa\Contracts\MfaEvent;
 use SineMacula\Laravel\Sso\Contracts\SsoEvent;
 
 /**
- * Registers this package's part of the audit trail with `laravel-audit-log`
- * (IAM-9.1, IAM-9.2), from this package's `boot()`. Audit-log binds its
- * registries (the recorder, the event catalogue, the contributor and mapper
- * registries) as shared instances in its `register()`, takes registrations
- * until the application has booted, and freezes them from a `booted()` callback
- * its own `boot()` queues, which runs only once every provider has booted. So
- * once audit-log's provider has registered, this package registers at once, in
- * every provider order, its own boot before audit-log's included.
- *
- * When audit-log's provider has not registered yet (an application provider
- * registers it from its own `boot()`, or it is left out of discovery), its
- * registries are not bound, and a recorder resolved now would be a throwaway
- * whose registrations are lost: nothing is touched, and the registration is
- * queued for when the application has booted instead. That callback is queued
- * before audit-log's freeze, since audit-log queues its own only as it boots,
- * after this package's provider, so it runs while audit-log still takes
- * registrations. If audit-log has still not registered by then, the boot is
- * refused (`MemberNotRegisteredException`, naming audit-log's provider), as a
- * member this package aligns is, rather than leave an application that seems to
- * record the members' events and records none; except, as for those members,
- * while one of the console commands that list, describe, discover, cache or
- * clear configuration runs, which the provider says when it registers this
- * (`$refusesMissing` false): nothing is registered then, and the command runs,
- * so a stale package manifest or a provider left out of discovery can still be
- * inspected and cleared.
- *
- * While the mappers' switch is on (`iam.audit.mappers`), one mapper is mapped
- * for each member's marker interface (`AuthenticationEvent`, `MfaEvent`,
- * `SsoEvent`, `AuthorizationEvent`), so every event a member dispatches, and
- * only those, is described by its member's mapper (no member event implements
- * two of them, and audit-log never maps its own events), and every case of this
- * package's code enums is defined (`AuthenticationActivity`, `SessionActivity`,
- * `MfaActivity`, `SsoActivity`, `AuthorizationActivity`), none of which is a
- * code audit-log ships, so no code is ever defined twice. With it off nothing
- * is mapped or defined.
- *
- * A registration repeated identically changes nothing, so a provider booted
- * twice is harmless. Once the application has booted, audit-log refuses any
- * registration: a provider booted again then (forced) finds this package's part
- * already registered, which the application records (`REGISTERED`), and
- * registers nothing more; a provider whose first registration comes only then
- * is refused (`\LogicException`), failing its boot, rather than leave an
- * application that seems to record the members' events and records none.
+ * Registers the mappers and code definitions with `laravel-audit-log` before it
+ * freezes its registries, waiting until boot when audit-log registers late.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -96,7 +55,7 @@ final readonly class AuditRegistrations
     public const string REGISTERED = 'iam.audit.registered';
 
     /**
-     * Register this package's part with audit-log, at once or once booted.
+     * Register with audit-log, at once or once the application has booted.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  bool  $refusesMissing
@@ -130,11 +89,8 @@ final readonly class AuditRegistrations
     }
 
     /**
-     * Register this package's part once the application has booted, before
-     * audit-log freezes its registries, for an audit-log whose provider had not
-     * registered when this package's booted; refuse an audit-log that has still
-     * not registered while `$refusesMissing` is true, and register nothing with
-     * it while it is false.
+     * Register once booted, refusing a still-missing audit-log unless a
+     * configuration command runs.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @param  bool  $refusesMissing
@@ -201,8 +157,7 @@ final readonly class AuditRegistrations
     }
 
     /**
-     * The refusal of a first registration once the application has booted, when
-     * audit-log takes none, so no member event would be recorded.
+     * The refusal of a first registration once audit-log takes none.
      *
      * @return \LogicException
      */
@@ -215,8 +170,7 @@ final readonly class AuditRegistrations
     }
 
     /**
-     * Map each member's marker interface to its mapper, and define every code
-     * of this package's enums.
+     * Define every code and map each member's marker interface to its mapper.
      *
      * @param  \SineMacula\Laravel\AuditLog\Recorder  $recorder
      * @return void

@@ -8,15 +8,7 @@ use SineMacula\Laravel\AuditLog\Definitions\EventDefinition;
 use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
- * The `mfa.*` codes MFA's events are recorded under (IAM-9.2), one for each of
- * MFA's events: codes sent, enrolments, factor changes, resets, lockouts,
- * recovery codes and verifications.
- *
- * Every definition is version 1, in the `security` category, and drops every
- * property it does not list. Each keeps the MFA application the event ran
- * through; one about a factor keeps the factor's id and type, never its label
- * or its masked destination; and a reset never keeps the reason an operator
- * gave in words, which is free text, not a reason code.
+ * The `mfa.*` codes MFA's events are recorded under, one per event.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -95,8 +87,7 @@ enum MfaActivity: string implements ListsProperties
     private const array FACTOR = ['application', 'factor_id', 'factor_type'];
 
     /**
-     * The definition of this case's code: version 1, the `security` category,
-     * the properties it lists kept and every other one dropped.
+     * This case's definition, dropping every property it does not list.
      *
      * @return \SineMacula\Laravel\AuditLog\Definitions\EventDefinition
      *

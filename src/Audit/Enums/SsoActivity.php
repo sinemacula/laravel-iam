@@ -8,17 +8,8 @@ use SineMacula\Laravel\AuditLog\Definitions\EventDefinition;
 use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
- * The `sso.*` codes SSO's events are recorded under (IAM-9.2), one for each of
- * SSO's events: its flows and their refusals, links, connections, domains,
- * enforcement, keys, metadata and JWKS.
- *
- * Every definition is version 1 and drops every property it does not list. The
- * flows, links, exemptions, a key nearing expiry and the refreshes are in the
- * `security` category; the administration of connections, domains, enforcement
- * and keys is a change to who may sign in and how, in the `access_management`
- * category (IAM-9.3), so it can be kept longer. A flow's code keeps the
- * connection, its tenant, its protocol, the application and the purpose; none
- * keeps a setting's value, a secret or a provisioning grant.
+ * The `sso.*` codes SSO's events are recorded under; administration is
+ * `access_management`, so it can be kept longer than the flows.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -176,8 +167,7 @@ enum SsoActivity: string implements ListsProperties
     ];
 
     /**
-     * The definition of this case's code: version 1, its category, the
-     * properties it lists kept and every other one dropped.
+     * This case's definition, dropping every property it does not list.
      *
      * @return \SineMacula\Laravel\AuditLog\Definitions\EventDefinition
      *

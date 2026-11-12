@@ -8,31 +8,8 @@ use SineMacula\Laravel\AuditLog\Definitions\EventDefinition;
 use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
- * The `authorization.*` codes `laravel-authorization`'s events are recorded
- * under (IAM-9.2): its decisions worth a record (a denial, a break-glass grant
- * used, a preview) and every change it makes to roles, permissions, policies,
- * role exclusions, grants, boundaries and guardrails, and every grant that
- * expires.
- *
- * Every definition is version 1 and drops every property it does not list. The
- * decisions are in the `security` category; every change is a change to who may
- * do what, in the `access_management` category (IAM-9.3), so it can be kept
- * longer than routine denials. None is `authorization.gate_denied`, which
- * audit-log ships for its Gate capture, left off while this package maps
- * `laravel-authorization`'s own decisions (IAM-9.6), so no code is defined
- * twice.
- *
- * Beyond the codes IAM-9.2 lists, six record what `laravel-authorization`
- * reports and IAM-9.2 names no code for, each a change to who may do what: a
- * pair of mutually exclusive roles declared or removed
- * (`role_exclusion_declared`, `_removed`), a grant's expiry changed
- * (`grant_expiry_changed`), a policy attached to or detached from a resource
- * (`resource_policy_attached`, `_detached`), and a protected record changed by
- * a system override (`system_override_used`).
- *
- * A code keeps names, ids, scopes and times, never a policy's document (only
- * its version and digest) nor a context value (only the keys a decision
- * depended on are named, and not kept).
+ * The `authorization.*` codes `laravel-authorization`'s decisions and changes
+ * are recorded under; changes are `access_management`, so they are kept longer.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -197,8 +174,7 @@ enum AuthorizationActivity: string implements ListsProperties
     ];
 
     /**
-     * The definition of this case's code: version 1, its category, the
-     * properties it lists kept and every other one dropped.
+     * This case's definition, dropping every property it does not list.
      *
      * @return \SineMacula\Laravel\AuditLog\Definitions\EventDefinition
      *
@@ -222,8 +198,7 @@ enum AuthorizationActivity: string implements ListsProperties
     }
 
     /**
-     * The category this case's code is stored under: a decision's is
-     * `security`, any change's `access_management`.
+     * The category this case's code is stored under.
      *
      * @return string
      */

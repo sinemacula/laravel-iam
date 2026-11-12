@@ -367,8 +367,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * Each event is recorded under its code, keeping exactly what its code
-     * keeps.
+     * Each event is recorded under its code, keeping what its code keeps.
      *
      * @param  object  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity  $code
@@ -422,8 +421,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A denial is denied with its reason, by the identity, as its principal,
-     * about the identity, in the decision's tenant.
+     * A denial is the identity's, denied with its reason.
      *
      * @return void
      */
@@ -443,10 +441,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A denial for want of a stronger proof is a denial too, denied with its
-     * own reason, which tells it apart from the rest: a decision made on no
-     * session, a job's or a command's, can never be stepped up, so it is the
-     * only evidence of the refusal.
+     * A denial for want of a stronger proof is recorded.
      *
      * @return void
      */
@@ -474,8 +469,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A guest's denial, in no tenant, names no one and no tenant, so no
-     * contributor fills either in.
+     * A guest's denial names no one and no tenant.
      *
      * @return void
      */
@@ -496,8 +490,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A principal with no identity behind it is both the actor and the
-     * principal.
+     * A principal with no identity is both actor and principal.
      *
      * @return void
      */
@@ -513,8 +506,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A preview is by the previewer, about the principal previewed, and
-     * succeeds whatever it decided: it is no impersonation and no denial.
+     * A preview is the previewer's, about the principal previewed.
      *
      * @return void
      */
@@ -561,8 +553,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A decision is written once its transaction ends, so a rollback keeps it;
-     * a change takes audit-log's default.
+     * Only a decision waits for its transaction to end.
      *
      * @return void
      */
@@ -575,9 +566,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A delegated change is by the identity behind the acting principal, as
-     * that principal, about what changed, in the tenant it holds in, and
-     * correlated with the rest of its call.
+     * A delegated change is the caller's, correlated by its operation.
      *
      * @return void
      */
@@ -600,9 +589,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A trusted command's change is by the reference it named, as no
-     * principal; system work is nobody's; and a platform-wide change is in no
-     * tenant.
+     * Trusted and system changes name only what the call named.
      *
      * @return void
      */
@@ -642,8 +629,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A role exclusion is the caller's, about the pair's first role, in the
-     * tenant that owns the pair.
+     * A role exclusion is the caller's, about the pair's first role.
      *
      * @return void
      */
@@ -706,11 +692,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A tenant `laravel-authorization` keys otherwise than by its identifier is
-     * recorded with no tenant, never under its key, which is another tenant's
-     * identifier: a decision and a change in the tenant keyed `7`, whose
-     * identifier is `12`, would otherwise be filed under the tenant whose
-     * identifier is `7`.
+     * A tenant not keyed by its identifier is recorded with no tenant.
      *
      * @return void
      */
@@ -728,8 +710,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A tenant of another type than the one its key resolves to is recorded
-     * with no tenant.
+     * A tenant of another type is recorded with no tenant.
      *
      * @return void
      */
@@ -759,9 +740,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A deletion covers every grantee it took a grant from, each once, and none
-     * it cannot name, as the manifest of the builder audit-log's capture hands
-     * it.
+     * A deletion covers each grantee it took a grant from, once.
      *
      * @param  object  $event
      * @return void
@@ -829,8 +808,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A deletion is refused, not recorded without its manifest, where the store
-     * keeps no attachment.
+     * A deletion is refused where the store keeps no attachment.
      *
      * @return void
      */
@@ -847,9 +825,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * A builder as audit-log's capture hands a mapper one: able to cover a bulk
-     * operation's subjects, under the default bounds, for the store the
-     * container binds.
+     * A builder as audit-log's capture hands a mapper one.
      *
      * @param  \Illuminate\Container\Container  $container
      * @return \SineMacula\Laravel\AuditLog\Records\PendingRecord
@@ -862,8 +838,7 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
-     * The mapper, with a container of its own for the tenant resolver, which
-     * resolves every organisation unless another is given.
+     * The mapper, resolving every organisation unless told otherwise.
      *
      * @param  ?\Illuminate\Container\Container  $container
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\TenantResolver  $tenancy

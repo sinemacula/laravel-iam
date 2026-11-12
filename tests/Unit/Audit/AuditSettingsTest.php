@@ -11,10 +11,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Audit\AuditSettings;
 
 /**
- * Unit tests for the mappers' switch (IAM-9.1): it is the shipped
- * configuration's key, on by default, read leniently, and turned off only by a
- * value that says off; and for audit-log's rule refusing a code no definition
- * registers (IAM-2.5), on only while it is `true` and read when asked.
+ * Unit tests for the mappers' switch and audit-log's `require_registered` rule.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -25,10 +22,7 @@ use SineMacula\Laravel\Iam\Audit\AuditSettings;
 final class AuditSettingsTest extends TestCase
 {
     /**
-     * The key is the shipped configuration's, and the shipped value is on: the
-     * shipped configuration holds `audit.mappers`, `true` while
-     * `IAM_AUDIT_MAPPERS` is unset, and the switch reads that very key, so the
-     * shipped configuration with it turned off maps nothing.
+     * The switch reads the shipped `audit.mappers` key, which is on by default.
      *
      * @return void
      */
@@ -129,8 +123,7 @@ final class AuditSettingsTest extends TestCase
     }
 
     /**
-     * Unset, the rule is audit-log's default, off, and it is read when asked,
-     * so a value set later counts.
+     * Unset, the rule is off, and it is read when asked.
      *
      * @return void
      */

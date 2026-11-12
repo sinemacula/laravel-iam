@@ -14,14 +14,7 @@ use SineMacula\Laravel\AuditLog\Records\EventCode;
 use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
- * The checks every enum of this package's codes is held to (IAM-9.2, IAM-9.3):
- * every code is under its member's reserved prefix and is none audit-log
- * ships; every definition is version 1, in its category, keeping exactly the
- * properties its case lists, each as it says, and dropping every other; and
- * audit-log's catalogue takes the enum, twice over, refusing none of it.
- *
- * Each subclass names its enum, its prefixes and, for every case, the category
- * and the properties it keeps.
+ * The checks every code enum of this package is held to.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,8 +46,7 @@ abstract class CodesTestCase extends TestCase
     }
 
     /**
-     * Each code is under one of its member's reserved prefixes, and none is one
-     * audit-log ships.
+     * Each code is under its member's prefix and none is audit-log's.
      *
      * @param  \BackedEnum&\SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties  $case
      * @return void
@@ -71,8 +63,8 @@ abstract class CodesTestCase extends TestCase
     }
 
     /**
-     * Each definition is its own code's, version 1, in its category, keeping
-     * exactly what it lists, as it says, and dropping every other property.
+     * Each definition is version 1, in its category, keeping exactly what it
+     * lists.
      *
      * @param  \BackedEnum&\SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties  $case
      * @return void
@@ -96,8 +88,7 @@ abstract class CodesTestCase extends TestCase
     }
 
     /**
-     * Audit-log's catalogue takes every case, beside its own codes, and takes
-     * it again unchanged.
+     * Audit-log's catalogue takes every case, and takes it again unchanged.
      *
      * @return void
      */
@@ -129,8 +120,7 @@ abstract class CodesTestCase extends TestCase
     abstract protected static function prefixes(): array;
 
     /**
-     * Each code, with its category and what it keeps: each property's path and
-     * how it is kept.
+     * Each code, with its category and how each property is kept.
      *
      * @return array<string, array{0: string, 1: array<string, \SineMacula\Laravel\AuditLog\Definitions\Enums\FieldHandling>}>
      */

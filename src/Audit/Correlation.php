@@ -7,9 +7,8 @@ namespace SineMacula\Laravel\Iam\Audit;
 use SineMacula\Laravel\AuditLog\Records\CorrelationId;
 
 /**
- * The correlation ids the mappers tie the members' records together with
- * (IAM-9.5), one namespace per source; a missing part, or an id audit-log would
- * refuse, is no id, so a record is never lost to the refusal.
+ * The correlation ids tying the members' records together, one namespace per
+ * source; an id audit-log would refuse is none, so the record is still written.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +33,7 @@ final readonly class Correlation
     public const string AUTHORIZATION = 'authorization';
 
     /**
-     * One SSO sign-in, by its connection and the public reference of its
-     * authorisation request.
+     * One SSO sign-in, by its connection and authorisation request reference.
      *
      * @param  ?string  $connectionId
      * @param  ?string  $requestReference
@@ -80,8 +78,7 @@ final readonly class Correlation
     }
 
     /**
-     * Every event of one `laravel-authorization` management call, by its
-     * operation's id.
+     * One `laravel-authorization` management call, by its operation's id.
      *
      * @param  ?string  $operationId
      * @return ?string
@@ -109,8 +106,8 @@ final readonly class Correlation
     }
 
     /**
-     * The namespace and parts joined by colons, or `null` when a part is
-     * missing or empty or audit-log would refuse the id.
+     * The namespace and parts joined by colons; `null` for an empty part or an
+     * id audit-log would refuse.
      *
      * @param  string  $namespace
      * @param  ?string  ...$parts

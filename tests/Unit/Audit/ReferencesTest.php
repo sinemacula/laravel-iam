@@ -12,12 +12,7 @@ use SineMacula\Laravel\Iam\Audit\References;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the references the mappers name people and tenants by
- * (IAM-9.5): a type is read through the application's morph map, so a mapped
- * class and its alias name the same model; an alias or a name of the
- * application's own is kept; a tenant is its opaque identifier under the one
- * type `tenant`; a missing or empty part is no reference; and one too long to
- * record is refused rather than recorded as another.
+ * Unit tests for the references the mappers name people and tenants by.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,8 +47,8 @@ final class ReferencesTest extends TestCase
     }
 
     /**
-     * A mapped class is named by its alias, and the alias itself, or a name the
-     * map does not hold, is kept, so every member's spelling names one model.
+     * A mapped class is named by its alias, and any other type is kept as it
+     * is.
      *
      * @return void
      */
@@ -97,8 +92,8 @@ final class ReferencesTest extends TestCase
     }
 
     /**
-     * A tenant is its opaque identifier, kept exactly, under the one type,
-     * whatever the morph map holds.
+     * A tenant is its opaque identifier under the one type, whatever the morph
+     * map holds.
      *
      * @return void
      */
