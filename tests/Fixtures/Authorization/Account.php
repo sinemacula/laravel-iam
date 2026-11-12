@@ -8,10 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableTenant;
 
 /**
- * A tenant of a second type, an account an application keeps below its
- * organisations: `laravel-authentication`'s tenant, naming itself by its id,
- * and `laravel-authorization`'s, named by a morph type of its own and that same
- * id.
+ * A second tenant type, an account kept below organisations.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

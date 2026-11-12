@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Subject;
 
 /**
- * A session policy source answering as the source it wraps does, recording each
- * answer, so a test can tell which scopes `laravel-authorization`'s checks were
- * capped by.
+ * A session policy source that records each answer of the one it wraps.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

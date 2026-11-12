@@ -9,10 +9,7 @@ use SineMacula\Laravel\Authorization\Support\IdentityPrincipals;
 use SineMacula\Laravel\Authorization\Support\Reference;
 
 /**
- * An identity directory an application names in
- * `authorization.identity_directory` in place of this package's: one that knows
- * no identity's principals, under a class of the application's, so a test can
- * tell it from both this package's and `laravel-authorization`'s.
+ * An application's own identity directory that knows no principals.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

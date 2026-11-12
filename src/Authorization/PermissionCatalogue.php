@@ -10,32 +10,8 @@ use SineMacula\Laravel\Authorization\Support\PermissionDefinition;
 use SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation;
 
 /**
- * The optional catalogue of the members' administrative permissions (IAM-6.9,
- * AUTHZ-14.5): SSO's and MFA's administrative operations
- * (`Enums\AdministrativeOperation`), and audit-log's reads of the trail, one
- * set for each purpose audit-log reads for (`ReadPurpose`: `read`, `count`,
- * `export`, `verify`), which the audit access policy answers from
- * (`AuditAccessPolicyAdapter`, IAM-6.10).
- *
- * For each purpose:
- *
- * - `audit-log.{purpose}` reaches every category of the trail;
- * - `audit-log.{purpose}.{category}` reaches one of the categories the suite
- *   records under (`CATEGORIES`): `security` (sign-ins, sessions, MFA, SSO's
- *   flows, access decisions), `access_management` (changes to who may do what)
- *   and `audit` (audit-log's own records of who read the trail);
- * - `audit-log.{purpose}.own` reaches only the viewer's own activity.
- *
- * The application opts in by naming this class in `laravel-authorization`'s
- * `authorization.permission_providers`; `authorization:sync` then writes the
- * permissions, so they can be granted, named in a policy and checked through
- * `laravel-authorization` and Laravel's Gate. Every name is guard-agnostic and
- * carries the member it belongs to as its category. The members check nothing
- * themselves, so the application checks one of these before each operation
- * (`AdministrativeCheck`), and grants the audit permissions for the access
- * policy to read.
- *
- * Pure: it reads nothing and keeps nothing.
+ * The members' administrative permissions and audit-log's read permissions, for
+ * the application to list in `authorization.permission_providers`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,8 +30,7 @@ final readonly class PermissionCatalogue implements PermissionProvider
     public const array CATEGORIES = ['security', 'access_management', 'audit'];
 
     /**
-     * Every permission the catalogue declares: each administrative operation,
-     * then each of audit-log's.
+     * Every administrative operation, then each of audit-log's permissions.
      *
      * @return list<\SineMacula\Laravel\Authorization\Support\PermissionDefinition>
      */

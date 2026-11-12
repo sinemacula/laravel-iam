@@ -10,17 +10,7 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use Tests\Fixtures\Models\Person;
 
 /**
- * An application's provisioner, as the tests' application writes one: each
- * result is made a new `Person`, named from the mapped `display_name` when the
- * connection maps one, under an email address of its own (never the one the
- * provider asserts, so no existing person is ever found by it), and that person
- * is made a member of the tenant (`ProvisionedMembership`). Both are written on
- * the default connection, the tests' shared storage connection.
- *
- * A test hands it a closure (`$observe`) to look at the database at each step,
- * given the step's name (`identity` once the person is inserted, `membership`
- * before the membership is), the person and the result; whatever the closure
- * throws propagates, as an application's provisioner refusing throws.
+ * The tests' provisioner: a new `Person` and membership per result.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -81,8 +71,7 @@ final readonly class ProvisionsPeople implements Provisioner
     }
 
     /**
-     * Hand the step, the person and the result to the test's closure, when it
-     * gave one.
+     * Hand the step, person and result to the test's closure, if any.
      *
      * @param  string  $step
      * @param  \Tests\Fixtures\Models\Person  $person

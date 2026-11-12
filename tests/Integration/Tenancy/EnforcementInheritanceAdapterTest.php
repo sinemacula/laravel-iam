@@ -47,28 +47,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's enforcement inheritance, read from
- * `laravel-authorization`'s tenant tree (IAM-7.5), and for the enforcement
- * change that judges every tenant below the enforcing one: the nearest tenant,
- * from the one asked up through its ancestors, that has a rule enforces, and
- * the tenant itself when none has; a rule turned off keeps the question at its
- * tenant, so turning an inner rule off under an enforcing ancestor only loosens
- * what applies below it, while a tenant never configured, or holding only the
- * row SSO's lock inserts, passes it up; tenants of mixed types inherit alike,
- * and a flat tree leaves each tenant alone; a password sign-in in a tenant
- * whose ancestor enforces is `sso_required`; and turning an ancestor's rule on
- * revokes, in its own transaction, the sessions it no longer allows in that
- * tenant and every tenant below it, whatever any setting says, keeping an
- * exempt person's and every session elsewhere, while turning it off revokes
- * nothing.
- *
- * The tree is a root with a region, the region with a branch, the branch with
- * the tests' tenant, and a second root apart. Each scenario that changes rules
- * and then reads the inheritance or judges sign-ins and sessions runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL; SSO's policy naming the enforcing ancestor, the
- * row SSO's lock inserts, a mixed tree and a flat tree run at the connection's
- * own level alone.
+ * Integration tests for SSO's enforcement inheritance from the tenant tree.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -102,9 +81,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     private ?ExemptsIdentities $exemptions = null;
 
     /**
-     * Arrange SSO with its enforcement on and no rule yet, the tree, a tenancy
-     * in which everyone may act in every tenant, and an exemption rule
-     * exempting nobody until a test says so.
+     * Arrange SSO enforcement, the tree, an open tenancy and an exemption rule.
      *
      * @return void
      */
@@ -143,10 +120,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * The nearest tenant, from the one asked up, that has a rule enforces; a
-     * tenant's own rule is the nearest; with none stored up the path, the
-     * tenant enforces itself; a rule turned off still keeps the question at its
-     * tenant.
+     * The nearest tenant with a rule enforces.
      *
      * @param  ?string  $level
      * @return void
@@ -191,8 +165,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * A tenant holding only the unconfigured row SSO's lock inserts has no
-     * rule, and passes the question up.
+     * A tenant holding only the lock's row passes the question up.
      *
      * @return void
      *
@@ -214,12 +187,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * Turning a tenant's own rule off under an ancestor whose rule is on, or an
-     * inner ancestor's, leaves the tenants below it on the rule turned off,
-     * which requires nothing, never on the outer ancestor's: a password sign-in
-     * there signs in, a session the inner rule allowed still complies when its
-     * tenant's subtree is judged again, and the outer ancestor still enforces
-     * its own tenant.
+     * Turning an inner rule off under an enforcing ancestor loosens below it.
      *
      * @param  ?string  $level
      * @return void
@@ -266,8 +234,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * SSO's own policy for a tenant names the enforcing ancestor, and its rule
-     * and version, through the adapter.
+     * SSO's policy names the enforcing ancestor.
      *
      * @return void
      *
@@ -285,8 +252,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * Tenants of another type than their ancestors inherit alike: an account
-     * below an organisation inherits the organisation's rule.
+     * A tenant below one of another type inherits.
      *
      * @return void
      *
@@ -310,8 +276,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * With `laravel-authorization`'s flat tree every tenant enforces itself,
-     * whatever its ancestors' rules.
+     * With a flat tree each tenant enforces itself.
      *
      * @return void
      *
@@ -327,8 +292,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * A password sign-in in a tenant whose ancestor's rule is on is refused as
-     * `sso_required`; in the tree apart it signs in.
+     * A password sign-in below an enforcing ancestor is refused.
      *
      * @param  ?string  $level
      * @return void
@@ -351,12 +315,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * Turning an ancestor's rule on revokes, in its own transaction, the
-     * sessions it no longer allows in that tenant and every tenant below it,
-     * whatever `laravel-authentication`'s revocation switches say, and keeps an
-     * exempt person's, every session in the tree apart, and every one in a
-     * tenant nearer that enforces a rule it still meets; turning it off again
-     * revokes nothing.
+     * An ancestor's rule change revokes through its subtree.
      *
      * @param  ?string  $level
      * @return void
@@ -404,8 +363,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * The tenant SSO's enforcement inheritance names for the tenant, as SSO
-     * asks it.
+     * The tenant SSO's inheritance names for the tenant.
      *
      * @param  string  $tenantId
      * @return string
@@ -433,9 +391,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * Turn the tenant's rule on, satisfied by a connection of its own, made
-     * once and marked as having completed a sign-in, or off; answer the version
-     * stored.
+     * Turn the tenant's rule on or off and return the stored version.
      *
      * @param  string  $tenantId
      * @param  bool  $on

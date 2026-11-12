@@ -8,19 +8,8 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 
 /**
- * The grant half of SSO's principal scope (IAM-6.8): whether every grant an
- * identity holds stays within a tenant, `outside_tenant` when one reaches
- * beyond it (a grant on another tenant, or on the platform), and `unknown` when
- * it cannot be told.
- *
- * It is answered by `laravel-authorization`'s grant scope query (AUTHZ-14.2,
- * `Authorization\GrantScopeAdapter`) while the authorization capability's
- * switch is on, and by `UnknownGrantScope` while it is off: SSO's principal
- * scope then answers `within_tenant` for nobody, and linking by a verified
- * domain stays refused. It is this package's own port, not a member's seam, so
- * it is bound only while unbound, and an application or a test binding of its
- * own is kept. It reads the write connection, keeps nothing of one call for the
- * next, takes no lock, and lets an error propagate.
+ * The grant half of SSO's principal scope: whether an identity's grants stay
+ * within a tenant.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

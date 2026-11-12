@@ -13,12 +13,7 @@ use SineMacula\Laravel\Iam\Authorization\PermissionCatalogue;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 
 /**
- * Unit tests for the catalogue of the members' administrative permissions
- * (IAM-6.9, IAM-6.10, AUTHZ-14.5): every operation of SSO's and MFA's, SSO's
- * own names reused where SSO names one, and for each of audit-log's read
- * purposes a permission to the whole purpose, to each of the suite's categories
- * and to the viewer's own activity, each name valid in `laravel-authorization`
- * and declared once, guard-agnostic, under its member's category.
+ * Unit tests for the catalogue of the members' administrative permissions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,8 +28,7 @@ final class PermissionCatalogueTest extends TestCase
     private const string NAME = '/^[A-Za-z0-9_\-:.*]{1,191}$/';
 
     /**
-     * Every permission is declared once, with a valid name, guard-agnostic,
-     * under its member's category.
+     * Every permission is declared once under its member.
      *
      * @return void
      */
@@ -77,8 +71,7 @@ final class PermissionCatalogueTest extends TestCase
     }
 
     /**
-     * MFA's administrative operations are each declared, re-enabling a factor
-     * disabled at the failure ceiling (`Mfa::enableFactor()`) among them.
+     * Every MFA operation is declared.
      *
      * @return void
      */
@@ -98,8 +91,7 @@ final class PermissionCatalogueTest extends TestCase
     }
 
     /**
-     * Each read purpose has its own permissions: the whole purpose, each of the
-     * suite's categories and the viewer's own activity.
+     * Each read purpose has its own permissions.
      *
      * @return void
      */

@@ -40,8 +40,7 @@ final readonly class EnforcementInheritanceAdapter implements EnforcementInherit
     ) {}
 
     /**
-     * The nearest tenant, from the tenant up, that has a rule, or the tenant
-     * itself.
+     * The nearest tenant from the tenant up with a rule, else the tenant.
      *
      * @param  string  $tenantId
      * @param  string  $application

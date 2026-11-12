@@ -16,11 +16,7 @@ use SineMacula\Laravel\Mfa\Enums\RequirementPart;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * Unit tests for translating `laravel-authorization`'s authentication
- * requirement into MFA's, part for part and age for age, a level MFA does not
- * know refused, and MFA's evaluation back into `laravel-authorization`'s
- * result, the unmet parts named and ordered as `laravel-authorization` names
- * and orders them.
+ * Unit tests for translating requirements between authorization and MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +27,7 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
 final class RequirementTranslatorTest extends TestCase
 {
     /**
-     * Rows of `[operand, MFA's requirement]`: each part alone, with and without
-     * a maximum age, and every part at once.
+     * Rows of `[operand, MFA's requirement]`.
      *
      * @return iterable<string, array{0: array<string, array<string, int|string>>, 1: \SineMacula\Laravel\Mfa\Requirements\Requirement}>
      */
@@ -95,9 +90,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's evaluation crosses back: met, until the instant it stops being met
-     * or unbounded, or unmet, the parts named and ordered as
-     * `laravel-authorization` names and orders them.
+     * MFA's evaluation crosses back.
      *
      * @return void
      */

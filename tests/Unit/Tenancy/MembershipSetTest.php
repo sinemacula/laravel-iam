@@ -12,10 +12,7 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 
 /**
- * Unit tests for an identity's memberships (IAM-7.4): a set finds the
- * membership of exactly a tenant, tells whether it reaches beyond one, is
- * complete unless marked incomplete, and holds each tenant's membership, and a
- * platform principal, once.
+ * Unit tests for an identity's membership set.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -26,8 +23,7 @@ use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 final class MembershipSetTest extends TestCase
 {
     /**
-     * The membership of exactly the tenant asked is found, byte for byte, and
-     * none for a tenant the set holds no membership of.
+     * The membership of exactly the tenant is found.
      *
      * @return void
      */
@@ -45,8 +41,7 @@ final class MembershipSetTest extends TestCase
     }
 
     /**
-     * A set is complete unless marked incomplete, and an empty one holds no
-     * membership of any tenant.
+     * A set is complete unless marked incomplete.
      *
      * @return void
      */
@@ -80,8 +75,7 @@ final class MembershipSetTest extends TestCase
     }
 
     /**
-     * A set reaches beyond a tenant when it holds a platform principal or a
-     * membership of any other tenant, whether accepted or not.
+     * A set reaches beyond a tenant through any other membership.
      *
      * @param  list<\SineMacula\Laravel\Iam\Tenancy\Membership>  $memberships
      * @param  bool  $reaches
@@ -95,8 +89,7 @@ final class MembershipSetTest extends TestCase
     }
 
     /**
-     * Rows of `[memberships]`: each set holding a tenant's membership, or a
-     * platform principal, twice.
+     * Rows of `[memberships]` holding a membership twice.
      *
      * @return iterable<string, array{0: list<\SineMacula\Laravel\Iam\Tenancy\Membership>}>
      */
@@ -108,8 +101,7 @@ final class MembershipSetTest extends TestCase
     }
 
     /**
-     * A set holding a tenant's membership, or a platform principal, twice is
-     * refused, since which of the two answered would be a guess.
+     * A set holds each membership once.
      *
      * @param  list<\SineMacula\Laravel\Iam\Tenancy\Membership>  $memberships
      * @return void
@@ -137,8 +129,7 @@ final class MembershipSetTest extends TestCase
     }
 
     /**
-     * A membership of a tenant whose id looks like a number is told apart from
-     * a platform principal and from another tenant's.
+     * A numeric tenant is its own tenant.
      *
      * @return void
      */

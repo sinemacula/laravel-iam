@@ -13,13 +13,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine;
 
 /**
- * A service account: `laravel-authentication`'s machine identity and its
- * principal in one model, authenticating with an API key, and
- * `laravel-authorization`'s machine principal, whose grants count only within
- * the scopes of the credential it acts with.
- *
- * It lives in the fixtures' machines table, on the default connection, the
- * tests' shared storage connection.
+ * A machine identity and authorization machine principal in one model.
  *
  * @property int $id
  * @property string $name

@@ -40,19 +40,7 @@ use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s tenant authentication
- * policy, answered from SSO's enforcement, SSO's exemption gate and the
- * application's MFA tenant requirement (IAM-4.5): an enforced tenant requires
- * its satisfying connections, of a session and of a sign-in alike, judged by
- * the connection the context names, asked for only when the rule requires one; the gate is asked only for a session the rule would refuse, and
- * an exempt identity then needs no connection and its exemption is reported
- * once; the application's requirement is the further factor; the version
- * changes when the enforcement, the exemption or the requirement does, and
- * stays while none does; nothing is cached; the application's requirement is
- * read on the write connection; the adapter takes no lock of its own, under the
- * session's lock or outside a transaction, at either isolation level; and a
- * tenant that cannot be named, or an identity MFA holds no factors for once a
- * requirement is bound, throws.
+ * Integration tests for the tenant authentication policy adapter.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -74,8 +62,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     private ?ExemptsIdentities $exemptions = null;
 
     /**
-     * Script SSO's enforcement and exemption contract, and record the
-     * exemptions SSO reports.
+     * Script SSO's enforcement and exemption, and record reported exemptions.
      *
      * @return void
      */
@@ -104,8 +91,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * With SSO's enforcement off and MFA's default tenant requirement, nothing
-     * is required, at a version, and nothing is read.
+     * With nothing on nothing is required or read.
      *
      * @return void
      */
@@ -126,8 +112,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An enforced tenant requires its satisfying connections of a session
-     * established through one of them, and the gate is not asked.
+     * An enforced tenant requires its connections.
      *
      * @return void
      */
@@ -158,9 +143,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A session the rule would refuse is judged by the gate: an identity that
-     * is not exempt is required to come through the rule's connections, and
-     * nothing is reported.
+     * A session the rule would refuse is judged by the gate.
      *
      * @param  bool  $external
      * @return void
@@ -183,9 +166,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An exempt identity's session the rule would refuse needs no connection,
-     * and its exemption is reported once, naming the session and carrying no
-     * client, since `laravel-authentication` hands the policy none.
+     * An exempt identity's session needs no connection.
      *
      * @return void
      */
@@ -212,9 +193,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An exempt identity's session through a satisfying connection is never
-     * judged by the gate, so no exemption is reported for a session that never
-     * needed one.
+     * An exempt identity's compliant session reports no exemption.
      *
      * @return void
      */
@@ -232,10 +211,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in, whose session is not written yet, is established through the
-     * connection the context names, as `laravel-authentication` names it from
-     * the sign-in's evidence, so the gate is not asked for one through a
-     * satisfying connection.
+     * A sign-in through a satisfying connection needs no gate.
      *
      * @return void
      */
@@ -250,9 +226,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in through no connection (a password sign-in), or through one the
-     * rule does not list, is judged by the gate, and an exemption it grants
-     * names no session.
+     * A sign-in through no satisfying connection is judged by the gate.
      *
      * @return void
      */
@@ -271,9 +245,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The connection is asked for only once the rule requires one: a tenant
-     * whose rule requires none never asks, so it costs no read of the session's
-     * provenance.
+     * The connection is asked for only when the rule requires one.
      *
      * @return void
      */
@@ -304,8 +276,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A rule whose every satisfying connection has gone is satisfied by none,
-     * so the gate judges every session.
+     * A rule with no connection left is satisfied by none.
      *
      * @return void
      */
@@ -322,9 +293,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The application's MFA tenant requirement for exactly the tenant asked is
-     * the further factor, whatever SSO's enforcement says, and a tenant it
-     * requires nothing of has none.
+     * The application's requirement is the further factor.
      *
      * @return void
      */
@@ -340,9 +309,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The version stays the same while nothing changes, and changes when the
-     * enforcement's rule, its connections, the exemption or the application's
-     * requirement does; nothing is cached, so each change is answered at once.
+     * The version changes when any input changes.
      *
      * @return void
      */
@@ -383,9 +350,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The application's requirement is asked with its model reads pinned to the
-     * write connection, wherever the tenant's data lives: a requirement the
-     * primary holds and its replica has not yet seen is answered, not refused.
+     * The application's requirement is read on the write connection.
      *
      * @return void
      */
@@ -420,13 +385,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Asked while the transaction holds the session's row locked, as a refresh,
-     * a switch and an external re-authentication ask it, the adapter judges by
-     * the connection the context names and takes no lock of its own, at either
-     * isolation level; SSO's own enforcement, with a rule stored, is asked in
-     * `EnforcementThroughTenantPolicyTest`, and a session committed after the
-     * transaction's snapshot, judged through `laravel-authentication`'s own
-     * lookup, in `CompliantSessionUnderAnOlderSnapshotTest`.
+     * It takes no lock under the session's lock.
      *
      * @param  string  $level
      * @return void
@@ -451,9 +410,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Asked outside any transaction, where nothing acts on the answer
-     * atomically, the adapter judges by the session's recorded connection and
-     * takes no lock, at either isolation level.
+     * It takes no lock outside a transaction.
      *
      * @param  string  $level
      * @return void
@@ -478,8 +435,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant whose identifier can name it to no member throws, so the session
-     * is refused rather than judged against no policy.
+     * A tenant that cannot be named throws.
      *
      * @return void
      *
@@ -505,9 +461,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Once a requirement is bound, an identity MFA holds no factors for is
-     * refused rather than answered as requiring nothing; with MFA's default it
-     * is not asked about.
+     * An identity with no MFA factors is refused once a requirement is bound.
      *
      * @return void
      *
@@ -529,9 +483,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * What the policy bound answers for the person's session in the tenant, on
-     * the guard, established through the connection its recorded provenance
-     * names, read only once the policy asks.
+     * The policy's answer for the session, through its recorded connection.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
@@ -548,9 +500,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * What the policy bound answers for the person's session in the tenant, or
-     * their sign-in whose session is not written yet (no session), on the
-     * guard, established through the connection given, or through none.
+     * The policy's answer for the session or sign-in, through a connection.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\Session  $session

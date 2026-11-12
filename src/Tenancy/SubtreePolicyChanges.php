@@ -10,9 +10,8 @@ use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Mfa\Database\AfterStorageCommit;
 
 /**
- * Judges the sessions of a tenant and every tenant below it, and of every
- * tenant the subtree gains before the storage connection's transaction commits
- * (IAM-7.5).
+ * Re-judges the sessions of a tenant's subtree, and of any tenant the subtree
+ * gains before the storage transaction commits.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,8 +48,7 @@ final readonly class SubtreePolicyChanges
     ) {}
 
     /**
-     * Judge the subtree now and its gained tenants after the storage commit;
-     * answer how many sessions the first pass revoked.
+     * Judge the subtree now and its gained tenants after the commit.
      *
      * @param  string  $tenantId
      * @return int
@@ -74,8 +72,7 @@ final readonly class SubtreePolicyChanges
     }
 
     /**
-     * Resolve every tenant given, then judge the sessions of each; answer how
-     * many sessions were revoked.
+     * Judge each tenant's sessions and answer how many were revoked.
      *
      * @param  array<int, string>  $tenantIds
      * @return int

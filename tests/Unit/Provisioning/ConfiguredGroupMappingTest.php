@@ -13,7 +13,7 @@ use SineMacula\Laravel\Iam\Provisioning\ConfiguredGroupMapping;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 
 /**
- * Unit tests for the group mapping read from configuration (IAM-7.2).
+ * Unit tests for the group mapping read from configuration.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +31,7 @@ final class ConfiguredGroupMappingTest extends TestCase
     ];
 
     /**
-     * A role two groups name is granted once, in the order the groups first
-     * name it, and a group named by a number is matched by its text.
+     * Each role is granted once, in order.
      *
      * @return void
      */
@@ -93,8 +92,7 @@ final class ConfiguredGroupMappingTest extends TestCase
     }
 
     /**
-     * A group the map does not name, one differing only in case among them, and
-     * no group at all, grant nothing.
+     * Unmapped groups grant nothing.
      *
      * @return void
      */

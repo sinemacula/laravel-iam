@@ -63,29 +63,7 @@ use Tests\Fixtures\Provisioning\QueuedProvisioning;
 use Tests\TestCase;
 
 /**
- * Integration tests for provisioning a new identity for a `sign_in` SSO found
- * unlinked (IAM-7.1), through SSO's whole flow against a fake OpenID provider,
- * against the provisioning checks of SSO's guide to this package: one
- * synchronous listener creates a new identity, its membership of the
- * connection's tenant and the link, in one transaction, in that order, after
- * SSO's scope widening, and the sign-in then redeems as the new person; an
- * identity that is not new (an existing person), a helper's refusal and
- * anything thrown roll all three back; the grant is used once, and the
- * transaction is retried whole after a concurrency failure; a subject another
- * request links meanwhile leaves no provisioned person behind; what the
- * listener committed stands after the completion fails, and the next sign-in
- * resolves through the link; a queued listener fails loudly and provisions
- * nothing; `laravel-authentication`'s informational unlinked result provisions
- * nothing; and with no provisioner nothing is provisioned.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL. The subject linked elsewhere meanwhile needs a second connection
- * committing while the listener's transaction is open, which SQLite's single
- * writer cannot give, so it runs on MySQL and PostgreSQL at both levels only.
- * The retry, a refusal before any transaction opens (a queued listener, the
- * informational event, no provisioner) and the absent provisioner run at the
- * connection's own level alone, since no level changes what they read.
+ * Integration tests for provisioning an identity for an unlinked sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -129,10 +107,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * An unlinked sign-in is provisioned a new person, a membership of the
-     * connection's tenant and an active link of `provisioning` origin, and is
-     * issued a handoff that signs the new person in; `LinkCreated` follows the
-     * listener's commit and `HandoffIssued` the completion's.
+     * An unlinked sign-in is provisioned and signs the new person in.
      *
      * @param  ?string  $level
      * @return void
@@ -174,9 +149,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Inside the one transaction, in order: the identity is inserted before
-     * SSO's scope widening takes its guard, the guard is held before the
-     * membership is written, and the link is written after the membership.
+     * Each write comes in order inside one transaction.
      *
      * @param  ?string  $level
      * @return void
@@ -212,11 +185,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * SSO's scope widening for the new person is reported for the completion's
-     * client: a link by a verified domain the person holds in another tenant's
-     * connection by the time it runs (written here by the provisioner, in the
-     * listener's transaction) is suspended, and SSO reports the suspension with
-     * the IP address and user agent the completion carried.
+     * The widening is reported for the completion's client.
      *
      * @param  ?string  $level
      * @return void
@@ -251,10 +220,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * A provisioner that answers an existing person, as one that looked them up
-     * by an attribute would, is refused before anything is written: the
-     * completion ends as a server error, no membership or link is made, and the
-     * existing person is left as they were.
+     * An existing identity is never provisioned.
      *
      * @param  ?string  $level
      * @return void
@@ -282,10 +248,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * A refusal from SSO's provisioning helper (here the verified response's
-     * deadline passing while the listener ran) rolls the identity and its
-     * membership back with the link the helper never wrote; the listener
-     * returns, and the completion ends as a failed flow, never with a handoff.
+     * A refused link rolls back the identity and membership.
      *
      * @param  ?string  $level
      * @return void
@@ -319,9 +282,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Anything the provisioner throws once the identity is inserted and its
-     * guard taken rolls every write back and propagates, ending the completion
-     * as a server error.
+     * An exception rolls back every write.
      *
      * @param  ?string  $level
      * @return void
@@ -352,14 +313,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Another request links the subject to someone else, through SSO's link
-     * storage, which raises the connection's links version, committing on
-     * another connection once the listener has inserted its person: SSO's
-     * helper, reading the subject's link under its lock, refuses
-     * `subject_already_linked`, the listener rolls its person and membership
-     * back and returns, and the completion resolves the subject anew, handing
-     * off for the person the other link names. On PostgreSQL at REPEATABLE READ
-     * the first attempt fails to serialise and the retry is refused.
+     * A subject linked elsewhere meanwhile leaves no provisioned person.
      *
      * @param  string  $level
      * @return void
@@ -397,11 +351,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Another person's first sign-in through the same connection links them,
-     * through SSO's link storage, committing on another connection once the
-     * listener has inserted its person: the listener still provisions its own
-     * person and links them, on PostgreSQL at REPEATABLE READ after a retry,
-     * and the sign-in signs the new person in.
+     * Another subject linked meanwhile still provisions.
      *
      * @param  string  $level
      * @return void
@@ -440,9 +390,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * The grant is spent by the listener: a second listener of the same event
-     * is refused `grant_invalid`, and the sign-in still finishes through the
-     * link the first made.
+     * The grant is used once.
      *
      * @param  ?string  $level
      * @return void
@@ -472,9 +420,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * A deadlock once the helper has claimed the grant rolls the whole
-     * transaction back and retries it: the grant is claimed again and the
-     * sign-in is provisioned once.
+     * The transaction is retried whole after a deadlock.
      *
      * @return void
      *
@@ -516,8 +462,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * An event handled after its dispatch has ended holds a closed grant: the
-     * helper refuses it and the person and membership roll back.
+     * An event handled after its dispatch provisions nothing.
      *
      * @return void
      *
@@ -546,11 +491,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Once the listener has committed, a completion that then fails (the
-     * connection disabled before its final step) leaves the identity, its
-     * membership and the link made; the next sign-in through the connection,
-     * once it is enabled again, resolves through the link to the same person
-     * and is not offered for provisioning again.
+     * What the listener committed stands after a later failure.
      *
      * @param  ?string  $level
      * @return void
@@ -592,8 +533,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * A queued provisioning listener fails loudly, as SSO's event refuses to be
-     * serialised, and provisions nothing.
+     * A queued listener fails loudly and provisions nothing.
      *
      * @return void
      *
@@ -614,10 +554,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * With the SSO capability's adapters off and a provisioner configured, the
-     * listener still provisions, but SSO's provisioning helper refuses a linker
-     * not backed by its link storage with a `LogicException`, which rolls the
-     * identity and the membership back: nothing is written.
+     * With SSO's adapters off the helper's refusal writes nothing.
      *
      * @return void
      *
@@ -640,8 +577,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * With no provisioner bound, nothing is provisioned: the sign-in ends as
-     * SSO's `unlinked`.
+     * With no provisioner nothing is provisioned.
      *
      * @return void
      *
@@ -658,8 +594,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s informational unlinked result provisions
-     * nothing: only SSO's is listened to.
+     * Authentication's informational unlinked result provisions nothing.
      *
      * @return void
      */
@@ -674,8 +609,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Bind the fixture provisioner, looking at the database at each step with
-     * the closure given.
+     * Bind the fixture provisioner with the given observer.
      *
      * @param  ?\Closure(string, \Tests\Fixtures\Models\Person, \SineMacula\Laravel\Sso\Results\VerifiedResult): void  $observe
      * @return void
@@ -688,11 +622,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Link the result's subject, or the other subject given, to the person
-     * given, as another request would, through SSO's link storage, which locks
-     * the connection and raises its links version as every link made does,
-     * committed on another connection to the test's database, made the default
-     * (and so SSO's storage connection) while it runs.
+     * Link the subject to the person on another connection.
      *
      * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
      * @param  \Tests\Fixtures\Models\Person  $person
@@ -724,8 +654,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Give the person a link by a verified domain in the connection given, on
-     * the test's connection, inside whatever transaction is open there.
+     * Give the person a domain link in the given connection.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $connectionId
@@ -752,8 +681,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Redeem the handoff code the redirect carries, for the flow's verifier,
-     * and answer the sign-in.
+     * Redeem the redirect's handoff code and return the sign-in.
      *
      * @param  \SineMacula\Laravel\Sso\Testing\HandoffRedirect  $redirect
      * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult
@@ -786,8 +714,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * Start a `sign_in` flow, have the provider answer it and complete it,
-     * answering where the client is sent back to, with a code or a failure.
+     * Run a `sign_in` flow to completion and return the redirect.
      *
      * @return \SineMacula\Laravel\Sso\Testing\HandoffRedirect
      *

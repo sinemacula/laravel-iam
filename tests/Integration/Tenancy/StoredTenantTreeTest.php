@@ -15,8 +15,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * The tests' application tree, held to `laravel-authorization`'s tenant tree
- * contract with tenants of mixed types.
+ * The tests' tenant tree, held to authorization's tree contract.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,8 +43,7 @@ final class StoredTenantTreeTest extends TestCase
     }
 
     /**
-     * An organisation with an account and a team below it, and an organisation
-     * apart sharing the account's id.
+     * Two organisations, one with an account and a team below it.
      *
      * @return list<array{0: \SineMacula\Laravel\Authorization\Support\Reference, 1: \SineMacula\Laravel\Authorization\Support\Reference|null}>
      */

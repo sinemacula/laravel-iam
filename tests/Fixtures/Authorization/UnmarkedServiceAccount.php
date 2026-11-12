@@ -12,12 +12,7 @@ use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
 
 /**
- * A service account an application has not marked as `laravel-authorization`'s
- * machine: `laravel-authentication`'s machine identity and its principal in one
- * model, as `ServiceAccount` is, without `AuthorizableMachine`, so only the
- * session policy source stands between its grants and every check.
- *
- * It lives in the fixtures' machines table, beside `ServiceAccount`.
+ * A service account not marked as authorization's machine.
  *
  * @property int $id
  * @property string $name

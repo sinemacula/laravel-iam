@@ -32,19 +32,7 @@ use Tests\Fixtures\Sso\Handoff;
 use Tests\TestCase;
 
 /**
- * Integration tests for an enforcement change racing a sign-in through SSO in
- * the enforcing tenant, with the tenant authentication policy this package
- * binds (IAM-4.4, IAM-4.5), against SSO's acceptance scenario: the sign-in
- * either sees the new rule or the session it writes is judged against it.
- *
- * The change commits on another database connection after the redemption has
- * read its code and before it locks the enforcing tenant's rule, on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ. A rule that no longer
- * admits the connection refuses the sign-in, which signs nobody in; one that
- * still admits it signs the person in, the provenance naming the rule SSO
- * locked, and the session is kept by the next judgement of the tenant's
- * sessions, which records the version the policy answers now, whatever older
- * snapshot the sign-in's own judgement read.
+ * Integration tests for an enforcement change racing an SSO sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -66,10 +54,7 @@ final class EnforcementRaceTest extends TestCase
     private string $otherConnectionId = '';
 
     /**
-     * Arrange SSO with its enforcement on, a tenancy in which everyone may act
-     * in every tenant, a linked person who has signed in once, a rule through
-     * the tests' connection, and a second connection of the tenant SSO may
-     * enforce.
+     * Arrange SSO enforcement, a linked person, a rule and a second connection.
      *
      * @return void
      *
@@ -101,10 +86,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * A rule changed to one that no longer admits the connection, after the
-     * sign-in read its code and before it locked, refuses the sign-in: nobody
-     * is signed in, and on PostgreSQL at REPEATABLE READ the sign-in is first
-     * run again from its start, once.
+     * A rule that no longer admits the connection refuses the sign-in.
      *
      * @param  string  $level
      * @return void
@@ -129,11 +111,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * A rule changed to one that still admits the connection, after the sign-in
-     * read its code and before it locked, signs the person in: the provenance
-     * names the rule SSO locked, and the next judgement of the tenant's
-     * sessions keeps the session and records the version the policy answers for
-     * it now.
+     * A rule that still admits the connection signs in and is judged now.
      *
      * @param  string  $level
      * @return void
@@ -180,8 +158,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * Require every session acting in the tenant to come through one of the
-     * connections, and answer the rule's version.
+     * Require sessions to come through the connections; return the version.
      *
      * @param  list<string>  $connections
      * @param  ?\SineMacula\Laravel\Sso\Http\ClientContext  $client
@@ -198,8 +175,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * Redeem the handoff for the guard through the connection, the sign-in
-     * asking to act in the tenant.
+     * Redeem the handoff, asking to act in the tenant.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
@@ -214,10 +190,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * Make the change on another connection to the same database, committed
-     * there, the first time the redemption reads its code inside its
-     * transaction (after it read, before it locked), and record each time it
-     * reads it.
+     * Commit the change elsewhere when the redemption first reads its code.
      *
      * @param  \Closure(): mixed  $change
      * @return \ArrayObject<int, true>
@@ -264,8 +237,7 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * Whether the isolation level and driver run a redemption again that locks
-     * a row another committed after it read: PostgreSQL's REPEATABLE READ.
+     * Whether a redemption is retried after a snapshot conflict.
      *
      * @param  string  $level
      * @return bool

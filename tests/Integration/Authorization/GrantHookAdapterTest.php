@@ -49,26 +49,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization`'s grant hook, answered by SSO's
- * scope widening (IAM-6.7, AUTHZ-11.3): a grant that widens a person's scope
- * into a tenant suspends their link by a verified domain in another tenant's
- * connection and revokes the session established through it, inside the grant's
- * own transaction, before the grant is written; a platform-wide grant does so
- * for every tenant, and a grant in the link's own tenant leaves it alone; a
- * grant to a grantee that is not `laravel-authentication`'s identity, which SSO
- * never links, is written with nothing reported to SSO; the hooks the
- * application lists in `authorization.grant_hooks` alongside it run once,
- * before it, as `laravel-authorization` wraps the bound hook in them, and a
- * refusal from either refuses the grant, the adapter's after the listed hooks
- * ran included; a suspension is reported for the client the widening carries,
- * and for none when it carries none; and a grant made inside the application's
- * own transaction is rolled back with it, the suspension included.
- *
- * The grant runs inside `laravel-authorization`'s transaction, where SSO's
- * scope widening takes its identity guard and locks the connections holding the
- * person's links, so each scenario that commits or rolls back runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
+ * Integration tests for the grant hook answered by SSO's scope widening.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -108,9 +89,7 @@ final class GrantHookAdapterTest extends TestCase
     private string $otherConnectionId = '';
 
     /**
-     * Arrange SSO, store the role, give the person a link by a verified domain
-     * in a connection of the other tenant, and resolve every tenant to the
-     * organisation of its id.
+     * Arrange SSO, the role, and a domain link in the other tenant.
      *
      * @return void
      *
@@ -150,9 +129,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant in the tenant suspends the person's link by a verified domain in
-     * the other tenant's connection and revokes the session established through
-     * it, and the grant is written; granted again, nothing more is reported.
+     * A grant in a tenant suspends a link in another and revokes its sessions.
      *
      * @param  ?string  $level
      * @return void
@@ -175,8 +152,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A platform-wide grant reaches beyond every tenant, so the link in the
-     * other tenant's connection is suspended too.
+     * A platform grant suspends the link.
      *
      * @param  ?string  $level
      * @return void
@@ -195,8 +171,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant in the link's own tenant is inside it: the link is left active,
-     * and its session standing.
+     * A grant in the link's own tenant leaves it alone.
      *
      * @param  ?string  $level
      * @return void
@@ -218,10 +193,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant in a tenant whose key, resolved as an identifier, names another
-     * tenant than the grant does is refused before anything is written: taken
-     * on trust, the key would be read as that other tenant, the link's own, and
-     * the link left active while the person reaches beyond it.
+     * A grant in a tenant that does not resolve back is refused.
      *
      * @return void
      *
@@ -246,10 +218,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * Under `laravel-authentication`'s default tenant resolver, which resolves
-     * no tenant, a grant in a tenant that widens the person's scope is refused
-     * as the grant's tenant, and nothing is written; `iam:check` refuses that
-     * resolver while the hook is bound, so a deploy finds it first.
+     * Under the default resolver a widening grant is refused.
      *
      * @return void
      *
@@ -272,12 +241,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant to a grantee that is not `laravel-authentication`'s identity (an
-     * admin panel's user, which `laravel-authorization` answers as its own
-     * identity) widens nobody SSO links: it is written, platform-wide and in a
-     * tenant no resolver resolves alike, with nothing reported to SSO and the
-     * person's link left active, and the hooks the application lists still run
-     * for it.
+     * A grant to a non-identity is written and the listed hooks run.
      *
      * @param  ?string  $level
      * @return void
@@ -308,8 +272,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A widening naming an identity of `laravel-authentication`'s kind whose
-     * row cannot be found is refused, never passed over (IAM-8.2).
+     * A widening of an identity that cannot be found is refused.
      *
      * @return void
      *
@@ -329,10 +292,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A widening whose grants hold in more than one tenant is reported for each
-     * of them: one in the link's own tenant alone leaves the link active, and
-     * one beside it in another tenant, named after the first is named again,
-     * suspends it.
+     * Every tenant the widening's grants hold in is reported.
      *
      * @return void
      *
@@ -357,9 +317,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * Rows of the client a widening carries, as its operation's IP address and
-     * user agent: a request's, and none, as a trusted, console or queued call
-     * carries.
+     * Rows of the widening's client IP and user agent, or none.
      *
      * @return iterable<string, array{0: ?string, 1: ?string}>
      */
@@ -371,8 +329,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * The suspension a widening causes is reported for the client the widening
-     * carries, its operation's, and for none when it carries none.
+     * A suspension is reported for the widening's client.
      *
      * @param  ?string  $ip
      * @param  ?string  $userAgent
@@ -406,9 +363,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A hook the application lists in `authorization.grant_hooks` once the
-     * application has booted still runs, once, beside SSO's widening, and is
-     * handed the widening of the grant.
+     * A hook listed after boot still runs beside the widening.
      *
      * @return void
      *
@@ -430,8 +385,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A refusal from a hook the application lists refuses the grant: nothing is
-     * written, suspended or revoked.
+     * A refusal from a listed hook refuses the grant.
      *
      * @param  ?string  $level
      * @return void
@@ -462,10 +416,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * An application that lists its own grant hooks in its configuration, read
-     * as `laravel-authorization` registers, has them run alongside the adapter:
-     * the hook resolved is the adapter wrapped in the listed hooks, which run
-     * once, before it, and the grant is written with the link suspended.
+     * The listed hooks run once, before the adapter.
      *
      * @param  ?string  $level
      * @return void
@@ -493,9 +444,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * The adapter's refusal, after the hooks the application lists have run,
-     * still refuses the grant: the listed hook was handed the widening first,
-     * and nothing is written, suspended or revoked.
+     * The adapter's refusal after the listed hooks refuses the grant.
      *
      * @param  ?string  $level
      * @return void
@@ -530,8 +479,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant made inside the application's own transaction on the storage
-     * connection is rolled back with it, and the suspension with it.
+     * A grant inside the application's transaction rolls back with it.
      *
      * @param  ?string  $level
      * @return void
@@ -562,11 +510,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * SSO's refusal of a widening whose link candidates changed under its lock
-     * is handed to `laravel-authorization` as a concurrency error, SSO's
-     * refusal kept as its cause: one its conflict retries try a delegated call
-     * again for, and turn into `TransactionConflictException` inside the
-     * application's transaction.
+     * Changed link candidates are handed back as a concurrency error.
      *
      * @return void
      *
@@ -596,10 +540,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * A grant whose link candidates changed, made inside a transaction that is
-     * tried again on a concurrency error, is written by the try after it: the
-     * application's `DB::transaction()` given attempts, as this package's
-     * transaction is.
+     * A grant whose link candidates changed succeeds on retry.
      *
      * @param  ?string  $level
      * @return void
@@ -628,8 +569,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * The widening of the grants given for the identity, as a trusted call
-     * proposes it.
+     * The widening of the given grants, as a trusted call proposes it.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $identity
      * @param  list<\SineMacula\Laravel\Authorization\Hooks\ProposedGrant>  $changes
@@ -641,9 +581,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * Have SSO refuse the first widening as one whose link candidates changed,
-     * and widen as it would every one after it; answer how many widenings were
-     * asked for.
+     * Refuse the first widening for changed candidates; count widenings asked.
      *
      * @return \ArrayObject<int, true>
      */
@@ -729,8 +667,7 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * What the container resolves the abstract to, as anything that asks for it
-     * does.
+     * Resolve the abstract from the container.
      *
      * @param  string  $abstract
      * @return mixed

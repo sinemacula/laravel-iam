@@ -5,19 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Tenancy;
 
 /**
- * An identity's current memberships, as the application's membership contract
- * answers them (IAM-7.4): complete, or marked incomplete when the application
- * could not read every one of them.
- *
- * A set holds at most one membership of each tenant, and at most one platform
- * principal: an application that keeps several principals of one tenant answers
- * the one membership they make up, accepted when the person first accepted any
- * of them. Completeness is what lets a set say what the identity does not hold:
- * a membership a set holds is held whether it is complete or not, but only a
- * complete set says the identity holds nothing beyond it, so only a complete
- * one can place the identity within a tenant, and an incomplete one never
- * places it outside one either (`PrincipalScopeAdapter`): SSO takes a set the
- * application could not read completely as `unknown`.
+ * An identity's current memberships, marked incomplete when the application
+ * could not read them all.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,8 +31,7 @@ final readonly class MembershipSet
         /** Whether these are every one of the identity's current memberships. */
         public bool $complete = true,
     ) {
-        // A tenant's id is never blank, so the blank key is a platform
-        // principal's alone.
+        // A tenant id is never blank, so '' is the platform principal's key.
         $keys = array_map(static fn (Membership $membership): string => $membership->tenantId ?? '', $memberships);
 
         if (count(array_unique($keys)) !== count($keys)) {
@@ -65,8 +53,7 @@ final readonly class MembershipSet
     }
 
     /**
-     * Those of the identity's current memberships the application could read,
-     * which may not be every one.
+     * The memberships the application could read, which may not be all.
      *
      * @param  \SineMacula\Laravel\Iam\Tenancy\Membership  ...$memberships
      * @return self
@@ -79,8 +66,7 @@ final readonly class MembershipSet
     }
 
     /**
-     * The membership of exactly the tenant given, byte for byte, or `null` when
-     * the set holds none.
+     * The membership of exactly the tenant given, or `null`.
      *
      * @param  string  $tenantId
      * @return ?\SineMacula\Laravel\Iam\Tenancy\Membership
@@ -97,8 +83,7 @@ final readonly class MembershipSet
     }
 
     /**
-     * Whether the set holds a membership that reaches beyond the tenant given:
-     * a platform principal, or a membership of any other tenant.
+     * Whether the set holds a platform principal or another tenant.
      *
      * @param  string  $tenantId
      * @return bool

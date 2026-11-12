@@ -7,8 +7,7 @@ namespace Tests\Fixtures\Authorization\Enums;
 use SineMacula\Laravel\Authorization\Contracts\PermissionEnum;
 
 /**
- * The permissions an application declares for its invoices, which a policy
- * allows once the session is authenticated strongly enough.
+ * Invoice permissions a policy allows on strong enough authentication.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

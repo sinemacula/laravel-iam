@@ -7,8 +7,7 @@ namespace Tests\Fixtures\Authorization;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 
 /**
- * Resolves every tenant id to a tenant `laravel-authorization` cannot scope to
- * (`UnscopedTenant`).
+ * Resolves every tenant id to an `UnscopedTenant`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

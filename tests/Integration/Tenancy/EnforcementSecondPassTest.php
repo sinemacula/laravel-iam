@@ -22,22 +22,7 @@ use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
- * Integration tests for the second pass an enforcement change makes over the
- * enforcing tenant's sessions once SSO's transaction commits (IAM-4.4), against
- * the strict cut-off `laravel-authentication`'s `tenantPolicyChanged()` asks
- * for: a password sign-in in the tenant, which takes no lock of SSO's rule and
- * judged the tenant's policy before the rule was turned on, writes its session
- * on another connection to the same database once the change's first pass has
- * read the tenant's sessions, and the session is revoked once the change
- * commits.
- *
- * On PostgreSQL at either isolation level and on MySQL at READ COMMITTED the
- * sign-in commits after the change's first pass and before the change commits,
- * the first pass's locks holding no row it writes. On MySQL at REPEATABLE READ
- * the first pass's locking read holds the gap the session's row would go in, so
- * the sign-in's write waits for the change to commit and then goes ahead with
- * the verdict it made: the sign-in commits once the change has, before the
- * second pass runs.
+ * Integration tests for the enforcement change's second pass over sessions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -50,9 +35,7 @@ final class EnforcementSecondPassTest extends TestCase
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInDuringTheFirstPass, SignsInPeople;
 
     /**
-     * Arrange SSO with its enforcement on and no rule yet, a tenancy in which
-     * everyone may act in every tenant, and the tests' connection marked as
-     * having completed a sign-in, so SSO may enforce it.
+     * Arrange SSO enforcement, an open tenancy and an enforceable connection.
      *
      * @return void
      */
@@ -74,8 +57,7 @@ final class EnforcementSecondPassTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on the other connection, so the migrations'
-     * rollback never waits on it.
+     * Roll back what is left open, so the migrations' rollback never waits.
      *
      * @return void
      */
@@ -88,10 +70,7 @@ final class EnforcementSecondPassTest extends TestCase
     }
 
     /**
-     * A password session that entered the tenant on another connection once the
-     * change's first pass had read the tenant's sessions, and committed before
-     * the second pass, recorded at the policy as it was before the rule, is
-     * revoked once the change commits.
+     * A session that entered during the change is revoked once it commits.
      *
      * @param  string  $level
      * @return void

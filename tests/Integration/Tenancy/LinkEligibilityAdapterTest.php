@@ -22,16 +22,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's link eligibility, answered from the
- * application's memberships (IAM-7.4): an identity may link through a
- * connection only by a membership of exactly the connection's tenant that the
- * person accepted; an invitation not taken up, another tenant's membership, a
- * platform principal or none makes it ineligible; an incomplete set answers
- * the membership it holds; and an identity that cannot be resolved, or
- * memberships that cannot be read, throw inside SSO's transaction.
- *
- * The scenarios run at the connection's own level on every engine, then at READ
- * COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for SSO's link eligibility answered from memberships.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +38,7 @@ final class LinkEligibilityAdapterTest extends TestCase
     private const string TENANT = 'tenant-1';
 
     /**
-     * A member of the connection's tenant, by a membership the person accepted,
-     * is eligible, inside SSO's transaction.
+     * An accepted member of the connection's tenant is eligible.
      *
      * @param  ?string  $level
      * @return void
@@ -70,8 +60,7 @@ final class LinkEligibilityAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[memberships]`: each set that holds no accepted membership of
-     * the connection's tenant.
+     * Rows of `[memberships]` holding no accepted membership of the tenant.
      *
      * @return iterable<string, array{0: list<\SineMacula\Laravel\Iam\Tenancy\Membership>}>
      */
@@ -126,8 +115,7 @@ final class LinkEligibilityAdapterTest extends TestCase
     }
 
     /**
-     * A reference that names nobody throws, and memberships that cannot be read
-     * propagate their failure.
+     * An unresolved identity or an unreadable set throws.
      *
      * @return void
      *

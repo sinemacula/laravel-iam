@@ -7,18 +7,8 @@ namespace SineMacula\Laravel\Iam\Tenancy;
 use Carbon\CarbonImmutable;
 
 /**
- * One of an identity's current memberships, as the application's membership
- * contract answers it (IAM-7.4): the tenant it is a membership of, `null` for a
- * platform principal, which belongs to no tenant and so reaches beyond every
- * one, and when the person accepted it.
- *
- * The acceptance time is the person's, never an administrator's: a membership
- * an administrator created, or an invitation the person has not taken up, has
- * none. SSO counts a membership for linking by a verified domain only when the
- * person accepted it strictly before the domain's current verification, so a
- * tenant that claims a domain cannot add people and then capture them; a
- * creation time standing in for an acceptance would let it. A tenant id is the
- * application's opaque id, compared byte for byte, never blank.
+ * One of an identity's memberships: its tenant (`null` for a platform
+ * principal) and when the person, never an administrator, accepted it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,8 +39,7 @@ final readonly class Membership
     }
 
     /**
-     * A membership of the tenant, accepted by the person at the time given, or
-     * not accepted yet.
+     * A membership of the tenant.
      *
      * @param  string  $tenantId
      * @param  ?\Carbon\CarbonImmutable  $acceptedAt
@@ -64,8 +53,7 @@ final readonly class Membership
     }
 
     /**
-     * A platform principal, which belongs to no tenant, accepted by the person
-     * at the time given, or not accepted yet.
+     * A platform principal, which belongs to no tenant.
      *
      * @param  ?\Carbon\CarbonImmutable  $acceptedAt
      * @return self
@@ -76,7 +64,7 @@ final readonly class Membership
     }
 
     /**
-     * Whether it is a platform principal, of no tenant.
+     * Whether it is a platform principal.
      *
      * @return bool
      */

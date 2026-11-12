@@ -8,8 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 
 /**
- * A tenancy of two tenant types: an id beginning `account-` resolves to the
- * account of that id, and every other id to the organisation of that id.
+ * A tenancy of accounts (`account-` ids) and organisations.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

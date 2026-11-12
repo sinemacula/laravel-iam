@@ -68,8 +68,7 @@ use Tests\Fixtures\Providers\ResolvesAuthorizationWhileBooting;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams `laravel-authorization` joins the other members
- * through.
+ * Feature tests for the seams authorization joins the members through.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -149,8 +148,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Each declared adapter is reported with its class, its lifetime and the
-     * closure bound over its contract.
+     * Each declared adapter is reported with its class, lifetime and binding.
      *
      * @return void
      */
@@ -192,8 +190,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[authorization, mfa, sso, on]`: the switches, and whether the
-     * plain rows, the requirement checker and the grant hook are on.
+     * Rows of `[authorization, mfa, sso, on]`.
      *
      * @return iterable<string, array{0: bool, 1: bool, 2: bool, 3: array{bool, bool, bool}}>
      */
@@ -209,8 +206,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Every row follows the authorization switch, the requirement checker MFA's
-     * too and the grant hook SSO's too.
+     * Every row follows the switches it depends on.
      *
      * @param  bool  $authorization
      * @param  bool  $mfa
@@ -242,8 +238,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, machines, access, domains]`: what makes the
-     * source and the registry, application access and the grant hook mandatory.
+     * Rows of `[configuration, machines, access, domains]`.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: bool, 2: bool, 3: bool}>
      */
@@ -259,8 +254,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Only the source, the registry, application access and the grant hook are
-     * mandatory, each while the configuration says so.
+     * Each mandate follows the configuration.
      *
      * @param  array<string, mixed>  $configuration
      * @param  bool  $machines
@@ -323,8 +317,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * With the switch off every member keeps its own default and nothing is
-     * declared.
+     * With the switch off nothing is declared.
      *
      * @return void
      *
@@ -412,8 +405,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Rebinding the subject resolver or the tenant tree forgets the resolutions
-     * read through it.
+     * Rebinding the resolver or the tree forgets cached resolutions.
      *
      * @return void
      */
@@ -445,8 +437,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * A `laravel-authorization` registered from another provider's `boot()`
-     * still gets every adapter.
+     * An authorization registered during boot still gets every adapter.
      *
      * @return void
      *
@@ -463,8 +454,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * What a provider resolves from `laravel-authorization` as it boots is
-     * built with the adapters.
+     * What a provider resolves while booting is built with the adapters.
      *
      * @return void
      *
@@ -507,8 +497,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * The subject resolver is one for a unit of work, held under this package's
-     * own scoped key and forgotten by the worker reset.
+     * The subject resolver is scoped and forgotten by the worker reset.
      *
      * @return void
      *
@@ -530,8 +519,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * The context's keys are declared with their types, its assurance keys
-     * untestable.
+     * The context's keys are declared with their types.
      *
      * @return void
      *
@@ -621,8 +609,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Load the configuration, then set what the test names in
-     * `laravel-authorization`'s configuration.
+     * Load the configuration with the test's authorization settings.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -638,8 +625,7 @@ final class AuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Seed the environment, then make the application's bindings, as its own
-     * provider's `register()` would.
+     * Seed the environment, then make the application's bindings.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

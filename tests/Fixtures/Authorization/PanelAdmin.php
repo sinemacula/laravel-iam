@@ -9,12 +9,7 @@ use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
 
 /**
- * The user of an admin panel on a Laravel session guard: an Eloquent user that
- * holds `laravel-authorization`'s grants of its own, but is not
- * `laravel-authentication`'s identity, so SSO never links it.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection.
+ * An admin panel user with grants who is not an authentication identity.
  *
  * @property int $id
  * @property string $name

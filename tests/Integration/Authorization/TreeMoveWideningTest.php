@@ -36,13 +36,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for a move that takes grants in the moved subtree beyond a
- * tenant of a verified domain link (IAM-6.7, IAM-7.5): the move reports their
- * identities to SSO's scope widening in its own transaction.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for a tree move widening grants beyond a linked tenant.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -81,10 +75,7 @@ final class TreeMoveWideningTest extends TestCase
     private string $linkedConnectionId = '';
 
     /**
-     * Arrange SSO, the tree (the granted tenant and its child below the linked
-     * tenant), the role, the person granted it in the granted tenant, and then
-     * their link by a verified domain in the linked tenant's connection, which
-     * the grant, rooted below that tenant, leaves within it.
+     * Arrange SSO, the tree, the role, the grantee and their domain link.
      *
      * @return void
      *
@@ -120,9 +111,7 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * A move that takes the granted tenant out from under the linked one,
-     * reported in the move's transaction, suspends the person's link and
-     * revokes the session established through it before the move commits.
+     * A move from under the linked tenant suspends the link in its transaction.
      *
      * @param  ?string  $level
      * @return void
@@ -151,8 +140,7 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * A move that rolls back takes the suspension and the revocation back with
-     * it.
+     * A move that rolls back suspends nothing.
      *
      * @param  ?string  $level
      * @return void
@@ -185,8 +173,7 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * With the SSO capability's switch off, `laravel-authorization`'s grants
-     * are not reported to SSO, so a move reports nobody, and no grant is read.
+     * With SSO's switch off nobody is reported.
      *
      * @return void
      *
@@ -209,9 +196,7 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * A move of a subtree holding a tenant of another type reports the people
-     * granted there too: a person granted only in an account below the granted
-     * organisation has their link suspended.
+     * A move reports people granted in a tenant of another type below.
      *
      * @param  ?string  $level
      * @return void

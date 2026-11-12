@@ -61,8 +61,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     private FakeMemberships $memberships;
 
     /**
-     * Store the catalogue's permissions, resolve the organisations and fake the
-     * memberships.
+     * Store the permissions, resolve organisations and fake memberships.
      *
      * @return void
      */
@@ -119,8 +118,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A platform-wide grant is seen in the viewer's tenants whose own decision
-     * allows its purpose.
+     * A platform grant is seen in the viewer's tenants that allow it.
      *
      * @return void
      *
@@ -144,8 +142,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A subtree grant is seen at its root and in the viewer's tenants below it,
-     * never in another tenant below it.
+     * A subtree grant is seen at its root and the viewer's tenants below it.
      *
      * @return void
      *
@@ -228,8 +225,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A permission whose decision reads an authentication requirement is not
-     * held.
+     * A permission whose decision reads a requirement is not held.
      *
      * @return void
      *
@@ -255,8 +251,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A principal's own grants count only where its tenant access lets it act;
-     * its identity's count anywhere.
+     * A principal's grants count only where it may act.
      *
      * @return void
      *
@@ -292,8 +287,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A viewer named by a reference is the model it names, one naming nobody is
-     * refused, and a viewer that is no model sees nothing.
+     * A viewer is the model it names.
      *
      * @return void
      *
@@ -393,8 +387,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A policy of one statement on reading the trail, under a multifactor
-     * requirement when guarded.
+     * A one-statement trail-reading policy, MFA-guarded when asked.
      *
      * @param  string  $effect
      * @param  bool  $guarded

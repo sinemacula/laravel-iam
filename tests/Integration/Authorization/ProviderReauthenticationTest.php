@@ -37,16 +37,7 @@ use Tests\Fixtures\Sso\TrustsConnections;
 use Tests\TestCase;
 
 /**
- * Integration tests for a session's reauthentication at its provider, as
- * `laravel-authorization`'s requirement checker judges it (IAM-6.3): with a
- * combination policy that trusts the connection, as an application that trusts
- * its provider binds one, and SSO's evidence gate open, a reauthentication at
- * the provider meets a maximum age in MFA's route gate and in the checker
- * alike, so a policy statement gets the answer MFA's gate gives.
- *
- * Each scenario commits a sign-in and a reauthentication, and runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
+ * Integration tests for provider reauthentication against a maximum age.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -69,8 +60,7 @@ final class ProviderReauthenticationTest extends TestCase
     private Person $person;
 
     /**
-     * Arrange SSO with its evidence gate open, the person, and a combination
-     * policy that trusts the connection.
+     * Arrange SSO's open evidence gate, the person and a trusting policy.
      *
      * @return void
      */
@@ -142,9 +132,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * Link the person and sign them in through SSO, the provider asserting a
-     * password and multifactor authentication, failing unless a session starts
-     * active, and return it.
+     * Link and sign the person in through SSO, returning the session.
      *
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
      *
@@ -163,8 +151,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * Reauthenticate the session at the provider, the provider asserting a
-     * password and multifactor authentication again.
+     * Reauthenticate the session at the provider.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return void
@@ -181,8 +168,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * The provider's token, asserting a password and multifactor
-     * authentication.
+     * The token, asserting a password and multifactor authentication.
      *
      * @param  \SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken  $token
      * @return \SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken
@@ -193,8 +179,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * Whether MFA's check, handed the proofs MFA's route gate reads of the
-     * served session, finds multifactor authentication within the maximum age.
+     * Whether MFA's route gate finds multifactor within the maximum age.
      *
      * @return bool
      *
@@ -212,8 +197,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * Ask the bound authorization checker whether the person's session meets
-     * multifactor authentication within the maximum age.
+     * Ask the bound checker whether the session meets the requirement.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return \SineMacula\Laravel\Authorization\Evaluation\RequirementResult
@@ -233,8 +217,7 @@ final class ProviderReauthenticationTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application under test, as anything that
-     * asks for it does.
+     * Resolve the abstract from the application under test.
      *
      * @param  string  $abstract
      * @return mixed

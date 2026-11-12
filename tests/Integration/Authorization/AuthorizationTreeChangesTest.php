@@ -42,11 +42,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization` reading the application's
- * tenant tree (IAM-7.5, AUTHZ-12.8): a grant reaches the tenants below it of
- * whatever type, and a move reported through `Iam::treeChanges()` reaches
- * `laravel-authorization` at once, reporting the identities granted in the
- * moved subtree to SSO's scope widening, while a flat tree reports nothing.
+ * Integration tests for authorization reading the tenant tree.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -69,8 +65,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     private const string ACCOUNT = Account::PREFIX . '1';
 
     /**
-     * Arrange the root apart from the moved organisation and its account, and
-     * declare the invoice permissions.
+     * Arrange the tree and declare the invoice permissions.
      *
      * @return void
      */
@@ -91,8 +86,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * A grant at an organisation reaches the account below it, a tenant of
-     * another type.
+     * A grant reaches a tenant of another type below it.
      *
      * @return void
      *
@@ -106,9 +100,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * A reported move reaches `laravel-authorization`: a grant at the new
-     * ancestor holds in the moved organisation and its account once reported,
-     * not before.
+     * A reported move reaches authorization.
      *
      * @param  ?string  $level
      * @return void
@@ -135,10 +127,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * A move reports the identity behind each grantee in the moved subtree to
-     * SSO's scope widening: an identity named by its morph alias, and a
-     * principal's identity; a grantee that is no model, a role and one whose
-     * row is gone are passed over, and nobody else is reported.
+     * A move reports the identity behind each grantee in the subtree.
      *
      * @return void
      *
@@ -200,8 +189,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * With `laravel-authorization`'s flat tree nothing is reported to it, and
-     * no tenant is resolved for it.
+     * With a flat tree nothing is reported.
      *
      * @return void
      *
@@ -220,8 +208,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * A moved tenant that cannot be named to `laravel-authorization` refuses
-     * the move.
+     * A tenant that cannot be named refuses the move.
      *
      * @return void
      *
@@ -241,8 +228,7 @@ final class AuthorizationTreeChangesTest extends TestCase
     }
 
     /**
-     * Declare the invoice permissions and keep `laravel-authorization`'s
-     * resolutions in a store that outlives a check, as a worker's would.
+     * Declare the permissions and keep resolutions in a lasting store.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

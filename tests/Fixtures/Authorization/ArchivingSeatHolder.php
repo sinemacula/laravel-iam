@@ -11,12 +11,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 
 /**
- * A person who owns seats an application archives (`ArchivedSeat`): its
- * `principals()` relation lists the seats the model's global scope leaves, an
- * archived one hidden.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection.
+ * A person whose seats are archived (`ArchivedSeat`).
  *
  * @property int $id
  * @property string $name

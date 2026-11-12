@@ -10,9 +10,8 @@ use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 
 /**
- * The tenant authentication policy's version (IAM-4.5): a SHA-256 digest of
- * SSO's policy, the exemption's outcome and the MFA tenant requirement, part by
- * part, so it changes whenever any of them does.
+ * The tenant policy's version: a digest of SSO's policy, the exemption and the
+ * MFA tenant requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -21,12 +20,11 @@ use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
  */
 final readonly class TenantPolicyVersion
 {
-    /** @var string The digest the version is made with, whose hexadecimal form is 64 characters long. */
+    /** @var string The digest algorithm. */
     private const string ALGORITHM = 'sha256';
 
     /**
-     * The version of the answer made of the enforcement, the exemption's
-     * outcome where it was asked, and the requirement.
+     * The version of the enforcement, exemption and requirement together.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome  $exemption
@@ -65,7 +63,7 @@ final readonly class TenantPolicyVersion
     }
 
     /**
-     * A part in canonical form, or `null` for a part the requirement lacks.
+     * A part in canonical form, or `null` when absent.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Requirements\RequirementPart  $part
      * @return ?array<string, ?int>

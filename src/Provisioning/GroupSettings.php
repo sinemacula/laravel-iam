@@ -10,8 +10,7 @@ use SineMacula\Laravel\Iam\Contracts\GroupMapping;
 use SineMacula\Laravel\Iam\Contracts\GroupResync;
 
 /**
- * The application's group mapping and re-sync (IAM-7.2), resolved on every
- * call.
+ * Resolves the application's group mapping and re-sync on every call.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -20,7 +19,7 @@ use SineMacula\Laravel\Iam\Contracts\GroupResync;
  */
 final readonly class GroupSettings
 {
-    /** @var string The configuration key mapping each group to its roles, read while no mapping is bound. */
+    /** @var string The config key mapping each group to its roles, read while no mapping is bound. */
     public const string MAP = 'iam.provisioning.groups.map';
 
     /**
@@ -39,8 +38,7 @@ final readonly class GroupSettings
     ) {}
 
     /**
-     * The bound mapping, else the configured map's, or `null` when groups map
-     * to nothing.
+     * The bound mapping, else the configured map's, or `null`.
      *
      * @return ?\SineMacula\Laravel\Iam\Contracts\GroupMapping
      *

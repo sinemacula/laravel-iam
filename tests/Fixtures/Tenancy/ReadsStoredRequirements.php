@@ -12,8 +12,7 @@ use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * MFA's tenant requirement kept in the application's own table, read on the
- * default connection every time.
+ * MFA's tenant requirement read from the application's own table.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,8 +50,7 @@ final readonly class ReadsStoredRequirements implements TenantRequirement
     }
 
     /**
-     * Multifactor authentication where the tenant's row requires it, otherwise
-     * nothing.
+     * Multifactor authentication where the tenant's row requires it.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application

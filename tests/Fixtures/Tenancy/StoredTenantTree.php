@@ -14,8 +14,7 @@ use SineMacula\Laravel\Authorization\Support\Reference;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 
 /**
- * An application's tenant tree, held in the `iam_tenant_nodes` table and read
- * afresh on every call; tenants of any type.
+ * A tenant tree in the `iam_tenant_nodes` table, read afresh each call.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -28,8 +27,7 @@ final readonly class StoredTenantTree implements TenantTree
     public const string TABLE = 'iam_tenant_nodes';
 
     /**
-     * Place the tenant under the parent, or as a root, moving it when placed
-     * before; an id alone names a `ClaimedTenant`.
+     * Place the tenant under the parent, or as a root.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference|string  $tenant
      * @param  \SineMacula\Laravel\Authorization\Support\Reference|string|null  $parent
@@ -98,8 +96,7 @@ final readonly class StoredTenantTree implements TenantTree
     }
 
     /**
-     * The tenant and every tenant below it, as a query of typed rows on
-     * `laravel-authorization`'s connection.
+     * The tenant and its descendants, on authorization's connection.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
      * @return \Illuminate\Contracts\Database\Query\Builder

@@ -19,15 +19,8 @@ use SineMacula\Laravel\Sso\Provisioning\ProvisioningHelper;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
- * Provisions a new identity for a `sign_in` result SSO found unlinked: the one
- * listener of SSO's `ResultUnlinked` (IAM-7.1).
- *
- * While a provisioner is bound it writes, in one transaction retried
- * whole on a concurrency failure: the new identity, which must be an Eloquent
- * model the provisioner just inserted; SSO's scope widening for it; its
- * membership; the link, through SSO's provisioning helper; then the roles its
- * groups map to. A refused link rolls everything back and SSO ends the flow as
- * `unlinked`; anything thrown rolls everything back and propagates.
+ * Provisions a new identity, membership, link and group roles in one
+ * transaction for a `sign_in` result SSO found unlinked.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -72,8 +65,7 @@ final readonly class ProvisionOnUnlinkedResult
     ) {}
 
     /**
-     * Register the listener, resolved from the current application at each
-     * dispatch.
+     * Listen for SSO's `ResultUnlinked`, resolving the handler per dispatch.
      *
      * @return void
      */
@@ -106,14 +98,12 @@ final readonly class ProvisionOnUnlinkedResult
         try {
             $this->transaction->run(fn () => $this->provision($provisioner, $event));
         } catch (RefusedLink) {
-            // The helper wrote nothing, and the identity and membership are
-            // rolled back
+            // SSO ends the flow as `unlinked`; the transaction has rolled back.
         }
     }
 
     /**
-     * Write the identity, widening, membership, link and group grants, in that
-     * order.
+     * Write the identity, widening, membership, link and group grants in order.
      *
      * @param  \SineMacula\Laravel\Iam\Contracts\Provisioner  $provisioner
      * @param  \SineMacula\Laravel\Sso\Events\ResultUnlinked  $event

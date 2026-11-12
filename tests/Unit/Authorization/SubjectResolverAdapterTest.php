@@ -26,15 +26,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Models\Machine;
 
 /**
- * Unit tests for the edges of the subject `laravel-authentication`'s caller and
- * guard give `laravel-authorization`: a caller still choosing its principal (a
- * pending session) is no subject, the caller's credential's scopes are the
- * subject's, from the caller and, for the guard's own principal handed over,
- * from the guard, with no cap, a list and none granted kept apart, a session
- * keyed by an integer is named by its key as text, the caller's identity or
- * principal loaded again apart from the guard's is still the caller, and a
- * principal acts for its identity in its own tenant on a default guard that is
- * not `laravel-authentication`'s.
+ * Unit tests for the edges of the subject resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,8 +40,7 @@ final class SubjectResolverAdapterTest extends TestCase
     private const string GUARD = 'api';
 
     /**
-     * A caller whose pending session has not chosen its principal yet is no
-     * subject, so every check that names none denies.
+     * A caller still choosing its principal is no subject.
      *
      * @return void
      */
@@ -65,8 +56,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[the scopes the caller's credential carries]`: none limiting it,
-     * as a person's session, a list, as an API key's, and none granted.
+     * Rows of the caller's credential scopes: no cap, a list, none granted.
      *
      * @return iterable<string, array{0: ?list<string>}>
      */
@@ -80,9 +70,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The scopes the caller's credential carries are said on the subject, no
-     * cap, a list and an empty one kept apart, so the session policy source is
-     * handed them and looks nothing up.
+     * The caller's scopes are the subject's.
      *
      * @param  ?list<string>  $scopes
      * @return void
@@ -100,10 +88,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The model the Gate hands over carries the scopes of the credential the
-     * guard holds when it is the guard's principal, so the Gate's checks are
-     * capped as the request's own are, no cap, a list and an empty one kept
-     * apart; any other principal says nothing of them.
+     * The guard's principal carries its credential's scopes.
      *
      * @param  ?list<string>  $scopes
      * @return void
@@ -119,8 +104,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The guard's session, keyed by an integer, is named by its key as text, as
-     * `laravel-authorization` compares sessions.
+     * A session keyed by an integer is named as text.
      *
      * @return void
      */
@@ -141,10 +125,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A copy of the caller's identity loaded again, apart from the one the
-     * guard holds, is the caller, acting as the guard's principal with its
-     * session, as the very object is; another row of the same model is no
-     * caller, but its own subject and identity, with no tenant and no session.
+     * A reloaded copy of the caller's identity is the caller.
      *
      * @return void
      */
@@ -169,9 +150,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A copy of the caller's principal loaded again, apart from the one the
-     * guard holds, is the caller, with its session; another row of the same
-     * model is a principal of its own, with none.
+     * A reloaded copy of the caller's principal is the caller.
      *
      * @return void
      */
@@ -189,10 +168,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A default guard that is not `laravel-authentication`'s still answers a
-     * principal, the user it holds or one handed in, as acting for its identity
-     * in its own tenant, on that guard, as `laravel-authorization`'s own
-     * resolver names it.
+     * Another kind of guard's principal acts for its identity in its tenant.
      *
      * @return void
      */
@@ -221,8 +197,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * What the subject says of the scopes a credential carries: no cap for
-     * `null`, and the scopes otherwise.
+     * The scopes said of a credential: no cap for `null`.
      *
      * @param  ?list<string>  $scopes
      * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
@@ -233,9 +208,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * An authentication factory whose default guard has resolved its request to
-     * the principal and identity given, on a session keyed `session-1`, with a
-     * credential carrying the scopes given.
+     * An auth factory whose default guard holds the principal and identity.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity

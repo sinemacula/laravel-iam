@@ -8,10 +8,7 @@ use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 
 /**
- * SSO's enforcement contract as a test scripts it: every tenant asked about is
- * answered with the policy the test last set (`requireThrough()`,
- * `requireNothing()`), for that tenant, and each question is kept, so a test
- * can tell how often, and for what, SSO's enforcement was asked.
+ * SSO's enforcement as the test scripts it, recording each question.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -27,8 +24,7 @@ final class ScriptedEnforcement implements Enforcement
     private array $asked = [];
 
     /**
-     * Require every session to come through one of the connections, under a
-     * rule of the version given.
+     * Require every session to come through one of the connections.
      *
      * @param  list<string>  $connections
      * @param  string  $version

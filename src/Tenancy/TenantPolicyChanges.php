@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 
 /**
- * Applies a change of a tenant's authentication policy to the sessions acting
- * in it through `laravel-authentication`'s `tenantPolicyChanged()` (IAM-4.5),
- * which judges them again once an enclosing transaction commits.
+ * Re-judges a tenant's sessions after its authentication policy changes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +29,7 @@ final readonly class TenantPolicyChanges
     ) {}
 
     /**
-     * Judge the tenant's sessions against its policy as it now answers, and
-     * answer how many were revoked.
+     * Re-judge the tenant's sessions and answer how many were revoked.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
      * @return int

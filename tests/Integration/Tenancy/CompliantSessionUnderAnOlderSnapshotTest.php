@@ -36,22 +36,7 @@ use Tests\Fixtures\Tenancy\ExemptsIdentities;
 use Tests\TestCase;
 
 /**
- * Integration tests for the tenant authentication policy this package binds
- * judging, under the session's row lock, a session committed after the judging
- * transaction's snapshot (IAM-4.5), as an enforcement change's first
- * `tenantPolicyChanged()` pass judges one: SSO's transaction reads before it
- * revokes, and a sign-in through SSO in the enforcing tenant may commit between
- * that read and the pass's locking read of the tenant's sessions.
- *
- * On MySQL at REPEATABLE READ the pass's locking read finds the session, while
- * a plain read of its provenance in the same transaction answers from the older
- * snapshot, without the row. The policy reads the provenance current there, as
- * `laravel-authentication` does under the session's lock, so an exempt
- * identity's session through a satisfying connection is answered as the
- * compliant session it is: the exemption gate is not asked, no `ExemptionUsed`
- * is reported, and the session records the version the policy answers for it
- * once the change has committed. On PostgreSQL, and at READ COMMITTED on both
- * engines, the same holds.
+ * Integration tests for judging a session committed after the snapshot.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -70,9 +55,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
     private ?ExemptsIdentities $exemptions = null;
 
     /**
-     * Arrange SSO with its enforcement on, a tenancy in which everyone may act
-     * in every tenant, and the application's break-glass rule, exempting nobody
-     * until the test says so.
+     * Arrange SSO enforcement, an open tenancy and an exemption rule.
      *
      * @return void
      */
@@ -97,8 +80,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on either connection, so the migrations'
-     * rollback never waits on it.
+     * Roll back what is left open, so the migrations' rollback never waits.
      *
      * @return void
      */
@@ -120,11 +102,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
     }
 
     /**
-     * An exempt person's sign-in through the rule's connection, committed on
-     * another connection after the judging transaction read, is judged by the
-     * first pass of a change of the tenant's policy as the compliant session it
-     * is: the gate is not asked, no exemption is reported, and the session
-     * stands at the version the policy answers for it.
+     * A compliant session committed after the snapshot skips the gate.
      *
      * @param  string  $level
      * @return void
@@ -147,8 +125,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
 
         $storage->beginTransaction();
 
-        // The transaction's first read, which fixes its snapshot on MySQL at
-        // REPEATABLE READ, as SSO's own reads do before its revocation.
+        // Fix the snapshot on MySQL at REPEATABLE READ, as SSO's reads do.
         $storage->table('authentication_provenance')->count();
 
         $session = $this->redeemElsewhere($handoff);
@@ -174,9 +151,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
     }
 
     /**
-     * Require every session acting in the tenant to come through the tests'
-     * connection, once a sign-in through it has completed, as SSO requires
-     * before it enforces a connection.
+     * Require sessions in the tenant to come through the tests' connection.
      *
      * @return void
      *
@@ -197,9 +172,7 @@ final class CompliantSessionUnderAnOlderSnapshotTest extends TestCase
     }
 
     /**
-     * Redeem the handoff in the tenant on another connection to the same
-     * database, made the default (and so every member's storage connection)
-     * while it runs, where it commits; answer the session.
+     * Redeem the handoff on another connection and return the session.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession

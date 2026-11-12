@@ -9,10 +9,7 @@ use SineMacula\Laravel\Authorization\Contracts\QueryableResource;
 use SineMacula\Laravel\Authorization\Support\ResourceTenancy;
 
 /**
- * An application record `laravel-authorization` scopes queries of by the tenant
- * it names in its own columns, kept on a connection of its own, apart from the
- * one `laravel-authorization` keeps its grants on, as an application keeps its
- * records apart from a dedicated storage connection.
+ * A tenant-scoped application record kept on its own connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

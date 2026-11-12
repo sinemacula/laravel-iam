@@ -18,11 +18,7 @@ use Tests\Fixtures\Tenancy\LandlordTenant;
 use Tests\TestCase;
 
 /**
- * Integration tests for resolving the tenants a member names by opaque id to
- * `laravel-authentication`'s tenants, through `laravel-authentication`'s own
- * tenant resolver as the application binds it, asked with its reads pinned to
- * the write connection: a tenant of exactly that identifier, and otherwise a
- * refusal by throwing (IAM-8.2).
+ * Integration tests for resolving tenant ids through the tenant resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,8 +29,7 @@ use Tests\TestCase;
 final class TenantReferencesTest extends TestCase
 {
     /**
-     * The tenant the application's resolver answers under the id given is the
-     * tenant.
+     * The resolver's tenant of the id is the tenant.
      *
      * @return void
      */
@@ -46,8 +41,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * A tenant identified by an integer is the tenant of the id that integer is
-     * written as, as `laravel-authentication` matches a session's tenant.
+     * A tenant identified by an integer is the tenant of its digits.
      *
      * @return void
      */
@@ -63,8 +57,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * With `laravel-authentication`'s default resolver, which resolves no
-     * tenant, every tenant is refused by throwing.
+     * The default resolver resolves no tenant.
      *
      * @return void
      */
@@ -74,8 +67,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * A resolver answering a tenant of another identifier would have another
-     * tenant's sessions judged, so the tenant is refused by throwing.
+     * A tenant of another identifier is refused.
      *
      * @return void
      */
@@ -87,8 +79,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * The resolver is asked as the application binds it when the question is
-     * asked, not as it was bound when the translator was built.
+     * The resolver is the one bound when asked.
      *
      * @return void
      */
@@ -102,11 +93,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * A resolver that reads the tenant with a plain model query, relying on the
-     * pin `laravel-authentication`'s contract promises, is asked with its reads
-     * on the write connection, wherever the tenant lives: a tenant the primary
-     * holds and its replica has not yet seen is the tenant, not a refusal that
-     * would roll back the change SSO was making.
+     * The resolver's read is pinned to the write connection.
      *
      * @return void
      */
@@ -167,8 +154,7 @@ final class TenantReferencesTest extends TestCase
     }
 
     /**
-     * Assert the id resolves to no tenant: it throws an unresolved tenant,
-     * naming the id.
+     * Assert the id resolves to no tenant.
      *
      * @param  string  $tenantId
      * @return void

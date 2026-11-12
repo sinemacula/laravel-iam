@@ -10,25 +10,8 @@ use SineMacula\Laravel\Authorization\Contracts\ContextKeyCatalogue;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
 
 /**
- * Declares the keys of the authentication context this package binds
- * (`AuthenticationContextAdapter`) to `laravel-authorization`'s key catalogue
- * (IAM-6.2, AUTHZ-8.2), as the catalogue asks of the context that supplies
- * them: a policy reads only a declared key, so without them no condition could
- * name `laravel-authentication`'s keys, MFA's or SSO's.
- *
- * Each key is declared with the type its member gives its value, and testable:
- * whether a condition may test it is the catalogue's to decide, from the
- * assurance keys the context declares beside `laravel-authorization`'s own
- * (`AuthenticationContextAdapter::ASSURANCE_KEYS`), each of which it makes
- * untestable whatever is declared. `laravel-authorization` learns the types of
- * a context's keys from nothing else, so the types are declared here.
- *
- * A key already declared (by `authorization.context.keys`, an attribute
- * provider, or a service provider that declared it first) is left as it is
- * declared: the application's declaration wins. The keys are declared once, as
- * the catalogue, one per application, is built, and only while the
- * authentication context bound is this package's: one the application binds
- * declares its own.
+ * Declares the authentication context's keys and their types on
+ * `laravel-authorization`'s key catalogue, leaving keys already declared.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,8 +63,7 @@ final readonly class AuthenticationContextKeys
     ];
 
     /**
-     * Declare the keys on the key catalogue once it is built, while the
-     * authentication context bound is this package's.
+     * Declare the keys once the catalogue is built, while the context is ours.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
      * @return void
