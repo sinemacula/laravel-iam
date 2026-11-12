@@ -9,6 +9,7 @@ use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
@@ -55,7 +56,7 @@ final readonly class TenancySeams implements ProvidesSeams
     public function seams(Repository $config): array
     {
         $on          = SsoSeams::isOn($config);
-        $memberships = $on && TenancyContracts::hasMemberships($this->container, $config);
+        $memberships = $on && $this->container->bound(Memberships::class);
         $mandatory   = fn (): bool => self::isEnforcedOrRequired($config, $this->container);
         $inherited   = fn (): bool => self::isEnforced($config) && TenancyContracts::hasTree();
 

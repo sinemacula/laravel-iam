@@ -129,7 +129,7 @@ and the gaps in the members it works around.
     use, refusing more than an unset value), and `sso.storage.connection` by the storage alignment, at boot and in
     `StorageCheck`; audit-log's are `AuditCheck`'s, so nothing is reported twice; `laravel-authorization`'s seams are
     bound through the container, so none of its resolver keys is required to name an adapter. While the application has
-    memberships (`TenancyContracts::hasMemberships()`), so its people act in tenants, `laravel-authorization`'s resource
+    memberships bound (`Contracts\Memberships`), so its people act in tenants, `laravel-authorization`'s resource
     tenant resolver left on its default is a note, never a failure, as `laravel-authorization` says whether the contract
     still holds its default (`AuthorizationServiceProvider::isPackageDefault()`): a class the application names in
     `authorization.resource_tenant_resolver` it binds as no default, so no key is read. A model declaring its tenancy

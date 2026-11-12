@@ -159,21 +159,6 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Memberships named bind the three membership adapters.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
-    public function testMembershipsNamedBindTheMembershipAdapters(): void
-    {
-        self::assertInstanceOf(TenantMembershipAdapter::class, $this->resolved(TenantMembership::class));
-        self::assertInstanceOf(LinkEligibilityAdapter::class, $this->resolved(LinkEligibility::class));
-        self::assertInstanceOf(PrincipalScopeAdapter::class, $this->resolved(PrincipalScope::class));
-    }
-
-    /**
      * Memberships an application provider binds in its `register()` bind the
      * membership adapters.
      *
@@ -230,47 +215,35 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[sso switch, memberships named, memberships bound, memberships
-     * on, inheritance on]`.
+     * Rows of
+     * `[sso switch, memberships bound, memberships on, inheritance on]`.
      *
-     * @return iterable<string, array{0: mixed, 1: mixed, 2: bool, 3: bool, 4: bool}>
+     * @return iterable<string, array{0: mixed, 1: bool, 2: bool, 3: bool}>
      */
     public static function provideTenancyRows(): iterable
     {
-        yield 'nothing' => [true, null, false, false, true];
+        yield 'nothing' => [true, false, false, true];
 
-        yield 'memberships named' => [true, FakeMemberships::class, false, true, true];
+        yield 'memberships bound' => [true, true, true, true];
 
-        yield 'memberships blank' => [true, '  ', false, false, true];
-
-        yield 'memberships misnamed' => [true, true, false, true, true];
-
-        yield 'memberships bound' => [true, null, true, true, true];
-
-        yield 'sso off' => ['off', FakeMemberships::class, true, false, false];
+        yield 'sso off' => ['off', true, false, false];
     }
 
     /**
-     * The membership rows are on while SSO is and memberships are named or
-     * bound; the policy and inheritance rows while SSO is.
+     * The membership rows are on while SSO is and memberships are bound; the
+     * policy and inheritance rows while SSO is.
      *
      * @param  mixed  $sso
-     * @param  mixed  $memberships
      * @param  bool  $membershipsBound
      * @param  bool  $membershipsOn
      * @param  bool  $inheritanceOn
      * @return void
      */
     #[DataProvider('provideTenancyRows')]
-    public function testTheTenancyRowsFollowTheSwitchAndTheApplicationsTenancy(
-        mixed $sso,
-        mixed $memberships,
-        bool $membershipsBound,
-        bool $membershipsOn,
-        bool $inheritanceOn,
-    ): void {
+    public function testTheTenancyRowsFollowTheSwitchAndTheApplicationsTenancy(mixed $sso, bool $membershipsBound, bool $membershipsOn, bool $inheritanceOn): void
+    {
         $container = $this->container();
-        $config    = new Repository(['iam' => ['adapters' => ['sso' => $sso], 'tenancy' => ['memberships' => $memberships]]]);
+        $config    = new Repository(['iam' => ['adapters' => ['sso' => $sso]]]);
 
         if ($membershipsBound) {
             FakeMemberships::fake($container);

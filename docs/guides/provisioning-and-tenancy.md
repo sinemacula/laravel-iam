@@ -4,19 +4,19 @@ Who your people are, which tenants they belong to and how your tenants nest are 
 members need answers from that data in several places, and must never disagree about a person or a tenant, so the
 package asks you for each answer once, through a contract of its own, and routes it to every member that needs it.
 
-| Contract                                                     | Configuration key                 | Answers                                                                                                                                                                   |
-|--------------------------------------------------------------|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `SineMacula\Laravel\Iam\Contracts\Provisioner`               | `iam.provisioning.provisioner`    | what a person signing in through SSO for the first time is made into                                                                                                      |
-| `SineMacula\Laravel\Iam\Contracts\GroupMapping`              | `iam.provisioning.groups.mapping` | the roles a provider's groups give a person provisioned through it, in the connection's tenant (see [Group mapping](#group-mapping))                                      |
-| `SineMacula\Laravel\Iam\Contracts\GroupResync`               | `iam.provisioning.groups.resync`  | whether, and how, a later sign-in brings a person's roles into line with the groups it reports                                                                            |
-| `SineMacula\Laravel\Iam\Contracts\Memberships`               | `iam.tenancy.memberships`         | SSO's tenant membership, link eligibility and the membership half of principal scope                                                                                      |
-| `SineMacula\Laravel\Mfa\Contracts\TenantRequirement`         | None: bind it                     | MFA's tenant requirement and the tenant's part of the tenant policy (see [The tenant MFA requirement](#the-tenant-mfa-requirement))                                       |
-| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | None: bind it                     | every tenant id to its tenant, owed with MFA's tenant requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
+| Contract                                                     | Answers                                                                                                                                                                   |
+|--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SineMacula\Laravel\Iam\Contracts\Provisioner`               | what a person signing in through SSO for the first time is made into                                                                                                      |
+| `SineMacula\Laravel\Iam\Contracts\GroupMapping`              | the roles a provider's groups give a person provisioned through it, in the connection's tenant (see [Group mapping](#group-mapping))                                      |
+| `SineMacula\Laravel\Iam\Contracts\GroupResync`               | whether, and how, a later sign-in brings a person's roles into line with the groups it reports                                                                            |
+| `SineMacula\Laravel\Iam\Contracts\Memberships`               | SSO's tenant membership, link eligibility and the membership half of principal scope                                                                                      |
+| `SineMacula\Laravel\Mfa\Contracts\TenantRequirement`         | MFA's tenant requirement and the tenant's part of the tenant policy (see [The tenant MFA requirement](#the-tenant-mfa-requirement))                                       |
+| `SineMacula\Laravel\Authentication\Contracts\TenantResolver` | every tenant id to its tenant, owed with MFA's tenant requirement, SSO's enforcement, or `laravel-authorization`'s glue (see [The tenant resolver](#the-tenant-resolver)) |
 
-Name each by its class in `config/iam.php`, or bind it in the container in a service provider's `register()`.
-Memberships bound only from a `boot()` are still the ones asked, but bind no adapter, so SSO's own defaults stay. The
-tenant tree is `laravel-authorization`'s (see [The tenant tree](#the-tenant-tree)). A value that is no class name fails
-closed. Each is optional: leave it unnamed and the member's own default, which refuses or requires nothing, stays.
+Bind each in the container in a service provider's `register()`. Memberships bound only from a `boot()` are still the
+ones asked, but bind no adapter, so SSO's own defaults stay. The tenant tree is `laravel-authorization`'s (see
+[The tenant tree](#the-tenant-tree)). Each is optional: leave it unbound and the member's own default, which refuses or
+requires nothing, stays.
 
 Every one of them is asked inside the members' transactions on the storage connection, some under SSO's locks, so:
 
@@ -60,14 +60,12 @@ and records one that does not resolve back with no tenant.
 
 ## Provisioning
 
-With a provisioner named, a person signing in through an SSO connection for the first time is made into a new identity
+With a provisioner bound, a person signing in through an SSO connection for the first time is made into a new identity
 and a membership of the connection's tenant, just in time, inside the flow:
 
 ```php
-// config/iam.php
-'provisioning' => [
-    'provisioner' => App\Identity\ProvisionPeople::class,
-],
+// A service provider's register()
+$this->app->bind(SineMacula\Laravel\Iam\Contracts\Provisioner::class, App\Identity\ProvisionPeople::class);
 ```
 
 ```php
@@ -125,8 +123,7 @@ start:
 ```php
 // config/iam.php
 'provisioning' => [
-    'provisioner' => App\Identity\ProvisionPeople::class,
-    'groups'      => [
+    'groups' => [
         'map' => [
             'finance'     => 'invoices.viewer',
             'finance-ops' => ['invoices.viewer', 'invoices.approver'],
@@ -144,7 +141,7 @@ Groups are compared byte for byte, a group the map does not name grants nothing,
 groups grants nothing.
 
 A mapping that tells one connection's groups from another's, or grants a role across the tenant's subtree, is a class of
-yours, named in `iam.provisioning.groups.mapping` or bound in the container (which wins over the map):
+yours, bound in the container as `SineMacula\Laravel\Iam\Contracts\GroupMapping` (which wins over the map):
 
 ```php
 use SineMacula\Laravel\Iam\Contracts\GroupMapping;
@@ -170,26 +167,23 @@ What provisioning granted stays until you change it: SSO's later sign-ins report
 To bring a person's roles into line with their groups at every sign-in, opt in:
 
 ```php
-'groups' => [
-    'map'    => [/* ... */],
-    'resync' => SineMacula\Laravel\Iam\Provisioning\MappedGroupResync::class,
-],
+// A service provider's register()
+$this->app->bind(SineMacula\Laravel\Iam\Contracts\GroupResync::class, SineMacula\Laravel\Iam\Provisioning\MappedGroupResync::class);
 ```
 
 `Iam::signIns()->redeem()` then calls it for every `sign_in` that links an identity and signs it in, once the
 redemption's transaction has committed, in a transaction of its own, and before the credential is handed back to you.
-`MappedGroupResync` makes the identity's own roles in the connection's
-tenant exactly those the mapping now answers: a group added grants its roles, a group removed revokes them, and a role
-the mapping does not answer is never granted. It also revokes a role an administrator granted the identity itself in
-that tenant, so grant those to the person's principal instead, or implement `Contracts\GroupResync` yourself (named in
-`iam.provisioning.groups.resync`, or bound); roles of the identity's principals, of another tenant, or platform-wide
-are never touched. A grant that widens the person's scope reports it to SSO first, which takes SSO's identity guard
-before any of SSO's other locks, so the re-sync never runs under the redemption's locks, which would deadlock with a
-grant or a link of the same person made meanwhile. A re-sync that throws grants and revokes nothing, and reaches you
-from `redeem()` once the sign-in has committed: the code is spent, and the session written is never handed out, so
-nobody can use it; the person signs in again. Grants are read on every check, so nothing in the session depends on the
-re-sync. Call `redeem()` with no transaction of your own open on the storage connection: inside one, the re-sync runs
-under the redemption's locks after all.
+`MappedGroupResync` makes the identity's own roles in the connection's tenant exactly those the mapping now answers: a
+group added grants its roles, a group removed revokes them, and a role the mapping does not answer is never granted. It
+also revokes a role an administrator granted the identity itself in that tenant, so grant those to the person's
+principal instead, or bind your own `Contracts\GroupResync`; roles of the identity's principals, of another tenant, or
+platform-wide are never touched. A grant that widens the person's scope reports it to SSO first, which takes SSO's
+identity guard before any of SSO's other locks, so the re-sync never runs under the redemption's locks, which would
+deadlock with a grant or a link of the same person made meanwhile. A re-sync that throws grants and revokes nothing, and
+reaches you from `redeem()` once the sign-in has committed: the code is spent, and the session written is never handed
+out, so nobody can use it; the person signs in again. Grants are read on every check, so nothing in the session depends
+on the re-sync. Call `redeem()` with no transaction of your own open on the storage connection: inside one, the re-sync
+runs under the redemption's locks after all.
 
 ## Scope widening
 
@@ -253,7 +247,7 @@ answer staying true until that transaction commits. So take your membership guar
 held until the asking transaction ends, such as the shared lock above. Every writer that revokes, expires or narrows a
 membership takes the same guard before it writes and before it ends the person's sessions.
 
-With memberships named, SSO's tenant membership, link eligibility (a `link` only by an accepted membership of the
+With memberships bound, SSO's tenant membership, link eligibility (a `link` only by an accepted membership of the
 connection's tenant) and the membership half of its principal scope are answered from them. Without them SSO's defaults
 stay: no membership, no `link`, and no linking by a domain.
 

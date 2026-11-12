@@ -84,11 +84,12 @@ return [
     | since `laravel-authentication`'s default requires nothing of any
     | tenant, so no enforcement and no requirement would reach a session.
     |
-    | While `sso` is on and the application names its memberships
-    | (`tenancy.memberships`), the package binds SSO's tenant membership, its
-    | link eligibility and its principal scope, answered from them. Without
-    | them SSO's defaults stay, and refuse. While `sso` is on, SSO's
-    | enforcement inheritance reads `laravel-authorization`'s tenant tree.
+    | While `sso` is on and the application binds its memberships
+    | (`SineMacula\Laravel\Iam\Contracts\Memberships`), the package binds
+    | SSO's tenant membership, its link eligibility and its principal scope,
+    | answered from them. Without them SSO's defaults stay, and refuse. While
+    | `sso` is on, SSO's enforcement inheritance reads
+    | `laravel-authorization`'s tenant tree.
     |
     | `authorization` binds `laravel-authorization` to the other members: its
     | subject resolver, answered from `Auth::caller()` (the principal, its
@@ -154,11 +155,12 @@ return [
     | exemption's sessions would otherwise keep acting in the tenant on their
     | access tokens until those expire.
     |
-    | `memberships` names the application's memberships, a class implementing
-    | `SineMacula\Laravel\Iam\Contracts\Memberships`: every tenant an
-    | identity is a current member of, a platform principal among them, and
-    | when the person, never an administrator, accepted each, or the set marked
-    | incomplete when it cannot all be read. While `adapters.sso` is on, the
+    | Bind the application's memberships,
+    | `SineMacula\Laravel\Iam\Contracts\Memberships`, in a service
+    | provider's `register()`: every tenant an identity is a current member
+    | of, a platform principal among them, and when the person, never an
+    | administrator, accepted each, or the set marked incomplete when it
+    | cannot all be read. While `adapters.sso` is on, the
     | package answers SSO's tenant membership, its link eligibility (a `link`
     | only by an accepted membership of the connection's tenant) and the
     | membership half of its principal scope from it. The grant half is
@@ -167,38 +169,26 @@ return [
     | memberships and grants both stay within the tenant, and `unknown` with it
     | off, so SSO links nobody by a verified domain; a complete set reaching
     | beyond the tenant is `outside_tenant`, which suspends a verified domain
-    | link for good. Name none and SSO's defaults stay: no membership, no
-    | `link`, no linking by a domain.
+    | link for good. Bind none, or bind it from a provider's `boot()`, and
+    | SSO's defaults stay: no membership, no `link`, no linking by a domain.
     |
     | The tenant tree is `laravel-authorization`'s (`authorization.tenant_tree`).
     | Report every move of a tenant inside the transaction that writes it,
     | after the write: `Iam::treeChanges()->changed($tenantId)`.
     |
-    | Memberships bound in the container count as named when they are bound
-    | by the time every service provider has registered (in a provider's
-    | `register()`, the application's own included); bound from a provider's
-    | `boot()` they are still the ones asked, but bind no adapter. Any
-    | value that is no class name (true, false, a number) fails closed.
-    |
     */
-
-    'tenancy' => [
-        'memberships' => null,
-    ],
 
     /*
     |---------------------------------------------------------------------------
     | Provisioning
     |---------------------------------------------------------------------------
     |
-    | `provisioner` names the application's provisioner, a class implementing
-    | `SineMacula\Laravel\Iam\Contracts\Provisioner`: what a person who signs
-    | in through an SSO connection for the first time is made into, a new
-    | identity and its membership of the connection's tenant. A provisioner
-    | bound in the container counts as named, whenever it is bound. Name none
-    | (leave it null) and provisioning is off: a `sign_in` that resolves to no
-    | identity ends as SSO's `unlinked`. Any value that is no class name (true,
-    | false, a number) fails closed.
+    | Bind the application's provisioner,
+    | `SineMacula\Laravel\Iam\Contracts\Provisioner`, in the container: what
+    | a person who signs in through an SSO connection for the first time is
+    | made into, a new identity and its membership of the connection's tenant.
+    | Bind none and provisioning is off: a `sign_in` that resolves to no
+    | identity ends as SSO's `unlinked`.
     |
     | The package's one listener of SSO's `ResultUnlinked` asks it, only for a
     | result that resolved to no identity and holds no reservation, never for
@@ -223,27 +213,23 @@ return [
     | roles of `laravel-authorization`'s, each granted to the new identity in
     | the connection's tenant, never beyond it, in the same transaction, once
     | the link is made: a refusal, or a role that does not exist, rolls the
-    | provisioning back. `mapping` names a class implementing
-    | `SineMacula\Laravel\Iam\Contracts\GroupMapping`; with none named or
-    | bound, `map` maps each group name to a role's name or a list of them;
-    | with both empty, groups grant nothing. `resync` names a class
-    | implementing `SineMacula\Laravel\Iam\Contracts\GroupResync`, which
-    | every later sign-in through a connection calls with the groups then
+    | provisioning back. With no
+    | `SineMacula\Laravel\Iam\Contracts\GroupMapping` bound, `map` maps each
+    | group name to a role's name or a list of them; with neither, groups grant
+    | nothing. Bind `SineMacula\Laravel\Iam\Contracts\GroupResync` and every
+    | later sign-in through a connection calls it with the groups then
     | reported, once the sign-in has committed, in a transaction of its own:
     | `SineMacula\Laravel\Iam\Provisioning\MappedGroupResync` makes the
     | identity's own roles in the connection's tenant exactly those the
-    | mapping answers. Leave it null and nothing is re-synced: a person keeps
-    | what provisioning granted until the application changes it. Provider
-    | groups are only as trustworthy as the connection.
+    | mapping answers. Bind none and nothing is re-synced: a person keeps what
+    | provisioning granted until the application changes it. Provider groups
+    | are only as trustworthy as the connection.
     |
     */
 
     'provisioning' => [
-        'provisioner' => null,
-        'groups'      => [
-            'mapping' => null,
-            'map'     => [],
-            'resync'  => null,
+        'groups' => [
+            'map' => [],
         ],
     ],
 

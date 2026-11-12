@@ -61,7 +61,7 @@ final readonly class TenantMembershipAdapter implements TenantMembership
      * @return \SineMacula\Laravel\Sso\Linking\MembershipStanding
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
+     * @throws \LogicException
      * @throws \Throwable
      */
     #[\Override]

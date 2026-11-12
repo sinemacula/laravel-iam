@@ -15,8 +15,8 @@ use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 /**
  * Memberships for tests: each identity holds what the test granted it
  * (`grant()`), complete unless marked `incomplete()`, and throws once told to
- * `failFor()` it. `fake()` binds a fresh instance; name the class in
- * `iam.tenancy.memberships` before boot for SSO's membership adapters to bind.
+ * `failFor()` it. `fake()` binds a fresh instance; bind one before boot for
+ * SSO's membership adapters to bind.
  *
  * @api
  *

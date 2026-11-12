@@ -36,8 +36,8 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
  * re-sync's transaction; take no lock on rows other writers share before them.
  * Throw to refuse.
  *
- * Name the implementation in `iam.provisioning.groups.resync`, or bind it in
- * the container; with neither, nothing is re-synced.
+ * Bind the implementation in the container; with none bound, nothing is
+ * re-synced.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

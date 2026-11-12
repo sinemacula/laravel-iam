@@ -84,7 +84,7 @@ final readonly class PrincipalScopeAdapter implements PrincipalScope
      * @return \SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
+     * @throws \LogicException
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \Throwable
      */

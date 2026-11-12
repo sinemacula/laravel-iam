@@ -7,7 +7,6 @@ namespace Tests\Integration\Sso;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Callers\Caller;
@@ -25,11 +24,11 @@ use SineMacula\Laravel\Authentication\Proofs\ObservedProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofWriter;
 use SineMacula\Laravel\Authentication\Proofs\Provenance;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\LinkConfirmationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
@@ -81,7 +80,6 @@ use Tests\TestCase;
  */
 #[CoversClass(LinkConfirmationAdapter::class)]
 #[CoversClass(SsoSeams::class)]
-#[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
 final class LinkConfirmationAdapterTest extends TestCase
 {
     use ChangesSessionsElsewhere, FindsLockedSessions, LinksByVerifiedDomain, MigratesSso, RegistersPasskeys, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -483,6 +481,20 @@ final class LinkConfirmationAdapterTest extends TestCase
         $result = $this->sessions()->start($factor, null, self::RECOVERY, new SignInContext(self::client()));
 
         return $result->session->record ?? self::fail(sprintf('The session was not started: [%s].', $result->reason->value ?? $result->status->value));
+    }
+
+    /**
+     * Bind the application's memberships before the seams are bound.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        $app->bind(Memberships::class, FakeMemberships::class);
     }
 
     /**

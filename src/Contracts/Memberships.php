@@ -12,13 +12,11 @@ use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
  * identity is a current member of, and when the person accepted each (IAM-7.4).
  *
  * Memberships are the application's own data. The application implements this
- * once, names it in `iam.tenancy.memberships` (or binds it in the container by
- * the time every provider has registered, in an application provider's
- * `register()`, say: one bound from a `boot()` leaves SSO's refusing defaults
- * bound), and the package answers SSO's tenant membership, its link eligibility
- * and the membership half of its principal scope from it, so none of them
- * disagrees with another about a person, and none is answered by
- * `laravel-authorization`.
+ * once and binds it in a service provider's `register()` (one bound from a
+ * `boot()` leaves SSO's refusing defaults bound), and the package answers SSO's
+ * tenant membership, its link eligibility and the membership half of its
+ * principal scope from it, so none of them disagrees with another about a
+ * person, and none is answered by `laravel-authorization`.
  *
  * Answer every current membership, a platform principal among them (a
  * membership of no tenant), each with the time the person accepted it: never a

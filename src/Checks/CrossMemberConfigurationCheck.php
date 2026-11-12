@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
 use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -169,7 +170,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     {
         $checks = $this->resolvesTenants() ? [fn () => $this->assertTenantsResolve()] : [];
 
-        if (TenancyContracts::hasMemberships($this->container, $this->config)) {
+        if ($this->container->bound(Memberships::class)) {
             $checks[] = fn (): ?string => $this->resourceTenantsNote();
         }
 

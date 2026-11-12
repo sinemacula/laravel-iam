@@ -6,7 +6,6 @@ namespace Tests\Integration\EndToEnd;
 
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -18,12 +17,12 @@ use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Contracts\GroupResync;
+use SineMacula\Laravel\Iam\Contracts\Provisioner;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 use SineMacula\Laravel\Iam\Provisioning\GroupGrants;
 use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
 use SineMacula\Laravel\Iam\Provisioning\MappedGroupResync;
-use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Iam\Testing\FakeGroupMapping;
@@ -56,7 +55,7 @@ use Tests\TestCase;
  * mapping does not answer and never one of another tenant; a re-sync runs once
  * the sign-in has committed, never under SSO's redemption locks, so one that
  * refuses grants and revokes nothing and hands out no credential, the code
- * spent; and with no re-sync configured a later sign-in changes nothing.
+ * spent; and with no re-sync bound a later sign-in changes nothing.
  *
  * Each flow that commits runs at the connection's own level on every engine,
  * then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
@@ -107,7 +106,7 @@ final class GroupGrantsThroughSsoTest extends TestCase
         $this->app?->instance(ProvisionsPeople::class, new ProvisionsPeople);
         $this->app?->instance(TenantResolver::class, new OrganisationTenancy);
 
-        Config::set(ProvisioningSettings::KEY, ProvisionsPeople::class);
+        $this->app?->bind(Provisioner::class, ProvisionsPeople::class);
 
         $this->mapping = FakeGroupMapping::fake($this->app)
             ->map('finance', self::VIEWER)
@@ -262,7 +261,7 @@ final class GroupGrantsThroughSsoTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        Config::set(GroupSettings::RESYNC, MappedGroupResync::class);
+        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
 
         $this->redeem($this->handoffWith(['finance']));
 
@@ -304,7 +303,7 @@ final class GroupGrantsThroughSsoTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        Config::set(GroupSettings::RESYNC, MappedGroupResync::class);
+        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
 
         $this->redeem($this->handoffWith(['finance']));
 
@@ -348,7 +347,7 @@ final class GroupGrantsThroughSsoTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        Config::set(GroupSettings::RESYNC, MappedGroupResync::class);
+        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
 
         $this->redeem($this->handoffWith(['finance']));
 
