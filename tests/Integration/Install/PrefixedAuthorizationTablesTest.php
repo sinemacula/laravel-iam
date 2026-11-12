@@ -64,7 +64,7 @@ final class PrefixedAuthorizationTablesTest extends TestCase
 
         $shipped    = glob(dirname((string) (new \ReflectionClass(AuthorizationServiceProvider::class))->getFileName(), 2) . '/database/migrations/*.php') ?: [];
         $migrations = array_map(fn (string $file): string => $this->scratch('database/migrations/' . basename($file)), $shipped);
-        $tables     = array_keys(array_diff_key($configuration['tables'], ['prefix' => '']));
+        $tables     = array_values(array_diff_key($configuration['tables'], ['prefix' => '']));
         $ran        = [];
 
         self::assertNotSame([], $migrations);
