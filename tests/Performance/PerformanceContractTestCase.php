@@ -22,15 +22,13 @@ use Tests\TestCase;
  *
  * Statements are recorded from every connection, and only while the path under
  * test runs. A select is a read and an insert, an update or a delete is a
- * write; a `set` of the open transaction's characteristics (its isolation
- * level) is a setting, budgeted apart, since it reads and writes nothing;
- * anything else fails the test, so a statement nobody has classified is never
- * counted silently as one or the other. Laravel begins, commits and rolls back
- * transactions and savepoints through PDO without logging a query, so those are
- * counted apart, from the connection's transaction events: a begin for every
- * transaction or savepoint opened, a commit for every one committed or
- * released, and a rollback for every one rolled back. Each budget may write to
- * one table of its own, created before it runs and dropped after.
+ * write; anything else fails the test, so a statement nobody has classified is
+ * never counted silently as one or the other. Laravel begins, commits and rolls
+ * back transactions and savepoints through PDO without logging a query, so
+ * those are counted apart, from the connection's transaction events: a begin
+ * for every transaction or savepoint opened, a commit for every one committed
+ * or released, and a rollback for every one rolled back. Each budget may write
+ * to one table of its own, created before it runs and dropped after.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -107,9 +105,8 @@ abstract class PerformanceContractTestCase extends TestCase
     }
 
     /**
-     * Run the path and assert exactly how many reads and writes it made, how
-     * many transactions or savepoints it began, committed and rolled back, and
-     * how many transaction settings it made.
+     * Run the path and assert exactly how many reads and writes it made, and
+     * how many transactions or savepoints it began, committed and rolled back.
      *
      * @template TResult
      *
@@ -119,10 +116,9 @@ abstract class PerformanceContractTestCase extends TestCase
      * @param  int  $begins
      * @param  int  $commits
      * @param  int  $rollbacks
-     * @param  int  $settings
      * @return TResult
      */
-    protected function assertQueryBudget(int $reads, int $writes, callable $callback, int $begins = 0, int $commits = 0, int $rollbacks = 0, int $settings = 0): mixed
+    protected function assertQueryBudget(int $reads, int $writes, callable $callback, int $begins = 0, int $commits = 0, int $rollbacks = 0): mixed
     {
         $this->statements = [];
         $this->capturing  = true;
@@ -133,7 +129,7 @@ abstract class PerformanceContractTestCase extends TestCase
             $this->capturing = false;
         }
 
-        $budget = ['read' => $reads, 'write' => $writes, 'begin' => $begins, 'commit' => $commits, 'rollback' => $rollbacks, 'setting' => $settings];
+        $budget = ['read' => $reads, 'write' => $writes, 'begin' => $begins, 'commit' => $commits, 'rollback' => $rollbacks];
 
         static::assertSame($budget, $this->counts(), "The path left its query budget.\n" . $this->listing());
 
@@ -141,18 +137,13 @@ abstract class PerformanceContractTestCase extends TestCase
     }
 
     /**
-     * Whether the statement reads or writes, or sets the open transaction's
-     * characteristics, or null when it does none of them.
+     * Whether the statement reads or writes, or null when it does neither.
      *
      * @param  string  $sql
-     * @return 'read'|'setting'|'write'|null
+     * @return 'read'|'write'|null
      */
     private static function kindOf(string $sql): ?string
     {
-        if (str_starts_with(strtolower(ltrim($sql)), 'set transaction ')) {
-            return 'setting';
-        }
-
         return match (strtolower(strtok(ltrim($sql), " \t\r\n(") ?: '')) {
             'select'                     => 'read',
             'insert', 'update', 'delete' => 'write',
@@ -161,22 +152,22 @@ abstract class PerformanceContractTestCase extends TestCase
     }
 
     /**
-     * How many reads and writes the path made, how many transactions or
-     * savepoints it began, committed and rolled back, and how many transaction
-     * settings it made, failing the test on a statement that is none of them.
+     * How many reads and writes the path made, and how many transactions or
+     * savepoints it began, committed and rolled back, failing the test on a
+     * statement that is none of them.
      *
-     * @return array{read: int, write: int, begin: int, commit: int, rollback: int, setting: int}
+     * @return array{read: int, write: int, begin: int, commit: int, rollback: int}
      */
     private function counts(): array
     {
-        $counts = ['read' => 0, 'write' => 0, 'begin' => 0, 'commit' => 0, 'rollback' => 0, 'setting' => 0];
+        $counts = ['read' => 0, 'write' => 0, 'begin' => 0, 'commit' => 0, 'rollback' => 0];
 
         foreach ($this->statements as $statement) {
 
             $kind = $statement['kind'] ?? self::kindOf($statement['sql']);
 
             if ($kind === null) {
-                static::fail(sprintf("A statement is neither a read, a write nor a transaction setting: [%s].\n%s", $statement['sql'], $this->listing()));
+                static::fail(sprintf("A statement is neither a read nor a write: [%s].\n%s", $statement['sql'], $this->listing()));
             }
 
             $counts[$kind]++;

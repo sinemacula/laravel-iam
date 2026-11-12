@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Performance\Provisioning;
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -75,11 +74,9 @@ final class ProvisioningQueryBudgetTest extends PerformanceContractTestCase
         // guard, the application's membership, the link, and the connection's
         // links version. Transactions: the listener's, the widening's
         // savepoint, the helper's, its link storage's and the link's insert,
-        // each begun and committed. Settings: on PostgreSQL, MySQL and
-        // MariaDB, the listener's transaction set to READ COMMITTED, as its
-        // first statement or just before it begins; none on SQLite.
+        // each begun and committed.
         $this->underBudget(static function (self $test, \Closure $provision): void {
-            $test->assertQueryBudget(8, 5, $provision, begins: 5, commits: 5, settings: DB::connection()->getDriverName() === 'sqlite' ? 0 : 1);
+            $test->assertQueryBudget(8, 5, $provision, begins: 5, commits: 5);
         }, new ProvisionsPeople);
 
         $this->handoff();
