@@ -30,8 +30,8 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\TestCase;
 
 /**
- * Feature tests for the reader that gives audit-log the caller a
- * `laravel-authentication` guard holds (IAM-9.7).
+ * Feature tests for the reader that gives audit-log a `laravel-authentication`
+ * guard's caller.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,8 +53,8 @@ final class AuthenticationActorReaderTest extends TestCase
     private const string TENANT = 'tenant-7';
 
     /**
-     * A record made during a request names the caller's actor, guard,
-     * principal, tenant and session.
+     * A request's record names the caller's actor, guard, principal, tenant and
+     * session.
      *
      * @return void
      *
@@ -72,8 +72,7 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * A queued job dispatched from that request records the same caller, with
-     * no guard holding anyone while it runs.
+     * A queued job records the caller that dispatched it.
      *
      * @return void
      *
@@ -94,8 +93,7 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * A record a mapper already gave the caller as its actor keeps its guard
-     * and gains the principal, tenant and session.
+     * A mapper's actor for the caller gains the principal, tenant and session.
      *
      * @return void
      *
@@ -209,8 +207,7 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * Queue the jobs on a `database` connection of their own, so each is
-     * serialised with Context and run from its payload.
+     * Queue jobs on a `database` connection, so each runs from its payload.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -253,8 +250,7 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * Sign the person in, act on the new session in the test's tenant, and
-     * return the session.
+     * Sign the person in on the test's tenant and return the session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Illuminate\Database\Eloquent\Model
@@ -271,8 +267,8 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * Fail the test unless the record names the person, as their own principal,
-     * in the test's tenant, on the session, with the guard given.
+     * Fail unless the record names the person, principal, tenant, session and
+     * guard.
      *
      * @param  \SineMacula\Laravel\AuditLog\Records\AuditRecord  $record
      * @param  \Tests\Fixtures\Models\Person  $person
@@ -293,8 +289,7 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * Run the one queued job as a queue worker does, its scoped instances and
-     * facade roots forgotten first.
+     * Run the queued job as a worker does, scoped instances forgotten first.
      *
      * @return void
      */

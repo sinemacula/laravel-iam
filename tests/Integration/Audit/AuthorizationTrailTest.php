@@ -33,17 +33,8 @@ use Tests\Fixtures\Authorization\Staff;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of `laravel-authorization` and the audit trail, with
- * audit-log storing in its own tables on the storage connection beside
- * `laravel-authorization`'s (IAM-6.10, IAM-9.2): a viewer reads exactly the
- * tenants its grants reach, never another tenant's entries nor the entries with
- * no tenant, and a viewer granted nothing reads nothing; and a denial made
- * inside a transaction on the storage connection that rolls back is still
- * recorded, once, after the rollback, as one made inside a transaction that
- * commits is, after the commit.
- *
- * Each runs at the connection's own level on every engine, then at READ
- * COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * End-to-end tests of `laravel-authorization`'s records in audit-log's own
+ * tables.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +53,8 @@ final class AuthorizationTrailTest extends TestCase
     private const string DENIED = 'authorization.access_denied';
 
     /**
-     * Store the permissions, so they can be granted, record grant hooks rather
-     * than widen anyone's scope, and resolve the organisations.
+     * Store and grant the permissions, record grant hooks and resolve the
+     * organisations.
      *
      * @return void
      */
@@ -85,8 +76,7 @@ final class AuthorizationTrailTest extends TestCase
     }
 
     /**
-     * A viewer reads exactly the tenants its grants reach, and a viewer granted
-     * nothing reads nothing.
+     * A viewer reads exactly the tenants its grants reach.
      *
      * @param  ?string  $level
      * @return void
@@ -117,9 +107,8 @@ final class AuthorizationTrailTest extends TestCase
     }
 
     /**
-     * A denial made inside a transaction on the storage connection is recorded
-     * once that transaction has ended: after a rollback, which would have taken
-     * a record written at once with it, as after a commit.
+     * A denial inside a transaction is recorded once the transaction ends,
+     * either way.
      *
      * @param  ?string  $level
      * @return void
@@ -157,8 +146,7 @@ final class AuthorizationTrailTest extends TestCase
     }
 
     /**
-     * Run the fixtures' migrations and every member's audit-log's tests run,
-     * with `laravel-authorization`'s, which it only publishes, beside them.
+     * Run the fixtures' migrations, audit-log's and `laravel-authorization`'s.
      *
      * @return void
      */
@@ -186,7 +174,7 @@ final class AuthorizationTrailTest extends TestCase
     }
 
     /**
-     * Name the catalogue and declare the invoice permissions, set before any
+     * Name the catalogue and declare the invoice permissions before any
      * provider registers.
      *
      * @param  \Illuminate\Foundation\Application  $app

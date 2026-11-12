@@ -34,27 +34,8 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Contract tests pinning the whole record sequence of the suite's three central
- * flows, as the members dispatch their events and this package maps them
- * (IAM-9.1 to IAM-9.5, #4 item 8): a password sign-in, an MFA step-up and an
- * SSO sign-in, every record in order, with its code, outcome, reason, actor,
- * subject, principal, tenant, guard, session, correlation, client and
- * properties.
- *
- * A password sign-in is a session written and a person signed in: two records,
- * correlated by the session, the second under audit-log's own code. A step-up
- * is the session stepped up and MFA's verification passed, after the wrong code
- * that failed first. An SSO sign-in is its start, its verified result, its
- * handoff issued and redeemed, all correlated as one sign-in, then
- * `laravel-authentication`'s session written, person signed in and result
- * redeemed, the last correlated with SSO's halves, each recorded once. The
- * `jwt` guard is excluded from audit-log's own capture, as the application sets
- * it, so no Laravel event adds a record, and audit-log refuses a code no
- * definition registers, as the application also sets, so every code the flows
- * record is proven defined. The records reach audit-log's fake store through
- * its whole capture pipeline, the contributors included. Every flow runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
+ * Contract tests for the whole record sequence of a password sign-in, an MFA
+ * step-up and an SSO sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -79,8 +60,8 @@ final class RecordSequencesTest extends TestCase
     private const string WRONG_CODE = '000000';
 
     /**
-     * A password sign-in is a session written and a person signed in, each by
-     * and on the person, under the guard and session, correlated by it.
+     * A password sign-in is a session written and a person signed in,
+     * correlated by the session.
      *
      * @param  ?string  $level
      * @return void
@@ -105,10 +86,8 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
-     * A step-up is a failed verification of the wrong code, by no one and on
-     * the person, then the session stepped up and MFA's verification passed,
-     * each by and on the person, all in the session the step-up proved,
-     * correlated by it.
+     * A step-up after a wrong code is a failed verification, the step-up and a
+     * passed verification.
      *
      * @param  ?string  $level
      * @return void
@@ -148,11 +127,8 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
-     * An SSO sign-in is SSO's start, verified result, handoff issued and
-     * redeemed, correlated as one sign-in in the connection's tenant, then
-     * `laravel-authentication`'s session written and person signed in,
-     * correlated by the session, and its redemption of the result, correlated
-     * with SSO's halves: each half recorded once.
+     * An SSO sign-in is SSO's halves then `laravel-authentication`'s, each
+     * recorded once and correlated.
      *
      * @param  ?string  $level
      * @return void
@@ -202,12 +178,8 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
-     * A refused SSO sign-in is SSO's start, verified result and handoff issued,
-     * correlated as one sign-in, then `laravel-authentication`'s refusal, by
-     * and on no one, since the guard refused the method before it resolved
-     * anyone, correlated with SSO's halves: recorded once, after the
-     * redemption's transaction rolled back, and SSO reports no redemption of
-     * the code that stays unspent.
+     * A refused SSO sign-in records SSO's halves, then the refusal once the
+     * redemption rolls back.
      *
      * @param  ?string  $level
      * @return void
@@ -256,9 +228,7 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
-     * What a record of the person's own action holds after its code: a success,
-     * by and on the person as their own principal, in no tenant, under the
-     * guard and the session, correlated as given, from the tests' client.
+     * What a record of the person's own action holds after its code.
      *
      * @param  string  $person
      * @param  string  $session
@@ -273,9 +243,8 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
-     * Every record the fake store holds, in order, as its code, outcome,
-     * reason, actor, subject, principal, tenant, guard, session, correlation,
-     * client and properties.
+     * Every record the fake store holds, in order, as its columns and
+     * properties.
      *
      * @param  \SineMacula\Laravel\AuditLog\Testing\FakeAuditStore  $fake
      * @return list<list<mixed>>

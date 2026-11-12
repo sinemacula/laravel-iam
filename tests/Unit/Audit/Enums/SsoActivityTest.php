@@ -8,10 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Audit\Enums\SsoActivity;
 
 /**
- * Unit tests for the `sso.*` codes and their definitions (IAM-9.2, IAM-9.3):
- * the flows, links, exemptions, expiry warnings and refreshes in the `security`
- * category, the administration of connections, domains, enforcement and keys in
- * `access_management`, each keeping exactly its properties.
+ * Unit tests for the `sso.*` codes and their definitions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
