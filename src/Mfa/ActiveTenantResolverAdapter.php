@@ -72,7 +72,7 @@ final readonly class ActiveTenantResolverAdapter implements ActiveTenantResolver
         $asked = ProofOwner::of($identity);
         $owner = $guard->identity();
 
-        if ($owner === null || (array) ProofOwner::of($owner) !== (array) $asked) {
+        if ($owner === null || !ProofOwner::of($owner)->is($asked)) {
             return null;
         }
 

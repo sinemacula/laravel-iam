@@ -198,7 +198,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     private static function isTheSession(PendingSession $now, PendingContext $pending): bool
     {
         return SignIn::reference($now->session, $pending->application) === $pending->sessionId
-            && (array) ProofOwner::of($now->identity)                  === (array) ProofOwner::of($pending->identity);
+            && ProofOwner::of($now->identity)->is(ProofOwner::of($pending->identity));
     }
 
     /**
