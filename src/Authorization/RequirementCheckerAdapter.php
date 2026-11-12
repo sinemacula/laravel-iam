@@ -184,7 +184,7 @@ final readonly class RequirementCheckerAdapter implements AuthenticationRequirem
 
         $own = $acting ?? ($model instanceof Authenticatable ? $model : null);
 
-        return $own === $identity || ($own !== null && (array) ProofOwner::of($own) === (array) ProofOwner::of($identity))
+        return $own === $identity || ($own !== null && ProofOwner::of($own)->is(ProofOwner::of($identity)))
             ? $identity
             : throw UnresolvedReferenceException::forSignIn($application);
     }
