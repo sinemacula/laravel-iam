@@ -42,57 +42,20 @@ use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContri
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 
 /**
- * Package service provider: registers the package's configuration, the `iam`
- * manager, the callers MFA's challenge gateway keeps for its factor codes, the
- * records SSO's redemptions keep for one request, the held actor reader
- * audit-log asks, the grant half of SSO's principal scope, the storage
- * connection's alignment, the seam bindings, the authentication context's keys
- * on `laravel-authorization`'s key catalogue, the storage check's booting and
- * booted callbacks, the audit trail's mappers and codes, the `mfa` and `sso`
- * authentication context contributors, the rendering of
- * `laravel-authorization`'s insufficient-authentication exception as MFA's
- * step-up, the listener provisioning SSO's unlinked results, the worker reset
- * listeners, the publishing tag and the `iam:install` and `iam:check` commands.
+ * Registers the package, binds its adapters over the members' seams and aligns
+ * every member on one storage connection.
  *
- * Every adapter is bound over a member's seam once every provider has
- * registered and before any boots, where the member says the seam still holds
- * its own default (IAM-8.4), so an application's binding from any `register()`
- * is kept and one from a `boot()` replaces the adapter.
- *
- * The storage connection is settled in the same step. A member key can be
- * written only once its member has merged its configuration, which a member
- * registering after this package does only then, since a key written before
- * would replace the member's whole `storage` block; and an application provider
- * registered later may name another shared connection. So the member keys are
- * aligned again and checked there. A provider registered once the booting
- * callbacks have run settles from its own `boot()`, which Laravel runs for it
- * at once.
- *
- * The storage step runs once more when the application has booted, from a
- * `booted()` callback the settling queues, because a provider's `boot()` can
- * still change what the booting phase settled: it can register a member, which
- * merges its configuration only then, or name another shared connection, or
- * point a member key elsewhere. Once booted, a member whose provider has still
- * not registered refuses boot (every member is required, IAM-1.3), since its
- * key could never be aligned; one registered later would read a connection this
- * package never checked.
- *
- * A storage connection mismatch, a member that has not registered, or a
- * connection key that is not a name, refuses boot, except while one of the
- * console commands that list, describe, discover, cache or clear configuration
- * runs, so the problem (a cached one included) can still be inspected and
- * cleared, as `laravel-mfa` skips its own boot check for them, or `iam:check`,
- * which reports it (`Checks\StorageCheck`) rather than stop before it can. The
- * command is read from the process's arguments; a process that names none runs
- * `list` only when it is Artisan, so any other script started without a command
- * (a test runner, a long-lived worker) is checked.
+ * Seams are bound and storage settled in the booting phase, once every member
+ * has merged its configuration, and storage is checked again once booted, since
+ * a provider's `boot()` can still change it. A mismatch or a missing member
+ * refuses boot, except under the configuration commands and `iam:check`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  */
 final class IamServiceProvider extends ServiceProvider
 {
-    /** @var list<string> The console commands neither a storage connection mismatch nor a missing member refuses. */
+    /** @var list<string> The console commands neither a storage mismatch nor a missing member refuses. */
     private const array UNCHECKED_COMMANDS = [
         'config:cache',
         'config:clear',
@@ -104,38 +67,32 @@ final class IamServiceProvider extends ServiceProvider
         'package:discover',
     ];
 
-    /** @var string The console command Artisan runs when the process's arguments name none. */
+    /** @var string The command Artisan runs when none is named. */
     private const string DEFAULT_COMMAND = 'list';
 
-    /** @var string The script whose process runs the default command when its arguments name none. */
+    /** @var string The script that runs the default command when none is named. */
     private const string ARTISAN = 'artisan';
 
-    /** @var string The console's only global option that takes a value, which may follow it after a space. */
+    /** @var string The only global console option that takes a value. */
     private const string ENVIRONMENT_OPTION = '--env';
 
-    /** @var array<string, ?string> The member keys this provider wrote, as it registered and as it settled, with what it wrote last. */
+    /** @var array<string, ?string> The member keys this provider wrote, with the value written last. */
     private array $written = [];
 
-    /** @var bool Whether the storage connections have been settled, and their check once the application has booted queued. */
+    /** @var bool Whether the seams are bound and storage settled. */
     private bool $settled = false;
 
-    /** @var bool Whether the SSO capability's switch was on when the seams were bound, which the `sso` contributor follows. */
+    /** @var bool Whether SSO was on when the seams were bound. */
     private bool $ssoOn = false;
 
-    /** @var bool Whether the MFA capability's switch was on when the seams were bound, which the `mfa` contributor and the step-up follow. */
+    /** @var bool Whether MFA was on when the seams were bound. */
     private bool $mfaOn = false;
 
-    /** @var bool Whether the authorization capability's switch was on when the seams were bound, which the step-up follows. */
+    /** @var bool Whether authorization was on when the seams were bound. */
     private bool $authorizationOn = false;
 
     /**
-     * Register the configuration, the manager, the request's records and the
-     * held actor reader audit-log asks, write the shared storage connection
-     * into every member key that is unset and whose member has registered,
-     * register the declaration of the authentication context's keys on
-     * `laravel-authorization`'s key catalogue, and register the callback that
-     * binds the seams and checks the storage connections once every provider
-     * has registered.
+     * Register the configuration, request records and storage settlement.
      *
      * @return void
      *
@@ -158,25 +115,12 @@ final class IamServiceProvider extends ServiceProvider
         AuthenticationContextKeys::register($this->app);
         $this->registerSettlement();
 
-        // `iam:check` runs `authorization:check`, so laravel-authorization
-        // boots for diagnosis when it is the process's command: a broken
-        // authorization setting is then reported by the check, not thrown at
-        // boot before the check can run
+        // laravel-authorization defers its boot errors to `iam:check`.
         Declarations::of($this->app)->composingCommand(CheckCommand::NAME);
     }
 
     /**
-     * Bind the seams and settle the storage connections if the booting phase
-     * passed before this provider registered (it was registered while the
-     * application booted, or after), register this package's part of the audit
-     * trail with audit-log before it stops taking registrations (an audit-log
-     * that never registers is not refused while a configuration command runs,
-     * as a member is not), then queue the `mfa` and `sso` authentication
-     * context contributors' registration for when every provider has booted,
-     * and bootstrap the listener provisioning SSO's unlinked results, the
-     * rendering of `laravel-authorization`'s insufficient-authentication
-     * exception as MFA's step-up, the worker reset listeners, the publishing
-     * tag and the console commands.
+     * Settle, then register the audit trail, contributors and listeners.
      *
      * @return void
      *
@@ -198,8 +142,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Return the capabilities whose seams are bound, which `iam:check` reads
-     * the mandatory seams from too.
+     * The capabilities whose seams are bound.
      *
      * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
      *
@@ -218,8 +161,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the `iam` manager singleton behind the facade, which resolves
-     * every service from the application current when it is called.
+     * Register the `iam` manager behind the facade.
      *
      * @return void
      */
@@ -230,13 +172,8 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the callers MFA's challenge gateway keeps beside the factor code
-     * bindings it hands `laravel-authentication`, scoped, so they are one
-     * request's or one job's alone (IAM-8.1): scoped under this package's own
-     * key for its scoped adapters, which `Iam::resetWorkerState()` forgets as
-     * it forgets every other one, and resolved through that key, so the
-     * explicit reset never leaves a caller held for a binding something still
-     * references.
+     * Register MFA's factor code callers, scoped so the worker reset drops
+     * them.
      *
      * @return void
      */
@@ -249,8 +186,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the admitted redemption and the renewal, scoped under this
-     * package's key so `Iam::resetWorkerState()` forgets them (IAM-8.1).
+     * Register SSO's request records, scoped so the worker reset forgets them.
      *
      * @return void
      */
@@ -266,23 +202,10 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register this package's contributors of the `mfa` and `sso` namespaces
-     * with `laravel-authentication`'s authentication context, each once, while
-     * its capability's switch is on (IAM-3.12, IAM-4.8), as it read when the
-     * seams were bound, so each contributor and its capability's adapters are
-     * bound together or not at all, whatever a later provider writes to the
-     * switch, from a `booted()` callback, which runs once every provider has
-     * booted (at once when the application already has).
-     * `laravel-authentication` asks for a registration from `boot()`, and a
-     * member may be registered from another provider's `boot()`, after this
-     * package's has run: its provider binds its contributors only then, so a
-     * registration made from this package's `boot()` would go to an instance
-     * nobody keeps and be lost without a word. A contributor the application
-     * registered under either namespace before the application finished
-     * booting, from any provider's `boot()`, is kept, as an application's
-     * binding of a seam is (IAM-8.4); one it registers once the application has
-     * booted is `laravel-authentication`'s `LogicException`, since a namespace
-     * is taken once.
+     * Register the `mfa` and `sso` contributors once every provider has booted.
+     *
+     * A member registered from another provider's `boot()` binds its registry
+     * only then.
      *
      * @return void
      */
@@ -296,10 +219,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the callback that binds the seams and settles the storage
-     * connections in the booting phase. When the application has already
-     * booted, the callback would never run, and none is registered: Laravel
-     * boots a provider registered then at once, and `boot()` settles.
+     * Settle in the booting phase, or from `boot()` when registered after it.
      *
      * @return void
      */
@@ -319,10 +239,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the reset of every member's request state before each Octane
-     * request and once as each Octane worker starts, by the events' names so
-     * Octane stays optional, and before each queued job, unless the application
-     * turned it off.
+     * Register the Octane and queue worker reset listeners, unless turned off.
      *
      * @return void
      *
@@ -340,8 +257,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the package's config publishing tag and its console commands,
-     * `iam:install` and `iam:check`, in the console only.
+     * Register the config publishing tag and the console commands.
      *
      * @return void
      */
@@ -359,9 +275,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register this package's contributor under the namespace while its
-     * capability's switch was on when the seams were bound and nothing else
-     * holds the namespace.
+     * Register the contributor while its capability is on and namespace free.
      *
      * @param  bool  $on
      * @param  string  $namespace
@@ -387,10 +301,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Bind every capability's adapters over the members' defaults, and this
-     * package's own grant scope port (IAM-6.8) where nothing is bound to it:
-     * `laravel-authorization`'s grant scope query while the authorization
-     * capability is on, otherwise `UnknownGrantScope`.
+     * Bind every capability's adapters and the grant scope port.
      *
      * @return void
      *
@@ -420,19 +331,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Bind the seams, then align the storage connections again and refuse a
-     * mismatch, once only, whichever phase reaches it first, and queue the same
-     * once more for when the application has booted, refusing then a member
-     * that has still not registered.
-     *
-     * Neither can be done in `register()` alone: a member that registers after
-     * this package merges its configuration only then, so its key can be
-     * neither written nor checked before, and an application provider that
-     * registers later may name another shared connection. Every member the
-     * application registers with the other providers has registered by now; one
-     * a provider registers from its `boot()` has not, and is left, as is its
-     * key, for the callback that runs once the application has booted. A
-     * callback queued once the application has booted runs at once.
+     * Bind the seams and check storage once, and again once the app has booted.
      *
      * @return void
      *
@@ -459,10 +358,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Write the shared connection into every member key whose member has
-     * registered, refuse a key naming another connection, and, once the
-     * application has booted, refuse a member that has not registered; none is
-     * refused while a configuration command runs.
+     * Align the storage keys; refuse a mismatch or, once booted, a lost member.
      *
      * @param  bool  $booted
      * @return void
@@ -492,12 +388,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Write the shared connection into every member key the alignment allows,
-     * leaving a member whose provider has not registered yet, and return what
-     * was written. While a console command that lists, describes, discovers,
-     * caches or clears configuration runs, a connection key that is not a name
-     * is left as it is, and nothing more is aligned, so the command can still
-     * clear or replace it; anywhere else it fails closed.
+     * Align the member keys; an unchecked command leaves an invalid key alone.
      *
      * @param  \SineMacula\Laravel\Iam\Storage\ConnectionAlignment  $alignment
      * @param  \Illuminate\Config\Repository  $config
@@ -521,14 +412,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Whether the worker reset's switch leaves the reset on, read leniently, as
-     * the members read a switch an environment variable fills: `false`, as a
-     * boolean or as text, `0`, `off` and `no` turn it off. Anything else leaves
-     * it on: `true`, `1`, `on` and `yes`, and a missing, empty or unrecognised
-     * value, since a reset that runs needlessly costs nothing, while one
-     * skipped lets a request's state reach the next, and refusing the value
-     * would stop every command, the ones that clear a cached configuration
-     * among them.
+     * Whether the worker reset is on; only a clear off value turns it off.
      *
      * @param  mixed  $value
      * @return bool
@@ -539,8 +423,7 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Whether the console command running is one a storage connection mismatch
-     * does not refuse.
+     * Whether the running console command skips the storage check.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return bool
@@ -551,18 +434,9 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Return the console command the process's arguments name, found as the
-     * console finds it: the first argument that is neither an option nor the
-     * value of `--env` given after a space, the only global option that takes a
-     * value (so `artisan -v config:clear` and `artisan --env production
-     * config:clear` are both `config:clear`).
+     * The console command argv names; `list` for a bare `artisan`, else null.
      *
-     * When there is none, the command is `list`, the console's default, only
-     * when the process is Artisan (a bare `artisan`, or `artisan -v`); any
-     * other process that names no command (a test runner given only options, a
-     * long-lived worker script) runs no console command at all, and `null` is
-     * returned, so it is checked, as `laravel-mfa`'s own boot check, which
-     * reads the first argument, checks it.
+     * Options are skipped, with the value `--env` takes after a space.
      *
      * @return ?string
      */

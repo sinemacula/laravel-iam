@@ -18,7 +18,7 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the fake provisioner (IAM-7.1).
+ * Unit tests for the fake provisioner.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,8 +35,7 @@ final class FakeProvisionerTest extends TestCase
     private int $next = 100;
 
     /**
-     * Each identity is the closure's, made for the result asked about, and kept
-     * in order.
+     * Each identity comes from the closure and is kept in order.
      *
      * @return void
      */
@@ -59,8 +58,7 @@ final class FakeProvisionerTest extends TestCase
     }
 
     /**
-     * Without a closure for memberships, each membership is kept with its
-     * tenant, and nothing else is written.
+     * Without a closure, each membership is only kept with its tenant.
      *
      * @return void
      */
@@ -75,8 +73,7 @@ final class FakeProvisionerTest extends TestCase
     }
 
     /**
-     * With a closure for memberships, the membership is written by the closure,
-     * for the identity and the tenant asked about, and kept.
+     * With a closure, each membership is written by it and kept.
      *
      * @return void
      */
@@ -98,8 +95,7 @@ final class FakeProvisionerTest extends TestCase
     }
 
     /**
-     * Once told to, the fake refuses every identity, with the refusal given or
-     * one of its own, and makes none.
+     * Once told to, the fake refuses every identity and makes none.
      *
      * @return void
      */
@@ -120,8 +116,7 @@ final class FakeProvisionerTest extends TestCase
     }
 
     /**
-     * Once told to, the fake refuses every membership, with the refusal given
-     * or one of its own, and keeps none.
+     * Once told to, the fake refuses every membership and keeps none.
      *
      * @return void
      */
@@ -149,8 +144,7 @@ final class FakeProvisionerTest extends TestCase
     }
 
     /**
-     * `fake()` binds a fresh fake as the application's provisioner, in the
-     * container given or the global one.
+     * `fake()` binds a fresh fake as the provisioner.
      *
      * @return void
      */

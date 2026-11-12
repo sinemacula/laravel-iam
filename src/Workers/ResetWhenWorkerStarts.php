@@ -7,8 +7,7 @@ namespace SineMacula\Laravel\Iam\Workers;
 use Illuminate\Container\Container;
 
 /**
- * Runs the full reset on the application an Octane worker clones its requests'
- * sandboxes from, so nothing its boot left reaches the first request.
+ * Resets the application an Octane worker clones each request's sandbox from.
  *
  * Registered by the event's name, so Octane stays optional.
  *

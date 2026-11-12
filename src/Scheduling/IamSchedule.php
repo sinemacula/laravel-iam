@@ -12,35 +12,12 @@ use SineMacula\Laravel\Mfa\Console\PruneCommand;
 use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
 
 /**
- * The members' scheduled work they leave to the application, registered on its
- * schedule in one call (IAM-2.6): `mfa:prune` daily, as MFA's lifecycle guide
- * schedules it; `authorization:prune` daily, as `laravel-authorization`'s
- * README schedules it, removing the grants that have expired and those of
- * grantees and records that are gone (an expired grant already stops counting
- * at its expiry, so the prune keeps the grant tables small rather than making a
- * check correct); SSO's operations schedule (`sso:prune`, the domain rechecks,
- * the metadata refresh, whose jobs run on `sso.metadata.queue`, and the key
- * expiry report, at `sso.operations.cadence.*`), which registers nothing while
- * SSO is not in use; and, while `audit-log.delivery.mode` is `outbox`,
- * `audit-log:drain --until-empty` every minute, as audit-log's README schedules
- * it.
+ * Registers the members' scheduled work on the application's schedule.
  *
- * Audit-log schedules its own seal, sweep, verify and prune as the console
- * resolves the schedule, so none of them is registered again here.
- *
- * No task is given a cache mutex (`withoutOverlapping()`, `onOneServer()`):
- * each command is safe to run on several servers at once, by what it does in
- * the database, as SSO's operations schedule promises for its own, so a stale
- * mutex can never suppress maintenance; SSO's `sso.operations.cache_mutexes`
- * still opts its own tasks in. A malformed SSO cadence is SSO's own
- * `InvalidArgumentException`, thrown as the schedule is built, so a scheduler
- * never starts with it, nor, while the schedule is resolved as the console
- * bootstraps, any console command; it is left as it is, as catching it here
- * would drop the rest of SSO's operations without a word. A delivery mode
- * audit-log does not read as `outbox` schedules no drain, and audit-log refuses
- * it when a record is captured and reports it in `audit-log:check`.
- *
- * Every value is read when the schedule is built, never kept.
+ * `mfa:prune` and `authorization:prune` run daily, SSO's operations schedule is
+ * registered, and the audit-log drain runs every minute while delivery is
+ * `outbox`. No task takes a cache mutex: each command is safe to run on several
+ * servers at once.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,13 +26,13 @@ use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
  */
 final readonly class IamSchedule
 {
-    /** @var string MFA's pruning of the records that stopped being usable. */
+    /** @var string MFA's pruning of unusable records. */
     public const string MFA_PRUNE = PruneCommand::NAME;
 
-    /** @var string `laravel-authorization`'s pruning of the grants that no longer count. */
+    /** @var string laravel-authorization's pruning of grants that no longer count. */
     public const string AUTHORIZATION_PRUNE = PruneGrantsCommand::NAME;
 
-    /** @var string Audit-log's delivery of its outbox, batch after batch until none is left. */
+    /** @var string Audit-log's outbox delivery, until the outbox is empty. */
     public const string AUDIT_DRAIN = 'audit-log:drain --until-empty';
 
     /** @var string The key of audit-log's delivery mode. */
@@ -69,15 +46,15 @@ final readonly class IamSchedule
      */
     public function __construct(
 
-        /** The configuration audit-log's delivery mode is read from when the schedule is built. */
+        /** Read when the schedule is built. */
         private Repository $config,
 
-        /** SSO's own operations schedule, which registers nothing while SSO is not in use. */
+        /** SSO's operations schedule, which registers nothing while SSO is unused. */
         private OperationsSchedule $operations,
     ) {}
 
     /**
-     * Register the members' scheduled work on the application's schedule.
+     * Register the members' scheduled work on the schedule.
      *
      * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
      * @return void
@@ -100,8 +77,7 @@ final readonly class IamSchedule
     }
 
     /**
-     * Whether audit-log's queued delivery through its outbox is on, read as
-     * audit-log reads it: exactly `outbox`.
+     * Whether audit-log's delivery mode is exactly `outbox`.
      *
      * @return bool
      */

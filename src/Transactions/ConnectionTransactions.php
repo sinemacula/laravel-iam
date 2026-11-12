@@ -9,7 +9,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\DatabaseTransactionRecord;
 
 /**
- * The transactions open on one connection, since Laravel's manager lists every
+ * The transactions open on one connection; Laravel's manager lists every
  * connection's together.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -25,9 +25,10 @@ final class ConnectionTransactions
     private function __construct() {}
 
     /**
-     * The connection's open transactions, outermost first. The manager is read
-     * on each call, since the testing traits swap their own in, and still lists
-     * a transaction while its rollback callbacks run.
+     * The connection's open transactions, outermost first.
+     *
+     * Read on each call, since the testing traits swap the manager; it still
+     * lists a transaction while its rollback callbacks run.
      *
      * @param  ?string  $connection
      * @return list<\Illuminate\Database\DatabaseTransactionRecord>

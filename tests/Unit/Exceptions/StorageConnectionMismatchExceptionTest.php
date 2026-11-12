@@ -9,8 +9,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 
 /**
- * Unit tests for refusing a member storage connection that differs from the
- * shared one.
+ * Unit tests for the storage connection mismatch exception.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -21,8 +20,7 @@ use SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException;
 final class StorageConnectionMismatchExceptionTest extends TestCase
 {
     /**
-     * The exception for a key names the key and both connections, and says how
-     * to resolve the mismatch.
+     * The message names the key and both connections, and how to fix it.
      *
      * @return void
      */
@@ -41,8 +39,7 @@ final class StorageConnectionMismatchExceptionTest extends TestCase
     }
 
     /**
-     * The default connection, which `null` stands for, is named as `[default]`
-     * on either side, and kept as `null` on the exception.
+     * A null connection is named `[default]` and kept as null.
      *
      * @return void
      */
@@ -58,8 +55,7 @@ final class StorageConnectionMismatchExceptionTest extends TestCase
     }
 
     /**
-     * Built directly, the exception carries the given message, no code and no
-     * previous exception.
+     * Built directly, it carries the message, no code and no previous.
      *
      * @return void
      */

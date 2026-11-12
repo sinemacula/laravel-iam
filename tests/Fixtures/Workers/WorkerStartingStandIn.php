@@ -5,9 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Fixtures\Workers;
 
 /**
- * Stands in for Octane's `WorkerStarting` event, which is dispatched by name
- * since Octane is not installed: it carries the worker's application as
- * Octane's event does.
+ * Stands in for Octane's `WorkerStarting` event, carrying the application.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

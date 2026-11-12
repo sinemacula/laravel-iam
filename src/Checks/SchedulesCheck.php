@@ -13,8 +13,7 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 
 /**
- * Notes each run `Iam::schedule()` registers that is not on the application's
- * schedule (IAM-2.6).
+ * Notes each run `Iam::schedule()` registers that is missing from the schedule.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,7 +22,7 @@ use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
  */
 final readonly class SchedulesCheck implements Check
 {
-    /** @var string The note of runs missing from the schedule. */
+    /** @var string The note naming the missing runs. */
     private const string MISSING = 'Runs [%s] are not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
     /**
@@ -34,7 +33,7 @@ final readonly class SchedulesCheck implements Check
      */
     public function __construct(
 
-        /** The container the application's schedule is resolved from. */
+        /** The container the schedule is resolved from. */
         private Container $container,
 
         /** The configuration audit-log's delivery mode is read from. */

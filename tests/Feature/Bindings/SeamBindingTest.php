@@ -46,8 +46,7 @@ final class SeamBindingTest extends TestCase
     }
 
     /**
-     * Each member is asked about its own seam, and the adapter replaces the
-     * default it reports.
+     * Each member is asked about its own seam, and its default is replaced.
      *
      * @param  class-string  $abstract
      * @return void
@@ -137,8 +136,7 @@ final class SeamBindingTest extends TestCase
     }
 
     /**
-     * A scoped adapter is held under this package's own key, which is scoped,
-     * while the seam itself is not.
+     * A scoped adapter is held under this package's own scoped key.
      *
      * @return void
      *
@@ -162,8 +160,7 @@ final class SeamBindingTest extends TestCase
     }
 
     /**
-     * The declaration is handed the closure bound over the seam, and is not
-     * made where the application's binding is kept.
+     * The bound adapter is declared; a kept application binding is not.
      *
      * @return void
      */
@@ -201,8 +198,7 @@ final class SeamBindingTest extends TestCase
     }
 
     /**
-     * A mandate declared as a closure is asked each time it is read, and never
-     * before.
+     * A closure mandate is asked each time it is read, and never before.
      *
      * @return void
      */

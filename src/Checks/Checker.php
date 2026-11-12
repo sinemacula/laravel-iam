@@ -49,8 +49,8 @@ final readonly class Checker
     ) {}
 
     /**
-     * Run every member's check, then this package's, reporting each to the
-     * output, and answer whether every one passed.
+     * Run every member's check, then this package's, and answer whether all
+     * pass.
      *
      * @param  \Symfony\Component\Console\Output\OutputInterface  $output
      * @return bool
@@ -71,8 +71,7 @@ final readonly class Checker
     }
 
     /**
-     * Run every member's check command, reporting one that is not registered,
-     * and answer whether every one passed.
+     * Run the members' check commands and answer whether all pass.
      *
      * @param  \Symfony\Component\Console\Output\OutputInterface  $output
      * @return bool
@@ -99,7 +98,7 @@ final readonly class Checker
     }
 
     /**
-     * Run a member's check command, and answer whether it exited successfully.
+     * Run a member's check command and answer whether it succeeded.
      *
      * @param  string  $command
      * @param  \Symfony\Component\Console\Output\OutputInterface  $output
@@ -113,7 +112,7 @@ final readonly class Checker
     }
 
     /**
-     * Run one of this package's checks, and answer whether it found no problem.
+     * Run one of this package's checks and answer whether it found no problem.
      *
      * @param  class-string<\SineMacula\Laravel\Iam\Checks\Contracts\Check>  $class
      * @param  \Symfony\Component\Console\Output\OutputInterface  $output
@@ -141,8 +140,8 @@ final readonly class Checker
     }
 
     /**
-     * Run every closure of a check, report its problems and notes, and answer
-     * how many problems it found.
+     * Run a check's closures, report its problems and notes, and count
+     * problems.
      *
      * @param  string  $subject
      * @param  list<\Closure(): mixed>  $closures

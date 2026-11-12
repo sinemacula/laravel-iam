@@ -10,10 +10,7 @@ use SineMacula\Laravel\Authentication\Contracts\PrincipalResolver;
 use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 
 /**
- * A principal resolver for identities that hold memberships beside themselves:
- * a hint resolves to the membership of that id the identity holds, or to the
- * identity itself when it names the identity, and no hint to the identity
- * itself, its default principal.
+ * Resolves a hint to the membership it names, or to the identity itself.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +31,7 @@ final readonly class ResolvesMemberships implements PrincipalResolver
     ) {}
 
     /**
-     * The membership the hint names, when the identity holds it; the identity
-     * itself with no hint, or a hint that names it; nothing otherwise.
+     * The membership the hint names, else the identity when the hint allows.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  mixed  $hint

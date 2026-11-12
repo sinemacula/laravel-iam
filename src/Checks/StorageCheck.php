@@ -13,8 +13,8 @@ use SineMacula\Laravel\Iam\Storage\ConnectionAlignment;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * Every member key and identity model is on the shared connection (IAM-2.3),
- * and audit-log on another connection is noted.
+ * Checks every member key and identity model is on the shared connection, and
+ * notes audit-log on another.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -29,7 +29,7 @@ final readonly class StorageCheck implements Check
     /** @var string The key of audit-log's storage connection. */
     private const string AUDIT_KEY = 'audit-log.storage.connection';
 
-    /** @var string The note of audit-log on another connection than the shared one. */
+    /** @var string The note for audit-log on another connection. */
     private const string AUDIT_ELSEWHERE = '`%s` names another connection than `%s`: audit-log\'s refusal of a read of the trail inside a change does not cover it.';
 
     /** @var string The key of the application's guards. */
@@ -38,7 +38,7 @@ final readonly class StorageCheck implements Check
     /** @var string The key of the application's user providers. */
     private const string PROVIDERS_KEY = 'auth.providers';
 
-    /** @var string The key of the user provider a guard naming none signs people in through. */
+    /** @var string The key of the user provider a guard naming none uses. */
     private const string DEFAULT_PROVIDER_KEY = 'auth.defaults.provider';
 
     /**
@@ -72,7 +72,7 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The check always applies: every member is required (IAM-1.3).
+     * The check always applies, since every member is required.
      *
      * @return bool
      */
@@ -83,9 +83,8 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * Every member key aligned, the shared connection configured, every
-     * identity model on it, and audit-log's connection noted when it is
-     * another.
+     * Member keys aligned, the shared connection configured, identity models on
+     * it, and audit-log noted.
      *
      * @return list<\Closure(): mixed>
      */
@@ -101,8 +100,7 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * Refuse a shared connection `database.connections` does not configure;
-     * the default connection, named by leaving the key unset, always is.
+     * Refuse a shared connection `database.connections` does not configure.
      *
      * @return void
      *
@@ -118,8 +116,8 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * Refuse an identity model that is no Eloquent model, or that lives on
-     * another connection than the shared one.
+     * Refuse an identity model that is no Eloquent model or is on another
+     * connection.
      *
      * @param  string  $model
      * @return void
@@ -144,8 +142,7 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * A note when audit-log stores the trail on another connection than the
-     * shared one.
+     * A note when audit-log stores the trail on another connection.
      *
      * @return ?string
      *
@@ -165,8 +162,8 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The model of each user provider a `jwt` or `api_key` guard signs people
-     * in through, once each, in the order the guards are configured.
+     * The models of the user providers `jwt` and `api_key` guards use, once
+     * each.
      *
      * @return array<int, string>
      */
@@ -190,8 +187,7 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The model of the user provider the guard's configuration signs people in
-     * through, read from the configured providers.
+     * The model of the user provider the guard uses.
      *
      * @param  mixed  $guard
      * @return ?string
@@ -205,10 +201,8 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The model of the user provider the guard signs people in through, when it
-     * is a `jwt` or `api_key` guard: the provider it names, or the default one
-     * when it names none, as `laravel-authentication` hands the guard's
-     * provider to Laravel, which falls back to `auth.defaults.provider`.
+     * The model of a `jwt` or `api_key` guard's provider, or of the default
+     * provider when it names none.
      *
      * @param  mixed  $guard
      * @param  array<array-key, mixed>  $providers

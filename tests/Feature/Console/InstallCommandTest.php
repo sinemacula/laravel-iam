@@ -20,7 +20,7 @@ use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
 /**
- * Feature tests for `iam:install` (IAM-2.1, IAM-2.4).
+ * Feature tests for `iam:install`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,8 +48,7 @@ final class InstallCommandTest extends TestCase
     private ?array $publishGroups = null;
 
     /**
-     * Restore the publishing groups a test replaced, then delete the test's
-     * directory.
+     * Restore the replaced publishing groups and delete the test directory.
      *
      * @return void
      */
@@ -66,8 +65,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Every member's configuration, language files and migrations, and this
-     * package's configuration, are published.
+     * Every member's config, language files and migrations are published.
      *
      * @return void
      */
@@ -117,8 +115,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A member's migration already published under another timestamp is
-     * recognised and never published again.
+     * A migration published under another timestamp is not published again.
      *
      * @return void
      */
@@ -137,8 +134,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * An application's own migration sharing a member's base name is not taken
-     * for the member's.
+     * An application migration sharing a base name is not taken for a member's.
      *
      * @return void
      */
@@ -155,8 +151,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A file of the application's at the very path a member's migration is
-     * published to is never overwritten.
+     * A file already at a migration's destination is never overwritten.
      *
      * @return void
      */
@@ -173,8 +168,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * An existing configuration file and an existing language file are left as
-     * they are.
+     * Existing configuration and language files are kept.
      *
      * @return void
      */
@@ -192,8 +186,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Every run ends with what the application still owes, each item pointing
-     * at the installation guide.
+     * The run ends with what is still owed, each linking the guide.
      *
      * @return void
      */
@@ -217,8 +210,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A tag no provider registered is reported and fails the run, and the rest
-     * is still published.
+     * An unregistered tag fails the run; the rest is still published.
      *
      * @return void
      */
@@ -238,9 +230,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * `--prefix` becomes the default of `AUTHORIZATION_TABLE_PREFIX` in
-     * `laravel-authorization`'s configuration published in the run, and nothing
-     * else in the file changes.
+     * `--prefix` becomes the default of `AUTHORIZATION_TABLE_PREFIX`.
      *
      * @return void
      */
@@ -260,8 +250,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Run again, the same prefix is noted as carried and another one is not
-     * written.
+     * A second run notes the prefix already carried and writes no other.
      *
      * @return void
      */
@@ -304,8 +293,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A prefix is not written once one of `laravel-authorization`'s migrations
-     * is published, under any timestamp.
+     * No prefix is written once an authorization migration is published.
      *
      * @return void
      */
@@ -323,8 +311,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A prefix is not written while either of `laravel-authorization`'s tags is
-     * unregistered.
+     * No prefix is written while either authorization tag is unregistered.
      *
      * @return void
      */
@@ -349,8 +336,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A configuration published in the run that does not declare the prefix is
-     * owed it, and is left as published.
+     * A config without the prefix key is left as published and owed it.
      *
      * @return void
      */
@@ -383,8 +369,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Interactive, the run asks for the prefix, and prefixes the tables with
-     * the one given.
+     * Interactively, the run asks for the prefix and applies it.
      *
      * @return void
      */
@@ -415,8 +400,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Interactive, nothing is asked when `--prefix` gives the prefix, or once
-     * it can no longer be written.
+     * Interactively, nothing is asked when `--prefix` is given or unwritable.
      *
      * @return void
      */
@@ -430,8 +414,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Point the application's configuration, database and language directories
-     * at the test's own.
+     * Point the config, database and language directories at the test's own.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -447,8 +430,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Run `iam:install` without interaction, and return its exit code and its
-     * output.
+     * Run `iam:install` and return its exit code and output.
      *
      * @param  array<string, mixed>  $options
      * @return array{int, string}
@@ -461,8 +443,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Run `iam:install` interactively, its questions answered as the test
-     * expects.
+     * Run `iam:install` interactively.
      *
      * @param  array<string, mixed>  $options
      * @return \Illuminate\Testing\PendingCommand
@@ -490,8 +471,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Replace the paths a publishing tag holds, or remove the tag, until the
-     * test ends.
+     * Replace or remove a publishing tag's paths until the test ends.
      *
      * @param  string  $tag
      * @param  ?array<string, string>  $paths

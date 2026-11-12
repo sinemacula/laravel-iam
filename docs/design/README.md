@@ -1,28 +1,12 @@
 # Design Notes
 
-These notes document the package's security and lifecycle contracts that are easy to miss if you only read the
-quick-start material or skim the test suite.
+Short notes for maintainers on why each area works as it does. Each has its own sections, covering what the area does,
+its decisions and invariants, and ends with a "Member gaps" list. Test lists and change triggers are left to the code.
 
-Each note is intentionally short and follows the same structure:
-
-- `Purpose`
-- `Invariants`
-- `Success Path`
-- `Failure / Edge Cases`
-- `Implementation Anchors`
-- `Authoritative Tests`
-- `Change Triggers`
-
-The current note set is:
-
-- `binding-precedence.md`: how the package binds its adapters over the members' seams once every provider has
-  registered, only where a seam is unbound or its member says it still holds its own default, so the application's
-  binding wins whatever order the providers register in.
-- `storage-and-transactions.md`: the one storage connection every member is aligned to, how a change that spans
-  members runs in one transaction on it, retried only when outermost, and work waiting on one connection's commit.
-- `long-running-processes.md`: the combined worker reset that flushes every member's request state, the session that
-  holds MFA's proofs among it, what it flushes before each Octane request and each queued job, why a job keeps its
-  scoped instances and the application keeps its own instances, and how another long-lived process calls it.
+- `binding-precedence.md`: how adapters are bound over the members' seams without replacing the application's
+  bindings.
+- `storage-and-transactions.md`: the one storage connection, cross-member transactions and their retries.
+- `long-running-processes.md`: the worker reset under Octane, the queue and other long-lived processes.
 - `authentication-and-mfa.md`: the twelve seams between `laravel-authentication` and `laravel-mfa` and the default each
   replaces; the `mfa` context namespace, filled from the contribution subject's session and its proofs; how an MFA
   application and sign-in are resolved to a guard and its current session, and refused when they cannot be; how proofs,
@@ -61,17 +45,7 @@ The current note set is:
 - `audit-mapping.md`: how the members' events are recorded in `laravel-audit-log`: registration, codes, actors and
   correlation, the guard caller reader, the capture exclusions, the audit access policy, and the member gaps.
 
-- `install-and-check.md`: how `iam:install` publishes every member's configuration, language files and migrations, and
-  this package's configuration, through `vendor:publish`; how it recognises a migration already published by its base
-  name whatever its timestamp, so it is safe to run twice; the `laravel-authorization` table prefix it writes
-  only into a configuration file it has just published, and what it reports as still owed; the
-  members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
-  the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and
-  the identity models on it, every mandatory seam off its member's default under the mandate its row declares, the `mfa`
-  and `sso` namespaces, the audit trail's settings, the configuration that crosses the members, SSO's side while SSO is
-  in use and the schedule, every one reported under `iam:check` alone; what `laravel-authorization`'s glue adds, its
-  prune and its resource tenant resolver's note among them; and the gaps in the members installation and the checks
-  work around.
+- `install-and-check.md`: `iam:install`, `Iam::schedule()` and the checks `iam:check` runs.
 
 - `authorization.md`: the seams `laravel-authorization` joins the other members through: its subject resolver,
   answered from `Auth::caller()` and, for the model the Gate hands over, from the guard's resolved state, never the
@@ -91,7 +65,4 @@ The current note set is:
   and `laravel-authorization`'s connection, prune, check, request state and resource tenants; and the gaps in the
   members the adapters work around.
 
-A note is added here with the code it describes.
-
-These documents are secondary to the code and tests, not a replacement for them. If a note and a cited test disagree,
-the test should be treated as authoritative until the mismatch is resolved.
+A note is added here with the code it describes. Where a note and the tests disagree, the tests win.

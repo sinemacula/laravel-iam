@@ -26,8 +26,8 @@ use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * Completes a sign-in `laravel-authentication` left pending on a further
- * factor, with MFA's level evidence, as a person completes it.
+ * Completes a sign-in left pending on a further factor, with MFA's level
+ * evidence.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

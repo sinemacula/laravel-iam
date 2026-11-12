@@ -29,7 +29,7 @@ final class InstallCommand extends Command
     /** @var string The installation guide every owed item points at. */
     public const string GUIDE = 'https://github.com/sinemacula/laravel-iam/blob/master/docs/guides/installation.md';
 
-    /** @var list<string> The configuration and language tags, which `vendor:publish` publishes. */
+    /** @var list<string> The configuration and language tags to publish. */
     private const array TAGS = [
         'authentication-config',
         'authorization-config',
@@ -118,7 +118,7 @@ final class InstallCommand extends Command
     }
 
     /**
-     * Publish every member's migration not already published, under any
+     * Publish each member's migration not already published under any
      * timestamp.
      *
      * @param  \Illuminate\Filesystem\Filesystem  $files
@@ -150,8 +150,7 @@ final class InstallCommand extends Command
     }
 
     /**
-     * The prefix `--prefix` gives, or the one the application chooses when
-     * asked while it can still be written.
+     * The `--prefix` option, or the prefix chosen when asked.
      *
      * @param  bool  $offered
      * @return ?string
@@ -174,8 +173,8 @@ final class InstallCommand extends Command
     }
 
     /**
-     * Write the prefix into `laravel-authorization`'s configuration published
-     * in this run, or say why it was not.
+     * Write the prefix into the newly published authorization config, or say
+     * why not.
      *
      * @param  \Illuminate\Filesystem\Filesystem  $files
      * @param  ?string  $configuration
@@ -213,8 +212,7 @@ final class InstallCommand extends Command
     }
 
     /**
-     * Where `laravel-authorization`'s configuration is published while none of
-     * its files has been yet, or `null`.
+     * Where authorization's config is published while none of its files is yet.
      *
      * @param  \Illuminate\Filesystem\Filesystem  $files
      * @param  \SineMacula\Laravel\Iam\Install\MigrationLedger  $ledger
@@ -242,8 +240,7 @@ final class InstallCommand extends Command
     }
 
     /**
-     * Every migration a tag publishes, by its source, with where it is
-     * published.
+     * Every migration a tag publishes, by source, with its destination.
      *
      * @param  \Illuminate\Filesystem\Filesystem  $files
      * @param  string  $tag

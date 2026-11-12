@@ -11,8 +11,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\ExternalSignInRefusedException;
 
 /**
- * Unit tests for carrying `laravel-authentication`'s refusal of an external
- * sign-in out of the redemption's transaction.
+ * Unit tests for the refused external sign-in exception.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +22,7 @@ use SineMacula\Laravel\Iam\Exceptions\ExternalSignInRefusedException;
 final class ExternalSignInRefusedExceptionTest extends TestCase
 {
     /**
-     * The exception names the reason, says the code stays unspent, and carries
-     * the failed result as given.
+     * The message names the reason and the result is carried as given.
      *
      * @return void
      */

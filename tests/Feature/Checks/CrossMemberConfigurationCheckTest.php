@@ -38,13 +38,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Feature tests for the configuration that crosses the members (IAM-2.5),
- * bullet by bullet: the ones this check holds (MFA's applications, the members'
- * freshness operations and the tenant resolver a tenant's rule needs), and the
- * ones held where they belong, SSO's by the SSO bridge check and audit-log's by
- * the audit check, so every bullet is pinned here. The authorization capability
- * is off unless a test turns it on, so only the test's own rule asks for a
- * tenant resolver.
+ * Feature tests for the cross-member configuration check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -67,9 +61,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
 
     /**
-     * Turn the authorization capability's switch off, so no grant is reported
-     * to SSO's scope widening and nothing but each test's own rule needs a
-     * tenant resolver.
+     * Turn authorization off so only each test's own rule needs a resolver.
      *
      * @return void
      */
@@ -82,9 +74,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * MFA's operations, undeclared under `laravel-authentication`'s freshness
-     * as it ships, are refused for the MFA application's guard; declared, they
-     * pass.
+     * MFA's operations must be declared for each MFA application's guard.
      *
      * @return void
      */
@@ -102,8 +92,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * An operation is declared by the guard's own freshness block too, and
-     * removed there by `null`.
+     * The guard's own freshness block declares, and removes with `null`.
      *
      * @return void
      */
@@ -124,8 +113,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Every MFA application must name a guard: MFA's application is the guard
-     * of the same name, one listed rather than named included.
+     * Every MFA application must name a guard.
      *
      * @return void
      */
@@ -143,10 +131,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * An MFA application on a guard of another driver than `jwt`, which holds
-     * no session for MFA to act on, is refused at deploy, whatever its other
-     * driver or none, rather than by every MFA call at runtime; on a `jwt`
-     * guard it passes.
+     * An MFA application on a guard of another driver than `jwt` is refused.
      *
      * @return void
      */
@@ -183,10 +168,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Rows of how a tenant comes to be resolved: MFA's tenant requirement
-     * bound, SSO's enforcement turned on, and the authorization capability's
-     * switch on beside SSO's, so the grant hook names every tenant a widening
-     * grant holds in.
+     * Ways a tenant comes to be resolved.
      *
      * @return iterable<string, array{0: \Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
@@ -206,9 +188,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * While a tenant's rule reaches a session, or a grant is reported to SSO's
-     * scope widening, `laravel-authentication`'s default tenant resolver is
-     * refused, resolved or not; the application's own resolver passes.
+     * The default tenant resolver is refused while a tenant rule applies.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
      * @return void
@@ -248,8 +228,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * With the authorization capability on but SSO's off, no grant is reported
-     * to SSO's scope widening, so no tenant resolver is needed for grants.
+     * With SSO off, grants need no tenant resolver.
      *
      * @return void
      */
@@ -266,10 +245,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * With a tenant tree bound to `laravel-authorization`, the tree's changes
-     * and SSO's inheritance resolve every tenant they ask about through the
-     * tenant resolver, so `ResolveNoTenant` is refused; with its flat tree,
-     * none is needed.
+     * A bound tenant tree refuses `ResolveNoTenant`; the flat tree does not.
      *
      * @return void
      */
@@ -293,8 +269,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * With no tenant MFA requirement and SSO's enforcement off, no tenant's
-     * rule reaches a session, so `ResolveNoTenant` is the application's choice.
+     * Without a tenant rule, `ResolveNoTenant` is allowed.
      *
      * @return void
      */
@@ -313,10 +288,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * While the application has memberships, `laravel-authorization`'s
-     * resource tenant resolver left on its default is noted, never failed;
-     * a resolver the application binds itself is not, nor is the default where
-     * nobody acts in a tenant.
+     * The default resource tenant resolver is noted while tenants are in use.
      *
      * @return void
      */
@@ -349,10 +321,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * A resource tenant resolver the application names in
-     * `laravel-authorization`'s configuration is no default, as
-     * `laravel-authorization` says, so it is not noted while people act in
-     * tenants.
+     * A resource tenant resolver named in configuration is not noted.
      *
      * @return void
      */
@@ -368,8 +337,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * While SSO is in use, SSO's operations must be declared for each SSO
-     * application's guard; out of use, they are not required.
+     * SSO's operations must be declared only while SSO is in use.
      *
      * @return void
      */
@@ -396,11 +364,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * SSO's bullets are each held once: every application SSO serves allowing
-     * `external_provider` and none handing off an unlinked result by the check
-     * SSO's own runs; the base URL set by SSO's own endpoints check, which
-     * `sso:check` runs too; and the storage connection the shared one by the
-     * storage check.
+     * SSO's settings are checked once each, by the SSO and storage checks.
      *
      * @return void
      */
@@ -434,9 +398,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Audit-log's bullets are held by the audit check: every `jwt` and
-     * `api_key` guard excluded from its capture, its Gate capture off and its
-     * refusal of unregistered codes on.
+     * Audit-log's settings are checked by the audit check.
      *
      * @return void
      */
@@ -456,8 +418,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * Declare the operations under `laravel-authentication`'s freshness, the
-     * shipped ones kept.
+     * Declare the operations under laravel-authentication's freshness.
      *
      * @param  list<string>  $operations
      * @return void

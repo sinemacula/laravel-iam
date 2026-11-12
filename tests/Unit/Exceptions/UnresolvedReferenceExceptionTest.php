@@ -10,8 +10,7 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 
 /**
- * Unit tests for refusing a tenant, identity, principal or session an adapter
- * needs and cannot resolve (IAM-8.2).
+ * Unit tests for the unresolved reference exception.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -22,8 +21,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 final class UnresolvedReferenceExceptionTest extends TestCase
 {
     /**
-     * The exception for an application that is no session guard names it, and
-     * says what each application MFA or SSO acts for must be.
+     * An application that is no session guard is named as a guard reference.
      *
      * @return void
      */
@@ -41,8 +39,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for a guard holding no session of the identity names the
-     * guard and says the change is refused.
+     * A guard holding no session of the identity is named.
      *
      * @return void
      */
@@ -60,8 +57,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for a sign-in that is no session of the identity's on the
-     * guard names the guard, as a reference of the kind `session`.
+     * A sign-in that is no session of the identity names the guard.
      *
      * @return void
      */
@@ -79,8 +75,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for an identity names its type and what it must be, on no
-     * application.
+     * An unresolved identity names its type, on no application.
      *
      * @return void
      */
@@ -97,8 +92,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for an identity MFA holds no factors for names its type and
-     * MFA's contract it must implement, on no application.
+     * An identity MFA cannot hold factors for names its type and the contract.
      *
      * @return void
      */
@@ -116,8 +110,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for an identity SSO names by reference names its type and
-     * what it must name, never its id, on no application.
+     * An unresolved SSO identity reference names its type, never its id.
      *
      * @return void
      */
@@ -135,8 +128,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for a tenant names its id and what the tenant resolver must
-     * answer, on no application.
+     * An unresolved tenant names its id.
      *
      * @return void
      */
@@ -154,8 +146,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * The exception for a grant's tenant names its id and the widening that
-     * cannot be reported, never the sessions acting in it.
+     * An unresolved grant tenant names its id and the unreported widening.
      *
      * @return void
      */
@@ -173,8 +164,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * A tenant whose identifier cannot name it names neither the tenant nor its
-     * identifier, of which nothing printable may be known.
+     * A tenant with an unusable identifier names neither tenant nor identifier.
      *
      * @return void
      */
@@ -192,8 +182,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
     }
 
     /**
-     * It is a runtime exception, so every member that refuses with one (MFA's
-     * session revoker and session transition among them) takes it.
+     * It is a runtime exception, which every refusing member takes.
      *
      * @return void
      */

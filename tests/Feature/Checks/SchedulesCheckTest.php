@@ -13,8 +13,7 @@ use Tests\Concerns\RunsChecks;
 use Tests\TestCase;
 
 /**
- * Feature tests for the schedule check (IAM-2.6): the runs `Iam::schedule()`
- * registers left off the schedule are noted without failing.
+ * Feature tests for the schedule check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,9 +29,7 @@ final class SchedulesCheckTest extends TestCase
     private const string MISSING = 'Runs [%s] are not on the schedule; call `Iam::schedule($schedule)` from the application\'s `withSchedule()`.';
 
     /**
-     * MFA's prune and `laravel-authorization`'s are noted until something on
-     * the schedule runs them, a closure event read as running nothing. Nothing
-     * fails.
+     * The prunes are noted, without failing, until something schedules them.
      *
      * @return void
      */
@@ -56,8 +53,7 @@ final class SchedulesCheckTest extends TestCase
     }
 
     /**
-     * While audit-log delivers through its outbox, its drain is noted until it
-     * is on the schedule.
+     * The drain is noted while audit-log delivers through its outbox.
      *
      * @return void
      */
@@ -73,8 +69,7 @@ final class SchedulesCheckTest extends TestCase
     }
 
     /**
-     * A schedule that cannot be built, as `Iam::schedule()` builds it with a
-     * malformed SSO cadence, is a problem naming the cause.
+     * A schedule that cannot be built is a problem naming the cause.
      *
      * @return void
      */
