@@ -461,7 +461,9 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * Deadlock the work from a forked process that kills itself on exit.
+     * Deadlock the work from a forked process.
+     *
+     * The child kills itself so no shutdown closes the parent's connections.
      *
      * @param  string  $signal
      * @return never

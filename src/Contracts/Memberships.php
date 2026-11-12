@@ -16,6 +16,9 @@ use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
  * locking read held until the transaction ends. Mark a partial read incomplete;
  * throw when the read fails.
  *
+ * A writer that revokes, expires or narrows a membership takes the same guard
+ * before it writes or ends sessions, and takes none of SSO's locks.
+ *
  * @api
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>

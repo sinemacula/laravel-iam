@@ -14,6 +14,9 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
  * storage connection and outside SSO's locks. Throwing rolls it back and
  * refuses the sign-in. With none bound, nothing is re-synced.
  *
+ * A widening grant takes SSO's identity guard first, so lock no shared rows
+ * before writing through laravel-authorization's services.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *

@@ -6,7 +6,8 @@ namespace SineMacula\Laravel\Iam\Contracts;
 
 /**
  * Maps an identity provider's groups to the roles a person holds in the
- * connection's tenant.
+ * connection's tenant, never beyond it, since the tenant's administrator may
+ * control the connection.
  *
  * Answered inside the provisioning transaction, after SSO's locks: read nothing
  * that locks, write nothing, and answer the same for the same values. Throw to
