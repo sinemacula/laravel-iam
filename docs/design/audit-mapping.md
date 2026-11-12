@@ -86,34 +86,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 
 - A mapper reads only the event it is handed, its context snapshot and its own fields, and the morph map; never the
   request, `Auth::user()`, the guard or any other current state. It sets the code explicitly, describes, and returns
-  the builder, or `null` to skip; it never records, and never chooses a timing. The one exception is when a refusal is
-  described, never what it says: see the next item.
-- A refusal `laravel-authentication` reports while a transaction is open on audit-log's storage connection is recorded
-  once the outermost transaction there has ended, whichever way it ended, never inside it. `laravel-authentication`
-  dispatches `AuthenticationFailed` at once, from inside whatever transaction its caller opened, and several roll back
-  on purpose once it has refused: this package's redemption of an SSO `sign_in` or `reauthenticate` code
-  (`ExternalSignInRefusedException`, `ExternalReauthenticationRefusedException`), so the code stays unspent and SSO
-  reports nothing; MFA's step-up and pending completion, whose adapters throw `not_accepted` on
-  `laravel-authentication`'s refusal (`Mfa\StepUpAdapter`, `Mfa\PendingCompletionAdapter`), so MFA rolls its
-  verification back and reports only its own `mfa.verification_failed`, never `laravel-authentication`'s reason; MFA's
-  enrolment, which rolls back when its first code is refused; and any transaction the application opened. Audit-log
-  writes a captured record at once, on its storage connection, which by default is the storage connection IAM-9.9's
-  read refusal rests on, so a record written then would roll back with the transaction and leave no record of
-  `laravel-authentication`'s refusal. So the authentication mapper hands every `AuthenticationFailed` it meets to
-  `Audit\DeferredRefusals` (`defers()`), scoped to the request: with no transaction open on the storage connection
-  (of those Laravel's transactions manager lets callbacks apply to, so not the one a testing trait wraps a test in) it
-  holds nothing and the refusal is recorded at once; otherwise it holds the refusal and the mapper returns `null`, so
-  audit-log neither writes nor claims the event. The refusal waits for the transactions open there: a rollback of any
-  of them releases it at once (each is asked, since Laravel 12 does not tell a savepoint that has committed of its
-  enclosing transaction's rollback), and a commit once the outermost transaction has committed, as a callback of the
-  innermost one open there (`Transactions\ConnectionTransactions::afterCommit()`); a release while a transaction is
-  still open there (a
-  savepoint rolled back inside another) waits again for those still open. Once none is, each refusal held, the same
-  object, is handed in the order reported back to audit-log's capture (`Recorder::capture()`), where the mapper
-  describes it from the event alone, as any other refusal. The record is written once, after the transactions have
-  ended, however audit-log stores: a store that a rollback does not reach (a fake, a connection of its own) never gets
-  it twice. A refusal an attempt the retry helper ran again reported is recorded too, since it reached every other
-  listener as well.
+  the builder, or `null` to skip; it never records, and chooses no timing but a refusal's: see the next item.
+- A refusal (`AuthenticationFailed`) is written with audit-log's `afterTransaction()`: once the outermost transaction
+  on audit-log's storage connection ends, committed or rolled back, and at once when none is open. Several callers roll
+  back on purpose after `laravel-authentication` refuses: this package's SSO redemptions, so the code stays unspent;
+  MFA's step-up, pending completion and enrolment; and any transaction the application opened. A record written inside
+  that transaction would roll back with it.
 - The noise of a bind (`PrincipalAssigned`, `SessionAuthenticated`) is skipped, and so is a refresh's `SignedIn`
   (`refresh` true), which repeats the `Refreshed` recorded beside it. Every other pair the members report is two facts
   and is recorded once each: a sign-in's `SessionCreated` and `SignedIn`; SSO's `ResultVerified` and
@@ -190,21 +168,11 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   checks enforce, requires every enum to be declared in an `Enums` namespace, as `Bindings\Enums` and `Mappers\Enums`
   are; the authorization code enum follows them, as `Audit\Enums\AuthorizationActivity`, not the M11 manifest's
   `Audit\Codes\AuthorizationActivity` (and its test, `tests/Unit/Audit/Enums/AuthorizationActivityTest.php`).
-- Decision this note records, beyond the plan's: a refusal reported while a transaction is open on audit-log's storage
-  connection is held and recorded once the outermost transaction there has ended (`Audit\DeferredRefusals`, not in the
-  manifest), rather than written inside a transaction that may roll back, or copied and captured again after a
-  rollback, which would record it twice wherever the rollback does not reach audit-log's store, or left to a dedicated
-  audit-log connection, which IAM-9.9's refusal on the shared connection rules out as a requirement. It holds every
-  such refusal, not only those reported inside a transaction this package rolls back on purpose, since MFA rolls its
-  own transactions back around `laravel-authentication`'s calls too, and the application may: a window each call site
-  had to open would leave the next one forgotten. A refusal reported inside a transaction that commits is recorded
-  after the commit, beside the reports the members dispatch after it, rather than before them. The authentication
-  mapper is the place the deferral is decided, since it is the only place that sees the event before audit-log writes
-  it, and it reads only whether a transaction is open on audit-log's storage connection, never the request or the
-  caller: what it records is still described from the event alone. IAM-9.5's "without dropping either" holds for a
-  refused redemption with the one record `laravel-authentication`'s refusal gives, correlated as the SSO sign-in it
-  ended, since SSO reports nothing for a code that stays unspent, and for a refused step-up or pending completion with
-  `laravel-authentication`'s refusal, under its own reason, beside MFA's failed verification.
+- Decision this note records, beyond the plan's: every refusal is written after the transaction, not only those inside
+  a transaction this package rolls back, since MFA and the application roll back around `laravel-authentication`'s
+  calls too. IAM-9.5's "without dropping either" holds for a refused redemption with `laravel-authentication`'s one
+  record, correlated as the SSO sign-in it ended, and for a refused step-up or pending completion with that refusal
+  beside MFA's failed verification.
 
 ### The caller's context (IAM-9.7)
 
@@ -294,8 +262,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   therefore leaves one denial in the trail, followed by MFA's records of what the person proved.
 - A decision is dispatched as it is made, inside whatever transaction is open (`laravel-authorization`'s
   `docs/design/events.md`), and a denial is a fact even when that transaction rolls back. So a decision the mapper
-  records, reported while a transaction is open on audit-log's storage connection, is handed to `DeferredRefusals`, as
-  `laravel-authentication`'s refusals are, and recorded once the outermost transaction there has ended.
+  records is written with `afterTransaction()`, as `laravel-authentication`'s refusals are.
 - Changes. Every change is read through `laravel-authorization`'s `AuthorizationMutation` accessors, never its
   properties, dispatched after its call commits, recorded under the code of its `operation()` (`role_created` to
   `guardrail_removed`, and `grant_expired` for a grantee's role, permission or policy and a role's permission that
@@ -490,10 +457,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
     `tenant`.
   - Audit-log offers a mapper no explicit setter of the guard, the session or the client, only the fillers its own
     capture uses and its documentation reserves to the recorder and `Contribution`; the mappers fill through them.
-  - `laravel-authentication` dispatches `AuthenticationFailed` at once, inside the caller's transaction, rather than
-    once the outermost transaction on its storage connection has ended, and audit-log offers no capture that waits for
-    a transaction to end whichever way it ends (`afterCommit` drops a record on rollback); either would let a refusal
-    reported inside a transaction be recorded once it has ended without `DeferredRefusals`.
   - Audit-log's `Contribution` has no credential filler, so the credential IAM-9.7 lists comes from the mappers alone
     (`usingCredential()`); a `fillCredential()` with `usingCredential()`'s rule would let audit-log fill it.
   - Audit-log's check of a user left over on a guard in a job reads only a guard using Laravel's `GuardHelpers`, so
@@ -539,8 +502,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `src/Audit/Mappers/Enums/Attribution.php`.
 - `src/Audit/Enums/AuthenticationActivity.php`, `SessionActivity.php`, `MfaActivity.php`, `SsoActivity.php`:
   `definition()`, `properties()`; `src/Audit/Contracts/ListsProperties.php`.
-- `src/Audit/DeferredRefusals.php`: `defers()`; `src/Transactions/ConnectionTransactions.php`: `afterCommit()`,
-  `open()`; `src/IamServiceProvider.php`: `registerRedemptionRecords()`.
 - `src/Audit/Correlation.php`: `ssoSignIn()`, `mfaChallenge()`, `authenticationChallenge()`, `session()`,
   `authorizationOperation()`, `first()`, `MAX_BYTES`; `src/Audit/References.php`: `type()`.
 - `src/Audit/AuthenticationActorReader.php`: `read()`; `src/Audit/References.php`: `of()`, `tenant()`, `TENANT_TYPE`;
@@ -568,6 +529,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testWithTheSwitchOffTheRegistrationIsStillRecorded`
 - `tests/Unit/Audit/Mappers/AuthenticationEventMapperTest.php` `testEachEventIsRecordedUnderItsCode`,
   `testNoiseIsSkipped`, `testEveryFlowIsProvidedFor`, `testARefusalIsRecordedByItsFlow`,
+  `testOnlyARefusalWaitsForItsTransactionToEnd`,
   `testOnlyTheOwnCodesOfRefusalsKeepProperties`, `testASignInOutOfAttemptsIsALockout`,
   `testOnlyASignInOutOfAttemptsIsALockout`, `testAnAccountsOwnLimitIsNoLockout`,
   `testAConcealedSignInRefusalKeepsItsReasonConcealed`,
@@ -612,14 +574,6 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   MySQL and PostgreSQL, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
   `testARefusedStepUpIsRecordedOnceMfasTransactionHasRolledBack`,
   `testARefusedPendingCompletionIsRecordedOnceMfasTransactionHasRolledBack`
-- `tests/Feature/Audit/DeferredRefusalsTest.php` `testARefusalReportedWithNoTransactionOpenIsRecordedAtOnce`,
-  `testARefusalReportedInsideATransactionIsRecordedOnceItCommits`,
-  `testTheRefusalsAreRecordedInOrderOnceTheTransactionRollsBack`, `testOnlyARefusalIsHeld`,
-  `testASavepointRolledBackWaitsForTheTransactionEnclosingIt`, `testARefusalHeldAgainKeepsItsPlace`,
-  `testASavepointCommittedWaitsForTheTransactionEnclosingItToRollBack`,
-  `testATransactionOnAnotherConnectionHoldsNothing`, `testTheTransactionATestIsWrappedInHoldsNothing`,
-  `testWithNoTransactionsManagerNothingIsHeld`,
-  `testARecordedRefusalIsHeldNoMore`
 - `tests/Feature/Audit/AuthenticationActorReaderTest.php` `testARequestsRecordNamesTheCaller`,
   `testAQueuedJobRecordsTheDispatchingCaller`, `testAMappersActorForTheCallerGainsTheRest`,
   `testAGuestsRecordNamesNoOne`, `testAGuardHoldingNoOneIsNeverResolved`, `testATenantThatCannotBeLoadedIsLeftOut`
@@ -639,7 +593,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `tests/Unit/Audit/Mappers/AuthorizationEventMapperTest.php` `testEachEventIsRecordedUnderItsCode`,
   `testEveryCodeIsProvidedFor`, `testEachSkippedEventRecordsNothing`,
   `testADenialIsTheSubjectsAndDeniedWithItsReason`, `testADenialForWantOfAStrongerProofIsRecorded`,
-  `testADenialWithNoReasonIsDeniedWithNone`,
+  `testADenialWithNoReasonIsDeniedWithNone`, `testOnlyADecisionWaitsForItsTransactionToEnd`,
   `testAGuestsDenialNamesNoOne`,
   `testAPreviewIsThePreviewersAboutThePrincipalPreviewed`, `testABreakGlassGrantUsedSucceeds`,
   `testADelegatedChangeIsTheCallersAndCorrelatedByItsOperation`,
@@ -688,13 +642,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `iam:check` changes what it enforces from `CaptureExclusions`' answers and
   `AuditSettings::refusesUnregisteredCodes()` (`install-and-check.md`).
 - A member closes one of the gaps listed above: the workaround it names goes.
-- `laravel-authentication` reports a refusal once the outermost transaction has ended, or audit-log offers a capture
-  that waits for a transaction to end either way: `DeferredRefusals` goes, and `RefusedRedemptionsTest` and
-  `RefusedCompletionsTest` still expect each refusal recorded once.
 - Another member dispatches a refusal of its own at once, inside a transaction its caller may roll back: its mapper
-  hands that refusal to `DeferredRefusals` too.
-- Laravel changes which transactions its transactions manager lets callbacks apply to, or when it runs a transaction's
-  rollback callbacks: `DeferredRefusals::defers()` and its tests follow.
+  writes that refusal with `afterTransaction()` too.
 - Audit-log or SSO adds an operational event: the guide's list gains it.
 - `laravel-authorization` makes decision events configurable (BL-72), dispatches `usedBreakGlass` true (BL-70), adds
   events or fields, or a query for the tenants where a subject holds an action: the authorization mapper, its codes,

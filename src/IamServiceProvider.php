@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
@@ -250,22 +249,14 @@ final class IamServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the records SSO's redemptions keep for one request: the
-     * redemption admitted, which `laravel-authentication`'s external identity
-     * links contract answers from, the renewal a re-authentication records
-     * before its one write, the refusals `laravel-authentication` reports
-     * inside a transaction, held for the audit trail until the outermost one
-     * has ended. Each is scoped, so it is one request's or one job's alone
-     * (IAM-8.1), under this package's own key for its scoped adapters, which
-     * `Iam::resetWorkerState()` forgets as it forgets every other one, and
-     * resolved through that key, so the explicit reset never leaves a record
-     * held where something still resolves it.
+     * Register the admitted redemption and the renewal, scoped under this
+     * package's key so `Iam::resetWorkerState()` forgets them (IAM-8.1).
      *
      * @return void
      */
     protected function registerRedemptionRecords(): void
     {
-        foreach ([AdmittedRedemptions::class, RenewalRecorder::class, DeferredRefusals::class] as $record) {
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class] as $record) {
 
             $key = SeamBinding::SCOPED_PREFIX . $record;
 

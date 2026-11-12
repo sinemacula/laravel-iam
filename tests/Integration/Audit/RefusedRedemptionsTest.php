@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\External\NoExternalLinks;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Audit\Correlation;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException;
 use SineMacula\Laravel\Iam\Exceptions\ExternalSignInRefusedException;
 use SineMacula\Laravel\Iam\Facades\Iam;
@@ -28,26 +27,14 @@ use Tests\Concerns\SignsInPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests proving that a redemption `laravel-authentication` refuses
- * leaves its refusal in the audit trail (IAM-9.5), in audit-log's own tables on
- * the storage connection, the setup IAM-9.9's read refusal rests on.
- *
- * `laravel-authentication` reports a refused external sign-in or
- * re-authentication with `AuthenticationFailed` at once, inside the
- * redemption's transaction, which then rolls back on purpose so the code stays
- * unspent, and SSO reports nothing, since its code was never spent. A record
- * written at once inside that transaction would roll back with it, leaving no
- * record from either member; the refusal is held while the transaction runs and
- * recorded once it has rolled back (`DeferredRefusals`), once, correlated as
- * the SSO sign-in it ended. Each runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * A refused redemption rolls back and its refusal is recorded once, after the
+ * rollback (IAM-9.5), on every engine and isolation level.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-#[CoversClass(DeferredRefusals::class)]
 #[CoversClass(SignInRedemption::class)]
 #[CoversClass(ReauthenticationRedemption::class)]
 #[WithConfig('audit-log.capture.laravel.except_guards', [self::GUARD])]
