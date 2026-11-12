@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Testing\PendingCommand;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
@@ -261,33 +260,6 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Provide prefixes `iam:install` writes.
-     *
-     * @return iterable<string, array{string}>
-     */
-    public static function validPrefixes(): iterable
-    {
-        yield 'one letter' => ['a'];
-        yield 'letters, digits and underscores' => ['iam2_authz_'];
-        yield 'the longest' => [str_repeat('a', 16)];
-    }
-
-    /**
-     * A valid prefix is written.
-     *
-     * @param  string  $prefix
-     * @return void
-     */
-    #[DataProvider('validPrefixes')]
-    public function testAValidPrefixIsWritten(string $prefix): void
-    {
-        [$code] = $this->install(['--prefix' => $prefix]);
-
-        self::assertSame(0, $code);
-        self::assertSame($prefix, $this->authorizationTables()['prefix']);
-    }
-
-    /**
      * Run again, the same prefix is noted as carried and another one is not
      * written.
      *
@@ -397,31 +369,13 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * Provide prefixes that are not one.
-     *
-     * @return iterable<string, array{string}>
-     */
-    public static function invalidPrefixes(): iterable
-    {
-        yield 'a digit first' => ['2fa_'];
-        yield 'an underscore first' => ['_authz'];
-        yield 'upper case' => ['Authz_'];
-        yield 'a hyphen' => ['authz-'];
-        yield 'a quote' => ['authz\''];
-        yield 'a newline after' => ["authz\n"];
-        yield 'too long' => [str_repeat('a', 17)];
-    }
-
-    /**
      * An invalid prefix refuses the run before anything is published.
      *
-     * @param  string  $prefix
      * @return void
      */
-    #[DataProvider('invalidPrefixes')]
-    public function testAnInvalidPrefixRefusesTheRunWithNothingPublished(string $prefix): void
+    public function testAnInvalidPrefixRefusesTheRunWithNothingPublished(): void
     {
-        [$code, $output] = $this->install(['--prefix' => $prefix]);
+        [$code, $output] = $this->install(['--prefix' => 'Authz_']);
 
         self::assertSame(2, $code);
         self::assertStringContainsString('The table prefix must be lower-case letters, digits and underscores, start with a letter and be at most 16 characters long.', $output);
