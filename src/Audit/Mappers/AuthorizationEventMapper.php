@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Audit\Mappers;
 
-use Illuminate\Support\Str;
 use SineMacula\Laravel\AuditLog\Contracts\EventMapper;
 use SineMacula\Laravel\AuditLog\Records\PendingRecord;
 use SineMacula\Laravel\AuditLog\Records\Reference;
@@ -84,6 +83,7 @@ final readonly class AuthorizationEventMapper implements EventMapper
         'document_version'         => 'document.version',
         'document_digest'          => 'document.digest',
         'previous_document_digest' => 'previous_document.digest',
+        'previous_policy'          => 'previous',
     ];
 
     /**
@@ -246,23 +246,21 @@ final readonly class AuthorizationEventMapper implements EventMapper
      */
     private static function properties(AuthorizationMutation $event): array
     {
-        $details  = $event->auditProperties();
-        $previous = $details['previous']      ?? null;
-        $type     = $details['resource_type'] ?? null;
-        $renamed  = array_map(static fn (string $key): mixed => $details[$key] ?? null, self::RENAMED);
+        $details = $event->auditProperties();
+        $type    = $details['resource_type'] ?? null;
+        $renamed = array_map(static fn (string $key): mixed => $details[$key] ?? null, self::RENAMED);
 
         return self::present([
             ...$details,
             ...$renamed,
-            'trusted'            => $event->isTrusted(),
-            'application'        => $event->application(),
-            'grant'              => self::GRANTS[$event->operation()] ?? null,
-            'changes'            => self::changedFields($details),
-            'previous_policy_id' => is_string($previous) ? Str::after($previous, ':') : null,
-            'resource_type'      => is_string($type) ? References::type($type) : null,
-            'grantee_count'      => count($event->grantees()),
-            'permission_count'   => self::countOf($details['permissions'] ?? null),
-            'role_count'         => self::countOf($details['roles'] ?? null),
+            'trusted'          => $event->isTrusted(),
+            'application'      => $event->application(),
+            'grant'            => self::GRANTS[$event->operation()] ?? null,
+            'changes'          => self::changedFields($details),
+            'resource_type'    => is_string($type) ? References::type($type) : null,
+            'grantee_count'    => count($event->grantees()),
+            'permission_count' => self::countOf($details['permissions'] ?? null),
+            'role_count'       => self::countOf($details['roles'] ?? null),
         ]);
     }
 

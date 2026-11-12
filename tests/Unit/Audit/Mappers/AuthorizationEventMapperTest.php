@@ -312,7 +312,7 @@ final class AuthorizationEventMapperTest extends TestCase
         yield 'a boundary set' => [
             new BoundarySet($operation, $grantee, $policy, 'Reviewers', $scope, new Reference('policy', '2')),
             AuthorizationActivity::BOUNDARY_SET,
-            [...$call, ...$where, 'name' => 'Reviewers', 'previous_policy_id' => '2'],
+            [...$call, ...$where, 'name' => 'Reviewers', 'previous_policy' => 'policy:2'],
         ];
 
         yield 'a boundary removed' => [
