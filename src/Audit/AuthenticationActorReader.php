@@ -13,7 +13,7 @@ use SineMacula\Laravel\Authentication\Guards\AbstractGuard;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 
 /**
- * Gives audit-log the caller a `laravel-authentication` guard holds (IAM-9.7).
+ * Gives audit-log the caller a `laravel-authentication` guard holds.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

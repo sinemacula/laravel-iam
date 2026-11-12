@@ -9,8 +9,8 @@ use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An identity that reports its identifiers verified but is no Eloquent model,
- * so it holds no table to search and SSO cannot name it by reference.
+ * A verifiable identity that is no Eloquent model, so it has no table to
+ * search.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

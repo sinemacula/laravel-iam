@@ -15,42 +15,7 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
  * SSO's reauthentication sessions, answered from `laravel-authentication`'s
- * external standing of a session, with its renewal recorded and never written
- * (IAM-4.2).
- *
- * - `standing()`, as a `reauthenticate` flow starts, outside any transaction:
- *   whether the session is one of the identity's, established through the
- *   connection by any link, live and active, on the guard the application is,
- *   which allows the `external_provider` method, as `laravel-authentication`'s
- *   `externalStanding()` answers it with no link, reading on the write
- *   connection and locking nothing.
- * - `lockedStanding()`, inside the redemption's transaction, after SSO's locks:
- *   the same, through exactly the link given, on the guard the application is,
- *   whose `externalStanding()` locks the session's row until the transaction
- *   ends. `laravel-authentication` compares the session's guard with the
- *   application's itself, so a session of another application, through another
- *   link or through none, is `not_signed_in`. Asked outside a transaction on
- *   the session model's connection, it could lock nothing, so it throws a
- *   `LogicException` rather than answer unprotected.
- * - `renewAuthentication()` writes nothing: it records the renewal
- *   (`RenewalRecorder`), and `ReauthenticationRedemption` makes the one write
- *   through `laravel-authentication`'s `reauthenticateExternally()` once SSO's
- *   admission answers, in the same transaction. A second renewal in one
- *   redemption is a `LogicException`, and so is a renewal asked for while no
- *   redemption is open to write it: a `reauthenticate` code is redeemed through
- *   `Iam::reauthentications()` alone, and one admitted through SSO's own
- *   `HandoffRedemption::admit()` rolls back with its code unspent rather than
- *   commit as redeemed with nothing renewed.
- *
- * Any reason `laravel-authentication` gives (`session_unknown` and
- * `session_guard_mismatch` among them) is `not_signed_in`: it is the answer,
- * never a refusal by throwing. What cannot be resolved throws
- * `UnresolvedReferenceException` (IAM-8.2), rolling the redemption back: an
- * identity reference that names no identity of `laravel-authentication`'s, and
- * an application that is no guard holding sessions.
- *
- * The recorder is resolved from the container on every call, so a renewal is
- * one request's or one job's alone (IAM-8.1); the adapter itself keeps nothing.
+ * external standing, with the renewal recorded for the redemption to write.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -79,8 +44,7 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
     ) {}
 
     /**
-     * Whether the identity is signed in on the session, of the application,
-     * through the connection, as a flow starts, locking nothing.
+     * Whether the identity is signed in on the session, locking nothing.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
      * @param  string  $sessionId
@@ -103,9 +67,7 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
     }
 
     /**
-     * Whether the identity is signed in on the session, of the application,
-     * through the connection and exactly the link, with the session's row
-     * locked until the redemption's transaction ends.
+     * Whether the identity is signed in through the link, locking the row.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
      * @param  string  $sessionId
@@ -132,9 +94,7 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
     }
 
     /**
-     * Record the renewal of the session's authentication, writing nothing: the
-     * redemption makes the one write once SSO's admission answers. Asked while
-     * no redemption is open to write it, it throws.
+     * Record the renewal for the redemption to write.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
      * @param  string  $sessionId
@@ -152,8 +112,7 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
     }
 
     /**
-     * Refuse a locked standing asked outside a transaction on the session
-     * model's connection, where no row could be held.
+     * Refuse a locked standing outside a transaction, where no row is held.
      *
      * @return void
      *

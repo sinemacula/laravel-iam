@@ -41,17 +41,8 @@ use Tests\Fixtures\Sso\Handoff;
 use Tests\TestCase;
 
 /**
- * Integration tests for redeeming a `link` handoff code SSO issued through its
- * standalone redemption, as the caller the application hands over (IAM-4.3):
- * the caller is linked, no session is written and nothing is admitted; a code
- * started for another identity links nobody; a caller that cannot be named to
- * SSO throws before the code is touched; until freshness is bound, SSO's
- * default refuses every link; and a concurrency failure is the caller's to
- * retry, inside its transaction or not.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for redeeming a `link` handoff code as the caller the
+ * application hands over.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -90,10 +81,8 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * The caller is linked to the provider's subject, standalone: the
-     * redemption commits before it answers, is redeemed but not admitted, and
-     * writes no session; one `HandoffRedeemed` reports it, carrying the client
-     * handed over.
+     * The caller is linked standalone, with no session written and nothing
+     * admitted.
      *
      * @param  ?string  $level
      * @return void
@@ -126,8 +115,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A code started for another identity is refused as `identity_mismatch`,
-     * and links neither of them.
+     * A code started for another identity is refused and links nobody.
      *
      * @param  ?string  $level
      * @return void
@@ -153,9 +141,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A caller that is no Eloquent identity cannot be named to SSO, and throws
-     * before the code is touched, so the code still links the person it was
-     * started for.
+     * A caller that cannot be named throws before the code is touched.
      *
      * @return void
      *
@@ -180,9 +166,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * An application that is no guard of the `jwt` driver throws before SSO is
-     * asked, so the code is not spent and still links the person it was started
-     * for through the application it was started for.
+     * An application that is no `jwt` guard throws before the code is touched.
      *
      * @return void
      *
@@ -207,8 +191,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A job's redemption, with a client of which nothing is known, reports
-     * neither an IP address nor a user agent.
+     * A job's redemption reports no IP address or user agent.
      *
      * @return void
      *
@@ -229,9 +212,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * SSO's default freshness, which this package replaces with
-     * `laravel-authentication`'s (IAM-4.6) and an application may bind again,
-     * refuses every link as not fresh, and the code is spent.
+     * SSO's default freshness refuses every link and spends the code.
      *
      * @return void
      *
@@ -252,10 +233,8 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * A standalone redemption's concurrency failure is retried by SSO alone,
-     * three times in all whatever this package's attempts say, then reaches the
-     * caller with the code unspent and nothing reported, so the request retried
-     * links the caller.
+     * A standalone concurrency failure outlasting SSO's retries reaches the
+     * caller with the code unspent.
      *
      * @return void
      *
@@ -283,8 +262,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * Inside the caller's transaction, the link is admitted, written in that
-     * transaction and committed with it.
+     * Inside the caller's transaction, the link commits with it.
      *
      * @param  ?string  $level
      * @return void
@@ -307,8 +285,8 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * Inside the caller's transaction, a failure to serialise is not retried:
-     * it reaches the caller from the one attempt, with nothing linked.
+     * Inside the caller's transaction, a serialisation failure reaches the
+     * caller unretried.
      *
      * @return void
      *
@@ -333,8 +311,7 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * Redeem the `link` handoff for the guard through the connection, for the
-     * tests' client, as the person.
+     * Redeem the `link` handoff as the person.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @param  \Tests\Fixtures\Models\Person  $person
@@ -348,8 +325,8 @@ final class LinkRedemptionTest extends TestCase
     }
 
     /**
-     * Bind SSO's single-use store to one failing its first records with the
-     * failure given, and answer it.
+     * Bind a single-use store that fails its first records with the given
+     * failure.
      *
      * @param  \Closure(): \Throwable  $failure
      * @param  int  $failures

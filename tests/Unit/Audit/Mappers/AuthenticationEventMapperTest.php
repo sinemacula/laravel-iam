@@ -59,15 +59,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 
 /**
- * Unit tests for the mapper of `laravel-authentication`'s events (IAM-9.1,
- * IAM-9.4, IAM-9.5): every event and every flow of a refusal is recorded under
- * its code, audit-log's own reused where the event means the same, a sign-in
- * out of attempts as its lockout; a refusal carries its reason, is concealed
- * when the member conceals it, hashes the identifier it named and names no
- * actor; the noise of a bind and a refresh's `SignedIn` are skipped; the actor,
- * subject, principal, tenant, guard, session, client and credential are the
- * event's, through the morph map; and each record is correlated as one SSO
- * sign-in, a challenge or a session.
+ * Tests the mapper of `laravel-authentication`'s events.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -196,8 +188,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` that are skipped: the noise of a bind, and a refresh's
-     * sign-in, which repeats the refresh.
+     * Rows of `[event]` that are skipped.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent}>
      */
@@ -285,9 +276,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A refusal is recorded by its flow, failed with its reason, explicitly by
-     * no one, on the identity, with the identifier it named hashed and never a
-     * property, and correlated by its session.
+     * A refusal is recorded by its flow, failed and by no one.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\AuthenticationFlow  $flow
      * @param  \BackedEnum  $code
@@ -314,8 +303,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A refusal is written once its transaction ends, so a rollback keeps it;
-     * any other event takes audit-log's default.
+     * Only a refusal waits for its transaction to end.
      *
      * @return void
      */
@@ -328,8 +316,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A refusal of the sign-in flow keeps no property at all, as audit-log's
-     * own code drops them all; any other keeps its method and wait.
+     * A sign-in refusal keeps no property; any other keeps its method and wait.
      *
      * @return void
      */
@@ -344,10 +331,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A sign-in refused because the identifier, the session or the IP address
-     * has used up its attempts is audit-log's own lockout, as it records
-     * Laravel's `Lockout`: denied with its reason, explicitly by no one, about
-     * no one, keeping no property, with the identifier hashed.
+     * A sign-in out of attempts is audit-log's lockout, about no one.
      *
      * @return void
      */
@@ -387,8 +371,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Another flow's refusal for attempts used up is that flow's failure, and
-     * still about the identity: only a sign-in's is a lockout.
+     * Only a sign-in out of attempts is a lockout.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\AuthenticationFlow  $flow
      * @return void
@@ -404,8 +387,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A sign-in refused by the account's own limit is no lockout: its reason is
-     * concealed, which audit-log's lockout would drop.
+     * A sign-in refused by the account's own limit is no lockout.
      *
      * @return void
      */
@@ -435,8 +417,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A sign-in refused for a concealed reason is recorded under its own code,
-     * with its reason and `concealed` kept, so it is never rendered.
+     * A concealed sign-in refusal keeps its reason concealed.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\FailureReason  $reason
      * @return void
@@ -475,8 +456,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A refusal of a further factor's code is correlated by MFA's namespace,
-     * any other challenge by `laravel-authentication`'s, ahead of the session.
+     * A refusal's challenge is correlated by whose challenge it is.
      *
      * @return void
      */
@@ -490,8 +470,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * An event naming its connection and request is correlated as the SSO
-     * sign-in, ahead of a challenge and the session.
+     * An event naming its connection and request is the SSO sign-in's.
      *
      * @return void
      */
@@ -507,8 +486,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * An event with no session, connection or challenge is correlated with
-     * nothing.
+     * An event naming no session, connection or challenge is uncorrelated.
      *
      * @return void
      */
@@ -518,8 +496,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * The identity's own action is by the identity, on it, as its principal, in
-     * its tenant, under its guard, session and client, all from the event.
+     * The identity's own action is the identity's, from the event.
      *
      * @return void
      */
@@ -541,8 +518,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * The types are read through the morph map, so a mapped class is named by
-     * its alias.
+     * The types are read through the morph map.
      *
      * @return void
      */
@@ -561,8 +537,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * An event naming no principal or tenant names explicitly none, so the
-     * caller's are never filled in.
+     * An event naming no principal or tenant names explicitly none.
      *
      * @return void
      */
@@ -584,8 +559,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` whose actor is left to the contributors: what the
-     * member does not say who did.
+     * Rows of `[event]` whose actor is left to the contributors.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent}>
      */
@@ -611,9 +585,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * What the member does not say who did is left to the contributors, and so
-     * is the actor's principal; the subject and the tenant are the event's, and
-     * the principal the event names is kept as properties.
+     * What the member does not attribute is left to the contributors.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @return void
@@ -637,8 +609,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` explicitly by no one: a replay the member detected, and
-     * a result that linked to no one.
+     * Rows of `[event]` by no one: a detected replay and an unlinked result.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent}>
      */
@@ -667,9 +638,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` that are the identity's own, though they could be
-     * another's: its own sign-out, a session its sign-in replaced, and a return
-     * to pending its own switch or refresh made.
+     * Rows of `[event]` that are the identity's own.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent}>
      */
@@ -860,8 +829,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event, property]` whose credential is the one the activity
-     * manages, with the property it is kept as.
+     * Rows of `[event, property]` managing a credential.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent, 1: string}>
      */
@@ -881,9 +849,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A credential the activity manages is never the record's, which names the
-     * credential the activity used: it is kept as a property, so the trail of
-     * what a leaked key did is never mixed with its management.
+     * A credential an event manages is never the record's credential.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @param  string  $property
@@ -899,8 +865,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event, prefix]` left to the caller whose context names the
-     * principal the activity was done to, with the prefix it is kept under.
+     * Rows of `[event, prefix]` naming the principal acted on.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent, 1: string}>
      */
@@ -925,10 +890,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A record left to the caller keeps the principal the event names, what the
-     * activity was done to, as properties through the morph map, while the
-     * record's principal is the caller's the contributors fill and its tenant
-     * the event's.
+     * A record left to the caller keeps the principal acted on.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @param  string  $prefix
@@ -955,8 +917,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A record the identity's own action makes keeps no principal it acted on
-     * beside its own: the record's principal is the event's.
+     * A record of the identity's own action keeps no principal it acted on.
      *
      * @return void
      */
@@ -969,8 +930,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * The snapshot of the record the mapper describes the event on, failing the
-     * test when it skips it.
+     * The snapshot of the record the mapper describes the event on.
      *
      * @param  object  $event
      * @return \SineMacula\Laravel\AuditLog\Records\PendingSnapshot
@@ -985,9 +945,7 @@ final class AuthenticationEventMapperTest extends TestCase
     }
 
     /**
-     * A context for the person, acting as themselves, or as the principal given
-     * (`null` for none), in the tenant, on the session, through the tests'
-     * client, signed in with a password.
+     * A password sign-in context for the person in the tenant.
      *
      * @param  ?string  $sessionId
      * @param  ?string  $credentialId

@@ -12,10 +12,7 @@ use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use Tests\Fixtures\Sso\Redemptions;
 
 /**
- * Unit tests for the one renewal a re-authentication records: it is recorded
- * only while a redemption has opened the recorder, is taken back as recorded,
- * once, a second record while one is held is a `LogicException`, and opening or
- * closing the recorder leaves nothing held.
+ * Unit tests for the recorder of a re-authentication's one renewal.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,7 +27,7 @@ final class RenewalRecorderTest extends TestCase
     private const string NO_REDEMPTION = 'SSO asked for a renewal no redemption would write: a re-authentication is redeemed through Iam::reauthentications().';
 
     /**
-     * The renewal recorded is taken back as recorded, and is no longer held.
+     * The renewal is taken back as recorded, and is no longer held.
      *
      * @return void
      */
@@ -76,8 +73,7 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * Recording a second renewal while one is held is a `LogicException`, and
-     * the first is still the one held.
+     * A second renewal while one is held is a `LogicException`.
      *
      * @return void
      */
@@ -119,9 +115,8 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * A renewal asked for while the recorder is closed, before any redemption
-     * opened it or once one closed it, is one no redemption would write: it is
-     * a `LogicException`, and nothing is held.
+     * A renewal while the recorder is closed is a `LogicException`, and nothing
+     * is held.
      *
      * @return void
      */
@@ -138,8 +133,7 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * Opening the recorder forgets a renewal still held, and another may be
-     * recorded.
+     * Opening the recorder forgets a renewal still held.
      *
      * @return void
      */
@@ -160,8 +154,8 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * Closing the recorder forgets a renewal still held, and refuses the next
-     * until it is opened again.
+     * Closing the recorder forgets a renewal and refuses the next until
+     * reopened.
      *
      * @return void
      */
@@ -184,9 +178,7 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * A redemption's attempt that opens and closes the recorder while another
-     * is still open leaves the other open: its renewal is still recorded, and
-     * the recorder is closed once both have closed.
+     * A nested opening and closing leaves the outer redemption open.
      *
      * @return void
      */
@@ -208,8 +200,7 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * A close with no opening left changes nothing: the next opening opens the
-     * recorder.
+     * A close with no opening left changes nothing.
      *
      * @return void
      */
@@ -225,8 +216,7 @@ final class RenewalRecorderTest extends TestCase
     }
 
     /**
-     * Assert the closed recorder refuses a renewal as one no redemption would
-     * write, and holds nothing.
+     * Assert the closed recorder refuses a renewal and holds nothing.
      *
      * @param  \SineMacula\Laravel\Iam\Sso\RenewalRecorder  $recorder
      * @return void

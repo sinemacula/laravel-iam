@@ -69,14 +69,7 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the mapper of SSO's events (IAM-9.1, IAM-9.4, IAM-9.5): every
- * event is recorded under its own code, keeping only what its code keeps; a
- * refusal and a failed refresh or recheck carry their reason; the actor is the
- * acting identity the application passed, else the identity, no one or the
- * caller, a subject migration's link among the caller's; the subject is the
- * identity, the connection or the domain, through the morph map; the tenant is
- * the active one, else the connection's; and one sign-in's events are
- * correlated as `sso:{connection_id}:{request_reference}`.
+ * Tests the mapper of SSO's events.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -148,8 +141,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event, code, details]` for every one of SSO's events, with what
-     * each keeps beside its connection's.
+     * Rows of `[event, code, details]` for every one of SSO's events.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Contracts\SsoEvent, 1: \SineMacula\Laravel\Iam\Audit\Enums\SsoActivity, 2: array<string, mixed>}>
      */
@@ -284,8 +276,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Each event is recorded under its code, keeping exactly what its code
-     * keeps of the connection and of itself.
+     * Each event is recorded under its code, keeping what its code keeps.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Enums\SsoActivity  $code
@@ -317,8 +308,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Each event is about its subject, and by the identity, explicitly no one,
-     * or the caller, as what it reports says.
+     * Each event is about its subject and by whom it reports.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Enums\SsoActivity  $code
@@ -369,8 +359,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A refusal, a failed refresh and a failed recheck carry their reason;
-     * anything else succeeds.
+     * A refusal or a failed refresh or recheck carries its reason.
      *
      * @return void
      */
@@ -400,9 +389,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A flow's success is by the identity, on it, as its principal, in the
-     * active tenant, under the application's guard, its session and client,
-     * correlated as the sign-in.
+     * A flow is the identity's, in the active tenant, correlated by sign-in.
      *
      * @return void
      */
@@ -424,8 +411,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Without a request, an event is correlated by its session, and without
-     * either by nothing.
+     * Without a request an event is correlated by its session, if any.
      *
      * @return void
      */
@@ -439,9 +425,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * An administration event's subject is the connection, by SSO's model
-     * through the morph map, its tenant the connection's, and its actor the
-     * acting identity the application passed.
+     * An administration event is the acting identity's, on the connection.
      *
      * @return void
      */
@@ -461,8 +445,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A domain's event is about the domain; an enforcement change about no
-     * subject but its tenant, even one naming an identity.
+     * A domain's event is about the domain, an enforcement change none.
      *
      * @return void
      */
@@ -477,8 +460,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` that are explicitly by no one with no acting identity,
-     * even when they name an identity: a refusal, and what SSO did by itself.
+     * Rows of `[event]` that are by no one without an acting identity.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Contracts\SsoEvent}>
      */
@@ -508,8 +490,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * What no one did is explicitly by no one, its principal and tenant the
-     * event's.
+     * What no one did is by no one, with the event's principal and tenant.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @return void
@@ -526,8 +507,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` an administration helper reports, the caller's when the
-     * application passed no acting identity.
+     * Rows of `[event]` an administration helper reports.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Contracts\SsoEvent}>
      */
@@ -583,10 +563,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A link a connection's subject migration made is the caller's when the
-     * administration helper was handed no acting identity, never the relinked
-     * identity's, who did not ask for it; it is still on that identity, in the
-     * connection's tenant, with the principal left to the contributors.
+     * A migration's link with no acting identity is the caller's.
      *
      * @return void
      */
@@ -604,8 +581,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A link a connection's subject migration made with an acting identity is
-     * that operator's, on the relinked identity.
+     * A migration's link with an acting identity is the operator's.
      *
      * @return void
      */
@@ -669,8 +645,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * The snapshot of the record the mapper describes the event on, failing the
-     * test when it skips it.
+     * The snapshot of the record the mapper describes the event on.
      *
      * @param  object  $event
      * @return \SineMacula\Laravel\AuditLog\Records\PendingSnapshot
@@ -685,9 +660,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A sign-in flow's context: the person through the connection, acting in a
-     * child tenant of the connection's, on the session, through the tests'
-     * client and the `api` application.
+     * A sign-in flow's context in a child tenant of the connection's.
      *
      * @return \SineMacula\Laravel\Sso\Events\EventContext
      */
@@ -714,8 +687,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * An administration helper's context: the connection, its tenant and
-     * protocol, and the acting identity given.
+     * An administration helper's context with the acting identity given.
      *
      * @param  ?string  $actingType
      * @param  ?string  $actingId
@@ -734,8 +706,7 @@ final class SsoEventMapperTest extends TestCase
     }
 
     /**
-     * A subject migration's context: the connection, its tenant and protocol,
-     * the identity relinked and the acting identity given, and no flow.
+     * A subject migration's context with the acting identity given.
      *
      * @param  ?string  $actingType
      * @param  ?string  $actingId

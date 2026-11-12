@@ -30,15 +30,7 @@ use Tests\Fixtures\Providers\TurnsSsoOnWhileRegistering;
 use Tests\TestCase;
 
 /**
- * Feature tests for the `mfa` and `sso` namespaces' registration with
- * `laravel-authentication`'s authentication context: this package registers its
- * contributor under each exactly once, once every provider has booted, in every
- * provider order, `laravel-authentication` registered from another provider's
- * `boot()` included, and only while the matching capability's switch is on as
- * the seams were bound, so the contributor and the adapters agree; a
- * contributor the application registered under either namespace from any
- * provider's `boot()` is kept, and one it registers once the application has
- * booted is `laravel-authentication`'s refusal.
+ * Feature tests for registering the `mfa` and `sso` context contributors.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -71,8 +63,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * With the SSO capability's switch off, nothing is registered under `sso`,
-     * and the `mfa` contributor still is.
+     * The SSO switch off registers nothing under `sso`.
      *
      * @return void
      *
@@ -85,8 +76,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * With the MFA capability's switch off, nothing is registered under `mfa`,
-     * and the `sso` contributor still is.
+     * The MFA switch off registers nothing under `mfa`.
      *
      * @return void
      *
@@ -99,8 +89,8 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * The MFA switch turned off in a later provider's `register()` turns off
-     * the bindings and the contributor alike.
+     * The MFA switch turned off in a later `register()` turns off the bindings
+     * and the contributor alike.
      *
      * @return void
      *
@@ -116,8 +106,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A contributor the application registered under `mfa` before this package
-     * booted is kept.
+     * An application's earlier `mfa` contributor is kept.
      *
      * @return void
      *
@@ -131,8 +120,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A contributor the application registers under `mfa` from a provider that
-     * boots after this package is kept too.
+     * An application's `mfa` contributor from a later-booting provider is kept.
      *
      * @return void
      *
@@ -146,8 +134,8 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * The SSO switch turned off in a later provider's `register()` turns off
-     * the bindings and the contributor alike.
+     * The SSO switch turned off in a later `register()` turns off the bindings
+     * and the contributor alike.
      *
      * @return void
      *
@@ -163,8 +151,8 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * The SSO switch turned on in a later provider's `register()` turns on the
-     * bindings and the contributor alike.
+     * The SSO switch turned on in a later `register()` turns on the bindings
+     * and the contributor alike.
      *
      * @return void
      *
@@ -180,8 +168,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A contributor the application registered under `sso` before this package
-     * booted is kept.
+     * An application's earlier `sso` contributor is kept.
      *
      * @return void
      *
@@ -195,9 +182,7 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A contributor the application registers under `sso` from a provider that
-     * boots after this package is kept too: this package registers its own only
-     * once every provider has booted.
+     * An application's `sso` contributor from a later-booting provider is kept.
      *
      * @return void
      *
@@ -211,9 +196,8 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A contributor the application registers under `sso` once the application
-     * has booted is `laravel-authentication`'s `LogicException`: a namespace is
-     * taken once.
+     * An `sso` contributor registered once booted is `laravel-authentication`'s
+     * `LogicException`.
      *
      * @return void
      *
@@ -229,10 +213,8 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * With `laravel-authentication` registered from another provider's
-     * `boot()`, after this package's has run, the contributor is still
-     * registered, with the authentication context's contributors that member
-     * binds then, never with an instance nobody keeps.
+     * The contributor is registered when `laravel-authentication` registers
+     * from another provider's `boot()`.
      *
      * @return void
      *
@@ -249,7 +231,7 @@ final class ContextContributorRegistrationTest extends TestCase
 
     /**
      * The contributors `laravel-authentication` holds, by namespace, in the
-     * namespaces' order rather than the order they were registered in.
+     * namespaces' order.
      *
      * @return array<string, string>
      *

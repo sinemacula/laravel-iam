@@ -23,23 +23,8 @@ use Tests\Concerns\SignsInPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests for reading the audit trail around a change that spans
- * members (IAM-9.9): inside the transaction this package opens on the storage
- * connection (`Iam::transaction()`, IAM-11.1), audit-log refuses a read before
- * anything is queried, naming the connection, since the read's record, or a row
- * it would show, could still be rolled back; the same read once the transaction
- * has committed is let in. The change itself is untouched by the refusal it
- * caught: what it wrote commits. Audit-log's tables are created from its own
- * migrations, on the storage connection, beside the members'.
- *
- * The refusal is audit-log's, and holds only while audit-log's storage
- * connection (or, under the outbox, its outbox connection) is the storage
- * connection, or its store joins a transaction open there: audit-log checks
- * only the connections it acknowledges a record on, and this package aligns no
- * key of audit-log's. With audit-log storing on a connection of its own, the
- * same read inside the transaction is let in and queried, which the last test
- * pins; IAM-9.9 then rests on this package never reading the trail itself (the
- * decision `audit-mapping.md` records).
+ * Integration tests for reading the audit trail inside a change that spans
+ * members.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,10 +40,8 @@ final class TrailReadsTest extends TestCase
     private const string AUDIT_CONNECTION = 'audit';
 
     /**
-     * Answer every read with audit-log's own policy, which shows nobody
-     * anything: what is read is not in question here, only whether a read is
-     * let in, so the test needs none of `laravel-authorization`'s tables the
-     * package's policy reads its grants from.
+     * Answer every read with audit-log's deny-all policy, since only whether a
+     * read is let in matters.
      *
      * @return void
      */
@@ -71,9 +54,8 @@ final class TrailReadsTest extends TestCase
     }
 
     /**
-     * A read of the trail inside a cross-member transaction is refused before
-     * anything is queried, naming the storage connection, and the transaction's
-     * own work still commits.
+     * A read inside a cross-member transaction is refused, and the
+     * transaction's work still commits.
      *
      * @param  ?string  $level
      * @return void
@@ -112,8 +94,7 @@ final class TrailReadsTest extends TestCase
     }
 
     /**
-     * A refusal the work lets propagate rolls the whole change back, as any
-     * failure of a cross-member transaction does.
+     * A refusal left to propagate rolls the whole change back.
      *
      * @param  ?string  $level
      * @return void
@@ -145,11 +126,8 @@ final class TrailReadsTest extends TestCase
     }
 
     /**
-     * With audit-log storing on a connection of its own, which the application
-     * may choose and this package never aligns, a read inside a cross-member
-     * transaction is not refused: audit-log checks only its own connections,
-     * none of which holds the transaction, so the read is queried there, and
-     * the transaction's work still commits.
+     * With audit-log on a connection of its own, a read inside the transaction
+     * is let in.
      *
      * @param  ?string  $level
      * @return void
@@ -208,9 +186,8 @@ final class TrailReadsTest extends TestCase
     }
 
     /**
-     * Have audit-log store on a connection of its own, to the same database as
-     * the storage connection, with audit-log's tables created there (on SQLite
-     * in memory, a second connection is a database of its own).
+     * Have audit-log store on its own connection to the same database (on
+     * in-memory SQLite, a separate one).
      *
      * @return void
      */

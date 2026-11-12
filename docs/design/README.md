@@ -20,15 +20,9 @@ its decisions and invariants, and ends with a "Member gaps" list. Test lists and
   `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
   subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
   to the application's `OneTimeCodeSender`; and the locks each path takes.
-- `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
-  store as its linker, and the handoff issuer left on SSO's default; how a `sign_in`, a
-  `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
-  connection retried whole and the last through SSO's standalone redemption; which refusals commit and which roll back;
-  the records kept for one request and the one renewal a re-authentication writes; how each of SSO's revocation scopes
-  ends exactly its sessions; how identity and tenant references are resolved; the provider's evidence through SSO's
-  evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
-  link e-mail matching on verified identifiers, link confirmation from how the caller's session signed in, and the
-  `sso` context namespace; SSO's lock order; and the gaps in the members the adapters work around.
+- `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, how SSO's handoff
+  codes are redeemed and its revocation scopes end sessions, and how SSO's evidence, freshness and link judgements are
+  answered.
 - `tenant-authentication-policy.md`: the application's implementation of laravel-mfa's `TenantRequirement`, read
   into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's enforcement, SSO's
   exemption gate and that requirement together; the version that changes whenever any of them does;
@@ -48,19 +42,8 @@ its decisions and invariants, and ends with a "Member gaps" list. Test lists and
   groups map to grants at provisioning and, where the application opts in, at later sign-ins; the testing kits and
   fakes for the application's contracts; and the gaps in the members the adapters work around.
 
-- `audit-mapping.md`: how `laravel-authentication`'s, MFA's, SSO's and `laravel-authorization`'s events are recorded in
-  `laravel-audit-log`: the mappers, codes and definitions registered while the application boots, before audit-log
-  freezes its registries; how each event is recorded from the event alone, under audit-log's own code where it means the
-  same and a code of its member's prefix otherwise, a refusal by its flow and a concealed reason kept concealed, the
-  actor the identity, no one or the caller, every reference through the morph map and every record correlated as one SSO
-  sign-in, a challenge or a session; the whole record sequences of a password sign-in, an MFA step-up and an SSO
-  sign-in; the one context contributor that fills a record's gaps from the caller a package guard already holds, never
-  triggering authentication, and only on a record about that caller; the `jwt` and `api_key` guards excluded from
-  audit-log's own capture, and its Gate capture off, so nothing is recorded twice, computed for the check to enforce,
-  and audit-log's refusal of a code no definition registers read for them too; the operational
-  events handed to the application's alerting; the trail read audit-log refuses inside a change that spans members;
-  `laravel-authorization`'s decisions and changes, its access policy over the trail and the catalogue of the members'
-  administrative permissions; and the gaps in the members the mapping works around.
+- `audit-mapping.md`: how the members' events are recorded in `laravel-audit-log`: registration, codes, actors and
+  correlation, the guard caller reader, the capture exclusions, the audit access policy, and the member gaps.
 
 - `install-and-check.md`: `iam:install`, `Iam::schedule()` and the checks `iam:check` runs.
 

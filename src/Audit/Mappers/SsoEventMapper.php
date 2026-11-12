@@ -52,32 +52,7 @@ use SineMacula\Laravel\Sso\Models\Connection;
 use SineMacula\Laravel\Sso\Models\Domain;
 
 /**
- * Records SSO's events (`SsoEvent`) in audit-log, from each event alone
- * (IAM-9.1, IAM-9.4), each under its own `SsoActivity` code.
- *
- * A flow's refusal (`FlowFailed`), a failed refresh and a failed domain recheck
- * carry their reason as the record's; SSO conceals none from the client. The
- * record's actor is the acting identity the application passed to an
- * administration helper, else the identity for its own flow or link, explicitly
- * no one for a refusal and for what SSO did by itself (a key nearing expiry, a
- * recheck, a lapse, a failed or JWKS refresh, a link suspended by a scope's
- * widening), and the caller for an administration helper called with no acting
- * identity, a link made by a connection's subject migration among them, which
- * the identity relinked never asked for. Its subject is the identity of a flow,
- * a link or an exemption, the connection of a connection's, a key's or a
- * refresh's event, and the domain of a domain's, each by SSO's own model's type
- * through the morph map; an enforcement change has none but its tenant. Its
- * tenant is the active tenant, else the connection's. The SSO application
- * stands for the guard, which is the same name in this package.
- *
- * One sign-in is correlated as `sso:{connection_id}:{request_reference}` across
- * its start, its verified result, its handoff and its redemption, which
- * `laravel-authentication`'s `ExternalResultRedeemed` correlates the same way,
- * so each half is recorded once; an event with no request, an administration
- * event among them, is correlated by its session, or not at all. An unlinked
- * result's provisioning grant is never recorded.
- *
- * It reads nothing but the event and the morph map, and keeps nothing.
+ * Records SSO's events under their `SsoActivity` codes, from each event alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -166,8 +141,7 @@ final readonly class SsoEventMapper implements EventMapper
     }
 
     /**
-     * The code the event is recorded under, or `null` for an event that is not
-     * one of SSO's own.
+     * The code the event is recorded under; `null` for any other event.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @return ?\SineMacula\Laravel\Iam\Audit\Enums\SsoActivity
@@ -215,8 +189,7 @@ final readonly class SsoEventMapper implements EventMapper
     }
 
     /**
-     * What the activity was done to: the domain, the connection, nothing for an
-     * enforcement change, or the identity.
+     * What the activity was done to; none for an enforcement change.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\Snapshot  $snapshot
@@ -271,10 +244,7 @@ final readonly class SsoEventMapper implements EventMapper
     }
 
     /**
-     * The properties the event describes itself with: its connection, the
-     * connection's tenant and protocol, the application, the purpose and the
-     * method, and what the event adds; a value the event does not have is left
-     * out. The code's definition decides which are kept.
+     * The connection, flow and event details, less any null.
      *
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoEvent  $event
      * @return array<string, mixed>

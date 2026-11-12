@@ -20,10 +20,8 @@ use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Sessions\Provenance as SsoProvenance;
 
 /**
- * SSO's link confirmation (IAM-4.10): the caller's session is `independent`
- * only when its first factor was a password, a passkey or the application's own
- * recovery, it holds no provider re-authentication, and its provenance names no
- * link of verified domain provenance.
+ * SSO's link confirmation: `independent` only for a session signed in with a
+ * password, passkey or recovery and never renewed through a provider.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,10 +49,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
     ) {}
 
     /**
-     * Whether the caller's session is independent of every verified domain
-     * link: signed in with a password, a passkey or the application's own
-     * recovery, never renewed through a provider, and recording no link of
-     * verified domain provenance.
+     * Whether the caller's session is independent of every domain link.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @param  \SineMacula\Laravel\Sso\Contracts\SsoConnection  $connection
@@ -69,6 +64,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
     #[\Override]
     public function judge(Caller $caller, SsoConnection $connection, array $domainLinkIds): LinkConfirmationVerdict
     {
+        // Unused: no session judged independent stood on any link.
         unset($connection, $domainLinkIds);
 
         $session = $this->session($caller);
@@ -80,9 +76,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
     }
 
     /**
-     * The caller's session, among its identity's own, or `null` for a caller
-     * with no session, a session that is not its identity's, or any asked
-     * outside a transaction, where no guard could be held.
+     * The caller's own session, or `null` outside a transaction.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
@@ -99,9 +93,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
     }
 
     /**
-     * Whether the session was signed in with a password, a passkey or the
-     * application's own recovery, holds no counting proof of a provider's
-     * re-authentication, and records no link of verified domain provenance.
+     * Whether the session was signed in and kept apart from every provider.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SessionService  $service
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -122,9 +114,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
     }
 
     /**
-     * Whether the session's recorded provenance names a link of verified domain
-     * provenance, as SSO stored it in the provider context; never for a session
-     * with no provenance or no provider context.
+     * Whether the session's provenance names a verified domain link.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Proofs\Provenance  $provenance
      * @return bool

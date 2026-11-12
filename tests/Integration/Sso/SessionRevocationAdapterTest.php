@@ -36,20 +36,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's session revocation through
- * `laravel-authentication` (IAM-4.4): each of SSO's four scopes ends exactly
- * the sessions it names, on every guard, through the one helper of
- * `laravel-authentication`'s for it; the connection and removed-link scopes
- * follow `laravel-authentication`'s own switches, while an enforcement change
- * and a widened scope are never skipped and a widened scope revoked twice
- * revokes nothing the second time; an enforcement change judges the sessions of
- * the enforcing tenant, and of every tenant below it in the application's
- * tenant tree, once more when the caller's transaction on the storage
- * connection commits, once every callback queued on it has run, whatever
- * another connection's transaction does, and, when another commit callback
- * fails, as the unit of work ends; and a tenant or identity that cannot be
- * resolved, or a scope missing what its kind names, throws inside the caller's
- * transaction, so the change rolls back (IAM-8.2).
+ * Integration tests for SSO's session revocation adapter.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -83,8 +70,7 @@ final class SessionRevocationAdapterTest extends TestCase
     private const string GRANDCHILD = 'tenant-1-grandchild';
 
     /**
-     * Rows of `[reason, switch]`: each reason a connection's sessions are
-     * revoked for, with `laravel-authentication`'s switch for it.
+     * Rows of `[reason, switch]`: each connection reason and its switch.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason, 1: string}>
      */
@@ -96,10 +82,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A connection disabled or deleted ends every session established through
-     * it, of every person and on every guard, inside the caller's transaction,
-     * and leaves every other session standing, while `laravel-authentication`'s
-     * switch for the reason is on, as it ships.
+     * A disabled or deleted connection ends exactly its sessions.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason  $reason
      * @param  string  $switch
@@ -124,8 +107,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A connection's revocation follows `laravel-authentication`'s switch for
-     * its reason: turned off, nothing is revoked, and nothing throws.
+     * A connection's revocation follows authentication's switch.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason  $reason
      * @param  string  $switch
@@ -146,9 +128,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A removed link ends exactly the identity's sessions established through
-     * that link, on every guard: its other links' sessions, its password
-     * sessions and another person's through a link of the same id stand.
+     * A removed link ends exactly its identity's sessions through it.
      *
      * @return void
      *
@@ -168,8 +148,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A removed link's revocation follows `laravel-authentication`'s switch:
-     * turned off, nothing is revoked, and nothing throws.
+     * A removed link's revocation follows authentication's switch.
      *
      * @return void
      *
@@ -188,9 +167,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A widened scope ends exactly the identity's sessions through the link,
-     * whatever `laravel-authentication`'s switch for a removed link says, since
-     * it is never mapped to that switchable revocation.
+     * A widened scope ends its sessions whatever the switch says.
      *
      * @return void
      *
@@ -211,11 +188,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A widened scope revoked twice, as SSO may report one widening from the
-     * principal's change and again from a resolution that finds it first,
-     * revokes nothing and reports nothing the second time, and throws nothing:
-     * a minute later, the session keeps the time it was first revoked at, and
-     * no second revocation is announced.
+     * A widened scope revoked twice revokes nothing the second time.
      *
      * @return void
      *
@@ -249,11 +222,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * An enforcement change ends the sessions acting in the enforcing tenant
-     * that the tenant authentication policy, as it now answers, no longer
-     * allows, on every guard: the sessions through a connection it no longer
-     * names are revoked, and those through one it names, or acting in another
-     * tenant, stand.
+     * An enforcement change revokes the sessions the policy no longer allows.
      *
      * @param  string  $level
      * @return void
@@ -280,10 +249,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * With the application's tenant tree, an enforcement change ends the
-     * sessions the policy no longer allows in the enforcing tenant and in every
-     * tenant below it, at any depth, and leaves every tenant's outside the
-     * subtree standing; without one, only the enforcing tenant's.
+     * An enforcement change judges the whole subtree when there is a tree.
      *
      * @param  ?string  $level
      * @return void
@@ -316,9 +282,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * The second pass judges the whole subtree once the caller's transaction
-     * commits, so a session that entered a tenant below the enforcing one once
-     * the first pass had run is revoked then.
+     * The second pass judges the subtree once the change commits.
      *
      * @return void
      *
@@ -345,9 +309,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A tenant below the enforcing one that `laravel-authentication`'s tenant
-     * resolver cannot resolve throws inside the caller's transaction before any
-     * tenant is judged, so SSO's change rolls back and every session stands.
+     * An unresolvable tenant below the enforcing one rolls the change back.
      *
      * @return void
      *
@@ -378,10 +340,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * An enforcement change judges the enforcing tenant's sessions once more
-     * when the caller's transaction commits, so a session that entered the
-     * tenant once the first pass had run, which no first pass saw, is revoked
-     * then, and not before.
+     * An enforcement change judges the tenant again once it commits.
      *
      * @return void
      *
@@ -406,10 +365,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * The second pass waits for the caller's transaction on the storage
-     * connection alone: a transaction open on another connection when the
-     * change is made, and rolled back before the change commits, does not take
-     * the second pass with it.
+     * The second pass waits for the storage connection alone.
      *
      * @return void
      *
@@ -439,9 +395,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * The second pass runs in turn with the caller's commit callbacks, so a
-     * session that entered the tenant once the first pass had run is revoked by
-     * the time a callback queued after the revocation fails.
+     * The second pass runs before a later commit callback fails.
      *
      * @return void
      *
@@ -474,10 +428,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A commit callback queued before the revocation that fails stops Laravel
-     * running the rest, so the change commits with the second pass still held:
-     * the failure propagates, and a session that entered the tenant once the
-     * first pass had run is revoked once the unit of work ends.
+     * The second pass still runs when an earlier commit callback fails.
      *
      * @return void
      *
@@ -512,10 +463,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A tenant `laravel-authentication`'s tenant resolver cannot resolve, as
-     * its default resolves none, throws inside the caller's transaction, so the
-     * enforcement change rolls back with everything it wrote and no session is
-     * left unjudged (IAM-8.2).
+     * An unresolved tenant throws and the change rolls back.
      *
      * @return void
      *
@@ -544,8 +492,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A tenant resolver that answers a tenant of another identifier would have
-     * another tenant's sessions judged, so the tenant is unresolved too.
+     * A tenant resolved under another identifier throws.
      *
      * @return void
      *
@@ -565,9 +512,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * An identity scope naming an identity that cannot be resolved throws, the
-     * removed link's and the widened scope's alike, and nothing is revoked
-     * (IAM-8.2).
+     * An unresolved identity throws and nothing is revoked.
      *
      * @return void
      *
@@ -592,8 +537,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[kind, reason, part]`: a scope of each kind missing a part its
-     * kind names, as SSO's named constructors never build one, and the part.
+     * Rows of `[kind, reason, part]`: each scope missing a part.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Revocation\Enums\RevocationScopeKind, 1: \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason, 2: string}>
      */
@@ -617,8 +561,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A scope missing what its kind names is a `LogicException`, and nothing is
-     * revoked: what it meant to end cannot be told.
+     * A scope missing what its kind names is a `LogicException`.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationScopeKind  $kind
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason  $reason
@@ -650,8 +593,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A revocation made inside the caller's transaction rolls back with it: the
-     * sessions it ended stand again once the caller's change fails.
+     * A revocation rolls back with the caller's change.
      *
      * @return void
      *
@@ -678,8 +620,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * Declare a second guard holding sessions of the same people, which allows
-     * the `external_provider` method too.
+     * Declare a second session guard of the same people.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -707,8 +648,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * Revoke the scope inside a transaction on the storage connection, as SSO
-     * calls the contract inside the change it makes.
+     * Revoke the scope inside a transaction on the storage connection.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\RevocationScope  $scope
      * @return void
@@ -740,9 +680,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * Bind a tenancy in which every tenant resolves, and a tenant
-     * authentication policy that requires a session to come through the other
-     * connection alone.
+     * Bind a tenancy whose policy requires the other connection.
      *
      * @return void
      */
@@ -813,8 +751,7 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A scope of the kind and reason with the parts given, built past SSO's
-     * named constructors, which never build an incomplete one.
+     * A scope built past SSO's named constructors, which never omit a part.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationScopeKind  $kind
      * @param  \SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason  $reason

@@ -15,12 +15,7 @@ use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use Tests\Fixtures\Sso\Redemptions;
 
 /**
- * Unit tests for the redemption SSO admitted in this request: it answers only
- * for exactly its result's connection, issuer and subject, only an admitted,
- * linked redemption is recorded, one at a time, the evidence it accepted is
- * answered for its own connection alone, the client it is made for is answered
- * for its own identity and session alone, and forgetting it leaves nothing to
- * answer from.
+ * Unit tests for the record of the redemption SSO admitted in this request.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +26,8 @@ use Tests\Fixtures\Sso\Redemptions;
 final class AdmittedRedemptionsTest extends TestCase
 {
     /**
-     * The redemption recorded answers for exactly its result's connection,
-     * issuer and subject.
+     * The redemption answers for exactly its result's connection, issuer and
+     * subject.
      *
      * @return void
      */
@@ -47,10 +42,7 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * The client a sign-in recorded is made for is answered for exactly the
-     * identity it links and no session, as `laravel-authentication` judges that
-     * sign-in before its session is written, and for no other identity or any
-     * session; with none recorded, or once forgotten, none is answered.
+     * A sign-in's client is answered for its identity and no session alone.
      *
      * @return void
      */
@@ -75,9 +67,8 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * The client a re-authentication recorded is made for is answered for
-     * exactly the identity it links and the session it renews, and for no other
-     * session, nor none.
+     * A re-authentication's client is answered for its identity and session
+     * alone.
      *
      * @return void
      */
@@ -96,8 +87,7 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * Another redemption recorded after one forgotten answers its own client,
-     * never the one before's.
+     * The next redemption answers its own client, never the one before's.
      *
      * @return void
      */
@@ -114,10 +104,8 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * The evidence SSO accepted in the redemption recorded is answered for
-     * exactly its connection and the identity it linked, and for no other; a
-     * redemption that accepted no evidence, none recorded, or one forgotten,
-     * answers none.
+     * Accepted evidence is answered for its connection and linked identity
+     * alone.
      *
      * @return void
      */
@@ -147,8 +135,7 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * Rows of a connection, issuer and subject, each differing from the
-     * admitted result's in one part.
+     * Results differing from the admitted one in one part.
      *
      * @return iterable<string, array{0: string, 1: string, 2: string}>
      */
@@ -164,8 +151,8 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * A connection, issuer or subject that differs from the result's in any
-     * way, letter case included, is answered by nothing.
+     * A result differing in any way, letter case included, is answered by
+     * nothing.
      *
      * @param  string  $connectionId
      * @param  string  $issuer
@@ -213,8 +200,7 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * Recording a second redemption while one is held is a `LogicException`,
-     * and the first is still the one answered.
+     * A second redemption while one is held is a `LogicException`.
      *
      * @return void
      */
@@ -237,7 +223,7 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * Rows of a redemption that is no admitted, linked one.
+     * Redemptions that are not admitted and linked.
      *
      * @return iterable<string, array{0: \Closure(): \SineMacula\Laravel\Sso\Handoffs\RedemptionResult}>
      */
@@ -253,8 +239,8 @@ final class AdmittedRedemptionsTest extends TestCase
     }
 
     /**
-     * A redemption that is not admitted, or names no result, identity or link,
-     * is never recorded.
+     * A redemption not admitted, or missing a result, identity or link, is
+     * never recorded.
      *
      * @param  \Closure(): \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
      * @return void

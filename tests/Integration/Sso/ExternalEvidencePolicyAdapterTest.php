@@ -58,29 +58,7 @@ use Tests\Fixtures\Sso\TrustsConnections;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s external evidence policy
- * over the evidence SSO accepted, with MFA's combination policy as the second
- * gate, against SSO's evidence acceptance scenarios: with SSO's default
- * evidence policy no evidence reaches `laravel-authentication` or MFA; with one
- * that accepts the provider's `mfa` and MFA's default combination policy, a
- * sign-in records its first factor through `external_provider` and is not
- * multifactor; only a combination policy rebound to trust the connection counts
- * the accepted `mfa` as multifactor authentication; a `reauthenticate` records
- * an `external_reauthentication`, which MFA reads as a
- * `first_factor_reauthentication` for its `reauthenticate` purpose; and a
- * `link` records no proof.
- *
- * Evidence is accepted only as what SSO accepted in the redemption admitted in
- * the request, exactly; MFA is handed the sign-in's first factor on an
- * `external_provider` channel naming the connection, made at the evidence's
- * time; accepted evidence meets a requirement within its maximum ages, for the
- * identity level and for a tenant that trusts the connection (its own, or one
- * its enforcement names), and never for another tenant, nor a requirement that
- * asks for nothing.
- *
- * Every scenario that commits a sign-in, a re-authentication or a link runs at
- * the connection's own level on every engine, then at READ COMMITTED and
- * REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for the external evidence policy over SSO and MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -135,9 +113,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * With SSO's default evidence policy no evidence reaches
-     * `laravel-authentication` or MFA: the sign-in records none, and is not
-     * multifactor, even with a combination policy that trusts the connection.
+     * With SSO's default evidence policy no evidence reaches either member.
      *
      * @param  ?string  $level
      * @return void
@@ -158,11 +134,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * With SSO's evidence policy accepting the provider's `mfa` and MFA's
-     * default combination policy, the sign-in records its first factor through
-     * `external_provider` on the connection, and MFA is not present: the
-     * provider's methods are not multifactor authentication, and nothing is
-     * recorded as accepted.
+     * With MFA's default policy a provider's `mfa` is not multifactor.
      *
      * @param  ?string  $level
      * @return void
@@ -194,9 +166,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Only with MFA's combination policy rebound to trust the connection does
-     * the provider's accepted `mfa` count as multifactor authentication: the
-     * evidence is recorded as accepted, and the session is multifactor.
+     * Only a policy trusting the connection counts its accepted `mfa`.
      *
      * @param  ?string  $level
      * @return void
@@ -225,8 +195,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A combination policy that trusts another connection counts nothing of
-     * this one's.
+     * A policy trusting another connection counts nothing of this one's.
      *
      * @param  ?string  $level
      * @return void
@@ -249,13 +218,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A `reauthenticate` redemption records, through `laravel-authentication`,
-     * an `external_reauthentication` proof by the `external_provider` method
-     * for the `reauthenticate` purpose on a channel naming the connection, and
-     * MFA reads it as a `first_factor_reauthentication` for its own
-     * `reauthenticate` purpose, never as a sign-in's first factor, beside the
-     * sign-in's own first factor; with SSO's default evidence policy it carries
-     * no accepted evidence, so MFA sees it naming no connection.
+     * A reauthentication records a `first_factor_reauthentication` for MFA.
      *
      * @param  ?string  $level
      * @return void
@@ -301,9 +264,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A `link` redemption by a signed-in person records no proof: neither
-     * `laravel-authentication` nor MFA holds one more, or another, once the
-     * person is linked.
+     * A `link` redemption records no proof.
      *
      * @param  ?string  $level
      * @return void
@@ -331,9 +292,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Rows of a probe requirement `laravel-authentication` asks acceptance for,
-     * and whether a trusting combination policy finds a provider's sign-in
-     * credible for it.
+     * Rows of a probe requirement and whether a trusting policy meets it.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Requirements\Requirement, 1: bool}>
      */
@@ -349,10 +308,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Evidence SSO accepted in the redemption admitted in this request is
-     * credible for a requirement exactly when MFA's combination policy says the
-     * sign-in's first factor meets it: never with MFA's default, and as a
-     * trusting policy says once it is rebound.
+     * Admitted evidence is credible as MFA's combination policy says.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @param  bool  $trusted
@@ -373,10 +329,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * MFA is handed one proof: the sign-in's first factor, by the
-     * `external_provider` method on an `external_provider` channel naming the
-     * connection, observing nothing, made at the evidence's time, bound to the
-     * identity and the application for a sign-in no session names yet.
+     * MFA is handed the sign-in's `external_provider` first factor.
      *
      * @return void
      *
@@ -410,9 +363,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Without a redemption admitted in this request, or with one through
-     * another connection, no evidence is accepted, however a combination policy
-     * would judge it.
+     * Without an admitted redemption no evidence is accepted.
      *
      * @return void
      *
@@ -453,8 +404,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Evidence that is not exactly what SSO accepted in the admitted
-     * redemption, in its methods or its context, is never accepted.
+     * Evidence other than what SSO accepted is never accepted.
      *
      * @param  list<string>  $methods
      * @param  ?string  $context
@@ -475,8 +425,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Evidence SSO accepted in a redemption that linked one person is never
-     * accepted for another, however a combination policy would judge it.
+     * Evidence admitted for another identity is never accepted.
      *
      * @return void
      *
@@ -508,8 +457,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Evidence of another time than the one SSO accepted is never accepted,
-     * though its methods and context are SSO's.
+     * Evidence of another time is never accepted.
      *
      * @param  int  $offset
      * @return void
@@ -528,9 +476,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Evidence SSO accepted for a time after the subject's (the clocks
-     * disagree) is accepted as `laravel-authentication` dates it, at the
-     * subject's time to the whole second, and never at the time it claims.
+     * Evidence dated after the subject's time is accepted as of that time.
      *
      * @return void
      *
@@ -552,9 +498,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Accepted evidence meets the identity-level requirement as MFA's
-     * combination policy judges it: never with MFA's default, and within the
-     * requirement's maximum age with a trusting one.
+     * Accepted evidence meets a requirement within its maximum age.
      *
      * @return void
      *
@@ -577,8 +521,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A requirement that asks for nothing is never met, nor accepted for, and
-     * MFA is not asked.
+     * A requirement that asks for nothing is never met.
      *
      * @return void
      *
@@ -596,9 +539,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant's requirement is met by evidence from the tenant's own
-     * connection, and never from a connection of another tenant's, however
-     * MFA's policy trusts it.
+     * A tenant trusts its own connections alone.
      *
      * @param  ?string  $level
      * @return void
@@ -622,9 +563,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant whose enforcement on the application names another tenant's
-     * connection (as an inheriting tenant's rule names the enforcing tenant's)
-     * trusts it; enforcement on another application does not.
+     * A tenant trusts the connections its enforcement names.
      *
      * @return void
      *
@@ -648,8 +587,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * The tenant's trust is read only once MFA's policy has found the evidence
-     * meets the requirement: with MFA's default, nothing is queried.
+     * The tenant's trust is read only for evidence meeting the requirement.
      *
      * @return void
      *
@@ -669,8 +607,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant whose identifier cannot name it to SSO throws, rather than judge
-     * another tenant's trust.
+     * A tenant that cannot be named throws.
      *
      * @return void
      *
@@ -701,8 +638,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Record, for this request, the sign-in SSO would admit for the person
-     * through the connection, with the evidence it accepted.
+     * Record the sign-in SSO would admit, with the evidence it accepted.
      *
      * @param  ?\SineMacula\Laravel\Sso\Evidence\AcceptedEvidence  $evidence
      * @return void
@@ -743,8 +679,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * The subject the evidence is judged for: the person, on the guard, through
-     * the connection, now, for the tenant given or the identity level.
+     * The subject the evidence is judged for.
      *
      * @param  ?string  $connectionId
      * @param  ?string  $tenant
@@ -801,9 +736,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * Link the person and sign them in through SSO, the provider asserting the
-     * methods and context class, failing unless a session starts active, and
-     * return it.
+     * Sign the person in through SSO, and return the active session.
      *
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
      *
@@ -822,8 +755,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     }
 
     /**
-     * The evidence `laravel-authentication` recorded as accepted with the
-     * session's provenance, decoded, or `null` when it recorded none.
+     * The evidence recorded as accepted with the session, or `null`.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $session
      * @return ?array<array-key, mixed>
