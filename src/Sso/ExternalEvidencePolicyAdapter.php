@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Sessions\SignInMethodManager;
 use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
@@ -25,6 +24,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 
 /**
@@ -196,9 +196,7 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
     }
 
     /**
-     * Whether MFA's combination policy finds the first factor the evidence is
-     * meets every part of the requirement; never for a requirement that asks
-     * for nothing.
+     * Whether MFA's policy finds the evidence meets a non-empty requirement.
      *
      * @param  \SineMacula\Laravel\Authentication\External\ExternalEvidence  $evidence
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
@@ -206,7 +204,7 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
      * @return bool
      *
      * @throws \InvalidArgumentException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function satisfies(ExternalEvidence $evidence, Requirement $requirement, EvidenceSubject $subject): bool
     {
@@ -220,22 +218,18 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
     }
 
     /**
-     * The first factor MFA records for a sign-in through the subject's
-     * connection, made at the evidence's time: a `first_factor` proof by the
-     * `external_provider` method on an `external_provider` channel naming the
-     * connection, observing nothing, bound to the identity and the application
-     * for a sign-in no session key names yet.
+     * The `external_provider` first factor MFA records for the sign-in.
      *
      * @param  \SineMacula\Laravel\Authentication\External\ExternalEvidence  $evidence
      * @param  \SineMacula\Laravel\Authentication\External\EvidenceSubject  $subject
      * @return \SineMacula\Laravel\Mfa\Proofs\Proof
      *
      * @throws \InvalidArgumentException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private static function firstFactor(ExternalEvidence $evidence, EvidenceSubject $subject): Proof
     {
-        $identity = IdentityReference::of($subject->identity);
+        $identity = ProofOwner::of($subject->identity);
 
         return new Proof(
             ProofKind::FIRST_FACTOR,

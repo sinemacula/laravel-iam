@@ -40,6 +40,7 @@ use SineMacula\Laravel\Mfa\Enums\AssuranceLevel as MfaLevel;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
+use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
@@ -253,7 +254,9 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
      */
     public function testAnIdentityWhoseKeyNamesNothingIsRefused(): void
     {
-        self::assertUnresolvedIdentity(fn (): mixed => $this->adapter()->requirementFor(self::context(new Person)), Person::class, 'non-empty string or an integer');
+        $this->expectException(UnsupportedIdentifierException::class);
+
+        $this->adapter()->requirementFor(self::context(new Person));
     }
 
     /**

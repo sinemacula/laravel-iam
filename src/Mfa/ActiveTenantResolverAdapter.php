@@ -4,9 +4,9 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * MFA's active tenant, read from the tenant `laravel-authentication`'s
@@ -26,9 +26,9 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * tenant applies to either, and refusing them would refuse every sign-in MFA
  * judges. An application that is no guard of `laravel-authentication`'s holding
  * sessions is a misconfiguration and throws `UnresolvedReferenceException` of
- * the kind `guard`, as does an identity whose key names nothing of the kind
- * `identity` (IAM-8.2), inside whatever transaction MFA opened, so it rolls
- * back.
+ * the kind `guard`, and an identity whose key names nothing throws MFA's
+ * `UnsupportedIdentifierException` (IAM-8.2), inside whatever transaction MFA
+ * opened, so it rolls back.
  *
  * It reads the session the guard already holds and runs no query of its own, so
  * it takes no lock and cannot invert the lock order of the transaction it is
@@ -54,8 +54,7 @@ final readonly class ActiveTenantResolverAdapter implements ActiveTenantResolver
     ) {}
 
     /**
-     * The tenant whose policy applies to the identity's session on the
-     * application, as an opaque id, or `null` for none.
+     * The tenant of the identity's session on the application, if any.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -64,15 +63,16 @@ final readonly class ActiveTenantResolverAdapter implements ActiveTenantResolver
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Authentication\Resolvers\UnresolvableIdentityException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     #[\Override]
     public function activeTenant(MultiFactorAuthenticatable $identity, string $application): ?string
     {
         $guard = $this->sessions->guard($application);
-        $asked = IdentityReference::of($identity);
+        $asked = ProofOwner::of($identity);
         $owner = $guard->identity();
 
-        if ($owner === null || !IdentityReference::of($owner)->is($asked)) {
+        if ($owner === null || (array) ProofOwner::of($owner) !== (array) $asked) {
             return null;
         }
 

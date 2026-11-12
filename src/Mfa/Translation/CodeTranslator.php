@@ -27,6 +27,7 @@ use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * Translates a delivered factor's code challenges between MFA and
@@ -134,20 +135,18 @@ final readonly class CodeTranslator
     }
 
     /**
-     * MFA's proof binding for the factor code binding, owned by the identity:
-     * its reference, the application, the session's key as MFA names the
-     * sign-in, and the purpose. A session key that is neither a non-empty
-     * string nor an integer names no sign-in MFA could refer back to.
+     * MFA's proof binding for the factor code binding.
      *
      * @param  \Illuminate\Contracts\Auth\Authenticatable  $identity
      * @param  \SineMacula\Laravel\Authentication\Codes\FactorCodeBinding  $binding
      * @return \SineMacula\Laravel\Mfa\Proofs\ProofBinding
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     public function toMfa(Authenticatable $identity, FactorCodeBinding $binding): MfaBinding
     {
-        $owner       = IdentityReference::of($identity);
+        $owner       = ProofOwner::of($identity);
         $application = $binding->binding->application;
         $session     = $binding->binding->sessionId;
 

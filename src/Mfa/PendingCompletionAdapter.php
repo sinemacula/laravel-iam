@@ -11,7 +11,6 @@ use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
@@ -21,6 +20,7 @@ use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
@@ -166,21 +166,18 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
     }
 
     /**
-     * Whether the proof is bound to the pending session's identity, application
-     * and sign-in, for a purpose a pending session can take: a sign-in, or the
-     * enrolment of the additional factor that confirms a bootstrap enrolment
-     * (MFA makes no other proof for an enrolment).
+     * Whether the proof is bound to the pending session for a purpose it takes.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @return bool
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private static function isForThePendingSession(PendingContext $pending, Proof $proof): bool
     {
         $binding = $proof->binding;
-        $owner   = IdentityReference::of($pending->identity);
+        $owner   = ProofOwner::of($pending->identity);
 
         return in_array($binding->purpose, [Purpose::SIGN_IN, Purpose::ENROLLMENT], true)
             && $owner->owns($binding)

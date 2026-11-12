@@ -10,7 +10,6 @@ use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
@@ -20,6 +19,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * MFA's proof store over `laravel-authentication`'s session proofs, where a
@@ -242,12 +242,13 @@ final readonly class ProofStoreAdapter implements ProofStore
      * @return \SineMacula\Laravel\Authentication\Contracts\Session
      *
      * @throws \SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function signInOf(MultiFactorAuthenticatable $identity, ProofBinding $binding): Session
     {
         try {
 
-            if (!IdentityReference::of($identity)->owns($binding)) {
+            if (!ProofOwner::of($identity)->owns($binding)) {
                 throw new ProofRefusedException('The proof is bound to another identity, so it cannot be recorded.');
             }
 

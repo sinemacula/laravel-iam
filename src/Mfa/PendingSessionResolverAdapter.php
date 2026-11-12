@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\Sessions\PendingSession;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ChangeTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
@@ -22,6 +21,7 @@ use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PendingSessionResolver;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
@@ -186,30 +186,30 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     }
 
     /**
-     * Whether the pending session read again is the one the context names: the
-     * same key, held by the same identity.
+     * Whether the pending session read again is the one the context names.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\PendingSession  $now
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @return bool
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private static function isTheSession(PendingSession $now, PendingContext $pending): bool
     {
         return SignIn::reference($now->session, $pending->application) === $pending->sessionId
-            && IdentityReference::of($now->identity)->is(IdentityReference::of($pending->identity));
+            && (array) ProofOwner::of($now->identity)                  === (array) ProofOwner::of($pending->identity);
     }
 
     /**
-     * MFA's pending context for `laravel-authentication`'s pending session,
-     * keeping the credential that names it.
+     * MFA's pending context for the pending session, keeping its credential.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\PendingSession  $pending
      * @param  string  $credential
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function context(PendingSession $pending, #[\SensitiveParameter] string $credential): PendingContext
     {
@@ -220,7 +220,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
         }
 
         $application = $pending->guard;
-        $signIn      = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($pending->session, $application), VerificationGeneration::current($identity));
+        $signIn      = new SignIn(ProofOwner::of($identity), $application, SignIn::reference($pending->session, $application), VerificationGeneration::current($identity));
 
         $trust   = ProviderTrust::accepted($pending->session->getTenantId());
         $further = [];

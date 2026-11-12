@@ -9,13 +9,13 @@ use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
 use SineMacula\Laravel\Authentication\Freshness\Operations;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\Reauthenticator;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 
@@ -88,8 +88,7 @@ final readonly class ReauthenticatorAdapter implements Reauthenticator
     ) {}
 
     /**
-     * The identity's newest reauthentication with its first factor on the
-     * application, or `null` when there is none.
+     * The identity's newest reauthentication on the application, if any.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -112,7 +111,7 @@ final readonly class ReauthenticatorAdapter implements Reauthenticator
             return null;
         }
 
-        $signIn = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
+        $signIn = new SignIn(ProofOwner::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
 
         return $this->proofs->toMfa($proof, $signIn, ProviderTrust::accepted($session->getTenantId()));
     }

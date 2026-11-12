@@ -17,7 +17,6 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -28,6 +27,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 
 /**
@@ -124,8 +124,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
     }
 
     /**
-     * Keep the sign-in's own first factor, or record the further proof at its
-     * own time: completing the pending sign-in, or stepping the active one up.
+     * Keep the first factor, or record the further proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
@@ -136,13 +135,14 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     #[\Override]
     public function record(MultiFactorAuthenticatable $identity, Proof $proof): void
     {
         $binding    = $proof->binding;
-        $credential = IdentityReference::of($identity)->owns($binding) ? ($this->waiting[$binding->sessionId] ?? null) : null;
+        $credential = ProofOwner::of($identity)->owns($binding) ? ($this->waiting[$binding->sessionId] ?? null) : null;
 
         if ($proof->kind === ProofKind::FIRST_FACTOR) {
             $credential === null ? $this->store->record($identity, $proof) : self::assertItsOwnFirstFactor($proof);
@@ -281,10 +281,11 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function assertOnTheCurrentSignIn(MultiFactorAuthenticatable $identity, ProofBinding $binding): void
     {
-        if (!IdentityReference::of($identity)->owns($binding) || $this->store->currentSession($identity, $binding->application) !== $binding->sessionId) {
+        if (!ProofOwner::of($identity)->owns($binding) || $this->store->currentSession($identity, $binding->application) !== $binding->sessionId) {
             throw new ProofRefusedException(self::UNBOUND);
         }
     }

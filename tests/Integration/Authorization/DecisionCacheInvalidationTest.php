@@ -19,11 +19,11 @@ use SineMacula\Laravel\Authorization\Models\Policy;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Concerns\MigratesAuthorization;
@@ -266,7 +266,7 @@ final class DecisionCacheInvalidationTest extends TestCase
         return Factor::query()->create([
             ...AuthenticatorApp::FACTOR,
             'authenticatable_type' => $member->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($member)->key,
+            'authenticatable_id'   => ProofOwner::of($member)->key,
             'status'               => 'confirmed',
             'confirmed_at'         => CarbonImmutable::now(),
             'application'          => self::GUARD,

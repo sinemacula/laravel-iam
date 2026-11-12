@@ -20,9 +20,9 @@ use SineMacula\Laravel\Authentication\SessionRecords\SessionKeyShape;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * Resolves the sign-in MFA names to `laravel-authentication`'s session: the
@@ -194,14 +194,14 @@ final readonly class CurrentSession
     }
 
     /**
-     * The guard's current session, whichever sign-in it is, when it is the
-     * identity's, or `null` when the guard holds none of the identity's.
+     * The guard's current session, when it is the identity's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
      * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     public function held(MultiFactorAuthenticatable $identity, string $application): ?Session
     {
@@ -209,7 +209,7 @@ final readonly class CurrentSession
         $session = $guard->session();
         $owner   = $guard->identity();
 
-        return $owner !== null && IdentityReference::of($owner)->is(IdentityReference::of($identity)) ? $session : null;
+        return $owner !== null && (array) ProofOwner::of($owner) === (array) ProofOwner::of($identity) ? $session : null;
     }
 
     /**

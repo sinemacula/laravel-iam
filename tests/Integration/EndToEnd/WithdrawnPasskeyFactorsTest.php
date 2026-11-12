@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Contracts\PasskeyFactorGate;
 use SineMacula\Laravel\Authentication\Models\Passkey;
 use SineMacula\Laravel\Iam\Mfa\PasskeyFactorGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
@@ -227,7 +226,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
         self::assertNull($registration->factor, 'With no binding, the passkey is not associated.');
         self::assertNotNull($registration->passkey);
 
-        $owner  = IdentityReference::of($person);
+        $owner  = ProofOwner::of($person);
         $factor = Factor::query()->create([
             'type'                 => PasskeySeams::TYPE,
             'credential_reference' => self::CREDENTIAL,
@@ -243,7 +242,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
 
         self::assertInstanceOf(PasskeyAssociations::class, $associations);
 
-        $associations->associate(new ProofOwner($owner->type, $owner->key), $factor->id, self::CREDENTIAL);
+        $associations->associate($owner, $factor->id, self::CREDENTIAL);
 
         return [$factor, $registration->passkey->id];
     }
@@ -274,7 +273,7 @@ final class WithdrawnPasskeyFactorsTest extends TestCase
         $kept = Factor::query()->create([
             ...AuthenticatorApp::FACTOR,
             'authenticatable_type' => $person->getMorphClass(),
-            'authenticatable_id'   => IdentityReference::of($person)->key,
+            'authenticatable_id'   => ProofOwner::of($person)->key,
             'label'                => 'Phone',
             'status'               => FactorStatus::CONFIRMED->value,
             'application'          => self::GUARD,

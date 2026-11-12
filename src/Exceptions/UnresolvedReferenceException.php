@@ -93,19 +93,14 @@ final class UnresolvedReferenceException extends \RuntimeException
 
     /**
      * Build an exception for an identity that does not implement
-     * `laravel-authentication`'s `Identity` contract, so it is not one
-     * `laravel-authentication` signs in, or whose key is neither a non-empty
-     * string nor an integer, so nothing it proved can be found.
+     * `laravel-authentication`'s `Identity` contract.
      *
      * @param  string  $type
      * @return self
      */
     public static function forIdentity(string $type): self
     {
-        $message = 'The identity of type [%s] cannot be resolved: it must implement laravel-authentication\'s Identity contract,'
-            . ' and its key must be a non-empty string or an integer.';
-
-        return new self(sprintf($message, $type), ReferenceKind::IDENTITY);
+        return new self(sprintf('The identity of type [%s] cannot be resolved: it must implement laravel-authentication\'s Identity contract.', $type), ReferenceKind::IDENTITY);
     }
 
     /**
