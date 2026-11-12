@@ -55,8 +55,8 @@ The current note set is:
   in the members the adapters work around.
 
 - `provisioning-and-tenancy.md`: the application's provisioner and the one listener of SSO's unlinked result that
-  provisions a new identity, its membership and its link in one transaction attempted once, reading committed rows on
-  PostgreSQL, in a fixed order after SSO's scope widening, with an identity that is not new refused and every write
+  provisions a new identity, its membership and its link in one transaction retried whole on a deadlock, in a fixed
+  order after SSO's scope widening, with an identity that is not new refused and every write
   rolled back on a refusal or a failure; how a change that gives a person a principal reports it to SSO first, inside
   its own transaction; the application's memberships, guarded as they answer against a revocation racing a redemption,
   and `laravel-authorization`'s tenant tree behind SSO's tenant membership, link eligibility, principal scope (whose

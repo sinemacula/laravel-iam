@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Iam\Provisioning\CommittedReads;
 use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
@@ -28,23 +27,12 @@ use Tests\TestCase;
  * at the same moment (IAM-7.1, IAM-11.2), on MySQL and PostgreSQL at READ
  * COMMITTED and REPEATABLE READ.
  *
- * The first sign-in's listener holds its transaction open once SSO's scope
- * widening has read the new person's links under a lock, and before SSO's
- * provisioning helper takes the connection, while a forked worker provisions
- * the second sign-in's person on a second connection to the same database, from
- * its start to its commit. At InnoDB's REPEATABLE READ that locking read, which
- * finds no link, would gap-lock the links' identity index: the worker's link
- * insert would wait on it while holding the connection the first listener then
- * locks, and one of the two would end as a deadlock, which the listener cannot
- * retry, since its grant allows one use. The listener's attempt reads committed
- * rows instead, which takes no gap lock, so the worker never waits on the first
- * listener, and both people are provisioned, each with a membership and a link
- * of `provisioning` origin.
- *
- * Each side stops at nothing but the other: the first listener goes on once the
- * worker has ended or waits on a lock, so a regression ends as the deadlock it
- * would be, rather than hanging. SQLite's single writer cannot hold two
- * transactions open, so it is not run there.
+ * The first sign-in's listener holds its transaction open past SSO's scope
+ * widening while a forked worker provisions the second sign-in on another
+ * connection. At REPEATABLE READ one side can deadlock or fail to serialise,
+ * and its listener retries the whole transaction; either way both people end
+ * provisioned. Each side waits only briefly on a lock, so a regression fails
+ * rather than hangs. It is skipped on SQLite, which has a single writer.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,7 +40,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ProvisionOnUnlinkedResult::class)]
-#[CoversClass(CommittedReads::class)]
 final class ConcurrentProvisioningTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -122,9 +109,8 @@ final class ConcurrentProvisioningTest extends TestCase
 
     /**
      * Two people signing in through the connection for the first time at once
-     * are both provisioned: the second, provisioned and committed while the
-     * first's listener holds its transaction open past the widening, never
-     * waits on the first, and the first then links its own person.
+     * are both provisioned, whichever side a deadlock or serialisation failure
+     * rolls back and retries.
      *
      * @param  string  $level
      * @return void
