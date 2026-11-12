@@ -12,7 +12,6 @@ use SineMacula\Laravel\Authentication\Events\Enums\FailureReason;
 use SineMacula\Laravel\Authentication\Events\EventContext as AuthenticationContext;
 use SineMacula\Laravel\Authentication\Events\SignedIn;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\SsoEventMapper;
@@ -109,7 +108,7 @@ final readonly class EventMappingBenchHarness
      */
     public function mapsASignIn(): void
     {
-        (new AuthenticationEventMapper(new DeferredRefusals))->map($this->signedIn, new PendingRecord);
+        (new AuthenticationEventMapper)->map($this->signedIn, new PendingRecord);
     }
 
     /**
@@ -122,7 +121,7 @@ final readonly class EventMappingBenchHarness
      */
     public function mapsARefusal(): void
     {
-        (new AuthenticationEventMapper(new DeferredRefusals))->map($this->refused, new PendingRecord);
+        (new AuthenticationEventMapper)->map($this->refused, new PendingRecord);
     }
 
     /**

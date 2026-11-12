@@ -16,7 +16,6 @@ use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
 use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Support\Reference;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter;
 use SineMacula\Laravel\Iam\Authorization\PermissionCatalogue;
@@ -52,7 +51,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(AuditAccessPolicyAdapter::class)]
-#[CoversClass(DeferredRefusals::class)]
 final class AuthorizationTrailTest extends TestCase
 {
     use MigratesAuditLog, RunsAtIsolationLevels;

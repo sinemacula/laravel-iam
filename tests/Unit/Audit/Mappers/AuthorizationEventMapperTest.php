@@ -16,6 +16,7 @@ use SineMacula\Laravel\AuditLog\Capture\CaptureSettings;
 use SineMacula\Laravel\AuditLog\Contracts\AuditStore;
 use SineMacula\Laravel\AuditLog\Delivery\StoreCapabilities;
 use SineMacula\Laravel\AuditLog\Records\Enums\Outcome;
+use SineMacula\Laravel\AuditLog\Records\Enums\Timing;
 use SineMacula\Laravel\AuditLog\Records\PendingRecord;
 use SineMacula\Laravel\AuditLog\Records\PendingSnapshot;
 use SineMacula\Laravel\AuditLog\Stores\NullAuditStore;
@@ -63,7 +64,6 @@ use SineMacula\Laravel\Authorization\Support\DocumentDigest;
 use SineMacula\Laravel\Authorization\Support\GrantScope;
 use SineMacula\Laravel\Authorization\Support\Operation;
 use SineMacula\Laravel\Authorization\Support\Reference;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
 use SineMacula\Laravel\Iam\Audit\References;
@@ -547,6 +547,20 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
+     * A decision is written once its transaction ends, so a rollback keeps it;
+     * a change takes audit-log's default.
+     *
+     * @return void
+     */
+    public function testOnlyADecisionWaitsForItsTransactionToEnd(): void
+    {
+        $change = new RoleAssigned(self::operation(), self::person('9'), new Reference('role', '3'), 'Billing', new GrantScope(new Reference('organisation', self::TENANT)), null);
+
+        self::assertSame(Timing::AFTER_TRANSACTION, self::snapshotOf(self::decision(DecisionEffect::DENY, null))->timing);
+        self::assertNull(self::snapshotOf($change)->timing);
+    }
+
+    /**
      * A delegated change is by the identity behind the acting principal, as
      * that principal, about what changed, in the tenant it holds in, and
      * correlated with the rest of its call.
@@ -822,7 +836,7 @@ final class AuthorizationEventMapperTest extends TestCase
 
         $container->instance(TenantResolver::class, $tenancy ?? new OrganisationTenancy);
 
-        return new AuthorizationEventMapper(new DeferredRefusals, new TenantTranslator(new TenantReferences($container)));
+        return new AuthorizationEventMapper(new TenantTranslator(new TenantReferences($container)));
     }
 
     /**

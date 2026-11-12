@@ -46,6 +46,8 @@ use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PasskeySeams;
+use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
+use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
@@ -162,6 +164,30 @@ final class IamServiceProviderTest extends TestCase
         $app->forgetScopedInstances();
 
         self::assertNotSame($callers, $app->make(FactorCodeCallers::class));
+    }
+
+    /**
+     * The redemption records are one instance for each request or job, held
+     * under this package's scoped key.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testTheRedemptionRecordsAreScoped(): void
+    {
+        $app = $this->application();
+
+        foreach ([AdmittedRedemptions::class, RenewalRecorder::class] as $class) {
+
+            $record = $app->make($class);
+
+            self::assertSame($record, $app->make(BindingRule::SCOPED_PREFIX . $class));
+
+            $app->forgetScopedInstances();
+
+            self::assertNotSame($record, $app->make($class));
+        }
     }
 
     /**

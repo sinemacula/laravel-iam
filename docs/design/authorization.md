@@ -395,7 +395,7 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   connection roll back, since a check made between the change and the rollback read proofs that were never committed.
   `forgetDecisionsFor()` knows nothing of the transaction, so the second pass is this package's: a rollback callback of
   every transaction open there that callbacks apply to (`Transactions\ConnectionTransactions::open()`), not only the
-  innermost, as `Audit\DeferredRefusals` waits: Laravel 12 does not tell a savepoint that has committed of its enclosing
+  innermost: Laravel 12 does not tell a savepoint that has committed of its enclosing
   transaction's rollback, so MFA's transaction, a savepoint of the caller's, would otherwise leave the decisions
   standing once the caller's rolls back. A commit needs no second pass: what was checked after the change read what
   committed. The manager, the connection and the transactions open are resolved on every call, so the request's or the
@@ -641,7 +641,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   plan nor FEATURES): a record's tenant is the application's to say, and a configured class cannot be told from the
   default by its binding. `CrossMemberConfigurationCheck` notes the default instead, while people act in tenants.
 - `Transactions\ConnectionTransactions`, which the manifest does not list, holds the transactions a rollback
-  callback must wait on, shared by `Audit\DeferredRefusals` and `DecisionCacheInvalidation`.
+  callback must wait on, for `DecisionCacheInvalidation`.
 - IAM-13.7 (decision Q15) is stale on every count at the commit this package requires: the resolvers are bound with
   `bindIf()` over scoped keys rather than a plain `singleton()`, so they give way to anything bound before or after,
   change events fire after commit, the connection setting exists, the authentication context is a contract, and the
