@@ -746,6 +746,36 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
+     * A change about nothing covers every grantee it altered.
+     *
+     * @return void
+     */
+    public function testAChangeAboutNothingCoversEveryGrantee(): void
+    {
+        $container = new Container;
+
+        $container->instance(AuditStore::class, new NullAuditStore);
+
+        $event = \Mockery::mock(AuthorizationMutation::class, [
+            'operation'       => 'role.deleted',
+            'operationId'     => self::OPERATION,
+            'isTrusted'       => true,
+            'actor'           => null,
+            'actorIdentity'   => null,
+            'subject'         => null,
+            'tenant'          => null,
+            'application'     => null,
+            'grantees'        => [self::person('8')],
+            'auditProperties' => [],
+        ]);
+
+        $snapshot = self::mapper($container)->map($event, self::captured($container))?->snapshot();
+
+        self::assertNull($snapshot?->subject);
+        self::assertSame(json_encode([[Person::class, '8']]), $snapshot?->manifest?->canonical);
+    }
+
+    /**
      * A deletion is refused, not recorded without its manifest, where the store
      * keeps no attachment.
      *

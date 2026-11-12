@@ -646,6 +646,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testTrustedAndSystemChangesNameOnlyWhatTheCallNamed`, `testADeletionCarriesItsGranteesAsItsManifest`,
   `testADeletionIsRefusedWhereTheStoreKeepsNoAttachment`, `testAPermissionDeletionCoversItsRoles`,
   `testAGuardrailIsAboutItsTenant`, `testASystemOverrideIsTheCallersAboutTheRecord`,
+  `testAChangeAboutNothingCoversEveryGrantee`,
   `testATenantNotKeyedByItsIdentifierIsRecordedWithNoTenant`, `testATenantOfAnotherTypeIsRecordedWithNoTenant`
 - `tests/Integration/Audit/AuthorizationRecordsTest.php` `testARolesLifeIsRecordedCallByCall`,
   `testAPermissionGrantedAndRevokedIsTwoRecords`, `testEachDenialIsRecordedOnceAndNoAllow`
