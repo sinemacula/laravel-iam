@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Testing;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
@@ -55,7 +56,7 @@ final readonly class VerifiedSession
         /** The real factor the further proof names. */
         private FixtureFactors $factors,
 
-        /** Resolves the default guard, its identity and its current session. */
+        /** Resolves the guard's identity and its current session. */
         private CurrentSession $current,
 
         /** Steps the session up through `laravel-authentication`. */
@@ -85,7 +86,7 @@ final readonly class VerifiedSession
     {
         self::assertClassified($level);
 
-        $application = $this->current->defaultGuard();
+        $application = Auth::getDefaultDriver();
         $identity    = $this->current->caller($application);
         $signIn      = SignIn::reference($this->current->current($identity, $application), $application);
         $owner       = ProofOwner::of($identity);

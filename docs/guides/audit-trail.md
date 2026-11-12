@@ -117,7 +117,7 @@ Each record carries one correlation id, the first of these that applies:
 | `session:{session_id}`                    | everything else about a session                                                     |
 | `authorization:{operation_id}`            | every change of one `laravel-authorization` management call                         |
 
-A missing part means no id, and an id longer than 191 bytes is none, so correlation never loses a record. So an SSO
+A missing part means no id, and an id longer than 191 characters is none, so correlation never loses a record. So an SSO
 sign-in reads as `sso.authorization_request_started`, `sso.result_verified`, `sso.handoff_issued` and
 `sso.handoff_redeemed`, correlated as the SSO sign-in, then `session.created` and `authentication.signed_in`,
 correlated by the new session, and `authentication.external_result_redeemed`, correlated with SSO's halves and naming

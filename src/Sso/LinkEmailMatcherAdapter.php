@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Database\WriteConnection;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Identifiers\IdentifierNormalizers;
-use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Linking\LinkEmailMatch;
 use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
@@ -66,7 +66,6 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Authentication\Identifiers\IdentifierNormalizers  $normalizers
-     * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      */
@@ -74,9 +73,6 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
 
         /** `laravel-authentication`'s identifier normalisers. */
         private IdentifierNormalizers $normalizers,
-
-        /** Names the session guards. */
-        private CurrentSession $sessions,
 
         /** The configuration the guards' providers are declared in. */
         private Repository $config,
@@ -183,7 +179,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     {
         $models = [];
 
-        foreach ($this->sessions->sessionGuards() as $guard) {
+        foreach (Auth::sessionGuards() as $guard) {
 
             $provider = $this->config->get('auth.guards.' . $guard . '.provider');
             $class    = is_string($provider) ? $this->config->get('auth.providers.' . $provider . '.model') : null;

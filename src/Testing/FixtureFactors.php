@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Testing;
 
-use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
@@ -42,11 +42,11 @@ final readonly class FixtureFactors
 
         foreach ($identity->authFactors()->useWritePdo()->get()->all() as $factor) {
             if ($factor->isConfirmed() && $factor->getType() === $type) {
-                return ProofStoreAdapter::factorReference($factor);
+                return CodeTranslator::reference($factor);
             }
         }
 
-        return ProofStoreAdapter::factorReference(self::enrol($identity, $application, $type));
+        return CodeTranslator::reference(self::enrol($identity, $application, $type));
     }
 
     /**

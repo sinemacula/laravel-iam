@@ -173,8 +173,8 @@ final readonly class CodeTranslator
     }
 
     /**
-     * The factor's id, as a factor code binding names it: `''`, which the
-     * binding refuses, when it is neither a string nor an integer.
+     * The factor's id as a proof or a factor code binding names it, or `''`
+     * when it is neither a string nor an integer.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @return string

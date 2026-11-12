@@ -10,8 +10,8 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\MachineIdentity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Testing\Concerns\InteractsWithAuthenticationContext;
-use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
 use SineMacula\Laravel\Iam\Testing\CallerSession;
 use SineMacula\Laravel\Iam\Testing\CallerSignIn;
@@ -132,7 +132,7 @@ trait InteractsWithIam
             $this->actingAsIdentity($identity, $principal, null, $scopes, $guard);
         } else {
             $session ??= CallerSession::started();
-            $guard   ??= $container->make(CurrentSession::class)->defaultGuard();
+            $guard   ??= Auth::getDefaultDriver();
 
             CallerSignIn::assertActable($session, $verified, $scopes);
 
