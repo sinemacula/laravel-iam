@@ -28,18 +28,8 @@ use Tests\Fixtures\Sso\ReplicatedMember;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's link email contract over the identities' verified
- * email addresses: the email SSO asserts is put in its normal form by
- * `laravel-authentication`'s email normaliser, and nothing more, and matches
- * only an identity that reports that very address verified; one such identity
- * is `exactly one`, none is `none`, and two (of any kinds of identity a session
- * guard signs in) are `ambiguous`; an email the normaliser refuses names nobody
- * without a query; an address the database's collation merely counts as equal
- * is not a match; and the identities are read on the write connection, so a
- * lagging replica never hides a match.
- *
- * The matching scenarios run at the connection's own level on every engine,
- * then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for matching SSO's asserted email against verified identity
+ * emails.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -117,9 +107,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * The one identity whose verified email address is the asserted email's
-     * normal form is exactly one match, however the provider cased or padded
-     * it.
+     * The one identity holding the normal form verified is exactly one match.
      *
      * @param  string  $asserted
      * @return void
@@ -140,8 +128,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * At every isolation level, the verified identity is matched, and an
-     * identity merely holding the address unverified never is.
+     * Only a verified address matches, at every isolation level.
      *
      * @param  ?string  $level
      * @return void
@@ -163,8 +150,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Nothing is folded beyond the normaliser's own form: a subaddress, a dot
-     * in the local part or a Unicode look-alike is another address.
+     * No address is folded beyond the normaliser's form.
      *
      * @return void
      *
@@ -202,9 +188,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Two identities, of any kinds a session guard signs in, holding the same
-     * verified address are ambiguous, never a guess between them; one of them
-     * unverified leaves the other exactly one.
+     * Two verified holders of the address are ambiguous.
      *
      * @param  ?string  $level
      * @return void
@@ -229,11 +213,8 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Each kind of identity is searched once, however many guards sign it in,
-     * and a guard whose provider names no model, or a class that is no Eloquent
-     * identity able to report its identifiers' verification, is passed over,
-     * wherever it is declared among the guards: an identity of a kind declared
-     * after them is still searched.
+     * Each kind of identity is searched once, and guards naming no verifiable
+     * identity are skipped.
      *
      * @return void
      *
@@ -264,9 +245,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Within one kind of identity, an unverified holder of the address is
-     * passed over and a verified one after it still matches; two verified
-     * holders are ambiguous.
+     * Every holder within one kind of identity is judged.
      *
      * @return void
      *
@@ -288,11 +267,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * An address the database's collation counts as equal to the normal form
-     * but that is not it byte for byte is not a match: with a normaliser that
-     * keeps case, a stored `Ada@` is not the asserted `ada@`, on a column that
-     * compares without regard to case (as SQLite's `NOCASE` and MySQL's default
-     * `_ci` collations do).
+     * An address a case-insensitive collation merely matches is no match.
      *
      * @return void
      *
@@ -313,8 +288,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * The identities are read on the write connection: an identity the primary
-     * holds verified and its replica has not yet seen is matched, not missed.
+     * The identities are read on the write connection.
      *
      * @return void
      *
@@ -345,8 +319,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Ask the adapter for the asserted email in the tenant's connection's
-     * domain.
+     * Ask the adapter for the asserted email.
      *
      * @param  string  $email
      * @return \SineMacula\Laravel\Sso\Linking\LinkEmailMatch
@@ -374,8 +347,7 @@ final class LinkEmailMatcherAdapterTest extends TestCase
     }
 
     /**
-     * Declare a session guard signing in the model through the provider, or a
-     * provider that names no model.
+     * Declare a session guard over the model, or a provider naming no model.
      *
      * @param  string  $guard
      * @param  string  $provider

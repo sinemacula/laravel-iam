@@ -27,11 +27,8 @@ use Tests\Fixtures\Sso\UuidIdentity;
 use Tests\TestCase;
 
 /**
- * Integration tests for translating the identities SSO names by reference to
- * `laravel-authentication`'s identities and back: through the application's
- * morph map, or by class name without it, read by key on the write connection,
- * and only when the identity found is named by exactly that reference; anything
- * else throws (IAM-8.2).
+ * Integration tests for translating SSO's identity references to identities and
+ * back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -50,9 +47,7 @@ final class IdentityReferencesTest extends TestCase
     private const string HANDLE = 'alice';
 
     /**
-     * Create the tables of the identities keyed by a string and by a UUID, each
-     * key compared as the engine's collation or type compares it, and on SQLite
-     * case-insensitively.
+     * Create the string- and UUID-keyed identity tables.
      *
      * @return void
      */
@@ -85,8 +80,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Drop the keyed identities' tables, and forget any morph map a test set,
-     * so the next test starts without one.
+     * Drop the keyed identity tables and forget any morph map.
      *
      * @return void
      */
@@ -102,8 +96,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Without a morph map, a person is named by its class and its key, and the
-     * reference resolves back to that very person, read once.
+     * Without a morph map, a person is named by its class and resolves back.
      *
      * @return void
      *
@@ -127,8 +120,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * With a morph map, a person is named by its alias, and the alias resolves
-     * back to that very person.
+     * With a morph map, a person is named by its alias and resolves back.
      *
      * @return void
      *
@@ -146,9 +138,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * With a morph map naming people by an alias, a reference naming a person
-     * by its class is another reference, and resolves to nobody: it never
-     * stands in for the alias `laravel-authentication` records sessions by.
+     * With a morph map, a reference by class name resolves to nobody.
      *
      * @return void
      *
@@ -164,9 +154,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Rows of `[type]`: a type naming no class, one naming a class that is no
-     * Eloquent model though it is an identity, and one naming an Eloquent model
-     * that is no identity.
+     * Rows of `[type]` naming no Eloquent identity.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -180,8 +168,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * A type naming no Eloquent identity resolves to nobody, and nothing is
-     * queried.
+     * A type naming no Eloquent identity resolves to nobody without a query.
      *
      * @param  string  $type
      * @return void
@@ -197,10 +184,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * A type names an identity only when it names, through the morph map or as
-     * a class name, an Eloquent model that is an identity: a type naming no
-     * class, a class that is no Eloquent model, and a model that is no identity
-     * name none.
+     * A type names an identity only through an Eloquent identity model.
      *
      * @param  string  $type
      * @return void
@@ -212,8 +196,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * A person's class names an identity, and so does its alias through the
-     * morph map.
+     * A person's class and its morph alias both name an identity.
      *
      * @return void
      */
@@ -240,8 +223,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * An id that cannot be a person's key resolves to nobody without a query,
-     * so no database error stands in for an unknown identity.
+     * An id that cannot be a person's key resolves to nobody without a query.
      *
      * @return void
      */
@@ -255,8 +237,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * An identity keyed by a string or by a UUID resolves from the reference it
-     * is named by, its key byte for byte.
+     * A string- or UUID-keyed identity resolves from its own reference.
      *
      * @return void
      *
@@ -274,9 +255,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Rows of `[id]` naming the stored handle `alice` not byte for byte: in
-     * another case, which a case-insensitive collation matches, and with a
-     * trailing space, which a pad-space collation matches.
+     * Rows of `[id]` a collation matches to `alice` though not byte for byte.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -288,10 +267,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * A reference whose id the database matches to a stored string key that is
-     * not its own byte for byte resolves to nobody: SSO keys its records by
-     * those bytes, so it names another identity, and is never resolved to this
-     * one.
+     * A string key matched only by collation resolves to nobody.
      *
      * @param  string  $id
      * @return void
@@ -305,8 +281,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * A reference naming a stored UUID key in upper case, which a `uuid` type
-     * or a case-insensitive collation matches, resolves to nobody.
+     * An upper-case UUID resolves to nobody.
      *
      * @return void
      */
@@ -334,8 +309,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Rows of `[identity]`: an identity that is no Eloquent model, one with no
-     * key yet, and one whose key is empty.
+     * Rows of `[identity]` that cannot be named.
      *
      * @return iterable<string, array{0: \Closure(): \SineMacula\Laravel\Authentication\Contracts\Identity}>
      */
@@ -404,8 +378,7 @@ final class IdentityReferencesTest extends TestCase
     }
 
     /**
-     * Assert the reference resolves to nobody: it throws an unresolved
-     * identity, naming its type.
+     * Assert the reference throws as an unresolved identity of its type.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $reference
      * @return void

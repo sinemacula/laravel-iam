@@ -16,10 +16,7 @@ use SineMacula\Laravel\Sso\Applications\Enums\ExternalSignIn;
 
 /**
  * Unit tests for SSO's application policy over `laravel-authentication`'s
- * sign-in methods: an application allows sign-in through an external provider
- * exactly when its guard's methods allow `external_provider`, whatever SSO's
- * own setting for it says, and a guard `laravel-authentication` does not know
- * is its error, never an answer.
+ * sign-in methods.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -32,9 +29,8 @@ final class ApplicationPolicyAdapterTest extends TestCase
     use MockeryPHPUnitIntegration;
 
     /**
-     * Rows of `[allowed, SSO's setting, answer]`: whether the guard's methods
-     * allow `external_provider`, what SSO's own `external_sign_in` says, and
-     * the answer.
+     * Rows of whether the guard allows `external_provider`, SSO's own setting,
+     * and the answer.
      *
      * @return iterable<string, array{0: bool, 1: bool, 2: \SineMacula\Laravel\Sso\Applications\Enums\ExternalSignIn}>
      */
@@ -50,8 +46,7 @@ final class ApplicationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The answer is the guard's method list's alone, asked for the guard of the
-     * application's name and the `external_provider` method.
+     * The guard's method list alone decides, whatever SSO's setting says.
      *
      * @param  bool  $allowed
      * @param  bool  $setting
@@ -69,8 +64,8 @@ final class ApplicationPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A guard `laravel-authentication` cannot judge is its
-     * `InvalidArgumentException`, which propagates rather than answer.
+     * A guard `laravel-authentication` does not know propagates its
+     * `InvalidArgumentException`.
      *
      * @return void
      */

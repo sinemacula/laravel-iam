@@ -17,9 +17,7 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 
 /**
- * Builds the redemptions SSO answers, with every value its own, for the unit
- * tests of what is built from one: an admitted `sign_in` with its captured
- * provenance, an admitted `reauthenticate` with none, and each part alone.
+ * Builds the redemptions SSO answers, for unit tests of what is built from one.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -82,8 +80,8 @@ final class Redemptions
     }
 
     /**
-     * The verified result of the purpose, through the connection, asserting the
-     * issuer and subject given.
+     * The verified result of the purpose, asserting the issuer and subject
+     * given.
      *
      * @param  \SineMacula\Laravel\Sso\Flows\Enums\Purpose  $purpose
      * @param  string  $issuer
@@ -149,8 +147,8 @@ final class Redemptions
     }
 
     /**
-     * An admitted `sign_in`, linked, with its evidence and provenance, or
-     * without either.
+     * An admitted, linked `sign_in`, with or without its evidence and
+     * provenance.
      *
      * @param  ?\SineMacula\Laravel\Sso\Results\VerifiedResult  $result
      * @param  bool  $evidence
@@ -173,8 +171,7 @@ final class Redemptions
     }
 
     /**
-     * An admitted `reauthenticate` of the session, which captures no
-     * provenance.
+     * An admitted `reauthenticate` of the session, with no provenance.
      *
      * @param  bool  $evidence
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult

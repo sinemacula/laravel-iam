@@ -9,13 +9,7 @@ use SineMacula\Laravel\Sso\Contracts\SingleUseStore;
 use SineMacula\Laravel\Sso\SingleUse\Enums\SingleUseOutcome;
 
 /**
- * SSO's single-use store, failing the first records it is asked to make with
- * the failure given, as the database would fail a redemption's transaction
- * there, then recording through the store it stands in for.
- *
- * SSO records a code there inside the redemption's transaction, after its locks
- * and before it consumes the code, so each failure rolls back the attempt it
- * met and leaves the code unspent.
+ * SSO's single-use store, failing its first records with the failure given.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +41,7 @@ final class FailingSingleUseStore implements SingleUseStore
     ) {}
 
     /**
-     * Fail the record while failures are left, and make it through the store
-     * otherwise.
+     * Fail the record while failures are left, and make it otherwise.
      *
      * @param  string  $namespace
      * @param  string  $key

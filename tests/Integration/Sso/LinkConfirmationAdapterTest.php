@@ -50,28 +50,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's link confirmation over `laravel-authentication`'s
- * public reader of a session's proofs (IAM-4.10, IAM-13.9), against SSO's
- * acceptance scenario: a person whose only session came through a verified
- * domain link is `independent_authentication_required` when confirming it, and
- * a password or passkey session confirms.
- *
- * A session is `independent` only when it signed in with a password, a passkey
- * or the application's own recovery (a `start()` from a first factor on the
- * `recovery` channel), was never renewed through a provider, is the one SSO's
- * caller names among its identity's own, and is judged inside a transaction,
- * where its row is locked and its proofs read current until the transaction
- * ends. Everything else is `dependent`: a session through the domain link, a
- * `start()` on the `unknown` channel, a session renewed through a provider,
- * revoked (here or on another connection after the transaction began), another
- * person's, one of a guard that holds no sessions, one that does not exist, a
- * caller with no session, and any judgement outside a transaction.
- *
- * Every redemption, and every judgement read inside a transaction, runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL; the lock and the revocation on another
- * connection run at those two levels alone, and the judgement outside a
- * transaction, which reads nothing, at the connection's own.
+ * Integration tests for SSO's link confirmation adapter.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -94,8 +73,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     private (EloquentSession&Model)|null $passwordSession = null;
 
     /**
-     * Arrange SSO, with the tenant's domain verified for its connection and a
-     * member of the tenant of that domain's verified email.
+     * Arrange SSO with a verified domain and a member holding its email.
      *
      * @return void
      */
@@ -117,8 +95,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * The adapter is the link confirmation SSO resolves, in place of SSO's
-     * refusing default.
+     * The adapter is the link confirmation SSO resolves.
      *
      * @return void
      */
@@ -128,9 +105,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A person whose session came through their verified domain link is refused
-     * as `independent_authentication_required` when confirming that link, which
-     * keeps its verified domain provenance.
+     * A session through the domain link cannot confirm that link.
      *
      * @param  ?string  $level
      * @return void
@@ -150,9 +125,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[isolation level, sign-in]`: each session the person holds apart
-     * from every provider, signed in by the test given, at each isolation
-     * level.
+     * Rows of `[isolation level, sign-in]`: each independent session.
      *
      * @return iterable<string, array{0: ?string, 1: \Closure(self): (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)}>
      */
@@ -169,10 +142,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Once the person holds a session signed in with a password or a passkey,
-     * or started for their recovery, the same link is confirmed through it at
-     * every isolation level, judged inside SSO's transaction in its judgement
-     * and its admission, and loses its verified domain provenance.
+     * A password, passkey or recovery session confirms the link.
      *
      * @param  ?string  $level
      * @param  \Closure(self): (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)  $signIn
@@ -194,9 +164,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A session the application started for its own recovery, from a first
-     * factor on the `recovery` channel, is `independent`; one started on the
-     * `unknown` channel, under the same method, is `dependent`.
+     * Only a session started on the `recovery` channel is independent.
      *
      * @param  ?string  $level
      * @return void
@@ -216,8 +184,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A password session whose freshness was renewed through a provider (a
-     * counting `external_reauthentication` proof) is `dependent`.
+     * A session renewed through a provider is `dependent`.
      *
      * @param  ?string  $level
      * @return void
@@ -234,8 +201,7 @@ final class LinkConfirmationAdapterTest extends TestCase
 
         self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($caller));
 
-        // laravel-authentication refuses such a renewal on a password session,
-        // so the proof is written as its own writer would write one
+        // laravel-authentication refuses this renewal on a password session
         ProofWriter::record($session, self::GUARD, new NewProof(
             ProofKind::EXTERNAL_REAUTHENTICATION,
             ProofPurpose::REAUTHENTICATE,
@@ -252,10 +218,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[isolation level, link provenance, verdict]`: a provenance
-     * naming a link of verified domain provenance makes a session `dependent`,
-     * and one naming a link the person made, or carrying no provider context
-     * (`null`), does not, at each isolation level.
+     * Rows of `[isolation level, link provenance, verdict]`.
      *
      * @return iterable<string, array{0: ?string, 1: ?\SineMacula\Laravel\Sso\Links\Enums\LinkOrigin, 2: \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict}>
      */
@@ -272,11 +235,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A password session whose recorded provenance names a link of verified
-     * domain provenance (SSO's `sso.link_provenance`), read through
-     * `laravel-authentication`'s public reader of a session's provenance, is
-     * `dependent`, whatever its first factor; one naming a link of any other
-     * provenance, or carrying no provider context, stays `independent`.
+     * A session recording a verified domain link is `dependent`.
      *
      * @param  ?string  $level
      * @param  ?\SineMacula\Laravel\Sso\Links\Enums\LinkOrigin  $origin
@@ -299,8 +258,7 @@ final class LinkConfirmationAdapterTest extends TestCase
         self::assertSame(LinkOrigin::VERIFIED_DOMAIN->value, $stored['link_provenance'] ?? null);
         self::assertSame(LinkConfirmationVerdict::INDEPENDENT, $this->judgeInTransaction($caller));
 
-        // laravel-authentication records a provenance only for a session a
-        // provider established, so it is written as its own writer would
+        // laravel-authentication records provenance only for provider sessions
         $context = $origin === null ? null : new ProviderContext([...$stored, 'link_provenance' => $origin->value]);
 
         ProofWriter::provenance($session, new Provenance($through->connectionId, $through->tenantId, linkId: $through->linkId, providerContext: $context));
@@ -309,8 +267,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[isolation level, caller]`: each caller of whom nothing the
-     * person holds apart is judged, at each isolation level.
+     * Rows of `[isolation level, caller]`: each caller judged dependent.
      *
      * @return iterable<string, array{0: ?string, 1: \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller}>
      */
@@ -324,8 +281,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Each caller of whom nothing the person holds apart is judged is
-     * `dependent`, however the person's own session signed in.
+     * A caller holding nothing of the person's own is `dependent`.
      *
      * @param  ?string  $level
      * @param  \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller  $caller
@@ -344,8 +300,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Outside a transaction no guard can hold the answer true until a redeemer
-     * commits, so a password session is `dependent` there, and nothing is read.
+     * Outside a transaction every session is `dependent` without a read.
      *
      * @return void
      *
@@ -366,9 +321,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction the session's row is locked until it ends, the guard
-     * every writer of the session takes, so the answer holds until the redeemer
-     * commits.
+     * The session's row is locked until the transaction ends.
      *
      * @param  string  $level
      * @return void
@@ -392,10 +345,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * A session revoked on another connection after the caller's transaction
-     * read is `dependent` inside it: the proofs are read current, never from
-     * the transaction's snapshot (and at PostgreSQL's REPEATABLE READ the lock
-     * fails to serialise instead, for the transaction to be retried).
+     * A session revoked since the transaction read is `dependent`.
      *
      * @param  string  $level
      * @return void
@@ -448,8 +398,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Sign the member in with the passkey registered for them now, and return
-     * the session.
+     * Sign the member in with a passkey, and return the session.
      *
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
      *
@@ -467,8 +416,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Start a session for the member as the application's own recovery does,
-     * from a first factor on the channel given.
+     * Start a session for the member from a first factor on the channel.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind  $channel
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
@@ -498,9 +446,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * The sign-in methods the guard allows: the password, a passkey, sign-in
-     * through an external provider, and the one the application's own recovery
-     * starts sessions under.
+     * The sign-in methods the guard allows.
      *
      * @return list<string>
      */
@@ -511,9 +457,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Each caller of whom nothing the person holds apart is judged, built by
-     * the test given once the person holds a password session
-     * (`passwordSession()`), keyed by what it is.
+     * Each dependent caller, keyed by what it is.
      *
      * @return iterable<string, array{0: \Closure(self): \SineMacula\Laravel\Sso\Identities\Caller}>
      */
@@ -543,9 +487,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Redeem a `link` of the member to the subject their domain link holds,
-     * through this package, as the member on the session, the caller of a
-     * request on the guard whose access credential holds it.
+     * Redeem a `link` for the member as the caller holding the session.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
@@ -571,8 +513,7 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
-     * Ask the adapter about the caller, inside a transaction on the storage
-     * connection.
+     * Ask the adapter about the caller inside a storage transaction.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict

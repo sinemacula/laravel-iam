@@ -25,14 +25,8 @@ use Tests\Concerns\SignsInThroughLinks;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's own changes ending `laravel-authentication`'s
- * sessions through this package's session revocation (IAM-4.4), inside the
- * transaction SSO makes each change in: disabling and deleting a connection end
- * the sessions established through it, unless `laravel-authentication`'s switch
- * for that is off, which leaves the change made; removing a link ends exactly
- * its sessions; and a revocation that throws, for an identity that no longer
- * resolves, rolls SSO's change back with it, on SQLite, and on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ * Integration tests for SSO's connection and link changes ending sessions
+ * through this package's session revocation.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,8 +43,8 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * Rows of `[operation, switch]`: each change to a connection that ends its
-     * sessions, with `laravel-authentication`'s switch for it.
+     * Rows of `[operation, switch]` for each connection change that ends its
+     * sessions.
      *
      * @return iterable<string, array{0: string, 1: string}>
      */
@@ -62,10 +56,8 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * Disabling or deleting a connection through SSO ends every session
-     * established through it, in the change's own transaction, while
-     * `laravel-authentication`'s switch for it is on, as it ships, and leaves
-     * the sessions of the tenant's other connection standing.
+     * Disabling or deleting a connection ends exactly its sessions in the
+     * change's transaction.
      *
      * @param  string  $operation
      * @param  string  $switch
@@ -92,8 +84,7 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * With `laravel-authentication`'s switch for the change off, the connection
-     * is still disabled or deleted, and its sessions stand.
+     * With the switch off, the connection still changes and its sessions stand.
      *
      * @param  string  $operation
      * @param  string  $switch
@@ -116,8 +107,7 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * Removing a link through SSO ends exactly the sessions established through
-     * it, in the removal's transaction, at either isolation level.
+     * Removing a link ends exactly its sessions in the removal's transaction.
      *
      * @param  string  $level
      * @return void
@@ -145,9 +135,8 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * A link whose identity no longer resolves cannot have its sessions
-     * revoked, so removing it throws, and SSO's removal rolls back: the link is
-     * kept rather than removed with sessions nobody judged (IAM-8.2).
+     * A link whose identity no longer resolves throws on removal, and SSO keeps
+     * the link.
      *
      * @return void
      *

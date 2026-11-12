@@ -11,11 +11,8 @@ use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An identity kept on a connection whose reads go to a replica of their own,
- * which sees nothing written to the primary, so a test can tell a read made on
- * the write connection from one a lagging replica serves.
- *
- * Its connection and table are declared by the test that needs it.
+ * An identity on a connection whose reads go to a replica that sees no primary
+ * writes.
  *
  * @property int $id
  * @property string $email
@@ -46,8 +43,7 @@ final class ReplicatedMember extends User implements HasVerifiableIdentifiers, I
     protected $fillable = ['email', 'email_verified_at'];
 
     /**
-     * The attributes cast on read and write: the email address, kept in its
-     * normal form, and when it was verified.
+     * The email address in its normal form, and when it was verified.
      *
      * @return array<string, string>
      */
