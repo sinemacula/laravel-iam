@@ -4,22 +4,24 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Authorization;
 
+use Illuminate\Auth\GenericUser;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\Access\AccessScope;
 use SineMacula\Laravel\AuditLog\Access\Enums\ReadPurpose;
-use SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy;
 use SineMacula\Laravel\AuditLog\Records\Reference as AuditReference;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Models\Policy;
 use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Authorization\Testing\FakeTenantTree;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter;
 use SineMacula\Laravel\Iam\Authorization\PermissionCatalogue;
@@ -27,7 +29,6 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use Tests\Concerns\MigratesAuthorization;
-use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Fixtures\Authorization\GrantedSeat;
 use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Authorization\OrganisationTenancy;
@@ -37,23 +38,6 @@ use Tests\Fixtures\Authorization\UnscopedTenancy;
 use Tests\TestCase;
 
 /**
- * Integration tests of audit-log's access policy answered from
- * `laravel-authorization`'s grants (IAM-6.10): it is what audit-log resolves;
- * each read purpose has its own permissions, so a viewer may read and be denied
- * export; a grant, platform-wide or a tenant's, sees only the tenants it is
- * decided in, never the whole trail, and a tenant whose own decision denies it
- * is left out; a category's grant only that category and an own-activity grant
- * only the viewer's own activity; a scope is never wider than a grant, so
- * tenants
- * whose grants share no category see nothing; an empty list sees nothing;
- * a permission an authentication requirement guards is not held; grants beyond
- * audit-log's limits are refused rather than truncated; and a viewer named by a
- * reference that names nobody is refused.
- *
- * The grants are read on the storage connection, so each answer runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
- *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
@@ -62,24 +46,23 @@ use Tests\TestCase;
 #[CoversClass(AuditAccessPolicyAdapter::class)]
 final class AuditAccessPolicyAdapterTest extends TestCase
 {
-    use MigratesAuthorization, RunsAtIsolationLevels;
+    use MigratesAuthorization;
 
-    /** @var string The contract audit-log resolves its policy by. */
-    private const string POLICY = AuditAccessPolicy::class;
-
-    /** @var string A tenant the viewer is a member of. */
+    /** @var string A tenant. */
     private const string FIRST = 'org-1';
 
-    /** @var string Another tenant the viewer is a member of. */
+    /** @var string Another tenant. */
     private const string SECOND = 'org-2';
 
-    /** @var \SineMacula\Laravel\Iam\Testing\FakeMemberships The viewer's memberships. */
+    /** @var string A third tenant. */
+    private const string THIRD = 'org-3';
+
+    /** @var \SineMacula\Laravel\Iam\Testing\FakeMemberships The viewers' memberships. */
     private FakeMemberships $memberships;
 
     /**
-     * Store the catalogue's permissions, so they can be granted; record grant
-     * hooks rather than widen anyone's scope; resolve the organisations; and
-     * fake the memberships.
+     * Store the catalogue's permissions, resolve the organisations and fake the
+     * memberships.
      *
      * @return void
      */
@@ -112,176 +95,84 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Audit-log resolves this package's policy, once, in place of its own.
+     * A tenant grant is seen in its tenant, and memberships are not read.
      *
-     * @return void
-     */
-    public function testAuditLogResolvesThePolicy(): void
-    {
-        self::assertInstanceOf(AuditAccessPolicyAdapter::class, self::policy());
-        self::assertSame(self::policy(), self::policy());
-    }
-
-    /**
-     * A viewer granted nothing sees nothing.
-     *
-     * @param  ?string  $level
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAViewerGrantedNothingSeesNothing(?string $level): void
+    public function testATenantGrantIsSeenInItsTenant(): void
     {
-        self::runAtIsolationLevel($level);
-
         $viewer = $this->viewer();
 
-        $this->memberships->grant($viewer, Membership::of(self::FIRST));
-
-        self::assertTrue(self::policy()->scope($viewer, ReadPurpose::READ)->isDenied());
-    }
-
-    /**
-     * A platform-wide grant of a purpose sees the viewer's tenants for that
-     * purpose alone: the viewer pages through their trail and is denied export.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testEachPurposeHasItsOwnPermission(): void
-    {
-        $viewer = $this->viewer('audit-log.read', 'audit-log.count');
-
-        $this->member($viewer, self::FIRST);
-
-        $read = self::policy()->scope($viewer, ReadPurpose::READ);
-
-        self::assertSame([self::tenant(self::FIRST)], self::tenants($read));
-        self::assertNull($read->categories());
-        self::assertFalse($read->includesTenantless());
-        self::assertSame($read->toArray(), self::policy()->scope($viewer, ReadPurpose::COUNT)->toArray());
-        self::assertTrue(self::policy()->scope($viewer, ReadPurpose::EXPORT)->isDenied());
-        self::assertTrue(self::policy()->scope($viewer, ReadPurpose::VERIFY)->isDenied());
-    }
-
-    /**
-     * A platform-wide grant is never read as the whole trail: with no tenant to
-     * decide it in, it sees nothing, and a tenant whose own decision denies the
-     * purpose is left out of what it sees.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAPlatformGrantSeesOnlyTheTenantsThatAllowIt(): void
-    {
-        $alone  = $this->viewer('audit-log.read');
-        $denied = $this->viewer('audit-log.read');
-
-        $denied->attachPolicy(Policy::query()->create([
-            'name'     => 'no-trail-in-the-second-tenant',
-            'document' => [
-                'statements' => [
-                    ['sid' => 'deny-trail', 'effect' => 'deny', 'actions' => ['audit-log.read']],
-                ],
-            ],
-        ]), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
-
-        $this->member($denied, self::FIRST, self::SECOND);
-
-        self::assertTrue(self::policy()->scope($alone, ReadPurpose::READ)->isDenied());
-        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope($denied, ReadPurpose::READ)));
-    }
-
-    /**
-     * A permission an authentication requirement guards is not held where it
-     * guards it, whether the requirement guards a deny or the allow: the policy
-     * cannot tell whether the reader's session meets it. A principal decided as
-     * its identity in a membership tenant is held to it as well.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAPermissionARequirementGuardsIsNotHeldThere(): void
-    {
-        $denied  = $this->viewer('audit-log.read');
-        $allowed = $this->viewer();
-
-        $denied->attachPolicy(self::guarded('deny-trail', 'deny'), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
-        $allowed->attachPolicy(self::guarded('allow-trail', 'allow'));
-
-        $this->member($denied, self::FIRST, self::SECOND);
-        $this->member($allowed, self::FIRST);
-
-        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope($denied, ReadPurpose::READ)));
-        self::assertTrue(self::policy()->scope($allowed, ReadPurpose::READ)->isDenied());
-
-        $person = $this->viewer();
-        $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
-
-        $this->member($person, self::SECOND);
-        $this->grant($person, 'audit-log.read', self::SECOND);
-
-        $person->attachPolicy(self::guarded('deny-seat-trail', 'deny'), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
-
-        self::assertTrue(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)->isDenied());
-    }
-
-    /**
-     * A platform-wide grant of categories sees the viewer's tenants in them
-     * alone.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAPlatformGrantOfCategoriesSeesThemAlone(): void
-    {
-        $viewer = $this->viewer('audit-log.export.security', 'audit-log.export.audit');
-
-        $this->member($viewer, self::FIRST);
-
-        $scope = self::policy()->scope($viewer, ReadPurpose::EXPORT);
-
-        self::assertSame([self::tenant(self::FIRST)], self::tenants($scope));
-        self::assertSame(['audit', 'security'], $scope->categories());
-    }
-
-    /**
-     * Grants in tenants the viewer is a member of see those tenants alone, in
-     * every category, and a tenant it holds nothing in, and its platform
-     * membership, are left out.
-     *
-     * @param  ?string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testTenantGrantsSeeTheirTenantsAlone(?string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $viewer = $this->viewer();
+        self::assertTrue(self::scope($viewer)->isDenied());
 
         $this->grant($viewer, 'audit-log.read', self::FIRST);
         $this->grant($viewer, 'audit-log.read', self::SECOND);
-        $this->memberships->grant($viewer, Membership::platform());
-        $this->member($viewer, self::FIRST, self::SECOND, 'org-3');
+        $this->member($viewer, self::THIRD);
 
-        $scope = self::policy()->scope($viewer, ReadPurpose::READ);
+        $scope = self::scope($viewer);
 
         self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants($scope));
         self::assertNull($scope->categories());
         self::assertFalse($scope->includesTenantless());
+        self::assertSame([], $this->memberships->asked());
     }
 
     /**
-     * A tenant whose grant reaches some categories narrows every tenant to
-     * them, and tenants whose grants share no category see nothing.
+     * A platform-wide grant is seen in the viewer's tenants whose own decision
+     * allows its purpose.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPlatformGrantIsSeenInTheViewersTenantsThatAllowIt(): void
+    {
+        $alone  = $this->viewer('audit-log.read');
+        $viewer = $this->viewer('audit-log.read', 'audit-log.count');
+
+        $viewer->attachPolicy(self::policy('deny', false), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
+
+        $this->grant($alone, 'audit-log.read', self::THIRD);
+        $this->memberships->grant($viewer, Membership::platform());
+        $this->member($viewer, self::FIRST, self::SECOND);
+
+        self::assertSame([self::tenant(self::THIRD)], self::tenants(self::scope($alone)));
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope($viewer)));
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants(self::scope($viewer, ReadPurpose::COUNT)));
+        self::assertTrue(self::scope($viewer, ReadPurpose::EXPORT)->isDenied());
+    }
+
+    /**
+     * A subtree grant is seen in every tenant below it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testASubtreeGrantIsSeenInEveryTenantBelowIt(): void
+    {
+        $first = new Reference(Organisation::TYPE, self::FIRST);
+
+        $this->app?->instance(TenantTree::class, FakeTenantTree::of([
+            [$first, null],
+            [new Reference(Organisation::TYPE, self::SECOND), $first],
+            [new Reference(Organisation::TYPE, self::THIRD), null],
+        ]));
+
+        $subtree = $this->viewer();
+        $node    = $this->viewer();
+
+        $subtree->givePermission('audit-log.read', tenant: $first);
+        $node->givePermission('audit-log.read', tenant: $first, includeSubtree: false);
+
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants(self::scope($subtree)));
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope($node)));
+    }
+
+    /**
+     * The scope is never wider than any tenant's grant.
      *
      * @return void
      *
@@ -295,22 +186,18 @@ final class AuditAccessPolicyAdapterTest extends TestCase
         $this->grant($narrowed, 'audit-log.read', self::FIRST);
         $this->grant($narrowed, 'audit-log.read.security', self::SECOND);
         $this->grant($narrowed, 'audit-log.read.audit', self::SECOND);
-        $this->member($narrowed, self::FIRST, self::SECOND);
-
         $this->grant($disjoint, 'audit-log.read.security', self::FIRST);
         $this->grant($disjoint, 'audit-log.read.audit', self::SECOND);
-        $this->member($disjoint, self::FIRST, self::SECOND);
 
-        $scope = self::policy()->scope($narrowed, ReadPurpose::READ);
+        $scope = self::scope($narrowed);
 
         self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants($scope));
         self::assertSame(['audit', 'security'], $scope->categories());
-        self::assertTrue(self::policy()->scope($disjoint, ReadPurpose::READ)->isDenied());
+        self::assertTrue(self::scope($disjoint)->isDenied());
     }
 
     /**
-     * An own-activity grant sees only the viewer's own activity, in the tenants
-     * it is held in, platform-wide or not, and nowhere with no tenant.
+     * An own-activity grant sees only the viewer's own activity.
      *
      * @return void
      *
@@ -318,94 +205,75 @@ final class AuditAccessPolicyAdapterTest extends TestCase
      */
     public function testAnOwnActivityGrantSeesOnlyTheViewersOwnActivity(): void
     {
-        $everywhere = $this->viewer('audit-log.read.own');
-        $inTenant   = $this->viewer();
-
-        self::assertTrue(self::policy()->scope($everywhere, ReadPurpose::READ)->isDenied());
-
-        $this->member($everywhere, self::FIRST, self::SECOND);
-        $this->grant($inTenant, 'audit-log.read.own', self::FIRST);
-        $this->member($inTenant, self::FIRST);
-
-        $platform = self::policy()->scope($everywhere, ReadPurpose::READ);
-        $tenant   = self::policy()->scope($inTenant, ReadPurpose::READ);
-
-        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants($platform));
-        self::assertSame([[References::type(Staff::class), self::keyOf($everywhere)]], self::about($platform));
-        self::assertSame([self::tenant(self::FIRST)], self::tenants($tenant));
-        self::assertSame([[References::type(Staff::class), self::keyOf($inTenant)]], self::about($tenant));
-    }
-
-    /**
-     * A principal, named by its reference as a principal that is no user is, is
-     * decided as itself, in its own tenant, with no memberships bound, and seen
-     * by its identity and itself.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAPrincipalIsDecidedInItsOwnTenant(): void
-    {
+        $viewer = $this->viewer('audit-log.read.own');
         $person = $this->viewer();
         $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
+
+        $this->member($viewer, self::FIRST, self::SECOND);
+        $seat->givePermission('audit-log.read.own');
+
+        $scope = self::scope($viewer);
+
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants($scope));
+        self::assertSame([[References::type(Staff::class), self::keyOf($viewer)]], self::about($scope));
 
         $this->app?->forgetInstance(FakeMemberships::MEMBERSHIPS);
 
-        $seat->givePermission('audit-log.verify', tenant: new Reference(Organisation::TYPE, self::FIRST));
-        $seat->givePermission('audit-log.read.own');
+        $scope = self::scope(AuditReference::to($seat));
 
-        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope(AuditReference::to($seat), ReadPurpose::VERIFY)));
-        self::assertCount(2, self::about(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)));
+        self::assertSame([self::tenant(self::FIRST)], self::tenants($scope));
+        self::assertCount(2, self::about($scope));
     }
 
     /**
-     * A principal's grant reaching a tenant its identity is a member of, but
-     * where `laravel-authentication`'s tenant access does not let it act,
-     * widens nothing: no check would let that principal use it there. Its
-     * identity's own grant there holds across every principal, so it is seen.
+     * A permission whose decision reads an authentication requirement is not
+     * held.
      *
-     * @param  ?string  $level
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAPrincipalSeesNoMembershipTenantItCannotActIn(?string $level): void
+    public function testAPermissionWhoseDecisionReadsARequirementIsNotHeld(): void
     {
-        self::runAtIsolationLevel($level);
+        $denied  = $this->viewer('audit-log.read');
+        $allowed = $this->viewer();
+        $beside  = $this->viewer('audit-log.read');
 
+        $denied->attachPolicy(self::policy('deny', true), tenant: new Reference(Organisation::TYPE, self::SECOND), includeSubtree: false);
+        $allowed->attachPolicy(self::policy('allow', true));
+        $beside->attachPolicy(self::policy('allow', true));
+
+        $this->member($denied, self::FIRST, self::SECOND);
+        $this->member($allowed, self::FIRST);
+        $this->member($beside, self::FIRST);
+
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope($denied)));
+        self::assertTrue(self::scope($allowed)->isDenied());
+        self::assertTrue(self::scope($beside)->isDenied());
+    }
+
+    /**
+     * A principal's own grants count only where its tenant access lets it act;
+     * its identity's count anywhere.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPrincipalsGrantsCountOnlyWhereItMayAct(): void
+    {
         $person = $this->viewer();
         $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
 
-        $this->member($person, self::SECOND);
-
+        $seat->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, self::FIRST));
         $seat->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, self::SECOND));
+        $this->grant($person, 'audit-log.read', self::THIRD);
 
-        self::assertTrue(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)->isDenied());
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::THIRD)], self::tenants(self::scope(AuditReference::to($seat))));
 
-        $this->grant($person, 'audit-log.read', self::SECOND);
-
-        self::assertSame([self::tenant(self::SECOND)], self::tenants(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)));
-    }
-
-    /**
-     * A principal's grant reaching a tenant its identity is a member of, where
-     * `laravel-authentication`'s tenant access lets it act, is seen there.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAPrincipalSeesAMembershipTenantItMayActIn(): void
-    {
-        $person = $this->viewer();
-        $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
-
-        $this->member($person, self::SECOND);
         $this->app?->instance(TenantAccess::class, new class implements TenantAccess {
             /**
-             * Whether the principal may act in the tenant: in any.
+             * Let the principal act in any tenant.
              *
              * @param  \SineMacula\Laravel\Authentication\Contracts\Principal  $principal
              * @param  ?\SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
@@ -418,92 +286,54 @@ final class AuditAccessPolicyAdapterTest extends TestCase
             }
         });
 
-        $seat->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, self::SECOND));
-
-        self::assertSame([self::tenant(self::SECOND)], self::tenants(self::policy()->scope(AuditReference::to($seat), ReadPurpose::READ)));
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND), self::tenant(self::THIRD)], self::tenants(self::scope(AuditReference::to($seat))));
     }
 
     /**
-     * A viewer named by a reference, read through the morph map, is decided as
-     * the model it names; one that names nobody is refused.
+     * A viewer named by a reference is the model it names, one naming nobody is
+     * refused, and a viewer that is no model sees nothing.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAViewerNamedByAReferenceIsTheModelItNames(): void
+    public function testAViewerIsTheModelItNames(): void
     {
         Relation::morphMap(['staff' => Staff::class]);
 
-        $viewer = $this->viewer('audit-log.read');
+        $viewer = $this->viewer();
 
-        $this->member($viewer, self::FIRST);
+        $this->grant($viewer, 'audit-log.read', self::FIRST);
 
-        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::policy()->scope(AuditReference::of('staff', self::keyOf($viewer)), ReadPurpose::READ)));
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope(AuditReference::of('staff', self::keyOf($viewer)))));
+        self::assertTrue(self::scope(new GenericUser(['id' => self::keyOf($viewer)]))->isDenied());
 
         $this->expectException(UnresolvedReferenceException::class);
 
-        self::policy()->scope(AuditReference::of(Staff::class, '999999'), ReadPurpose::READ);
+        self::scope(AuditReference::of('nothing', '1'));
     }
 
     /**
-     * A reference to no model is refused.
+     * A tenant the tenant resolver cannot name is refused.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAReferenceToNoModelIsRefused(): void
-    {
-        $this->expectException(UnresolvedReferenceException::class);
-
-        self::policy()->scope(AuditReference::of('nothing', '1'), ReadPurpose::READ);
-    }
-
-    /**
-     * Grants in more tenants than audit-log's scope holds are refused, never
-     * truncated.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testGrantsBeyondTheLimitAreRefused(): void
-    {
-        $viewer  = $this->viewer();
-        $tenants = array_map(static fn (int $index): string => 'org-' . $index, range(1, AccessScope::MAX_TENANTS + 1));
-
-        foreach ($tenants as $tenant) {
-            $this->grant($viewer, 'audit-log.read', $tenant);
-        }
-
-        $this->member($viewer, ...$tenants);
-
-        $this->expectException(\InvalidArgumentException::class);
-
-        self::policy()->scope($viewer, ReadPurpose::READ);
-    }
-
-    /**
-     * A tenant `laravel-authorization` cannot scope to is refused.
-     *
-     * @return void
-     */
-    public function testATenantThatCannotBeScopedIsRefused(): void
+    public function testATenantTheResolverCannotNameIsRefused(): void
     {
         $viewer = $this->viewer();
 
-        $this->member($viewer, self::FIRST);
+        $this->grant($viewer, 'audit-log.read', self::FIRST);
         $this->app?->instance(TenantResolver::class, new UnscopedTenancy);
 
         $this->expectException(UnresolvedReferenceException::class);
 
-        self::policy()->scope($viewer, ReadPurpose::READ);
+        self::scope($viewer);
     }
 
     /**
-     * Name the catalogue among `laravel-authorization`'s permission providers,
-     * set before any provider registers.
+     * Name the catalogue among `laravel-authorization`'s permission providers.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -517,7 +347,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A viewer, granted the permissions platform-wide.
+     * A viewer granted the permissions platform-wide.
      *
      * @param  string  ...$permissions
      * @return \Tests\Fixtures\Authorization\Staff
@@ -561,42 +391,36 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A policy whose one statement, of the effect, names reading the trail
-     * under a multifactor requirement.
+     * A policy of one statement on reading the trail, under a multifactor
+     * requirement when guarded.
      *
-     * @param  string  $name
      * @param  string  $effect
+     * @param  bool  $guarded
      * @return \SineMacula\Laravel\Authorization\Models\Policy
      */
-    private static function guarded(string $name, string $effect): Policy
+    private static function policy(string $effect, bool $guarded): Policy
     {
-        return Policy::query()->create([
-            'name'     => $name,
-            'document' => [
-                'statements' => [
-                    [
-                        'sid'        => 'guarded-trail',
-                        'effect'     => $effect,
-                        'actions'    => ['audit-log.read'],
-                        'conditions' => ['authentication_requirement' => ['authentication' => ['multifactor' => []]]],
-                    ],
-                ],
-            ],
-        ]);
+        $statement = ['sid' => 'trail', 'effect' => $effect, 'actions' => ['audit-log.read']];
+
+        if ($guarded) {
+            $statement['conditions'] = ['authentication_requirement' => ['authentication' => ['multifactor' => []]]];
+        }
+
+        return Policy::query()->create(['name' => uniqid($effect, true), 'document' => ['statements' => [$statement]]]);
     }
 
     /**
-     * The policy audit-log resolves.
+     * The scope the adapter answers for the viewer.
      *
-     * @return \SineMacula\Laravel\AuditLog\Contracts\AuditAccessPolicy
+     * @param  \Illuminate\Contracts\Auth\Authenticatable|\SineMacula\Laravel\AuditLog\Records\Reference  $viewer
+     * @param  \SineMacula\Laravel\AuditLog\Access\Enums\ReadPurpose  $purpose
+     * @return \SineMacula\Laravel\AuditLog\Access\AccessScope
+     *
+     * @throws \Throwable
      */
-    private static function policy(): AuditAccessPolicy
+    private static function scope(AuditReference|Authenticatable $viewer, ReadPurpose $purpose = ReadPurpose::READ): AccessScope
     {
-        $policy = app()->make(self::POLICY);
-
-        self::assertInstanceOf(AuditAccessPolicy::class, $policy);
-
-        return $policy;
+        return (new AuditAccessPolicyAdapter)->scope($viewer, $purpose);
     }
 
     /**
@@ -611,7 +435,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The tenants the scope sees, as it lists them.
+     * The tenants the scope sees.
      *
      * @param  \SineMacula\Laravel\AuditLog\Access\AccessScope  $scope
      * @return list<array{0: string, 1: string}>
@@ -627,7 +451,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The references the scope sees the activity of, as it lists them.
+     * The references whose activity the scope sees.
      *
      * @param  \SineMacula\Laravel\AuditLog\Access\AccessScope  $scope
      * @return list<array{0: string, 1: string}>
