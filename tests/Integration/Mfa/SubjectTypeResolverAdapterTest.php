@@ -23,15 +23,7 @@ use Tests\Fixtures\Resolvers\Factorless;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's subject type read from `laravel-authentication`'s
- * machine identity contract (IAM-3.12): a machine identity is never a person,
- * though its model says it may hold factors, as MFA's own reading would take it
- * for one; any other identity is a person only when it is MFA's and may hold
- * factors; and once bound, MFA refuses a machine every operation it would
- * otherwise have run.
- *
- * The machine is the fixtures' `Machine`, which keeps MFA's own defaults, so
- * only the machine identity contract tells it apart from a person.
+ * Integration tests for MFA's subject type read from machine identities.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,8 +36,7 @@ final class SubjectTypeResolverAdapterTest extends TestCase
     use MigratesMembers, SignsInPeople, SubjectTypeResolverTests;
 
     /**
-     * A machine identity is no person, though its model says it may hold
-     * factors and MFA's own reading takes it for one.
+     * A machine identity is no person, whatever its model says.
      *
      * @return void
      */
@@ -59,8 +50,7 @@ final class SubjectTypeResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA holds no factors for is no person: one whose model says
-     * it may hold none, and one that is not MFA's identity at all.
+     * An identity MFA holds no factors for is no person.
      *
      * @return void
      */
@@ -71,8 +61,7 @@ final class SubjectTypeResolverAdapterTest extends TestCase
     }
 
     /**
-     * Bound as MFA's subject type, the adapter has MFA refuse a machine an
-     * operation, as one that is not a person, before anything is written.
+     * Once bound, MFA refuses a machine an operation.
      *
      * @return void
      *

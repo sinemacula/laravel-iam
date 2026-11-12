@@ -9,31 +9,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * MFA's active tenant, read from the tenant `laravel-authentication`'s
- * validated session records (IAM-3.12): the session the guard the application
- * names holds for the identity, as the guard validated it for the request, its
- * recorded tenant id handed over as MFA's opaque tenant id. Never a tenant the
- * request claims, never the active tenant a trusted bind or a test sets on the
- * guard beside the session, and never an event's context.
- *
- * A session that acts in no tenant answers no tenant, as does a credential the
- * guard validated without a session (an access token that records none). An
- * identity that holds no validated session on the application in the request
- * answers none too: a sign-in judged before its session is written, which
- * `laravel-authentication` asks deliberately without a tenant and then holds to
- * the destination tenant's own authentication policy once a principal is
- * chosen, or a change to an identity the request does not serve. No session's
- * tenant applies to either, and refusing them would refuse every sign-in MFA
- * judges. An application that is no guard of `laravel-authentication`'s holding
- * sessions is a misconfiguration and throws `UnresolvedReferenceException` of
- * the kind `guard`, and an identity whose key names nothing throws MFA's
- * `UnsupportedIdentifierException` (IAM-8.2), inside whatever transaction MFA
- * opened, so it rolls back.
- *
- * It reads the session the guard already holds and runs no query of its own, so
- * it takes no lock and cannot invert the lock order of the transaction it is
- * asked in. It holds nothing between calls: the guard is read on every call
- * (IAM-8.1).
+ * MFA's active tenant: the tenant of the session the application's guard
+ * validated for the identity, or none before a session exists.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

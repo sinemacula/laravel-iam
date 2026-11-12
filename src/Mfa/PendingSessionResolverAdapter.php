@@ -26,8 +26,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
- * MFA's pending session resolver, read from `laravel-authentication`'s pending
- * session a pending credential names on the default guard (IAM-3.3).
+ * MFA's pending session resolver over `laravel-authentication`'s.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,8 +59,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     ) {}
 
     /**
-     * The pending sign-in the request's credential names, or `null` when it
-     * carries none.
+     * The pending sign-in the request's credential names on the default guard.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
@@ -92,8 +90,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     }
 
     /**
-     * The pending sign-in as it stands now, read again from the credential the
-     * context keeps, or `null` when it no longer stands.
+     * The pending sign-in read again, or `null` once it no longer stands.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
@@ -118,8 +115,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     }
 
     /**
-     * The pending sign-in the credential names on the application's guard, or
-     * `null` when it names no live pending session there.
+     * The live pending sign-in the credential names on the guard, if any.
      *
      * @param  string  $application
      * @param  string  $credential
@@ -199,8 +195,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     }
 
     /**
-     * The refusal of a pending credential that names no live pending session of
-     * the guard.
+     * The refusal of a credential naming no live pending session of the guard.
      *
      * @param  string  $guard
      * @return \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException

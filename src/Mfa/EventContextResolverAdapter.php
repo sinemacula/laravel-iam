@@ -13,9 +13,8 @@ use SineMacula\Laravel\Mfa\Events\EventSubject;
 use SineMacula\Laravel\Mfa\Support\IdentityType;
 
 /**
- * MFA's event context (IAM-3.12): the identity and client MFA hands over, and
- * the session, principal and tenant of the sign-in MFA names when it is one of
- * the identity's sessions on the application's guard.
+ * MFA's event context, with the session, principal and tenant of the sign-in
+ * MFA names.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,8 +58,7 @@ final readonly class EventContextResolverAdapter implements EventContextResolver
     }
 
     /**
-     * The session, principal and tenant of the sign-in named, when it is one of
-     * the identity's sessions on the application's guard, or nothing.
+     * The named sign-in's session, principal and tenant, if the identity's.
      *
      * @param  ?\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  ?string  $application

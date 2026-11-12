@@ -30,21 +30,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Verifies further factors through MFA with every adapter between the two
- * members bound by this package's binding rule, as an application gets them,
- * and holds `laravel-authentication`'s freshness to MFA's own requirement check
- * (IAM-3.2, IAM-3.4, IAM-3.5): a step-up is recorded multifactor only when MFA
- * says it refreshes the multifactor evidence of the session's first factor
- * (`VerificationResult::$refreshesMultifactor`), so a fresh weaker proof never
- * refreshes an old stronger one, and a removed factor's proofs stop counting.
- *
- * The person signs in with a password and steps up with an authenticator app
- * code a minute later; three hours on, they step up with an email code, which
- * MFA accepts after the password but which is no multifactor combination with
- * it. MFA's evaluation of the whole session is still multifactor, through the
- * old authenticator app code. The email code is sent and checked by MFA's own
- * challenge gateway, bound as the application's, so its delivery is MFA's
- * synchronous sender: the test is about the evidence, not the delivery.
+ * A step-up is recorded multifactor only when MFA says it refreshes it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -67,10 +53,7 @@ final class MultifactorEvidenceTest extends TestCase
     private const string DESTINATION = 'ada@example.test';
 
     /**
-     * A fresh email code after an old authenticator app code is not fresh
-     * multifactor authentication, as MFA's own requirement check judges the
-     * session's proofs, and stays not fresh once the authenticator app is
-     * removed and its proofs stop counting.
+     * A fresh weaker proof never refreshes an old multifactor one.
      *
      * @return void
      *
@@ -115,9 +98,7 @@ final class MultifactorEvidenceTest extends TestCase
     }
 
     /**
-     * Step the session up through MFA with a code delivered to an email factor
-     * of the person's, failing the test unless it is verified, and return the
-     * proof `laravel-authentication` recorded for it.
+     * Step the session up with an email code and return its proof.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
@@ -155,8 +136,7 @@ final class MultifactorEvidenceTest extends TestCase
     }
 
     /**
-     * Whether the freshness gate finds the caller's session fresh for
-     * multifactor authentication within the maximum age.
+     * Whether the freshness gate finds the session fresh multifactor.
      *
      * @return bool
      *
@@ -168,8 +148,7 @@ final class MultifactorEvidenceTest extends TestCase
     }
 
     /**
-     * Whether MFA's own requirement check finds the session's counting proofs
-     * multifactor within the maximum age.
+     * Whether MFA's requirement check finds the session's proofs multifactor.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return bool

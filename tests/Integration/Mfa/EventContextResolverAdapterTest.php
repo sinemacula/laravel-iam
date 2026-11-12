@@ -32,15 +32,7 @@ use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's event context filled from the subject MFA hands
- * it (IAM-3.12): an event carries the identity it is about and the IP address
- * and user agent of the client MFA hands it, and the session, principal and
- * tenant of the sign-in MFA names only when it names the application too and
- * the sign-in is one of the identity's sessions on that application's guard,
- * read by its key; another identity's session, another application's, an
- * unknown key and a malformed one name none. It never reads a request bound in
- * the container, the default guard or the session the guard serves, never
- * throws, and MFA's own events carry it once it is bound.
+ * Tests for MFA's event context, filled from the subject MFA hands it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -71,11 +63,7 @@ final class EventContextResolverAdapterTest extends TestCase
     private ?Person $eventPerson = null;
 
     /**
-     * A sign-in MFA names on its application, one of the identity's sessions
-     * there, names its session, the principal it acts as and the tenant it is
-     * active in, read by its key: though the guard serves another person's
-     * session and a request from another client is bound in the container,
-     * neither reaches the context.
+     * The identity's named sign-in names its session, principal and tenant.
      *
      * @return void
      *
@@ -101,8 +89,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in that is another identity's session names no session, principal
-     * or tenant, though it is on the application named.
+     * Another identity's session names no session, principal or tenant.
      *
      * @return void
      *
@@ -119,8 +106,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in that is the identity's session on another application than the
-     * one named names no session, principal or tenant.
+     * A session on another application names none.
      *
      * @return void
      *
@@ -137,8 +123,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[sign-in]` that name no session: a key no session has, and one
-     * no session could have.
+     * Rows of `[sign-in]` that name no session.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -150,9 +135,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in that names no session names none of the session, principal or
-     * tenant, and is not refused, though the guard serves the identity's own
-     * session.
+     * A sign-in that names no session names none and is not refused.
      *
      * @param  string  $signIn
      * @return void
@@ -170,8 +153,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[application, named]`: a subject naming the application but no
-     * sign-in, and one naming the sign-in but no application.
+     * Rows of `[application, named]` naming only one of the two.
      *
      * @return iterable<string, array{0: ?string, 1: bool}>
      */
@@ -183,8 +165,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Without both the application and the sign-in, the identity's session is
-     * not named, though the guard serves it and the sign-in is its own.
+     * Without both the application and the sign-in, no session is named.
      *
      * @param  ?string  $application
      * @param  bool  $named
@@ -203,9 +184,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * An application that is no session guard, and an identity
-     * `laravel-authentication` does not sign in, name no session and are not
-     * refused: an event is only described.
+     * What cannot be resolved names no session and is never refused.
      *
      * @return void
      *
@@ -231,8 +210,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * A session acting as no principal yet, and in no tenant, names its session
-     * alone.
+     * A session with no principal and no tenant names its session alone.
      *
      * @return void
      *
@@ -253,8 +231,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * The identity and the principal are carried by their morph class, so an
-     * application's morph map is honoured.
+     * The identity and the principal are carried by their morph class.
      *
      * @return void
      *
@@ -279,8 +256,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * An event about no identity carries no sign-in, though the guard serves
-     * one and the subject names it: only the client.
+     * An event about no identity carries only the client.
      *
      * @return void
      *
@@ -297,9 +273,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Served to no client, as an administrator's, a console command's or a
-     * pruning's change is, the context names no IP address or user agent,
-     * though the container holds a request from another client.
+     * Without a client, no IP address or user agent is named.
      *
      * @return void
      *
@@ -318,8 +292,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * No tenant is carried for a subject naming no sign-in: neither the served
-     * session's own nor one set on the guard beside it.
+     * No tenant is carried for a subject naming no sign-in.
      *
      * @return void
      *
@@ -336,8 +309,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[default guard]`: one that holds sessions, Laravel's own session
-     * guard, a name no guard is declared under, and none.
+     * Rows of `[default guard]`.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -353,8 +325,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Whatever the default guard, the sign-in named is read on the application
-     * named, and the context is never refused.
+     * The default guard is never read.
      *
      * @param  string  $guard
      * @return void
@@ -378,9 +349,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Bound as MFA's event context resolver, MFA's own events carry the
-     * identity and the client MFA hands it, and none of the sign-in the guard
-     * serves for an administrator's reset, which names none.
+     * Once bound, MFA's own events carry the context.
      *
      * @return void
      *
@@ -439,9 +408,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Serve a session of the kit's identity on the guard, signed in through
-     * `laravel-authentication`, with a request from another client bound beside
-     * it, so a resolver that read either would be caught.
+     * Serve the kit identity's session, with another client's request bound.
      *
      * @return void
      *
@@ -473,8 +440,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * The context of an event about the person, served to the tests' client,
-     * naming no sign-in.
+     * The context of an event about the person, naming no sign-in.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return array<string, int|string|null>
@@ -490,8 +456,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Sign the person in, and record the tenant on the new session's row as a
-     * sign-in into the tenant records it, without acting on it.
+     * Sign the person in and record the tenant on the new session's row.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
@@ -508,9 +473,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * Serve another session of the person's on the guard, in the tenant, as a
-     * bearer request for it would, with a request from another client bound in
-     * the container, and return the served session.
+     * Serve another session of the person's in the tenant, and return it.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
@@ -541,8 +504,7 @@ final class EventContextResolverAdapterTest extends TestCase
     }
 
     /**
-     * A context with the values given and every other key `null`, in the order
-     * MFA keeps.
+     * A context with the values given and every other key `null`.
      *
      * @param  array<string, ?string>  $values
      * @return array<string, int|string|null>

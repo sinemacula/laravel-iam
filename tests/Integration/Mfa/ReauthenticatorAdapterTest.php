@@ -35,22 +35,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's reauthenticator over `laravel-authentication`'s
- * freshness policy (IAM-3.5): the newest reauthentication with the first factor
- * on the guard's current session, made within five minutes and no longer ago
- * than the application's own setting allows, is MFA's reauthentication, bound
- * to the identity, the application and the session; a session without one, or
- * no longer live, answers none; a guard holding no session of the identity, and
- * an application that is no guard, throw (IAM-8.2), rolling back the
- * transaction they are asked in; outside a transaction it asks the policy
- * plainly and takes no lock; and inside one, as MFA's own factor-change gate
- * asks it inside MFA's transaction, the only lock it takes is the session's,
- * last, and it asks the policy current, so a reauthentication made by another
- * request after the transaction's first read is found.
- *
- * The sessions are real ones, signed in and reauthenticated through
- * `laravel-authentication` with a password, and the adapter is resolved on its
- * own, so none of this package's other adapters takes part.
+ * Tests for MFA's reauthenticator over the freshness policy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -67,10 +52,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     private const string LOCKING_READ = '/\b(for update|for share|for no key update|lock in share mode)\b/i';
 
     /**
-     * The newest reauthentication on the guard's session is MFA's
-     * reauthentication with the first factor, bound to the identity, the
-     * application and the sign-in for `reauthenticate`, under the identity's
-     * current verification generation.
+     * The newest reauthentication on the session is answered.
      *
      * @return void
      *
@@ -103,8 +85,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A session holding only the sign-in's first factor has proved nothing
-     * again, and answers no reauthentication.
+     * A session with no reauthentication answers none.
      *
      * @return void
      *
@@ -120,8 +101,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A reauthentication answers until it is five minutes old, and none from
-     * then on.
+     * A reauthentication answers until it is five minutes old.
      *
      * @return void
      *
@@ -146,8 +126,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * The application's own setting for `first_additional_factor` makes the
-     * reauthentication it takes stricter: a shorter age, and fewer kinds.
+     * The application's own setting makes the reauthentication stricter.
      *
      * @return void
      *
@@ -175,8 +154,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A session revoked since the request was authenticated, which the guard
-     * still holds, answers no reauthentication, though it recorded one.
+     * A session no longer live answers no reauthentication.
      *
      * @return void
      *
@@ -195,9 +173,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A guard holding no session, one holding another identity's, and an
-     * application that is no guard, cannot resolve the identity's session, and
-     * throw.
+     * A session that cannot be resolved throws.
      *
      * @return void
      *
@@ -216,8 +192,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A session that cannot be resolved inside MFA's transaction rolls back
-     * what the transaction wrote before it.
+     * An unresolved session rolls back the transaction it is asked in.
      *
      * @return void
      *
@@ -238,10 +213,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * Inside MFA's transaction, holding the identity's state row, the
-     * reauthenticator locks the session's row before it reads the proof, and
-     * takes no lock of MFA's, so it never takes a lock out of the order
-     * identity state, factors, challenge, session row.
+     * Inside MFA's transaction the session row is the only lock it takes.
      *
      * @param  string  $level
      * @return void
@@ -281,10 +253,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * Outside a transaction, as MFA's contract kit or a caller of the
-     * application's asks it, nothing acts on the answer atomically: the
-     * reauthenticator asks the policy plainly, which the policy answers there,
-     * and takes no lock.
+     * Outside a transaction it asks the policy plainly and takes no lock.
      *
      * @return void
      *
@@ -311,10 +280,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction on the session model's connection, as MFA's own
-     * factor-change gate asks it inside MFA's transaction and grants a first
-     * additional factor on the answer, the reauthenticator asks the policy
-     * current, which the policy answers there.
+     * Inside a transaction it asks the policy current.
      *
      * @return void
      *
@@ -333,12 +299,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * Inside a caller's transaction that read before another request proved the
-     * person's password again on the session, that reauthentication is
-     * answered, though the transaction's snapshot on MySQL at REPEATABLE READ
-     * does not hold it. On PostgreSQL at REPEATABLE READ the session's lock
-     * fails to serialise first, and the question asked again in a new
-     * transaction is answered the same.
+     * A reauthentication made after the transaction's first read is answered.
      *
      * @param  string  $level
      * @return void
@@ -379,8 +340,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * A person signed in on the application who has just proved their password
-     * again.
+     * A signed-in person who has just proved their password again.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *
@@ -408,8 +368,7 @@ final class ReauthenticatorAdapterTest extends TestCase
     }
 
     /**
-     * Prove the person's password again on the session, through
-     * `laravel-authentication`, failing the test unless it is recorded.
+     * Prove the person's password again on the session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session

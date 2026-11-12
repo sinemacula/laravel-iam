@@ -17,7 +17,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 
 /**
  * MFA's SMS and email senders, forwarding each code to the application's
- * `laravel-authentication` one-time code sender (IAM-3.13).
+ * `OneTimeCodeSender`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -38,7 +38,7 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
     ) {}
 
     /**
-     * Send the code as a `laravel-authentication` factor code.
+     * Send the code as a `laravel-authentication` one-time code.
      *
      * @param  \SineMacula\Laravel\Mfa\Codes\CodeMessage  $message
      * @return void

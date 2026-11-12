@@ -27,11 +27,8 @@ use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 
 /**
- * The seams `laravel-authentication` and MFA join through (IAM-3.1 to
- * IAM-3.13), switched by `iam.adapters.mfa`. Every adapter is transient and
- * reads the request afresh on each call (IAM-8.1). The recorder MFA's
- * `actingAsVerified()` signs in through, which MFA leaves unbound, is bound
- * here too. Revocation on factor removal and reset is mandatory (IAM-3.7).
+ * The seams `laravel-authentication` and MFA join through, switched by
+ * `iam.adapters.mfa`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -76,8 +73,7 @@ final readonly class MfaSeams implements ProvidesSeams
     }
 
     /**
-     * Whether the switch is on: `false`, `0`, `off` and `no` turn it off, and
-     * anything else, a missing value included, leaves it on.
+     * Whether the switch is on; only a false-like value turns it off.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool

@@ -9,18 +9,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 
 /**
- * MFA's first-factor resolver, answered with the first-factor proof
- * `laravel-authentication` recorded on the identity's current session
- * (IAM-3.11).
- *
- * The sign-in is the guard's current session when it is the identity's, as the
- * proof store names it, and its first factor is the oldest counting
- * first-factor proof `Auth::sessions($guard)->firstFactor()` reads, translated
- * to MFA's proof bound to the sign-in and stamped with the identity's current
- * verification generation. Nothing is answered for a guard holding no session
- * of the identity, for a session that is no longer live and active, or for a
- * first factor MFA cannot express, so MFA trusts no first factor it was not
- * given.
+ * MFA's first factor, read from the first-factor proof `laravel-authentication`
+ * recorded on the current session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,13 +26,12 @@ final readonly class FirstFactorResolverAdapter implements FirstFactorResolver
      */
     public function __construct(
 
-        /** Reads the session's proofs as the proof store does. */
+        /** Reads the session's proofs. */
         private ProofStoreAdapter $store,
     ) {}
 
     /**
-     * The first factor the identity's current sign-in on the application was
-     * made with, or `null` when it has none.
+     * The first factor of the identity's current sign-in, if MFA can read it.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application

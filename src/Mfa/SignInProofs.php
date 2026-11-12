@@ -14,7 +14,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
- * A session's recorded proofs as MFA's proofs of the sign-in (IAM-3.11).
+ * A session's recorded proofs as MFA's proofs of the sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

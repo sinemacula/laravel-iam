@@ -25,13 +25,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's active state read from `laravel-authentication`'s
- * (IAM-3.12): an identity `laravel-authentication` can deactivate is active to
- * MFA exactly while it is active there, whatever its own `isMfaActive()` says,
- * read from the primary as `laravel-authentication` reads it, never from a
- * lagging replica; any other identity answers as MFA's own default does, by its
- * `isMfaActive()`; and once bound, MFA refuses a deactivated identity as
- * `identity_inactive`.
+ * Tests for MFA's active state, read from `laravel-authentication`'s.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +41,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     private const string REPLICATED = 'replicated';
 
     /**
-     * An identity `laravel-authentication` can deactivate is active to MFA
-     * exactly while it is active there, whatever its own `isMfaActive()` says.
+     * A deactivatable identity is judged by its active state there.
      *
      * @return void
      */
@@ -64,8 +57,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity with no active state of `laravel-authentication`'s answers as
-     * MFA's own default does, by its `isMfaActive()`.
+     * Any other identity answers by its own `isMfaActive()`.
      *
      * @return void
      */
@@ -91,9 +83,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity whose active state reads the database is active to MFA as the
-     * primary has it, as `laravel-authentication` reads it, not as a replica
-     * that has not yet seen its suspension has it.
+     * The active state is read from the primary, never a lagging replica.
      *
      * @return void
      */
@@ -111,8 +101,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
             use HasFactors;
 
             /**
-             * Whether the identity has no suspension, as its connection reads
-             * it.
+             * Whether the identity has no suspension.
              *
              * @return bool
              */
@@ -130,10 +119,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * Bound as MFA's active state, the adapter has MFA refuse a signed-in
-     * person `laravel-authentication` has since deactivated, as
-     * `identity_inactive`, though MFA's own reading of the model takes them as
-     * active, and serve them again once reactivated.
+     * Once bound, MFA refuses a deactivated identity as `identity_inactive`.
      *
      * @return void
      *
@@ -178,8 +164,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` holds active: a person, as a new one
-     * is.
+     * An identity `laravel-authentication` holds active.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      */
@@ -190,8 +175,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` holds inactive: a person whose
-     * active flag is cleared.
+     * An identity `laravel-authentication` holds inactive.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      */
@@ -202,8 +186,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * Declare a connection whose reads go to a replica of their own, which sees
-     * nothing written to the primary.
+     * Declare a connection whose reads go to an empty replica.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -222,8 +205,7 @@ final class ActiveStateResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` can deactivate, with its active
-     * state there and MFA's own reading of it.
+     * A deactivatable identity with the given active states.
      *
      * @param  bool  $active
      * @param  bool  $mfaActive

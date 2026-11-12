@@ -51,23 +51,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's freshness gate over `laravel-authentication`'s
- * freshness policy (IAM-3.5): each part MFA asks for is judged by the policy on
- * the caller's session, made stricter by the application's own setting for the
- * operation, and the session is fresh until the first of them lapses; the
- * requirement it holds the session to is at least the caller's; a part the
- * policy cannot judge is refused; a caller with no session is not fresh; a
- * default guard that is not `laravel-authentication`'s throws (IAM-8.2),
- * rolling back the transaction it is asked in; outside a transaction it asks
- * the policy plainly and takes no lock; and inside one, as MFA's own
- * factor-change gate asks it inside MFA's transaction, it asks the policy
- * current, locking the session's row after MFA's locks, so a step-up voided or
- * made by another request after the transaction's first read is judged as
- * committed.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password and stepped up through it, and the adapter is resolved on its own,
- * so none of this package's other adapters takes part.
+ * Integration tests for MFA's freshness gate over the freshness policy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -93,8 +77,7 @@ final class FreshnessGateAdapterTest extends TestCase
     private const string PAYOUTS = 'payouts.change';
 
     /**
-     * An additional verification is met by a step-up within its age, and the
-     * session stays fresh until the step-up is as old as the age.
+     * An additional verification is met by a step-up within its age.
      *
      * @return void
      *
@@ -123,9 +106,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Multifactor authentication is met only by a proof whose evaluation
-     * reported it, and phishing resistance only by one observed to resist
-     * phishing.
+     * Each flag is met only by a proof that shows it.
      *
      * @return void
      *
@@ -156,8 +137,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * With several parts asked for, every one must be met, and the session is
-     * fresh until the first of them lapses.
+     * Every part must be met, and the session is fresh until the first lapses.
      *
      * @return void
      *
@@ -186,9 +166,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * The application's own setting for the operation decides alone when the
-     * caller asks for nothing, and makes the caller's stricter when it asks for
-     * something: the kinds both take, and the shorter age.
+     * The application's setting makes the caller's requirement stricter.
      *
      * @return void
      *
@@ -217,8 +195,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[requirement]` the policy cannot hold a session to: a minimum
-     * assurance level, which no proof records, and a part longer than a day.
+     * Rows of `[requirement]` the policy cannot hold a session to.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: string}>
      */
@@ -234,8 +211,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A caller's requirement the policy cannot hold the session to is refused,
-     * by every question, before anything is read.
+     * A requirement the policy cannot judge is refused by every question.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  string  $message
@@ -256,9 +232,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A name that is not an operation's is never fresh and has no requirement,
-     * whatever the caller asks, without the caller's requirement being looked
-     * at.
+     * A name that is no operation's is never fresh and has no requirement.
      *
      * @return void
      *
@@ -276,8 +250,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A caller with no session is not fresh for any operation, though the
-     * requirement for it is answered.
+     * A caller with no session is not fresh.
      *
      * @return void
      */
@@ -289,8 +262,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[application]` that are no guard of `laravel-authentication`'s:
-     * a name no guard is declared under, and Laravel's own session guard.
+     * Rows of `[application]` that are no guard of `laravel-authentication`'s.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -302,9 +274,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A caller's application that is not one of `laravel-authentication`'s
-     * guards cannot be resolved, and every question throws, whoever the caller
-     * is.
+     * An application that is no authentication guard throws on every question.
      *
      * @param  string  $application
      * @return void
@@ -337,9 +307,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * The caller's own application is asked, never the default guard: the
-     * guard's session of the caller's is judged, and its setting read, while
-     * the default guard is another.
+     * The caller's application is asked, never the default guard.
      *
      * @return void
      *
@@ -358,11 +326,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Only an active caller whose guard holds a session of its own can be
-     * fresh: a caller the guard holds no session of (another identity than the
-     * one it serves), a pending caller and nobody are not, though the
-     * requirement for each is answered, and a request bound in the container
-     * never stands in for the caller handed in.
+     * Only an active caller whose guard holds its own session can be fresh.
      *
      * @return void
      *
@@ -387,11 +351,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * The requirement is the stricter of the caller's and what MFA can express
-     * of the application's setting: a setting taking only further factors and
-     * recovery codes is an additional verification, its flags are multifactor
-     * authentication and phishing resistance, and a setting that also takes a
-     * first factor, with no flag, expresses nothing.
+     * The requirement is the stricter of the caller's and the setting's.
      *
      * @return void
      */
@@ -417,8 +377,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A refusal inside MFA's transaction rolls back what the transaction wrote
-     * before it.
+     * A refusal rolls back the transaction it is asked in.
      *
      * @return void
      *
@@ -441,9 +400,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Outside a transaction, as MFA's route gate and `Mfa::isFresh()` ask it,
-     * nothing acts on the answer atomically: the gate asks the policy plainly,
-     * which the policy answers there, and takes no lock.
+     * Outside a transaction the gate asks the policy plainly and takes no lock.
      *
      * @return void
      *
@@ -472,10 +429,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction on the session model's connection, as MFA's own
-     * factor-change gate asks it inside MFA's transaction and grants the change
-     * on the answer, the gate asks the policy current, which the policy answers
-     * there, both for whether the session is fresh and until when.
+     * Inside a transaction the gate asks the policy current.
      *
      * @return void
      *
@@ -501,10 +455,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside MFA's transaction, holding the identity's state row, the gate's
-     * current read locks the session's row and then reads its proofs, and takes
-     * no lock of MFA's, so it never takes one out of the order identity state,
-     * factors, challenge, session row.
+     * Inside MFA's transaction the gate locks the session row last.
      *
      * @param  string  $level
      * @return void
@@ -543,13 +494,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside a caller's transaction that read before another request voided the
-     * session's step-up (removing the factor it was made with), the session is
-     * not fresh: the step-up is judged as committed, never as the transaction's
-     * snapshot shows it, which on MySQL at REPEATABLE READ still holds it. On
-     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
-     * first, and the question asked again in a new transaction is answered the
-     * same.
+     * A step-up voided after the transaction's first read is not fresh.
      *
      * @param  string  $level
      * @return void
@@ -580,12 +525,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside a caller's transaction that read before another request stepped
-     * the session up, the session is fresh on that step-up, which the
-     * transaction's snapshot on MySQL at REPEATABLE READ does not hold. On
-     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
-     * first, and the question asked again in a new transaction is answered the
-     * same.
+     * A step-up made after the transaction's first read is fresh.
      *
      * @param  string  $level
      * @return void
@@ -629,9 +569,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * The caller the kit's gates are asked for: the person the guard serves on
-     * the session `freshnessGate()` signed in, as a request served now reads
-     * it.
+     * The caller the kit's gates are asked for.
      *
      * @return \SineMacula\Laravel\Mfa\Context\CallerContext
      */
@@ -642,8 +580,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * The gate under test, asked on behalf of a session that has just signed
-     * in, which is fresh for an identifier change.
+     * The gate under test, asked for a session that has just signed in.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\FreshnessGate
      *
@@ -667,8 +604,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * A pending context of the person's on the sign-in given, as a pending
-     * caller would be served it.
+     * A pending context of the person's on the sign-in.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $signIn
@@ -693,8 +629,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Step the session up with a TOTP proof of the person's, through
-     * `laravel-authentication`, failing the test unless it is recorded.
+     * Step the session up with a TOTP proof, failing unless it is recorded.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -722,8 +657,7 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Assert the call is refused as a requirement the gate cannot take, and
-     * return the refusal.
+     * Assert the call is refused as a requirement the gate cannot take.
      *
      * @param  \Closure(): mixed  $call
      * @return \InvalidArgumentException

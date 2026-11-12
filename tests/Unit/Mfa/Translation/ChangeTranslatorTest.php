@@ -16,10 +16,7 @@ use SineMacula\Laravel\Mfa\Enums\FactorChangeMade as MfaFactorChangeMade;
 use SineMacula\Laravel\Mfa\Enums\PendingAction as MfaPendingAction;
 
 /**
- * Unit tests for translating factor changes and pending actions between MFA and
- * `laravel-authentication`: every case MFA names crosses as the one
- * `laravel-authentication` spells the same, and the pending actions MFA does
- * not take are left out.
+ * Unit tests for translating factor changes and pending actions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,8 +27,7 @@ use SineMacula\Laravel\Mfa\Enums\PendingAction as MfaPendingAction;
 final class ChangeTranslatorTest extends TestCase
 {
     /**
-     * Rows of `[MFA's factor change, laravel-authentication's]` for every
-     * change MFA gates.
+     * Rows of `[MFA's factor change, laravel-authentication's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\FactorChange, 1: \SineMacula\Laravel\Authentication\Factors\Enums\FactorChange}>
      */
@@ -47,8 +43,7 @@ final class ChangeTranslatorTest extends TestCase
     }
 
     /**
-     * Every factor change MFA gates is `laravel-authentication`'s of the same
-     * value.
+     * Every factor change MFA gates crosses as the one of the same value.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $mfa
      * @param  \SineMacula\Laravel\Authentication\Factors\Enums\FactorChange  $authentication
@@ -62,8 +57,7 @@ final class ChangeTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's factor change made, laravel-authentication's]` for every
-     * change MFA makes.
+     * Rows of `[MFA's factor change made, laravel-authentication's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\FactorChangeMade, 1: \SineMacula\Laravel\Authentication\Factors\Enums\FactorChangeMade}>
      */
@@ -77,8 +71,7 @@ final class ChangeTranslatorTest extends TestCase
     }
 
     /**
-     * Every factor change MFA makes is `laravel-authentication`'s of the same
-     * value.
+     * Every factor change MFA makes crosses as the one of the same value.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChangeMade  $mfa
      * @param  \SineMacula\Laravel\Authentication\Factors\Enums\FactorChangeMade  $authentication
@@ -92,8 +85,7 @@ final class ChangeTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's pending action, laravel-authentication's]` for every
-     * action MFA takes.
+     * Rows of `[MFA's pending action, laravel-authentication's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\PendingAction, 1: \SineMacula\Laravel\Authentication\Sessions\Enums\PendingAction}>
      */
@@ -127,8 +119,7 @@ final class ChangeTranslatorTest extends TestCase
     }
 
     /**
-     * The pending actions MFA does not take are left out, and the rest keep
-     * their order.
+     * The pending actions MFA does not take are left out, in order.
      *
      * @return void
      */

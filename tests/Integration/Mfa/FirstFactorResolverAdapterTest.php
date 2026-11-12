@@ -36,19 +36,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's first-factor resolver answered with the first
- * factor `laravel-authentication` recorded on the identity's current session
- * (IAM-3.11): MFA's proof of it, bound to the session for sign-in and stamped
- * with the identity's current verification generation, and nothing for a guard
- * holding no live session of the identity.
- *
- * MFA's `FirstFactorResolverTests` kit runs on real sessions, signed in through
- * `laravel-authentication` with a password. Inside a transaction on the storage
- * connection, as MFA's removal reaches it, the resolver locks the session's row
- * after the caller's own locks, and a refusal rolls the caller's transaction
- * back: both run at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
- * and are skipped on SQLite. The members' defaults stay bound: the resolver is
- * resolved directly.
+ * Tests for MFA's first-factor resolver over the identity's current session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -64,8 +52,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     use FindsLockedSessions, FirstFactorResolverTests, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /**
-     * The first factor is the session's own, as MFA's proof bound to the
-     * session for sign-in under the identity's current verification generation.
+     * The first factor is the session's own, bound to the session for sign-in.
      *
      * @return void
      *
@@ -95,9 +82,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     }
 
     /**
-     * Nothing is answered for another identity's session or a revoked session
-     * the guard still holds; an application that is no session guard is a
-     * misconfiguration, and throws.
+     * Nothing is answered without a live session of the identity.
      *
      * @return void
      *
@@ -132,8 +117,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity whose key cannot name a proof's owner is not resolved: it
-     * throws rather than answering another identity's first factor (IAM-8.2).
+     * An identity whose key cannot name a proof's owner throws.
      *
      * @return void
      *
@@ -157,10 +141,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     }
 
     /**
-     * Resolving inside the caller's transaction, after the caller's own locks
-     * (MFA's identity state), locks the session's row last, until the caller's
-     * transaction ends, as MFA's removal reaches the resolver inside its own;
-     * resolving outside one takes no lock.
+     * Inside the caller's transaction the session's row is locked last.
      *
      * @param  string  $level
      * @return void
@@ -193,9 +174,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in the resolver cannot resolve inside the caller's transaction
-     * throws there, and everything the caller wrote in it rolls back, the
-     * session's lock released with it.
+     * An unresolved sign-in rolls the caller's transaction back.
      *
      * @param  string  $level
      * @return void
@@ -250,8 +229,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
     }
 
     /**
-     * A person signed in through `laravel-authentication`, the guard acting on
-     * the session.
+     * A person signed in, the guard acting on the session.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *

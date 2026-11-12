@@ -9,13 +9,7 @@ use SineMacula\Laravel\Mfa\Drivers\AbstractCodeDriver;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 
 /**
- * A delivered factor driver of the application's own, registered through
- * `Mfa::extend()`: it states the channel kind it is given and delivers each
- * code itself, by its own transport, keeping every message it is handed so a
- * test can tell its `deliver()` ran and read the code it carried, and calling
- * the observer it is given, if any, as it delivers, so a test can watch the
- * transaction the delivery runs in. A destination is any text that is not
- * blank, trimmed.
+ * An application's own code driver that keeps every message it delivers.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -78,8 +72,7 @@ final class RecordingCodeDriver extends AbstractCodeDriver
     }
 
     /**
-     * Keep the message, as the driver's own transport would send it, once the
-     * observer has watched it go.
+     * Keep the message once the observer has watched it go.
      *
      * @param  \SineMacula\Laravel\Mfa\Codes\CodeMessage  $message
      * @return void

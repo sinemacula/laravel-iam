@@ -30,16 +30,7 @@ use Tests\Fixtures\Mfa\Pending\RequiresAdditionalVerification;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Arranges what the tests of the pending adapters share: the two adapters bound
- * over MFA's defaults, `laravel-authentication` asking every sign-in for an
- * additional verification its stand-in check meets after a number of further
- * factors, people signed in pending with a password, the request carrying a
- * pending credential, and further-factor proofs MFA verified for a pending
- * session.
- *
- * The requirement adapters are not bound: their stand-ins keep these tests to
- * the pending adapters alone. The tables come from `MigratesMembers`, the
- * people from `SignsInPeople`.
+ * Arranges pending sessions for the pending adapters' tests.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,9 +53,7 @@ trait ArrangesPendingSessions
     private const string FACTOR = 'factor-1';
 
     /**
-     * Bind the pending adapters over MFA's defaults, and the stand-ins that
-     * leave a password sign-in pending until it holds the given number of
-     * further factors.
+     * Bind the pending adapters, needing the given number of further factors.
      *
      * @param  int  $needed
      * @return void
@@ -82,8 +71,7 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * Sign the person in with their password, failing the test unless the
-     * session waits pending, and return its pending credential.
+     * Sign the person in pending and return the pending credential.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return string
@@ -113,8 +101,7 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * The pending context the pending credential resolves to, read from a
-     * request carrying it, as MFA's `CallerContext::fromRequest()` reads it.
+     * The pending context a request carrying the credential resolves to.
      *
      * @param  string  $credential
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
@@ -153,9 +140,7 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * An additional factor's proof made now, as MFA makes one on the pending
-     * session, for the purpose and on the sign-in given (the pending session's
-     * own by default).
+     * An additional factor's proof made now on the pending sign-in.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
@@ -186,11 +171,7 @@ trait ArrangesPendingSessions
     }
 
     /**
-     * MFA's successful verification of the proof on the pending session, as
-     * MFA's own acceptance makes it: the session's proofs evaluated together by
-     * MFA's requirement check, and the proof refreshing the multifactor
-     * evidence when the check, judging the session's first factor and the proof
-     * alone, dates that evidence to the proof.
+     * MFA's successful verification of the proof on the pending session.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof

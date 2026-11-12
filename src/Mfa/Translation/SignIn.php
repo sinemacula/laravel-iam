@@ -11,17 +11,8 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * One of `laravel-authentication`'s sessions as MFA names a sign-in: the
- * identity, the application (the guard's name), the session's key as a string
- * and the identity's MFA verification generation when its proofs are read.
- *
- * `laravel-authentication`'s recorded proofs carry no binding of their own, so
- * a proof read from a session is bound here: MFA counts a proof only for its
- * own identity, application and sign-in, and only under the identity's current
- * verification generation, which the adapter reads and hands in, since reading
- * it is a query and translation is not. Where `laravel-authentication` names no
- * session, every proof of one judgement is bound to the same sign-in
- * (`UNNAMED`), as MFA counts only the proofs of one.
+ * A `laravel-authentication` session as MFA names a sign-in, binding the proofs
+ * read from it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,7 +21,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
  */
 final readonly class SignIn
 {
-    /** @var string The sign-in a proof is bound to when `laravel-authentication` names no session (at sign-in, and when it asks for a requirement): a reference no session key can be, as it holds a colon, so no adapter that reads a session's proofs ever produces it. */
+    /** @var string The sign-in bound when no session is named; the colon keeps it from matching a session key. */
     public const string UNNAMED = 'iam:unnamed-session';
 
     /**
@@ -57,9 +48,7 @@ final readonly class SignIn
     ) {}
 
     /**
-     * The reference MFA names a session by: its key, which is always its
-     * primary key, as a string. A key that is neither a non-empty string nor an
-     * integer names no session MFA could refer back to.
+     * The session's key as a string, the reference MFA names it by.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  string  $application
@@ -79,8 +68,7 @@ final readonly class SignIn
     }
 
     /**
-     * The binding MFA reads a proof of the sign-in made for the given purpose
-     * as bound to.
+     * The binding of a proof of the sign-in made for the purpose.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @return \SineMacula\Laravel\Mfa\Proofs\ProofBinding

@@ -10,8 +10,8 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Mfa\Contracts\GuardApplicationResolver;
 
 /**
- * MFA's application is the guard of the same name (IAM-3.12): the guard MFA
- * hands it, otherwise the default guard.
+ * MFA's application is the guard of the same name, the default guard unless MFA
+ * names one.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -21,8 +21,7 @@ use SineMacula\Laravel\Mfa\Contracts\GuardApplicationResolver;
 final readonly class ApplicationResolverAdapter implements GuardApplicationResolver
 {
     /**
-     * The application the request is for: the name of the default guard, the
-     * one that serves it.
+     * The default guard's name.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return string
@@ -36,7 +35,7 @@ final readonly class ApplicationResolverAdapter implements GuardApplicationResol
     }
 
     /**
-     * The application the request is for through the guard: the guard's name.
+     * The guard's name.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  string  $guard

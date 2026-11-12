@@ -60,9 +60,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's proof store over `laravel-authentication`'s
- * session proofs (IAM-3.11), with MFA's `ProofStoreTests` kit run on real
- * sessions. The lock and rollback cases are skipped on SQLite.
+ * Integration tests for MFA's proof store over the session proofs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -92,8 +90,7 @@ final class ProofStoreAdapterTest extends TestCase
     private (EloquentSession&Model)|null $kitSession = null;
 
     /**
-     * Proofs made at the same instant are read in the order they were recorded,
-     * as MFA's contract asks of `proofs()`.
+     * Proofs made at the same instant are read in the order recorded.
      *
      * @return void
      *
@@ -120,8 +117,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * The current sign-in is the key of the guard's current session, whatever
-     * sign-in MFA began.
+     * The current sign-in is the guard's session.
      *
      * @return void
      *
@@ -141,9 +137,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * An identity the guard holds no session of has no current sign-in and no
-     * proofs: with no session, with another identity's, and once the guard has
-     * stopped acting on it.
+     * An identity the guard holds no session of has no sign-in and no proofs.
      *
      * @return void
      *
@@ -168,9 +162,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * With no session of the identity, the guard holding another identity's,
-     * the store answers no first factor without asking
-     * `laravel-authentication`'s session service for one.
+     * Without a session of the identity no first factor is asked for.
      *
      * @return void
      *
@@ -192,10 +184,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * An application that is no session guard of `laravel-authentication`'s, an
-     * `api_key` guard among them, is a misconfiguration, not a guard holding no
-     * sign-in: asking about it throws (IAM-8.2) rather than answering that
-     * nothing counts.
+     * An application that is no session guard throws.
      *
      * @return void
      *
@@ -229,9 +218,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * The session's counting proofs are MFA's, oldest first, each bound to the
-     * identity, the application and the session for the purpose it was made
-     * for, under the identity's current verification generation.
+     * The session's counting proofs are translated to MFA's, oldest first.
      *
      * @return void
      *
@@ -282,8 +269,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A proof MFA cannot express (an additional factor naming no factor) is
-     * left out.
+     * A proof MFA cannot express does not count.
      *
      * @return void
      *
@@ -308,8 +294,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A session revoked while the guard still holds it keeps no proof that
-     * counts.
+     * A revoked session keeps no proof that counts.
      *
      * @return void
      *
@@ -348,8 +333,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * An identity whose key cannot name a proof's owner is not resolved: it
-     * throws rather than reading another identity's sign-in (IAM-8.2).
+     * An identity whose key cannot name a proof's owner throws.
      *
      * @return void
      *
@@ -377,10 +361,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * The sign-in's own first factor is kept, already held by the session, and
-     * any proof it does not hold is refused and not kept: another identity's,
-     * another sign-in's, an application's that is no session guard, a first
-     * factor made otherwise than the session's, and a further proof.
+     * Only the sign-in's own first factor is kept.
      *
      * @return void
      *
@@ -415,8 +396,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A proof is refused when the guard holds no session, acts as the identity
-     * on none, or holds another identity's.
+     * A proof is refused without the identity's session.
      *
      * @return void
      *
@@ -442,8 +422,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to a session that is no longer live and active is refused,
-     * though the guard still holds it.
+     * A proof of a revoked session is refused.
      *
      * @return void
      *
@@ -462,8 +441,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Beginning and forgetting a sign-in or a factor run no query, and the
-     * session keeps its proofs.
+     * Beginning and forgetting run no query.
      *
      * @return void
      *
@@ -493,9 +471,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Recording inside the caller's transaction, after the caller's own locks
-     * (MFA's identity state), locks the session's row last, until the caller's
-     * transaction ends; recording outside one opens and ends its own.
+     * Recording locks the session row last in the caller's transaction.
      *
      * @param  string  $level
      * @return void
@@ -533,8 +509,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A refusal inside the caller's transaction rolls back everything the
-     * caller wrote in it.
+     * A refusal rolls the caller's transaction back.
      *
      * @param  string  $level
      * @return void
@@ -568,10 +543,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * A session revoked by another transaction after the caller's began is read
-     * current under its lock: the proof is refused, or, at PostgreSQL's
-     * REPEATABLE READ, the caller's transaction fails to serialise, for its
-     * owner to retry whole.
+     * A session revoked concurrently is read current under its lock.
      *
      * @param  string  $level
      * @return void
@@ -642,8 +614,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Another person of the same kind, with no sign-in until a check signs them
-     * in.
+     * Another person of the same kind, not yet signed in.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      */
@@ -665,10 +636,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Sign the identity in through `laravel-authentication` for real, and name
-     * the session as MFA names the sign-in, with the guard no longer acting on
-     * it, so the store holds no sign-in of the identity until the check
-     * arranges its first factor.
+     * Sign the identity in, with the guard no longer acting on the session.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -688,10 +656,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Sign the identity in again through `laravel-authentication`, with the
-     * guard acting on the new session, as the bearer request after a sign-in
-     * does, so the new session is the identity's current sign-in and the one it
-     * replaced is not.
+     * Sign the identity in again, with the guard acting on the new session.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -716,16 +681,6 @@ final class ProofStoreAdapterTest extends TestCase
 
     /**
      * Put the check's proof in the sign-in through `laravel-authentication`.
-     *
-     * A password first factor is the one `laravel-authentication` recorded on
-     * signing the session in, its only first factor: the guard acts on the
-     * session, as the bearer request after a sign-in does, so it counts, and
-     * the check's proof is recorded through the store, which keeps it only as
-     * that session's own first factor. On a sign-in that replaced another, the
-     * guard already acts on the session, so its first factor shows already and
-     * a further factor is recorded as the equivalent evidence. A further factor
-     * is recorded through `laravel-authentication`'s step-up, the one way it
-     * records one on an active session, made with the same factor.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -767,8 +722,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Sign the identity out through `laravel-authentication`, which revokes the
-     * session and forgets the guard's binding to it.
+     * Sign the identity out through `laravel-authentication`.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -783,9 +737,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Enrol a confirmed factor of MFA's for the identity, and name it as a
-     * proof made with it names it: the store counts such a proof only while the
-     * identity holds the factor.
+     * Enrol a confirmed factor for the identity and name it as a proof does.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return string
@@ -798,8 +750,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Forget the deleted factor as MFA's removal does: through the store, then
-     * the session revoker, which voids its proofs.
+     * Forget the deleted factor through the store, then the session revoker.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -820,8 +771,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Void the identity's proofs as a reset voids them: by ending every session
-     * it has through `laravel-authentication`'s `factorReset()`.
+     * Void the identity's proofs by ending every session with `factorReset()`.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return void
@@ -880,8 +830,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Assert the identity has no current sign-in on the application, and no
-     * proofs.
+     * Assert the identity has no current sign-in and no proofs.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
@@ -985,9 +934,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * Step the session up through `laravel-authentication` with a further proof
-     * of the person's, accepted as multifactor, as the step-up adapter hands
-     * one over.
+     * Step the session up with a further multifactor proof of the person's.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -1019,8 +966,7 @@ final class ProofStoreAdapterTest extends TestCase
     }
 
     /**
-     * The proofs of the identity's current sign-in on the application, as MFA
-     * reads them: it asks which sign-in is current once and names the answer.
+     * The proofs of the identity's current sign-in, as MFA reads them.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\ProofStore  $store
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity

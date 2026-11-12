@@ -54,43 +54,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Races MFA's factor changes, gated and revoked through
- * `laravel-authentication` (IAM-3.6, IAM-3.7), against a step-up of the same
- * session and against each other, on MySQL and PostgreSQL at READ COMMITTED and
- * REPEATABLE READ, with every adapter between the two members bound by this
- * package's binding rule, as an application gets them.
- *
- * Every MFA change takes the identity's state first and its factors second, in
- * one transaction on the storage connection, before any row of
- * `laravel-authentication`'s; the session's row is taken after both, and any
- * other row of MFA's taken after it (a challenge, an enrolment, a passkey
- * association) is one of the identity's own, which no transaction takes without
- * the identity's state. `laravel-authentication` alone takes the session's row
- * and nothing of MFA's. A removal goes on to take the identity's other
- * sessions' rows after the current session's row and its proofs, in the
- * revoker's `factorRemoved()`. So, but for the one deadlock below, no two
- * transactions can each hold a row the other waits on: whichever holds the
- * contended row first commits, and the other resumes against what it committed,
- * never deadlocked and never against what it overwrote. A PostgreSQL
- * transaction at REPEATABLE READ that cannot see what the other committed fails
- * to serialise instead; MFA opens its own transaction, which never retries and
- * is not to be wrapped, so the caller retries the request (IAM-11.2). One
- * wrapped all the same never goes ahead on a step-up voided while it waited:
- * `laravel-authentication`'s gate judges the session's proofs as committed
- * under the session's lock, whatever the wrapping transaction read first, and
- * refuses it itself.
- *
- * The one deadlock left is `laravel-authentication`'s by design: on MySQL at
- * REPEATABLE READ a removal's freshness judgement holds the gaps around the
- * session's proofs, and a step-up or reauthentication of the identity's
- * neighbouring session, holding that session's row while its proof waits on a
- * gap, deadlocks with the removal that goes on to end it. The database fails
- * the neighbour's side, with nothing of it written, as a concurrency failure
- * whose class depends on whether a transaction was already open around it.
- *
- * The second side of each race runs in a forked worker on a connection of its
- * own, which the test never opened, so the two share none; the test commits its
- * side only once the database reports the worker waiting on a lock.
+ * Races MFA's factor changes against step-ups and each other.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -185,10 +149,7 @@ final class FactorChangeLockOrderTest extends TestCase
     private int $outermost = 0;
 
     /**
-     * A step-up of the session that waits on a removal holding its row resumes
-     * once the removal commits, and is refused: the removal returned the
-     * session to pending. At REPEATABLE READ on PostgreSQL the step-up cannot
-     * see the removal, so it fails to serialise instead.
+     * A step-up waiting on a removal resumes and is refused.
      *
      * @param  string  $level
      * @return void
@@ -228,10 +189,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A removal that waits on a step-up holding the session's row resumes once
-     * the step-up commits, and is allowed on it. At REPEATABLE READ on
-     * PostgreSQL the removal cannot see the step-up, so it fails to serialise
-     * instead, and nothing of it is kept: MFA's own transaction never retries.
+     * A removal waiting on a step-up resumes and is allowed.
      *
      * @param  string  $level
      * @return void
@@ -259,11 +217,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A factor change (enrolling a further factor, gated through
-     * `laravel-authentication`) that waits on a removal holding the identity's
-     * state resumes once the removal commits, against the factors it left, and
-     * is allowed on the step-up the session still holds. At REPEATABLE READ on
-     * PostgreSQL it cannot see the removal, so it fails to serialise instead.
+     * A factor change waiting on a removal resumes against what it left.
      *
      * @param  string  $level
      * @return void
@@ -302,12 +256,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A removal that waits on a step-up and fails to serialise is made when the
-     * caller retries the request, as MFA's changes are retried (IAM-11.2): MFA
-     * opens its own transaction, which never retries and cannot be wrapped, so
-     * the failure reaches the caller, and the request made again is allowed on
-     * the step-up it waited on. Only PostgreSQL at REPEATABLE READ fails; at
-     * every other level the first request is allowed.
+     * A removal that fails to serialise is made when the request is retried.
      *
      * @param  string  $level
      * @return void
@@ -335,19 +284,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * MFA's changes are not to be run inside a transaction someone else opens,
-     * `Iam::transaction()` included (IAM-11.2), and one that is never goes
-     * ahead on a step-up voided while it waited. The session holds step-ups
-     * made with two factors; one removal, allowed on the step-up with the
-     * second, voids the step-up with the first, while a removal of the second,
-     * run inside `Iam::transaction()`, waits on it. Once the first commits, the
-     * second has only the voided step-up left, and is refused as not fresh at
-     * every level, by `laravel-authentication`'s own gate (`step_up_required`),
-     * the refusal this package's gate passes on as it is: at REPEATABLE READ on
-     * MySQL the snapshot fixed before the wait still shows the voided step-up
-     * to a plain read, but the gate judges the session's proofs as committed
-     * under the session's lock; on PostgreSQL the first attempt fails to
-     * serialise and the package's transaction runs it again.
+     * A wrapped removal is never allowed on a step-up voided while it waited.
      *
      * @param  string  $level
      * @return void
@@ -397,12 +334,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Rows of `[the neighbouring session's proof, how it is made, what it
-     * reports]`: a step-up of the session signed in after the removal's, or a
-     * reauthentication of the one signed in before it, each made directly
-     * through `laravel-authentication`, its own transaction the outermost;
-     * inside a transaction the caller opened; and inside `Iam::transaction()`,
-     * which retries it whole.
+     * Rows of `[neighbouring proof, how it is made, what it reports]`.
      *
      * @return iterable<string, array{0: string, 1: string, 2: string}>
      */
@@ -423,19 +355,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * On MySQL at REPEATABLE READ a removal's freshness judgement holds the
-     * gaps on either side of the session's proofs until MFA's transaction ends.
-     * A step-up or a reauthentication of the identity's neighbouring session,
-     * whose proofs border these, holds that session's row while its proof waits
-     * on a gap, and the removal, ending the neighbouring session, then waits on
-     * its row. The database fails one side, the neighbour's, with nothing of it
-     * written, and the removal goes ahead. The failure is Laravel's
-     * `DeadlockException` only when the neighbour's side ran inside a
-     * transaction the caller opened; made directly, its own transaction the
-     * outermost, it is the `QueryException` the database raised, which
-     * Laravel's concurrency detection recognises all the same. Inside
-     * `Iam::transaction()`, it is retried whole, against the removal, which
-     * ended the session.
+     * A neighbouring proof deadlocked with a removal is a concurrency failure.
      *
      * @param  string  $proof
      * @param  string  $how
@@ -474,8 +394,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Rows of `[path, isolation level]`: each change MFA makes through the
-     * adapters at each level.
+     * Rows of `[path, isolation level]`.
      *
      * @return iterable<string, array{0: string, 1: string}>
      */
@@ -489,13 +408,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Each change takes the identity's state first and its factors second, in
-     * one transaction, before any row of `laravel-authentication`'s; the
-     * challenge a step-up proves is consumed under them; the session's row is
-     * taken after both; and every row of MFA's taken after the session's is the
-     * identity's own, which no transaction takes without the identity's state.
-     * A step-up and a removal write the session last; MFA's counters of
-     * attempts are kept outside the transaction.
+     * Each change locks the identity's state and factors before the session.
      *
      * @param  string  $path
      * @param  string  $level
@@ -536,12 +449,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A removal takes the current session's row, then reads its proofs, and
-     * only then, in the revoker's `factorRemoved()`, takes the row of the
-     * identity's other session, which it ends: `laravel-authentication`'s
-     * order, under which another session's row is taken after the current
-     * session's, never before it. That order is what leaves the deadlock with a
-     * neighbouring session's proof on MySQL at REPEATABLE READ.
+     * A removal locks the current session before the identity's other sessions.
      *
      * @param  string  $level
      * @return void
@@ -577,8 +485,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Give the worker and the observer connections of their own to the test's
-     * database.
+     * Give the worker and the observer connections of their own.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -595,9 +502,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A person signed in as many times as asked, the guard acting on the first
-     * session. Each test gives the person their factors only afterwards, so
-     * MFA's requirement asks none of the sessions for a further factor.
+     * A person signed in as many times as asked.
      *
      * @param  int  $sessions
      * @return array{0: \Tests\Fixtures\Models\Person, 1: list<\SineMacula\Laravel\Authentication\Models\Session>}
@@ -635,8 +540,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Remove the factor through MFA from the session the key names, reporting
-     * whether the removal was made, or MFA's reason when it was not.
+     * Remove the factor from the session the key names, reporting the outcome.
      *
      * @param  string  $key
      * @param  string  $factor
@@ -652,8 +556,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Remove the factor through MFA from the session the guard acts on,
-     * reporting whether the removal was made, or MFA's reason when it was not.
+     * Remove the factor from the guard's session, reporting the outcome.
      *
      * @param  string  $factor
      * @return string
@@ -668,9 +571,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Remove the factor through MFA from the session the key names, as a
-     * request would, and make the request once more when it fails to serialise,
-     * reporting the outcome and the attempt that reached it.
+     * Remove the factor, retrying once when it fails to serialise.
      *
      * @param  string  $key
      * @param  string  $factor
@@ -693,12 +594,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Step the session the key names up with the factor, or reauthenticate it
-     * with the person's password, made as asked: directly, inside a transaction
-     * opened on the storage connection, or inside `Iam::transaction()`. Reports
-     * whether it was issued, or the reason it was not, with the attempt that
-     * reached it inside `Iam::transaction()`; or the failure it threw and
-     * whether Laravel's concurrency detection recognises it.
+     * Step up or reauthenticate the session as asked, reporting the outcome.
      *
      * @param  string  $proof
      * @param  \Tests\Fixtures\Models\Person  $person
@@ -735,9 +631,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Have the bound factor-change gate, once it allows a change, run the
-     * callback before it hands the change back to MFA, inside MFA's
-     * transaction.
+     * Have the bound gate run the callback once it allows a change.
      *
      * @param  \Closure(): void  $then
      * @return void
@@ -781,8 +675,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Record, from now on, the detail of every refusal the bound factor-change
-     * gate throws, passing each on unchanged, and return the record.
+     * Record every refusal the bound factor-change gate throws.
      *
      * @return \ArrayObject<int, string>
      */
@@ -832,9 +725,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Assert what a removal raced against a step-up kept: when made, the factor
-     * gone, every other session ended and the current session's step-up with
-     * the kept factor still counting; when not, nothing of it.
+     * Assert what a removal raced against a step-up kept.
      *
      * @param  bool  $made
      * @param  \SineMacula\Laravel\Authentication\Models\Session  $current
@@ -854,9 +745,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * From now on, have `laravel-authentication` ask every session for a
-     * phishing-resistant proof, which no authenticator app code is, so a
-     * session judged again after a removal returns to pending.
+     * Have `laravel-authentication` ask for a phishing-resistant proof.
      *
      * @return void
      */
@@ -878,9 +767,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * The change the path names, ready to run, with the statement that consumes
-     * its challenge (when it proves one) and whether it writes the session
-     * last.
+     * The change the path names, ready to run.
      *
      * @param  string  $path
      * @param  \Tests\Fixtures\Models\Person  $person
@@ -907,9 +794,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * A step-up with a code delivered to an email factor of the person's, sent
-     * now, ready to verify, by MFA's own challenge gateway, bound as the
-     * application's, whose codes MFA keeps itself.
+     * A step-up with an email code sent by MFA's own challenge gateway.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \Closure(): bool
@@ -946,9 +831,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Run the change, failing unless it went ahead, and return the statements
-     * it made inside its outermost transaction on the storage connection,
-     * failing unless it made them in exactly one.
+     * Run the change and return its one transaction's statements.
      *
      * @param  \Closure(): bool  $change
      * @return list<string>
@@ -975,8 +858,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Run the change, failing unless it went ahead in exactly one transaction,
-     * and return the statements it made inside it with their bindings.
+     * Run the change and return its statements with their bindings.
      *
      * @param  \Closure(): bool  $change
      * @return list<array{sql: string, bindings: list<string>}>
@@ -993,8 +875,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * The index of the first statement that locks or writes a row of the table
-     * bound to the key given, or `null` when none does.
+     * The index of the first statement that locks the table's row, if any.
      *
      * @param  list<array{sql: string, bindings: list<string>}>  $statements
      * @param  string  $table
@@ -1013,8 +894,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * The index of the first statement that reads rows of the table bound to
-     * the key given, or `null` when none does.
+     * The index of the first statement that reads the table's rows, if any.
      *
      * @param  list<array{sql: string, bindings: list<string>}>  $statements
      * @param  string  $table
@@ -1033,9 +913,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Record, while recording is on, every statement the storage connection
-     * runs with the transaction level it runs at, and count the outermost
-     * transactions it begins.
+     * Record the storage connection's statements and outermost transactions.
      *
      * @return void
      */
@@ -1065,8 +943,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Follow the storage connection's transaction level through one of its
-     * transaction events, counting an outermost transaction it begins.
+     * Track the storage connection's transaction level.
      *
      * @param  \Illuminate\Database\Events\ConnectionEvent  $event
      * @return void
@@ -1080,10 +957,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Assert the transaction takes the identity's state first and its factors
-     * second, touches no row of `laravel-authentication`'s before both, takes
-     * the session's row after them, and takes no row of MFA's that is not the
-     * identity's own: no counter of attempts, which MFA keeps outside it.
+     * Assert the identity's state and factors are locked before the session.
      *
      * @param  list<string>  $statements
      * @return void
@@ -1110,8 +984,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * The index of the first statement that holds the text, or `null` when none
-     * does.
+     * The index of the first statement that holds the text, if any.
      *
      * @param  list<string>  $statements
      * @param  string  $text
@@ -1151,8 +1024,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Whether the statement locks or writes a row: a locking read, an insert,
-     * an update or a delete.
+     * Whether the statement locks or writes a row.
      *
      * @param  string  $sql
      * @return bool
@@ -1196,8 +1068,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Skip the race where it cannot be run: on SQLite, or a process that cannot
-     * fork; otherwise set the level of every transaction from now on.
+     * Skip on SQLite or without fork support, else set the isolation level.
      *
      * @param  string  $level
      * @return void
@@ -1214,9 +1085,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Run the first side in a transaction left open, run the second in a forked
-     * worker, commit once the database reports the worker waiting on a lock,
-     * and return what the worker reported once it resumed.
+     * Race the first side against a forked worker, returning its report.
      *
      * @param  \Closure(): mixed  $first
      * @param  \Closure(): string  $second
@@ -1283,10 +1152,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Skip the deadlock where it cannot arise or cannot be run: anywhere but
-     * MySQL and MariaDB, whose REPEATABLE READ locks the gaps a current read
-     * spans, or in a process that cannot fork; otherwise run every transaction
-     * from now on at REPEATABLE READ.
+     * Skip unless on MySQL or MariaDB with fork support.
      *
      * @return void
      */
@@ -1300,11 +1166,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Fork a worker to run the second side, run the first, and once the first
-     * is past the factor-change gate, still inside MFA's transaction, let the
-     * worker go on and hold the first until the database reports the worker
-     * waiting on a lock. Returns what each side reported, the first's failure
-     * described as the worker's is.
+     * Deadlock the first side with a forked worker, returning both reports.
      *
      * @param  \Closure(): string  $first
      * @param  \Closure(): string  $second
@@ -1373,10 +1235,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Run the second side in the forked worker, on the racer's connection, as
-     * the default and so the storage connection, at the level given. The worker
-     * reports its connection's id before it starts and the outcome after, then
-     * kills itself, so nothing the test set up is torn down twice.
+     * Run the second side in the forked worker, then kill the worker.
      *
      * @param  \Closure(): string  $second
      * @param  \Closure(string): void  $send
@@ -1408,8 +1267,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Wait until the database reports the worker's connection waiting for a row
-     * lock, failing when it never does.
+     * Wait until the database reports the worker waiting on a row lock.
      *
      * @param  string  $backend
      * @return void
@@ -1437,8 +1295,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * What the worker reports for a failure: a failure to serialise, wherever
-     * it is in the chain, or the failure itself.
+     * What the worker reports for a failure.
      *
      * @param  \Throwable  $exception
      * @return string
@@ -1455,9 +1312,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * What a side reports for a failure: its class, and whether Laravel's
-     * concurrency detection recognises it as a deadlock or a failure to
-     * serialise; or, when it does not, the failure itself.
+     * What a side reports for a failure, as a concurrency failure or not.
      *
      * @param  \Throwable  $exception
      * @return string
@@ -1472,9 +1327,7 @@ final class FactorChangeLockOrderTest extends TestCase
     }
 
     /**
-     * Whether a transaction that waited on a row another committed a change to
-     * can go on against that change: every one but PostgreSQL's at REPEATABLE
-     * READ, which fails to serialise instead.
+     * Whether a waiting transaction can go on against the other's commit.
      *
      * @param  string  $level
      * @return bool

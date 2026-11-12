@@ -24,44 +24,8 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 
 /**
- * `laravel-authentication`'s requirement check, answered by MFA's, so sign-in,
- * a tenant's policy, step-up and authorization conditions all get the same
- * answer (IAM-3.2).
- *
- * The requirement crosses as MFA's, part for part and age for age, and MFA's
- * check judges the subject's first factor with the further proofs the subject
- * reads; the parts it leaves unmet are the answer (IAM-3.14). The proofs are
- * read in one bounded query, as `laravel-authentication` asks: only the kinds a
- * requirement can be met with after the first factor, only those made since the
- * oldest time a part's maximum age allows (all of them when a part has none),
- * and at most as many as one query returns. A part met only by a proof older
- * than the newest that many is left unmet, never guessed met. A
- * reauthentication at the external provider is not read:
- * `laravel-authentication` counts no part of a requirement met by one, and on
- * its own it is all such a proof could meet.
- *
- * An external provider's first factor is handed to MFA naming no connection
- * (`ProviderTrust::withheld()`), so no combination policy can trust it by its
- * connection here: `laravel-authentication` asks its external evidence policy
- * first, with the tenant whose requirement it is, and that policy
- * (`ExternalEvidencePolicyAdapter::meets()`) counts only the evidence SSO
- * accepted, from a connection that tenant trusts. The check is told neither, so
- * trusting the connection here would count every sign-in through it, for every
- * tenant, whatever SSO accepted (IAM-4.6, IAM-5.1).
- *
- * Each proof is bound to the session judged (its key, as MFA names a sign-in),
- * or, at sign-in, before the session is written, to the sign-in no session key
- * can name (`SignIn::UNNAMED`); MFA counts only the proofs of one sign-in, so
- * every proof of one judgement is bound to the same. Each is stamped with the
- * identity's current verification generation, as MFA stamps a proof it records.
- * An identity MFA cannot hold factors for, or a session or identity whose key
- * names nothing, is refused by throwing (IAM-8.2), as is a proof MFA would not
- * build: no answer is guessed.
- *
- * It takes no lock: it is asked inside `laravel-authentication`'s transaction,
- * after the session row's lock when a session is judged, and reads the
- * generation and whatever MFA's check reads without locking, so the order
- * identity state, factors, session row is never inverted.
+ * `laravel-authentication`'s requirement check, answered by MFA's on the
+ * subject's proofs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -70,7 +34,7 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
  */
 final readonly class RequirementCheckAdapter implements AuthenticationRequirementCheck
 {
-    /** @var list<\SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind> The kinds of proof read beside the first factor: those a requirement can be met with, but a reauthentication at an external provider, which `laravel-authentication` counts through its external evidence policy first (`laravel-authorization`'s requirement checker, with no such policy, reads that too: `Authorization\RequirementCheckerAdapter::FURTHER_KINDS`). */
+    /** @var list<\SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind> The proofs read beside the first factor; an external reauthentication counts only through authentication's evidence policy. */
     private const array FURTHER_KINDS = [
         ProofKind::FIRST_FACTOR_REAUTHENTICATION,
         ProofKind::ADDITIONAL_FACTOR,
@@ -126,10 +90,7 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
     }
 
     /**
-     * The oldest time a proof can meet a part of the requirement at: its
-     * longest maximum age before the time judged, or `null` when a part has
-     * none, so any proof may meet it. `laravel-authorization`'s requirement
-     * checker bounds its read the same way.
+     * The oldest time a proof can meet a part, or `null` if one has no age.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \Carbon\CarbonImmutable  $now

@@ -23,16 +23,7 @@ use Tests\Fixtures\Mfa\Codes\Concerns\DeliversFactorCodes;
 use Tests\TestCase;
 
 /**
- * Integration tests for the order a delivered factor's code challenge takes its
- * locks in, once MFA's challenge gateway is `laravel-authentication`'s factor
- * codes (IAM-3.9): MFA's identity state, then its factors, then the session
- * whose first factor MFA's counters read, then `laravel-authentication`'s
- * counts on code requests or checks, which it takes inside MFA's transaction
- * when MFA calls from inside one, then its challenge, last, whether the code is
- * sent or checked, at both isolation levels. Every path that challenges a
- * factor takes the identity's state first, so two of them never wait on each
- * other in the other order, and `laravel-authentication` takes its counts in
- * one order of its own.
+ * Integration tests for the lock order of a factor's code challenge.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,8 +46,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     private bool $recording = false;
 
     /**
-     * Fake the delivery of factor codes, and record the storage connection's
-     * statements while asked to.
+     * Fake code delivery and record the storage connection's statements.
      *
      * @return void
      */
@@ -94,10 +84,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * A step-up's code, sent or checked through MFA, takes the identity's
-     * state, its factors, the session, `laravel-authentication`'s counts and
-     * the challenge, in that order, and the challenge only once all the others
-     * are held.
+     * A code locks the identity, factors, session, counts, then challenge.
      *
      * @param  string  $challenge
      * @param  string  $level
@@ -156,8 +143,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * Run the challenge, failing unless it went ahead, recording the statements
-     * it made on the storage connection.
+     * Run the challenge and record its statements on the storage connection.
      *
      * @param  \Closure(): bool  $challenge
      * @return void
@@ -175,8 +161,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * The index of the first statement that locks or writes a row of the table,
-     * or `null` when none does.
+     * The index of the first statement that locks the table's row, if any.
      *
      * @param  string  $table
      * @return ?int
@@ -193,8 +178,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * The index of the first statement that locks or writes a row of any of the
-     * tables a challenge locks.
+     * The index of the first statement that locks any challenge table.
      *
      * @return ?int
      */
@@ -210,8 +194,7 @@ final class CodeChallengeLockOrderTest extends TestCase
     }
 
     /**
-     * Whether the statement locks or writes a row: a locking read, an insert,
-     * an update or a delete.
+     * Whether the statement locks or writes a row.
      *
      * @param  string  $sql
      * @return bool

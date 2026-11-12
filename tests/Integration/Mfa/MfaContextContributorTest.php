@@ -36,23 +36,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for the `mfa` namespace of `laravel-authentication`'s
- * authentication context (IAM-3.12): the keys are MFA's own, worked out from
- * the contribution subject's session and its proofs, so the request's context
- * agrees with MFA's own view of the caller, a context built for another session
- * than the request's reports that session's verification, and one built in a
- * queued job, with no request and no guard bound, reports the session it names.
- * A session no longer live, a subject with no session and an identity that
- * cannot hold factors get the neutral context; a first factor older than every
- * proof read still counts; and inside a transaction the proofs are read
- * current, so a removal committed after the transaction's first read shows. The
- * request's context is built once and kept, so one built before a transaction
- * is returned unchanged inside it, as `laravel-authentication` keeps it, while
- * MFA's own view is asked afresh there.
- *
- * Each scenario that reads stored proofs runs at the connection's own level on
- * every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Tests for the `mfa` namespace of the authentication context.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -82,8 +66,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * The request's context holds MFA's own view of the caller under `mfa`:
-     * before the session is verified and once it is.
+     * The request's context is MFA's own view of the caller.
      *
      * @param  ?string  $level
      * @return void
@@ -119,8 +102,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * The proofs reach MFA oldest first, so the age reported is the newest
-     * verification's.
+     * The age reported is the newest verification's.
      *
      * @param  ?string  $level
      * @return void
@@ -144,9 +126,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * Proofs made at the same instant reach MFA in the order
-     * `laravel-authentication` reads them back (by their ids), oldest first, so
-     * the factor types come in that order.
+     * Proofs made at one instant keep the order they are read back in.
      *
      * @param  ?string  $level
      * @return void
@@ -173,8 +153,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * A context built for another session than the request's reports that
-     * session's verification, never the request's.
+     * A context built for another session reports that session's verification.
      *
      * @param  ?string  $level
      * @return void
@@ -206,8 +185,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * A context built in a queued job, with no request and no guard bound,
-     * reports the session the job names.
+     * A queued job's context reports the session the job names.
      *
      * @param  ?string  $level
      * @return void
@@ -243,8 +221,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * A session that is no longer live gets the neutral context, without MFA
-     * being asked: not even the confirmed factor the person holds is reported.
+     * A session no longer live is neutral without MFA being asked.
      *
      * @param  ?string  $level
      * @return void
@@ -269,8 +246,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * A subject with no session, and one whose identity cannot hold factors,
-     * get the neutral context.
+     * No session, or an identity without factors, is neutral.
      *
      * @return void
      *
@@ -291,9 +267,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * The session's first factor counts when it is older than every proof read:
-     * MFA reports evidence only after exactly one first factor, and the newest
-     * of the proofs read is the newest evidence.
+     * A first factor older than every proof read still counts.
      *
      * @param  ?string  $level
      * @return void
@@ -328,8 +302,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * A session whose first factor no longer counts is asked of MFA with its
-     * further proofs alone, which MFA reports no evidence for.
+     * A session whose first factor no longer counts reports no evidence.
      *
      * @param  ?string  $level
      * @return void
@@ -356,9 +329,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * Inside a transaction the proofs are read current: a removal committed on
-     * another connection after the transaction's first read shows, as the
-     * contributor answers once the session's row is locked.
+     * Inside a transaction the proofs are read current.
      *
      * @param  string  $level
      * @return void
@@ -390,11 +361,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * The request's context is built once and kept: one built before a
-     * transaction is returned unchanged inside it, with no query run and so no
-     * lock taken, after another process has voided the session's proofs, while
-     * MFA's own view of the caller, asked inside the same transaction, reads
-     * the proofs current.
+     * A context built before a transaction is kept unchanged inside it.
      *
      * @param  string  $level
      * @return void
@@ -443,8 +410,7 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
-     * The `mfa` keys the registered contributor gives the person's session,
-     * read afresh.
+     * The `mfa` keys contributed for the person's session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session

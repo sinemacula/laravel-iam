@@ -9,10 +9,7 @@ use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 
 /**
- * A delivered factor that keeps no state of its own on a row: confirmed, of the
- * type and to the destination given, identified as given. MFA finds no such
- * factor among an identity's, so a code challenge never goes ahead for it; and
- * as it needs no application, a translation can be tested with it alone.
+ * A confirmed delivered factor with no row, so MFA never finds it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

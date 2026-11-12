@@ -28,23 +28,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Removes a factor through MFA with every adapter between the two members bound
- * by this package's binding rule, as an application gets them, and holds MFA's
- * account of the removal to `laravel-authentication`'s (IAM-3.7, IAM-3.11).
- *
- * MFA deletes the factor, forgets it in the proof store, reads the proofs the
- * session kept and only then reports the removal to the session revoker, whose
- * `factorRemoved()` voids the factor's proofs and judges the session again. The
- * requirement MFA reports outstanding is judged on the proofs it read, so the
- * proof store must already leave the removed factor's proofs out: otherwise MFA
- * reports the requirement met while `laravel-authentication` has returned the
- * session to pending in the same transaction.
- *
- * The identity asks for a further factor made within the last five minutes once
- * it holds a factor. The session steps up with the factor it keeps, then,
- * later, with the one it removes; the removal is allowed on the first step-up,
- * still fresh enough for a factor change, and leaves the session either still
- * meeting the requirement or short of it.
+ * Tests that MFA's account of a factor removal agrees with the session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +46,7 @@ final class FactorRemovalTest extends TestCase
     private const int MAX_AGE = 300;
 
     /**
-     * How old a further factor may be for the identity's requirement, in
-     * seconds.
+     * How old a further factor may be, in seconds.
      *
      * @return int
      */
@@ -73,8 +56,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * Rows of `[seconds between the two step-ups, whether the session is left
-     * short of its requirement]`.
+     * Rows of `[seconds between the two step-ups, whether the session is left short of its requirement]`.
      *
      * @return iterable<string, array{0: int, 1: bool}>
      */
@@ -86,10 +68,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * The requirement MFA reports outstanding after a removal agrees with the
-     * session `laravel-authentication` judged in the same transaction: a
-     * session returned to pending has a requirement outstanding, and one kept
-     * active has none.
+     * The requirement MFA reports outstanding agrees with the judged session.
      *
      * @param  int  $gap
      * @param  bool  $short
@@ -108,8 +87,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * Once MFA removes a factor, the session's further proof made with it no
-     * longer counts, and the one made with the kept factor still does.
+     * The removed factor's proof stops counting; the kept one's still counts.
      *
      * @return void
      *
@@ -130,9 +108,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * On MySQL and PostgreSQL, at READ COMMITTED and REPEATABLE READ, the
-     * removed factor's proofs stop counting inside MFA's own transaction: a
-     * session left short of its requirement is reported so.
+     * The removed factor stops counting inside MFA's own transaction.
      *
      * @param  string  $level
      * @return void
@@ -153,9 +129,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * Sign a person in, give them two factors, step the session up with the one
-     * kept and, the gap later, with the one removed, then remove it through MFA
-     * from the session.
+     * Step up with each factor, then remove the second through MFA.
      *
      * @param  int  $gap
      * @return array{0: \SineMacula\Laravel\Authentication\Models\Session, 1: \SineMacula\Laravel\Mfa\Models\Factor, 2: \SineMacula\Laravel\Mfa\Lifecycle\FactorRemovalResult}
@@ -182,11 +156,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * From now on, have MFA ask an identity that holds a factor, as its own
-     * requirement, for a further factor made within `MAX_AGE`, and one that
-     * holds none for nothing, so the person signs in active. MFA's requirement
-     * policy, which `laravel-authentication` asks through this package, and
-     * MFA's judgement of a removal both read it.
+     * Have MFA ask for a further factor made within `MAX_AGE`.
      *
      * @return void
      */
@@ -209,10 +179,7 @@ final class FactorRemovalTest extends TestCase
     }
 
     /**
-     * Assert the removal was made and that MFA's account of it agrees with the
-     * session `laravel-authentication` judged: pending, with a new pending
-     * credential and a requirement outstanding, when the session was left short
-     * of it, and otherwise active with none outstanding.
+     * Assert MFA's account of the removal agrees with the judged session.
      *
      * @param  \SineMacula\Laravel\Mfa\Lifecycle\FactorRemovalResult  $result
      * @param  bool  $short

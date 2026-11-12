@@ -17,9 +17,7 @@ use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 
 /**
- * Unit tests for the callers MFA's challenge gateway keeps beside the factor
- * code bindings it hands `laravel-authentication`: each is read back for the
- * very binding it was kept for, and for no other.
+ * Unit tests for the callers kept beside MFA's factor code bindings.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,8 +28,7 @@ use SineMacula\Laravel\Mfa\Context\CallerContext;
 final class FactorCodeCallersTest extends TestCase
 {
     /**
-     * The caller kept for a binding is read back for that binding, which is
-     * handed back as it was.
+     * The caller kept for a binding is read back for that binding.
      *
      * @return void
      */
@@ -46,8 +43,7 @@ final class FactorCodeCallersTest extends TestCase
     }
 
     /**
-     * A binding nothing was kept for has no caller, though it names the same
-     * factor, sign-in and channel as one that has.
+     * A binding nothing was kept for has no caller.
      *
      * @return void
      */

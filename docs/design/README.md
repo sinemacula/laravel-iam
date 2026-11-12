@@ -23,19 +23,13 @@ The current note set is:
 - `long-running-processes.md`: the combined worker reset that flushes every member's request state, the session that
   holds MFA's proofs among it, what it flushes before each Octane request and each queued job, why a job keeps its
   scoped instances and the application keeps its own instances, and how another long-lived process calls it.
-- `authentication-and-mfa.md`: the twelve seams between `laravel-authentication` and `laravel-mfa` and the default each
-  replaces; the `mfa` context namespace, filled from the contribution subject's session and its proofs; how an MFA
-  application and sign-in are resolved to a guard and its current session, and refused when they cannot be; how proofs,
-  channels, requirements, levels and changes are translated, `external_reauthentication` and `unclassified` among them;
-  what each adapter answers and how it refuses; the evaluation a further proof is recorded with; and the lock order,
-  identity state and factors before the session row, with what each isolation level does to a change that waited and why
-  MFA's changes are never wrapped in another transaction.
+- `authentication-and-mfa.md`: the seams between `laravel-authentication` and `laravel-mfa`, how an MFA sign-in maps
+  to an authentication session, how proofs and requirements are translated, the `mfa` context namespace, the lock
+  order, and the member gaps.
 
-- `codes-delivery-and-passkeys.md`: the code challenges `laravel-mfa` sends and checks through
-  `laravel-authentication`'s factor codes under MFA's challenge counters, passkeys as MFA factors through
-  `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
-  subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
-  to the application's `OneTimeCodeSender`; and the locks each path takes.
+- `codes-delivery-and-passkeys.md`: MFA's code challenges through `laravel-authentication`'s factor codes, MFA's codes
+  forwarded to the application's `OneTimeCodeSender`, passkeys as MFA factors, the context resolvers, their locks, and
+  the member gaps.
 - `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
   store as its linker, and the handoff issuer left on SSO's default; how a `sign_in`, a
   `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage

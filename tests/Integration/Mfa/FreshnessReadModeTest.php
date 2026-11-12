@@ -25,25 +25,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * How each adapter that judges freshness asks `laravel-authentication`'s
- * freshness policy from every place MFA asks it, with every adapter bound by
- * this package's binding rule, as an application gets them (IAM-3.5):
- *
- * - MFA's route gate and `Mfa::isFresh()` ask the freshness gate outside any
- *   transaction, where nothing acts on the answer atomically: plainly, which
- *   the policy answers there;
- * - MFA's own factor-change gate, which an application may bind back in place
- *   of this package's, asks the freshness gate and the reauthenticator inside
- *   MFA's transaction, after its locks, and grants the change on the answer:
- *   current, which the policy answers there.
- *
- * Neither path meets the `LogicException` the policy throws for a current
- * judgement outside a transaction. The policy is `laravel-authentication`'s
- * own, decorated only to record the read mode each judgement was asked in, the
- * operation it was asked for and the adapter that asked it. Each case checks
- * the adapter: `laravel-authentication`'s own factor-change gate, behind this
- * package's, asks the same policy current too, so a judgement asked on that
- * path never passes for one MFA's own gate asked through an adapter.
+ * Integration tests for the read mode adapters ask the freshness policy in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -67,9 +49,7 @@ final class FreshnessReadModeTest extends TestCase
     private const string DESTINATION = 'ada@example.test';
 
     /**
-     * MFA's route gate asks the freshness gate for the operation it names
-     * outside any transaction, so the gate asks the policy plainly, and lets a
-     * session stepped up just now through.
+     * MFA's route gate asks the freshness gate plainly.
      *
      * @return void
      *
@@ -87,8 +67,7 @@ final class FreshnessReadModeTest extends TestCase
     }
 
     /**
-     * `Mfa::isFresh()` asks the freshness gate outside any transaction, so the
-     * gate asks the policy plainly.
+     * `Mfa::isFresh()` asks the freshness gate plainly.
      *
      * @return void
      *
@@ -107,11 +86,7 @@ final class FreshnessReadModeTest extends TestCase
     }
 
     /**
-     * MFA's own factor-change gate, bound back by the application, asks the
-     * freshness gate inside MFA's transaction, after its locks, for adding a
-     * further factor (until when, the enrolment's grant) and for removing one
-     * (whether), so the gate asks the policy current, for MFA's operation of
-     * each change, and both changes are made.
+     * MFA's own factor-change gate asks the freshness gate current.
      *
      * @return void
      *
@@ -141,11 +116,7 @@ final class FreshnessReadModeTest extends TestCase
     }
 
     /**
-     * MFA's own factor-change gate, bound back by the application, asks the
-     * reauthenticator inside MFA's transaction, after its locks, for a first
-     * additional factor, so the reauthenticator asks the policy current, for
-     * the operation a reauthentication authorises, and the enrolment starts on
-     * a reauthentication made just now.
+     * MFA's own factor-change gate asks the reauthenticator current.
      *
      * @return void
      *
@@ -171,8 +142,7 @@ final class FreshnessReadModeTest extends TestCase
     }
 
     /**
-     * Define the route MFA's gate guards for the operation's freshness, on the
-     * stateless guard.
+     * Define the route MFA's gate guards for the operation's freshness.
      *
      * @param  mixed  $router
      * @return void
@@ -187,10 +157,7 @@ final class FreshnessReadModeTest extends TestCase
     }
 
     /**
-     * Bind MFA's own factor-change gate back in place of this package's, as an
-     * application may once every provider has registered, so MFA asks the
-     * freshness gate and the reauthenticator itself, failing unless MFA then
-     * resolves its own gate.
+     * Bind MFA's own factor-change gate back in place of this package's.
      *
      * @return void
      */

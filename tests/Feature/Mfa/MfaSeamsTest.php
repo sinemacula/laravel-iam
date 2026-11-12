@@ -132,8 +132,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * An MFA application offering `sms` refuses to boot with no one-time code
-     * sender bound.
+     * Offering `sms` with no one-time code sender bound refuses to boot.
      *
      * @return void
      */
@@ -168,8 +167,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[value, on]`: the switch's value, and whether it leaves the
-     * bindings on.
+     * Rows of `[value, on]` for the switch.
      *
      * @return iterable<string, array{0: mixed, 1: bool}>
      */
@@ -218,8 +216,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * Every binding is transient, and only revocation on factor removal is
-     * mandatory.
+     * Every binding is transient; only revocation is mandatory.
      *
      * @return void
      */
@@ -250,8 +247,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * Assert each seam resolves to an instance of the given class, with an
-     * application sender for MFA's senders' adapter to forward to.
+     * Assert each seam resolves to an instance of the given class.
      *
      * @param  array<class-string, class-string>  $expected
      * @return void

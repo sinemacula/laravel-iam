@@ -48,19 +48,7 @@ use Tests\Fixtures\Passkeys\VirtualAuthenticator;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's passkey gateway running a passkey factor's
- * ceremonies through `laravel-authentication`'s passkeys (IAM-3.10), with every
- * adapter between the two members bound by this package's binding rule, as an
- * application gets them while its MFA application offers passkeys.
- *
- * A person registers a passkey for an MFA enrolment through
- * `laravel-authentication`, so it is one of their factors, and MFA then asks
- * for and verifies an assertion of it, signed by the virtual authenticator, as
- * a browser would: the ceremony is bound to the person's sign-in and purpose,
- * allows only the credentials MFA names among the person's own passkeys, and
- * answers what the assertion itself observed, or why it does not hold, in MFA's
- * terms. The assertion's writes join MFA's transaction, on MySQL and PostgreSQL
- * at READ COMMITTED and REPEATABLE READ.
+ * Integration tests for MFA's passkey gateway over the members' passkeys.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -125,9 +113,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Through MFA, on MySQL and PostgreSQL at both levels, an assertion of the
-     * person's passkey factor is requested and verified, and steps the session
-     * up with a proof of the factor, its user verification as observed.
+     * A passkey factor's assertion through MFA steps the session up.
      *
      * @param  string  $level
      * @return void
@@ -159,10 +145,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A request bound in the container never reaches the assertion: MFA hands
-     * the gateway no client, so `laravel-authentication`'s passkey is used for
-     * a client of which nothing is known, never for the client of the request
-     * the container holds, and the assertion still verifies.
+     * A request bound in the container never reaches the assertion.
      *
      * @return void
      *
@@ -192,10 +175,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The identity's registered passkeys are listed as `laravel-authentication`
-     * holds them, oldest first, each once: a sign-in passkey among them, and
-     * never a credential a factor of MFA's names that no passkey of the
-     * identity's holds.
+     * The registered passkeys are the identity's own, oldest first, each once.
      *
      * @return void
      *
@@ -217,8 +197,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Each application lists only its own guard's passkeys, and none where it
-     * offers no passkeys.
+     * Each application lists only its own guard's passkeys.
      *
      * @return void
      *
@@ -254,10 +233,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A guard of the `jwt` driver that uses no passkeys, so has no relying
-     * party, as `laravel-authentication` allows, is never asked: the listing,
-     * and through it MFA's offers and assertions, still work on the guard that
-     * offers passkeys.
+     * A guard that uses no passkeys is never asked.
      *
      * @return void
      *
@@ -280,9 +256,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A guard of the `jwt` driver whose MFA application offers passkeys, with
-     * no valid relying party, fails closed: the listing throws, as that guard's
-     * ceremonies do.
+     * A guard offering passkeys with no valid relying party fails closed.
      *
      * @return void
      *
@@ -301,9 +275,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The options handed out allow only the credentials MFA names among the
-     * identity's own passkeys, under a challenge bound to the sign-in and the
-     * purpose.
+     * The options allow only the credentials MFA names.
      *
      * @return void
      *
@@ -324,9 +296,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A request that would allow none of the identity's passkeys is refused,
-     * with no challenge written: another identity's credential, an unknown one
-     * and none at all.
+     * A request allowing none of the identity's passkeys is refused.
      *
      * @return void
      *
@@ -352,8 +322,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A ceremony bound to another identity than the one it is for is refused,
-     * when requested and when verified.
+     * A ceremony bound to another identity is refused.
      *
      * @return void
      *
@@ -375,10 +344,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An assertion of the passkey factor verifies, answering the credential
-     * that made it, what its own authenticator data showed and the challenge it
-     * answered; its use joins the caller's transaction, so one rolled back
-     * leaves the challenge to be answered again.
+     * An assertion verifies inside the caller's transaction.
      *
      * @param  string  $level
      * @return void
@@ -418,8 +384,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An assertion answering the ceremony's own challenge once it has expired
-     * is `expired`.
+     * An assertion of an expired challenge is `expired`.
      *
      * @return void
      *
@@ -438,8 +403,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An assertion answering a challenge made for another purpose of the same
-     * sign-in does not hold for this one.
+     * An assertion for another purpose does not verify.
      *
      * @return void
      *
@@ -455,8 +419,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An assertion made by a credential the verification does not allow, an
-     * empty allowlist, and a response that is not one, never verify.
+     * An assertion outside the allowlist never verifies.
      *
      * @return void
      *
@@ -492,8 +455,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A response without a usable challenge or credential never verifies, and
-     * is not handed on.
+     * A response without a usable challenge or credential never verifies.
      *
      * @param  array<string, mixed>  $response
      * @return void
@@ -510,8 +472,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An assertion whose signature does not hold is an invalid code, as is one
-     * whose sign counter went backwards.
+     * An assertion that does not hold is an invalid code.
      *
      * @return void
      *
@@ -573,9 +534,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An application that names no `jwt` guard cannot be resolved, nor can any
-     * while `laravel-authentication` is not the application's authentication,
-     * and neither can an identity it does not sign in.
+     * An unresolvable application or identity throws.
      *
      * @return void
      *
@@ -650,8 +609,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Arrange, once for every hook of a check, a person holding a passkey
-     * factor and a step-up of their sign-in.
+     * Arrange a person holding a passkey factor and a step-up of their sign-in.
      *
      * @return void
      *
@@ -670,9 +628,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A person signed in and acting on the session, holding a passkey factor
-     * registered for an MFA enrolment, while MFA asks nothing of them, so the
-     * session stays active.
+     * A person signed in holding a passkey factor.
      *
      * @formatter:off
      *
@@ -704,8 +660,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The response the virtual authenticator gives to the options handed out,
-     * as the client hands it back.
+     * The virtual authenticator's response to the options handed out.
      *
      * @param  array<string, mixed>  $options
      * @return array<string, mixed>
@@ -725,8 +680,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Request a new assertion of the passkey factor, answer it with the virtual
-     * authenticator and verify the answer.
+     * Request, answer and verify a new assertion of the passkey factor.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
@@ -757,9 +711,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * From now on, have MFA ask nothing of the identity, neither as the
-     * application's requirement nor as its own, so a session judged again after
-     * a factor change stays active.
+     * Have MFA ask nothing of the identity, so the session stays active.
      *
      * @return void
      */

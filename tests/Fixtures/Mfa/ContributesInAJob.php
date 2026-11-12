@@ -20,11 +20,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use Tests\Fixtures\Models\Person;
 
 /**
- * A queued job that builds the `mfa` namespace for a session it names by key,
- * as an application's job building a context outside any request would: the
- * person and the session are loaded afresh, the contribution subject is made of
- * plain values, and the contributor registered under `mfa` is resolved from the
- * container serving the job, with no guard bound and no request.
+ * A queued job that builds the `mfa` namespace outside any request.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -73,8 +69,7 @@ final class ContributesInAJob implements ShouldQueue
     }
 
     /**
-     * The contributor registered under `mfa`, resolved from the container
-     * serving now.
+     * The contributor registered under `mfa`.
      *
      * @return \SineMacula\Laravel\Authentication\Contracts\AuthenticationContextContributor
      *
@@ -93,8 +88,7 @@ final class ContributesInAJob implements ShouldQueue
     }
 
     /**
-     * The contribution subject for the person's session on the guard, made of
-     * plain values, as a context built outside any request is.
+     * The contribution subject for the session, made of plain values.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session

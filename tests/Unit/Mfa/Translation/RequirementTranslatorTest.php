@@ -21,11 +21,7 @@ use SineMacula\Laravel\Mfa\Enums\RequirementPart as MfaRequirementPart;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 
 /**
- * Unit tests for translating requirements, their parts and assurance levels
- * between `laravel-authentication` and MFA (IAM-3.14): every part keeps its
- * maximum age, every level crosses as itself, and MFA's `unclassified` level is
- * no level; and MFA's requirement to and from `laravel-authentication`'s
- * freshness requirement, which holds what a stored proof shows and no more.
+ * Unit tests for translating requirements and assurance levels.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,8 +36,7 @@ final class RequirementTranslatorTest extends TestCase
         . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.';
 
     /**
-     * Rows of `[laravel-authentication's requirement, MFA's]`: nothing, each
-     * part alone with and without a maximum age, and every part at once.
+     * Rows of `[laravel-authentication's requirement, MFA's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Requirements\Requirement, 1: \SineMacula\Laravel\Mfa\Requirements\Requirement}>
      */
@@ -86,8 +81,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s requirement is MFA's with the same parts,
-     * maximum ages and level.
+     * A requirement crosses to MFA's with the same parts, ages and level.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $authentication
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $mfa
@@ -100,8 +94,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's requirement is `laravel-authentication`'s with the same parts,
-     * maximum ages and level.
+     * MFA's requirement crosses back with the same parts, ages and level.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $authentication
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $mfa
@@ -114,8 +107,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * A maximum age `laravel-authentication` does not allow, over a year, is
-     * refused rather than shortened.
+     * A maximum age over a year is refused rather than shortened.
      *
      * @return void
      */
@@ -127,8 +119,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's level, laravel-authentication's]` for every level,
-     * `unclassified` being none.
+     * Rows of `[MFA's level, laravel-authentication's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: ?\SineMacula\Laravel\Authentication\Requirements\Enums\AssuranceLevel}>
      */
@@ -197,8 +188,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's evaluation is `laravel-authentication`'s answer with the parts it
-     * leaves unmet, in their order, and met when it leaves none.
+     * MFA's evaluation leaves the same parts unmet, in order.
      *
      * @return void
      */
@@ -215,9 +205,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement, the freshness requirement for each part]`:
-     * nothing, each part alone, and every part but a level at once, in MFA's
-     * order of parts.
+     * Rows of `[MFA's requirement, the freshness requirement for each part]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>}>
      */
@@ -244,10 +232,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Each part of MFA's requirement is a freshness requirement of its own,
-     * within the part's age: an additional verification a further factor or a
-     * recovery code, and multifactor authentication and phishing resistance
-     * their flags on a proof of any kind.
+     * Each part is a freshness requirement of its own, within its age.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>  $parts
@@ -260,8 +245,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement, the message it is refused with]` that no
-     * freshness requirement asked part by part can hold.
+     * Rows of `[MFA's requirement, the refusal message]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: string}>
      */
@@ -275,8 +259,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * A part no freshness requirement asked part by part can hold is refused,
-     * never dropped or shortened.
+     * A part no freshness requirement can hold is refused.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  string  $message
@@ -291,10 +274,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of
-     * `[MFA's requirement, the freshness requirement holding it at once]`:
-     * nothing, each part alone, a part with no age or a longer one held to a
-     * day, and every part but a level, held to the shortest age.
+     * Rows of `[MFA's requirement, the one freshness requirement holding it]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement}>
      */
@@ -321,9 +301,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's requirement asked as a whole is one freshness requirement: the
-     * shortest age of its parts, each held to a day, the kinds every part
-     * takes, and every flag a part asks for.
+     * A whole requirement is one freshness requirement at the shortest age.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $freshness
@@ -348,10 +326,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[freshness requirement, MFA's parts it expresses]`: one taking
-     * only further factors and recovery codes is an additional verification,
-     * its flags are the parts of the same names, and one that also takes a
-     * first factor, with no flag, expresses nothing.
+     * Rows of `[freshness requirement, the MFA parts it expresses]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement, 1: ?\SineMacula\Laravel\Mfa\Requirements\Requirement}>
      */
@@ -377,8 +352,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * A freshness requirement is MFA's requirement for the parts it expresses,
-     * each within its age, or none when it expresses none.
+     * A freshness requirement is MFA's for the parts it expresses, or none.
      *
      * @param  \SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $freshness
      * @param  ?\SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement

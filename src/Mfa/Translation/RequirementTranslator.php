@@ -18,30 +18,8 @@ use SineMacula\Laravel\Mfa\Enums\RequirementPart as MfaRequirementPart;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 
 /**
- * Translates requirements, their parts and assurance levels between
- * `laravel-authentication` and MFA (IAM-3.14), MFA's evaluation into the answer
- * `laravel-authentication`'s requirement check gives, and MFA's requirement to
- * and from `laravel-authentication`'s freshness requirement.
- *
- * Both members spell the four requirement parts and the three assurance levels
- * the same, and each part keeps its maximum age. MFA's `unclassified` level,
- * which its evaluations report when the evidence supports no level and which no
- * requirement may ask for, is no level in `laravel-authentication`. A maximum
- * age one member allows and the other does not (over a year, which
- * `laravel-authentication` refuses) is refused with the member's own exception,
- * never shortened or dropped.
- *
- * A freshness requirement holds what a stored proof shows and no more: how
- * recently a proof of the kinds it takes was made, and whether it reported
- * multifactor authentication or resisted phishing. So an additional
- * verification is a further factor or a recovery code made within the part's
- * age, multifactor authentication and phishing resistance are the flags of the
- * same names on a proof of any kind, and a minimum assurance level, which no
- * stored proof records, is refused rather than dropped. A requirement asked
- * part by part (the freshness gate's) refuses a part with no maximum age, as
- * MFA's freshness gate contract does; one asked as a whole (the factor-change
- * gate's, from MFA's configuration) is held to a day for a part with none, or a
- * longer one, the longest a freshness requirement takes.
+ * Translates requirements, parts, levels and evaluations between
+ * `laravel-authentication` and MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,8 +32,7 @@ final readonly class RequirementTranslator
     public const array ADDITIONAL_VERIFICATIONS = [ProofKind::ADDITIONAL_FACTOR, ProofKind::RECOVERY_CODE];
 
     /**
-     * MFA's requirement for `laravel-authentication`'s: each part it has, with
-     * its maximum age, and its minimum level.
+     * MFA's requirement for `laravel-authentication`'s.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
@@ -86,8 +63,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s requirement for MFA's: each part it asks for,
-     * with its maximum age, and its minimum level.
+     * `laravel-authentication`'s requirement for MFA's.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
@@ -107,8 +83,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s answer for MFA's evaluation: the parts it
-     * leaves unmet.
+     * The parts MFA's evaluation leaves unmet.
      *
      * @param  \SineMacula\Laravel\Mfa\Assurance\Evaluation  $evaluation
      * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
@@ -119,8 +94,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s freshness requirement for each part of MFA's,
-     * in MFA's order of parts; none for a requirement that asks for nothing.
+     * A freshness requirement per part of MFA's, each needing a maximum age.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @return list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>
@@ -136,11 +110,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s freshness requirement holding every part of
-     * MFA's at once, or `null` when it asks for nothing: the shortest of the
-     * parts' maximum ages, each held to a day at most (a part with none
-     * included), the kinds the parts all take, and the flags any of them asks
-     * for.
+     * One freshness requirement holding every part, each held to a day at most.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @return ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement
@@ -171,12 +141,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * MFA's requirement for the parts of `laravel-authentication`'s freshness
-     * requirement it can express, each within its age, or `null` when it can
-     * express none: one that takes only further factors and recovery codes is
-     * an additional verification, and its flags are multifactor authentication
-     * and phishing resistance. One that also takes a first factor has no part
-     * of its own to express.
+     * MFA's requirement for the freshness parts it can express.
      *
      * @param  \SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $freshness
      * @return ?\SineMacula\Laravel\Mfa\Requirements\Requirement
@@ -203,8 +168,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s level for MFA's, or `null` for MFA's
-     * `unclassified`, which is no level.
+     * `laravel-authentication`'s level for MFA's; `unclassified` is none.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @return ?\SineMacula\Laravel\Authentication\Requirements\Enums\AssuranceLevel
@@ -267,8 +231,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s freshness requirement for one part of MFA's,
-     * within the age given.
+     * A freshness requirement for one part within the age.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\RequirementPart  $part
      * @param  int  $maxAge
@@ -298,8 +261,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * The refusal of a minimum assurance level asked as freshness, which no
-     * stored proof records.
+     * The refusal of a minimum assurance level asked as freshness.
      *
      * @return \InvalidArgumentException
      */
@@ -312,8 +274,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s part for one MFA's requirement asks for, with
-     * its maximum age, or `null` when it does not ask for it.
+     * `laravel-authentication`'s part, if MFA's requirement asks for it.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Mfa\Enums\RequirementPart  $part

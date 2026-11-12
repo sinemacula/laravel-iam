@@ -24,64 +24,8 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * MFA's passkey gateway, running a passkey factor's ceremonies through
- * `laravel-authentication`'s passkeys (IAM-3.10).
- *
- * An assertion is requested with `PasskeyService::factorOptions()` and verified
- * with `verifyFactor()`, on the guard the binding's application names, bound to
- * the same identity, sign-in and purpose (the purposes translate one to one),
- * and limited to the credentials MFA allows, which `laravel-authentication`
- * narrows to the identity's own passkeys on the guard's relying party. The
- * options handed out are `CeremonyOptions::toArray()`: `challenge` (the id of
- * the challenge), `options` (for the browser) and `expires_at`. The response
- * handed back is `['challenge' => <that id>, 'credential' => <the browser's
- * PublicKeyCredential, as an array or its JSON>]`; anything else does not
- * verify. A verified assertion is MFA's, with the credential it made, the
- * properties its own authenticator data showed, never what was asked for, and
- * the challenge it answered. MFA hands the gateway no client, so
- * `verifyFactor()` is handed one of which nothing is known
- * (`Translation\ClientTranslator::unknown()`), never one read from a request,
- * and `laravel-authentication`'s `PasskeyUsed` event names no client.
- *
- * `laravel-authentication` concedes nothing on the way and counts nothing: MFA
- * counts every failure. Its reasons cross as MFA's: the ceremony's own
- * challenge submitted to before (`passkey_challenge_used`) is `replayed`; its
- * own challenge expired (`passkey_challenge_expired`) is `expired`, as is a
- * challenge that is malformed, unknown or another binding's
- * (`passkey_challenge_invalid`), which answers no live ceremony of the
- * binding's; and every other failure, a counter that went backwards included,
- * is `invalid_code`. An empty allowlist, a response without a challenge or a
- * credential, and an assertion made by a credential the allowlist does not name
- * never verify. A request that would allow none of the identity's passkeys is
- * refused with an `OperationRefusedException` (`not_found`), as the browser
- * would otherwise offer any credential it holds; so is a binding that names
- * another identity.
- *
- * The identity's registered passkeys are the ones `laravel-authentication`
- * holds for it (`PasskeyService::credentialIds()`), on the relying party of
- * each of its guards of the `jwt` driver whose MFA application offers the
- * `passkey` type (`mfa.applications.<guard>.types`), in the order the guards
- * are declared, each relying party's oldest first, each id listed once. These
- * are the only guards whose passkeys can back a passkey factor MFA asks about:
- * a ceremony runs on the binding's application's guard alone, and MFA refuses a
- * factor of a type its application does not enable before it asks for the
- * listing. MFA names no application when it asks, so every such guard's are
- * listed: MFA only asks whether a passkey factor's credential is still
- * registered, and a ceremony is always narrowed to the binding's guard's
- * relying party, so a passkey of another relying party's is never offered or
- * verified there. A guard that does not offer passkeys is never asked, so one
- * with no relying party, as `laravel-authentication` allows a guard that uses
- * no passkeys, leaves the listing working. A sign-in passkey that is no factor
- * of MFA's is listed too, and never asserted: MFA asserts only a passkey factor
- * it holds an association for. A guard that offers passkeys with no valid
- * relying party fails closed, as its ceremony does: the listing throws.
- * Passkeys are available whenever this adapter is bound, which is only while an
- * MFA application offers them.
- *
- * An application that names no `jwt` guard of `laravel-authentication`'s, and
- * an identity it does not sign in, cannot be resolved and throw
- * `UnresolvedReferenceException` (IAM-8.2). It holds nothing between calls
- * (IAM-8.1).
+ * MFA's passkey gateway, running passkey factor ceremonies through
+ * `laravel-authentication`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -120,8 +64,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     ) {}
 
     /**
-     * Whether passkeys can be used as a factor: always, while this adapter is
-     * bound.
+     * Always true: this is bound only while an application offers passkeys.
      *
      * @return bool
      */
@@ -132,8 +75,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * The identity's passkey credential ids on the application's guard, or none
-     * where it offers no passkeys.
+     * The identity's passkey credential ids, if the guard offers passkeys.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -155,8 +97,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * Request an assertion from the identity's passkeys among the credentials
-     * given, through `laravel-authentication`'s factor ceremony.
+     * Request an assertion from the identity's allowed passkeys.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
@@ -181,9 +122,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * Verify the client's response to the assertion request through
-     * `laravel-authentication`'s factor ceremony, limited to the credentials
-     * given, and return what it observed or why it does not verify.
+     * Verify the response against the allowed credentials, or say why it fails.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
@@ -219,9 +158,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * MFA's failure reason for `laravel-authentication`'s: a ceremony whose
-     * challenge expired, or is no live challenge of the binding, is `expired`,
-     * one already answered `replayed`, and every other failure `invalid_code`.
+     * MFA's failure reason for `laravel-authentication`'s ceremony failure.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Events\Enums\FailureReason  $reason
      * @return \SineMacula\Laravel\Mfa\Enums\FailureReason
@@ -237,8 +174,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * MFA's assertion for what `laravel-authentication` verified, when the
-     * credential that made it is one allowed, or why it does not verify.
+     * MFA's assertion, when an allowed credential made it, or why it fails.
      *
      * @param  \SineMacula\Laravel\Authentication\Passkeys\PasskeyFactorResult  $result
      * @param  list<string>  $credentialIds
@@ -279,8 +215,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * `laravel-authentication`'s binding of the ceremony: the same identity,
-     * application, sign-in and purpose.
+     * `laravel-authentication`'s binding of the ceremony.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $owner
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
@@ -294,8 +229,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * `laravel-authentication`'s passkey service for the guard the application
-     * names, when it is a declared guard of the `jwt` driver.
+     * The passkey service of the application's `jwt` guard.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Passkeys\PasskeyService
@@ -316,8 +250,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * The refusal of a ceremony no passkey of the identity's could answer, with
-     * the detail for the logs.
+     * The refusal of a ceremony no passkey of the identity's could answer.
      *
      * @param  string  $detail
      * @return \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException

@@ -13,13 +13,6 @@ use SineMacula\Laravel\Mfa\Enums\PendingAction as MfaPendingAction;
 
 /**
  * Translates factor changes and pending actions between MFA and
- * `laravel-authentication` (IAM-3.6, IAM-3.8, IAM-3.14).
- *
- * The members spell every case they share the same: the four factor changes MFA
- * gates, the three factor changes it has made, and the five pending actions it
- * takes. `laravel-authentication` has more of each (replacing a factor, another
- * change, choosing a principal), which MFA never names, so those translate only
- * one way: the pending actions a session allows are MFA's own, the rest left to
  * `laravel-authentication`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -61,9 +54,7 @@ final readonly class ChangeTranslator
     }
 
     /**
-     * MFA's pending actions among those a pending session allows, in their
-     * order; the ones MFA does not take (listing and choosing principals) are
-     * left out.
+     * MFA's pending actions among those allowed, in order, dropping the rest.
      *
      * @param  list<\SineMacula\Laravel\Authentication\Sessions\Enums\PendingAction>  $actions
      * @return list<\SineMacula\Laravel\Mfa\Enums\PendingAction>

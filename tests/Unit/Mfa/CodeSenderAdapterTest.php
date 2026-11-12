@@ -23,8 +23,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\Factorless;
 
 /**
- * Unit tests for MFA's SMS and email senders forwarding to the application's
- * `laravel-authentication` sender.
+ * Unit tests for MFA's senders forwarding to the application's sender.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,8 +50,7 @@ final class CodeSenderAdapterTest extends TestCase
     }
 
     /**
-     * MFA's code reaches the application's sender for the same guard, type,
-     * destination, code, expiry and recipient.
+     * MFA's code reaches the application's sender with every field intact.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @param  \SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose  $expected
@@ -82,8 +80,7 @@ final class CodeSenderAdapterTest extends TestCase
     }
 
     /**
-     * A recipient `laravel-authentication` cannot sign in is refused, and
-     * nothing is sent.
+     * A recipient that is no identity is refused and nothing is sent.
      *
      * @return void
      *

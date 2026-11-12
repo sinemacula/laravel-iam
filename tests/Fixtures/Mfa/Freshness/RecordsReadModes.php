@@ -12,16 +12,7 @@ use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 
 /**
- * `laravel-authentication`'s own freshness policy, decorated as its contract
- * asks a decorator to be: each question is passed on unchanged, the read mode
- * included, so the policy still locks, reads current and refuses a current
- * judgement outside a transaction exactly as it would bound alone. It also
- * records the read mode each freshness judgement was asked in, the operation it
- * was asked for, and which of this package's adapters asked it (the nearest on
- * the call stack), so a test can tell how an adapter asked it and that it was
- * that adapter, not another path to the same policy, that asked.
- *
- * Bound for one test and dropped with it.
+ * Decorates the freshness policy, recording each read mode and asker.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -124,8 +115,7 @@ final class RecordsReadModes implements FreshnessPolicy
     }
 
     /**
-     * Record a freshness judgement: its read mode, its operation, and the
-     * adapter of this package's that asked it.
+     * Record a freshness judgement's read mode, operation and asking adapter.
      *
      * @param  string  $operation
      * @param  bool  $current
@@ -139,8 +129,7 @@ final class RecordsReadModes implements FreshnessPolicy
     }
 
     /**
-     * The class of the frame nearest the judgement on the call stack that is
-     * this package's, or `null` when none is.
+     * The nearest class of this package's on the call stack, or `null`.
      *
      * @return ?class-string
      */

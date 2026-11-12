@@ -12,13 +12,7 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 
 /**
- * A requirement check that meets an additional verification once the session
- * holds as many counting further factors (additional factors and recovery
- * codes) as it is told to need, and nothing else.
- *
- * It stands in for MFA's requirement check, so the tests of the pending
- * adapters can leave a session pending after one further factor, or activate
- * it, without the requirement adapters.
+ * A requirement check met once the session holds enough further factors.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -39,8 +33,7 @@ final readonly class CountsAdditionalFactors implements RequirementCheck
     ) {}
 
     /**
-     * The requirement's additional verification, unmet while the session holds
-     * fewer further factors than are needed.
+     * The additional verification, unmet while too few factors are held.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\RequirementSubject  $subject
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement

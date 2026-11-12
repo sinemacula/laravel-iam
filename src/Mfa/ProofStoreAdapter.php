@@ -21,8 +21,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * MFA's proof store over `laravel-authentication`'s session proofs, where a
- * sign-in is the guard's current session (IAM-3.11).
+ * MFA's proof store over `laravel-authentication`'s session proofs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -86,8 +85,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * Keep the live sign-in's own first factor, under the session's row lock,
-     * and refuse any other proof.
+     * Accept only the live sign-in's own first factor, under its row lock.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
@@ -115,8 +113,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The sign-in's newest `RequirementSubject::MAX_LIMIT` proofs, oldest
-     * first, or none unless it is the current sign-in.
+     * The current sign-in's newest proofs, oldest first.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -141,8 +138,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The current sign-in's first factor, or `null` when there is no live
-     * session or MFA cannot express it.
+     * The current sign-in's first factor, if live and expressible in MFA.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -191,8 +187,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * Whether the proof is a first factor made with the method and kind of
-     * channel the session recorded.
+     * Whether the proof matches the session's first factor.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $firstFactor

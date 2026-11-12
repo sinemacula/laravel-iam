@@ -43,18 +43,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's pending session resolver read from
- * `laravel-authentication`'s pending sessions (IAM-3.3): MFA's contract kit,
- * the pending context a real pending session crosses as, where the credential
- * is read from and that the context keeps it, the revalidation of a context
- * from that credential alone, which answers `null` for a session that no longer
- * stands, and the refusal by throwing of a credential, a guard or an identity
- * that cannot be resolved (IAM-8.2).
- *
- * The sessions are real ones, signed in with a password through
- * `laravel-authentication`, whose additional-factor policy and requirement
- * check are stand-ins that leave them pending; the other adapters are not
- * bound.
+ * Tests for MFA's pending session resolver.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -84,10 +73,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A pending session resolves as MFA's pending context: its identity, the
-     * guard as the application, its key as the sign-in, its first factor bound
-     * to that sign-in under the identity's verification generation, the
-     * requirement it falls short of, MFA's actions and its expiry.
+     * A pending session resolves as MFA's pending context.
      *
      * @return void
      *
@@ -131,8 +117,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * The further proofs the session holds cross oldest first, bound to its
-     * sign-in, without its first factor.
+     * Further proofs cross oldest first, without the first factor.
      *
      * @return void
      *
@@ -177,8 +162,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * The query string never carries the credential, so a request carrying it
-     * only there has no pending session.
+     * The query string never carries the credential.
      *
      * @return void
      *
@@ -204,8 +188,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A request that may have no body is not read for a credential, whatever
-     * its form body holds.
+     * A request that may have no body is not read for a credential.
      *
      * @param  string  $method
      * @return void
@@ -223,8 +206,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * The credential is read from the field `laravel-authentication` is
-     * configured to read it from.
+     * The credential is read from the configured field.
      *
      * @return void
      *
@@ -241,8 +223,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * The pending context keeps the credential it was read from, so it can be
-     * read again and the pending completion can satisfy the session it names.
+     * The pending context keeps the credential it was read from.
      *
      * @return void
      *
@@ -256,9 +237,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * Revalidating reads the pending session again from the credential the
-     * context keeps: its further proofs as they stand now, under the same
-     * sign-in, keeping the credential.
+     * Revalidating reads the pending session again as it stands now.
      *
      * @return void
      *
@@ -286,8 +265,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * Revalidating reads the session on the guard the context's application
-     * names, never the default guard, and reads no request.
+     * Revalidating reads the context's application's guard.
      *
      * @return void
      *
@@ -304,8 +282,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A context that kept no credential cannot be read again, so it no longer
-     * stands.
+     * A context that kept no credential no longer stands.
      *
      * @return void
      *
@@ -342,9 +319,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A credential that names another pending session than the context's, of
-     * the same identity or another one's under the same key, no longer stands
-     * for it.
+     * A credential naming another pending session no longer stands.
      *
      * @return void
      *
@@ -379,10 +354,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * Only the request handed in is read: a request bound in the container
-     * carrying another pending session's credential names neither the session
-     * the handed request's credential names, nor one for a handed request that
-     * carries none.
+     * Only the request handed in is read, never one bound in the container.
      *
      * @return void
      *
@@ -402,10 +374,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * Revalidating reads no request: a request bound in the container carrying
-     * another live pending session's credential neither replaces the context's,
-     * nor stands in for a context that kept none, though it carries that
-     * context's own credential.
+     * Revalidating reads no request bound in the container.
      *
      * @return void
      *
@@ -430,10 +399,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A credential handed in as a plain value is read on the guard the
-     * application given names, never the default guard, as the pending session
-     * it names, keeping the credential, though a request bound in the container
-     * carries another pending session's credential.
+     * A credential handed in is read on the application's guard.
      *
      * @return void
      *
@@ -459,8 +425,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A credential handed in that names no live pending session of the guard is
-     * none, though a request bound in the container carries one that does.
+     * A credential handed in that names no live pending session is none.
      *
      * @return void
      *
@@ -519,8 +484,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A value in the field that is not a credential at all is refused as one
-     * naming no pending session.
+     * A field value that is not a credential is refused.
      *
      * @param  mixed  $credential
      * @return void
@@ -532,8 +496,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * The credential of a session that has activated names no pending session
-     * any more, and is refused.
+     * The credential of an activated session is refused.
      *
      * @return void
      *
@@ -562,8 +525,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A credential on a default guard that holds no sessions, or names no
-     * guard, is refused; a request carrying none still has no pending session.
+     * A default guard that holds no sessions, or names none, is refused.
      *
      * @param  string  $guard
      * @return void
@@ -582,8 +544,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A pending session of an identity that holds no factors names no one MFA
-     * could verify a factor for, and is refused.
+     * A pending session of an identity that holds no factors is refused.
      *
      * @return void
      *
@@ -614,8 +575,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * Resolving a pending session takes no lock and writes nothing, at either
-     * isolation level, so it never orders itself before MFA's locks.
+     * Resolving a pending session takes no lock and writes nothing.
      *
      * @param  string  $level
      * @return void
@@ -669,8 +629,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A request carrying a pending credential that names no pending session,
-     * for MFA's contract kit.
+     * A request carrying a pending credential that names no pending session.
      *
      * @return \Illuminate\Http\Request
      */
@@ -681,8 +640,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s proof of a further factor verified now for the
-     * person's pending session the credential names.
+     * The proof of a further factor verified now for the pending session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $credential

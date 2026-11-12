@@ -16,9 +16,8 @@ use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
 use SineMacula\Laravel\Mfa\Contracts\SubjectTypeResolver;
 
 /**
- * The seams MFA reads its context through, answered by `laravel-authentication`
- * (IAM-3.12). The active tenant's is mandatory while SSO's enforcement is on or
- * the application binds MFA's tenant requirement (IAM-10.2).
+ * The seams MFA reads its context through; the active tenant's is mandatory
+ * while tenant MFA is enforced or required.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
