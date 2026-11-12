@@ -44,6 +44,7 @@ use SineMacula\Laravel\Mfa\Contracts\RequirementPolicy;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
+use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\ProofRequirementCheck;
@@ -370,7 +371,9 @@ final class RequirementCheckAdapterTest extends TestCase
     {
         $subject = self::subject(new Person, CarbonImmutable::now());
 
-        self::assertUnresolved(ReferenceKind::IDENTITY, fn (): mixed => $this->adapter()->evaluate($subject, self::additionalVerification()));
+        $this->expectException(UnsupportedIdentifierException::class);
+
+        $this->adapter()->evaluate($subject, self::additionalVerification());
     }
 
     /**

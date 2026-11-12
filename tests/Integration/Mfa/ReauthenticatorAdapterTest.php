@@ -17,13 +17,13 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ReauthenticatorAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\Reauthenticator;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ReauthenticatorTests;
 use Tests\Concerns\ChangesSessionsElsewhere;
@@ -87,7 +87,7 @@ final class ReauthenticatorAdapterTest extends TestCase
 
         $generation = VerificationGeneration::advance($person);
         $proof      = $this->adapter()->reauthenticate($person, self::GUARD);
-        $reference  = IdentityReference::of($person);
+        $reference  = ProofOwner::of($person);
 
         self::assertNotNull($proof);
         self::assertSame(ProofKind::FIRST_FACTOR_REAUTHENTICATION, $proof->kind);

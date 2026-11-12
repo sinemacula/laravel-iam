@@ -4,13 +4,12 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Testing;
 
-use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
-use SineMacula\Laravel\Mfa\Database\ConfiguredModels;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * The real factor a test helper's further proof names, as this package's proof
@@ -24,27 +23,15 @@ use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 final readonly class FixtureFactors
 {
     /**
-     * Constructor.
-     *
-     * @param  \Illuminate\Contracts\Config\Repository  $config
-     */
-    public function __construct(
-
-        /** The configuration MFA's factor model is declared in. */
-        private Repository $config,
-    ) {}
-
-    /**
-     * The id of the identity's confirmed factor of the level's type, enrolling
-     * one on the application when it holds none.
+     * The id of the identity's factor of the level's type, enrolled if none.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @return string
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\InvalidModelException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     public function held(MultiFactorAuthenticatable $identity, string $application, AssuranceLevel $level): string
@@ -61,7 +48,7 @@ final readonly class FixtureFactors
             }
         }
 
-        return ProofStoreAdapter::factorReference($this->enrol($identity, $application, $type));
+        return ProofStoreAdapter::factorReference(self::enrol($identity, $application, $type));
     }
 
     /**
@@ -72,16 +59,16 @@ final readonly class FixtureFactors
      * @param  string  $type
      * @return \SineMacula\Laravel\Mfa\Contracts\Factor
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\InvalidModelException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
-    private function enrol(MultiFactorAuthenticatable $identity, string $application, string $type): Factor
+    private static function enrol(MultiFactorAuthenticatable $identity, string $application, string $type): Factor
     {
-        $model  = ConfiguredModels::factor($this->config);
-        $factor = new $model;
+        $model  = $identity->authFactors()->getModel()->newInstance();
+        $factor = $model instanceof EloquentFactor ? $model : throw new \LogicException(sprintf('The factor model [%s] is not an EloquentFactor.', $model::class));
         $owner  = $factor->authenticatable();
-        $holder = IdentityReference::of($identity);
+        $holder = ProofOwner::of($identity);
 
         $factor->forceFill([
             $owner->getMorphType()        => $holder->type,

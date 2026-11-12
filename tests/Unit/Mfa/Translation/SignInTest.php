@@ -11,10 +11,10 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * Unit tests for naming one of `laravel-authentication`'s sessions as MFA names
@@ -95,7 +95,7 @@ final class SignInTest extends TestCase
      */
     public function testAProofIsBoundToTheSignIn(): void
     {
-        $signIn = new SignIn(IdentityReference::of(new GenericUser(['id' => 7])), 'api', '42', 3);
+        $signIn = new SignIn(ProofOwner::of(new GenericUser(['id' => 7])), 'api', '42', 3);
 
         self::assertEquals(new ProofBinding(GenericUser::class, '7', 'api', '42', Purpose::STEP_UP), $signIn->binding(Purpose::STEP_UP));
         self::assertSame(3, $signIn->generation);

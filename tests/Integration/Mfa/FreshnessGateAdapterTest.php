@@ -26,7 +26,6 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties as MfaObservedProperties;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
@@ -38,6 +37,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof as MfaProof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FreshnessGateTests;
@@ -676,7 +676,7 @@ final class FreshnessGateAdapterTest extends TestCase
      */
     private static function pendingOf(Person $person, string $signIn): PendingContext
     {
-        $reference = IdentityReference::of($person);
+        $reference = ProofOwner::of($person);
 
         $firstFactor = new MfaProof(
             MfaProofKind::FIRST_FACTOR,

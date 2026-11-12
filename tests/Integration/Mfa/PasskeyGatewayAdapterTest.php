@@ -21,7 +21,6 @@ use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\PasskeyGatewayAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -34,6 +33,7 @@ use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyAssertion;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PasskeyGatewayTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
@@ -588,7 +588,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
             use HasFactors;
         };
 
-        $owner   = IdentityReference::of($person);
+        $owner   = ProofOwner::of($person);
         $binding = new ProofBinding($owner->type, $owner->key, 'not-a-guard', 'sign-in', Purpose::STEP_UP);
 
         self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]))->kind);
@@ -751,7 +751,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
      */
     private function bindingOf(Person $person, EloquentSession&Model $session, Purpose $purpose = Purpose::STEP_UP): ProofBinding
     {
-        $owner = IdentityReference::of($person);
+        $owner = ProofOwner::of($person);
 
         return new ProofBinding($owner->type, $owner->key, self::GUARD, $this->signInReference($session), $purpose);
     }

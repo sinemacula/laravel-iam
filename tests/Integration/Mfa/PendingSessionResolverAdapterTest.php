@@ -24,7 +24,6 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PendingSessionResolverAdapter;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\PendingSessionResolver;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
@@ -33,6 +32,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\PendingSessionResolverTests;
@@ -360,7 +360,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
         self::assertNull($this->pendingResolver()->revalidate(self::keeping($pending, $other)));
 
         $stranger = $this->createPerson();
-        $owner    = IdentityReference::of($stranger);
+        $owner    = ProofOwner::of($stranger);
         $own      = $this->pendingContextFor($other);
         $first    = $own->firstFactor;
         $binding  = new ProofBinding($owner->type, $owner->key, $own->application, $own->sessionId, Purpose::SIGN_IN);
@@ -455,7 +455,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
         self::assertNotNull($pending);
         self::assertSame($expected->sessionId, $pending->sessionId);
         self::assertSame(self::GUARD, $pending->application);
-        self::assertTrue(IdentityReference::of($pending->identity)->is(IdentityReference::of($person)));
+        self::assertEquals(ProofOwner::of($person), ProofOwner::of($pending->identity));
         self::assertSame($credential, $pending->credential());
     }
 

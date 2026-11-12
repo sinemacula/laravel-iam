@@ -6,12 +6,12 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
@@ -45,11 +45,12 @@ final readonly class SignInProofs
      * @return list<\SineMacula\Laravel\Mfa\Proofs\Proof>
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     public function of(MultiFactorAuthenticatable $identity, string $application, Session $session, array $recorded): array
     {
-        $signIn = new SignIn(IdentityReference::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
+        $signIn = new SignIn(ProofOwner::of($identity), $application, SignIn::reference($session, $application), VerificationGeneration::current($identity));
         $trust  = ProviderTrust::accepted($session->getTenantId());
         $proofs = [];
 
