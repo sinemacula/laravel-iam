@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\Passkeys\PasskeyService;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
@@ -22,6 +21,7 @@ use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyAssertion;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * MFA's passkey gateway, running a passkey factor's ceremonies through
@@ -261,8 +261,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
     }
 
     /**
-     * The identity MFA asks about, as `laravel-authentication`'s, refused
-     * unless the binding names it.
+     * The identity MFA asks about, refused unless the binding names it.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
@@ -270,12 +269,13 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function identity(MultiFactorAuthenticatable $identity, ProofBinding $binding): Identity
     {
         $owner = $this->sessions->identity($identity);
 
-        return IdentityReference::of($owner)->owns($binding) ? $owner : throw self::refused('The ceremony is bound to another identity.');
+        return ProofOwner::of($owner)->owns($binding) ? $owner : throw self::refused('The ceremony is bound to another identity.');
     }
 
     /**

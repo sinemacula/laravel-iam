@@ -7,12 +7,12 @@ namespace SineMacula\Laravel\Iam\Mfa;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
@@ -86,9 +86,7 @@ final readonly class StepUpAdapter implements StepUp
     ) {}
 
     /**
-     * Step the caller's session up with the verified proof, then forget the
-     * decisions that read its authentication, returning
-     * `laravel-authentication`'s access token result as MFA's completion.
+     * Step the caller's session up with the verified proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
@@ -97,6 +95,7 @@ final readonly class StepUpAdapter implements StepUp
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     #[\Override]
@@ -112,7 +111,7 @@ final readonly class StepUpAdapter implements StepUp
 
         $sessions = $this->current->sessions($application);
 
-        if (!IdentityReference::of($identity)->owns($proof->binding)) {
+        if (!ProofOwner::of($identity)->owns($proof->binding)) {
             throw self::refused('The proof is not bound to the caller.');
         }
 

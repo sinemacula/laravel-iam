@@ -13,6 +13,7 @@ use SineMacula\Laravel\Mfa\Contracts\EventContextResolver;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Events\EventContext;
 use SineMacula\Laravel\Mfa\Events\EventSubject;
+use SineMacula\Laravel\Mfa\Support\IdentityType;
 
 /**
  * MFA's event context, filled from the subject MFA hands it (IAM-3.12), each
@@ -80,7 +81,7 @@ final readonly class EventContextResolverAdapter implements EventContextResolver
 
         return EventContext::allowlist([
             ...$this->signIn($identity, $subject->application, $subject->signInId),
-            'identity_type' => $identity === null ? null : self::typeOf($identity),
+            'identity_type' => $identity === null ? null : IdentityType::of($identity),
             'identity_id'   => EventContext::scalarKey($identity?->getAuthIdentifier()),
             'ip'            => $client->ip,
             'user_agent'    => $client->userAgent,
@@ -145,19 +146,5 @@ final readonly class EventContextResolverAdapter implements EventContextResolver
             'principal_type' => is_string($type) ? $type : null,
             'principal_id'   => EventContext::scalarKey($session->getAttribute($principal->getForeignKeyName())),
         ];
-    }
-
-    /**
-     * The type an identity is recorded under: its morph class for an Eloquent
-     * model, so an application's morph map is honoured, and its class name
-     * otherwise.
-     *
-     * @param  object  $subject
-     * @return string
-     */
-    private static function typeOf(object $subject): string
-    {
-        // @phpstan-ignore staticMethod.dynamicCall
-        return $subject instanceof Model ? $subject->getMorphClass() : $subject::class;
     }
 }

@@ -207,6 +207,7 @@ final class RequirementCheckerAdapterTest extends TestCase
         $this->actingOnVerifiedSession($session);
 
         self::assertEquals(RequirementResult::met(), $this->check(['multifactor' => []], new Subject($person, null, null, self::GUARD, self::GUARD, $key)));
+        self::assertEquals(RequirementResult::met(), $this->check(['multifactor' => []], new Subject(clone $person, $person, null, self::GUARD, self::GUARD, $key)));
 
         $this->assertRefused(ReferenceKind::SESSION, new Subject($someone, $person, null, self::GUARD, self::GUARD, $key));
         $this->assertRefused(ReferenceKind::SESSION, new Subject(new \stdClass, $person, null, self::GUARD, self::GUARD, $key));

@@ -23,10 +23,10 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * `laravel-authorization`'s requirement checker, answered by MFA's requirement
@@ -163,17 +163,14 @@ final readonly class RequirementCheckerAdapter implements AuthenticationRequirem
     }
 
     /**
-     * The identity whose session the subject signed in with, once the subject
-     * is accounted for by it: a principal must act for it, and any other
-     * subject must be it, unless the subject names no identity, when it is its
-     * own; refused when the subject is not, or MFA cannot hold factors for the
-     * identity, so another identity's proofs never answer for the subject.
+     * The identity the subject is or acts for, whose session it signed in with.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  string  $application
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private static function identityOf(Subject $subject, string $application): MultiFactorAuthenticatable
     {
@@ -187,7 +184,7 @@ final readonly class RequirementCheckerAdapter implements AuthenticationRequirem
 
         $own = $acting ?? ($model instanceof Authenticatable ? $model : null);
 
-        return $own === $identity || ($own !== null && IdentityReference::of($own)->is(IdentityReference::of($identity)))
+        return $own === $identity || ($own !== null && (array) ProofOwner::of($own) === (array) ProofOwner::of($identity))
             ? $identity
             : throw UnresolvedReferenceException::forSignIn($application);
     }

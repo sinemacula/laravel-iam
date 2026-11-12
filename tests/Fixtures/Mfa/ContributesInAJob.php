@@ -16,7 +16,7 @@ use SineMacula\Laravel\Authentication\Contracts\AuthenticationContextContributor
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Jwt\Enums\SubjectType;
 use SineMacula\Laravel\Authentication\Models\Session;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use Tests\Fixtures\Models\Person;
 
 /**
@@ -103,7 +103,7 @@ final class ContributesInAJob implements ShouldQueue
      */
     public static function subject(Person $person, EloquentSession&Model $session, string $guard): ContributionSubject
     {
-        $id  = IdentityReference::of($person)->key;
+        $id  = ProofOwner::of($person)->key;
         $key = $session->getKey();
 
         $context = new AuthenticationContext(

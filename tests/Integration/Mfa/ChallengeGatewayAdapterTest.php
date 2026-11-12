@@ -25,7 +25,6 @@ use SineMacula\Laravel\Iam\Mfa\ChallengeGatewayAdapter;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
@@ -41,6 +40,7 @@ use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Enrollment;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ChallengeGatewayTests;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Concerns\BindsStrayRequests;
@@ -928,7 +928,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testAnApplicationThatIsNoGuardThrows(): void
     {
-        $owner   = IdentityReference::of($this->person());
+        $owner   = ProofOwner::of($this->person());
         $binding = new ProofBinding($owner->type, $owner->key, 'console', $this->signInReference($this->personsSession()), Purpose::STEP_UP);
         $caller  = self::callerOf($this->person(), 'console');
 
@@ -1213,7 +1213,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     private function bindingOf(Person $person, Purpose $purpose): ProofBinding
     {
-        $owner   = IdentityReference::of($person);
+        $owner   = ProofOwner::of($person);
         $session = $this->session ?? self::fail('The person has not signed in.');
 
         return new ProofBinding($owner->type, $owner->key, self::GUARD, $this->signInReference($session), $purpose);

@@ -89,8 +89,7 @@ final class UnresolvedReferenceExceptionTest extends TestCase
         $exception = UnresolvedReferenceException::forIdentity('App\Models\Robot');
 
         self::assertSame(
-            'The identity of type [App\Models\Robot] cannot be resolved: it must implement laravel-authentication\'s Identity contract,'
-            . ' and its key must be a non-empty string or an integer.',
+            'The identity of type [App\Models\Robot] cannot be resolved: it must implement laravel-authentication\'s Identity contract.',
             $exception->getMessage(),
         );
         self::assertSame(ReferenceKind::IDENTITY, $exception->kind);

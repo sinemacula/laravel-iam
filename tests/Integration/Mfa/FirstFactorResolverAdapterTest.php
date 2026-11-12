@@ -17,7 +17,6 @@ use SineMacula\Laravel\Iam\Mfa\FirstFactorResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Contracts\FirstFactorResolver;
@@ -26,6 +25,8 @@ use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\FirstFactorResolverTests;
 use Tests\Concerns\FindsLockedSessions;
@@ -88,7 +89,7 @@ final class FirstFactorResolverAdapterTest extends TestCase
         self::assertEquals(CarbonImmutable::now(), $proof->provedAt);
         self::assertSame($generation, $proof->generation);
         self::assertSame(
-            [$person->getMorphClass(), IdentityReference::of($person)->key, self::GUARD, $this->signInReference($session), Purpose::SIGN_IN],
+            [$person->getMorphClass(), ProofOwner::of($person)->key, self::GUARD, $this->signInReference($session), Purpose::SIGN_IN],
             [$proof->binding->identityType, $proof->binding->identityKey, $proof->binding->application, $proof->binding->sessionId, $proof->binding->purpose],
         );
     }
@@ -150,13 +151,9 @@ final class FirstFactorResolverAdapterTest extends TestCase
 
         self::assertInstanceOf(FirstFactorResolverAdapter::class, $resolver);
 
-        try {
-            $resolver->resolve($stranger, self::GUARD);
+        $this->expectException(UnsupportedIdentifierException::class);
 
-            self::fail('An identity without a key was resolved.');
-        } catch (UnresolvedReferenceException $exception) {
-            self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
-        }
+        $resolver->resolve($stranger, self::GUARD);
     }
 
     /**

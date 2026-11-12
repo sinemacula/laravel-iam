@@ -32,7 +32,6 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
@@ -44,9 +43,11 @@ use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\ProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Exceptions\ProofRefusedException;
+use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ProofStoreTests;
@@ -368,8 +369,8 @@ final class ProofStoreAdapterTest extends TestCase
                 $read();
 
                 self::fail('An identity without a key was resolved.');
-            } catch (UnresolvedReferenceException $exception) {
-                self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
+            } catch (UnsupportedIdentifierException) {
+                self::addToAssertionCount(1);
             }
         }
     }
@@ -874,7 +875,7 @@ final class ProofStoreAdapterTest extends TestCase
      */
     private static function keyOf(Person $person): string
     {
-        return IdentityReference::of($person)->key;
+        return ProofOwner::of($person)->key;
     }
 
     /**

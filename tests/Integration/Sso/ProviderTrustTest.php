@@ -31,7 +31,6 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
@@ -40,6 +39,7 @@ use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken;
 use Tests\Concerns\MigratesSso;
@@ -328,7 +328,7 @@ final class ProviderTrustTest extends TestCase
      */
     private function unnamedSignIn(): SignIn
     {
-        return new SignIn(IdentityReference::of($this->person), self::GUARD, SignIn::UNNAMED, 0);
+        return new SignIn(ProofOwner::of($this->person), self::GUARD, SignIn::UNNAMED, 0);
     }
 
     /**

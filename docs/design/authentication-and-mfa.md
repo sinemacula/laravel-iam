@@ -63,9 +63,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   - Where `laravel-authentication` names no session (at sign-in, before the session row is written, and whenever it
     asks for a requirement), every proof of the judgement is bound to `SignIn::UNNAMED` (`iam:unnamed-session`). It
     holds a colon, so no session key can equal it, and no adapter that reads a session's proofs produces it.
-  - The identity is named as MFA names a proof's owner (`Mfa\Translation\IdentityReference`): its morph class for an
-    Eloquent model and its class name otherwise, and its key, which must be an integer or a non-empty string. MFA's own
-    rule is `@internal`, so it is restated here, and every comparison of two identities goes through it.
+  - The identity is named by MFA's `ProofOwner`: its morph class for an Eloquent model and its class name otherwise,
+    and its key, which must be an integer or a non-empty string.
   - Every proof read from a session is stamped with the identity's current MFA verification generation
     (`VerificationGeneration::current()`, one read), since MFA trusts a proof only under the current generation.
 - `Mfa\CurrentSession` resolves the guard and the sign-in for every adapter, so every adapter refuses the same
@@ -472,8 +471,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `adapters.mfa`.
 - `src/Mfa/CurrentSession.php`: `named()`, `of()`, `current()`, `held()`, `identity()`, `caller()`, `defaultGuard()`,
   `guard()`, `sessions()`, `identitySessions()`, `isInTransaction()`.
-- `src/Mfa/Translation/SignIn.php` (`UNNAMED`, `reference()`, `binding()`), `IdentityReference.php`,
-  `ChannelTranslator.php`, `ProofTranslator.php` (`toMfa()`, `toResult()`), `RequirementTranslator.php` (`toMfa()`,
+- `src/Mfa/Translation/SignIn.php` (`UNNAMED`, `reference()`, `binding()`), `ChannelTranslator.php`,
+  `ProofTranslator.php` (`toMfa()`, `toResult()`), `RequirementTranslator.php` (`toMfa()`,
   `toAuthentication()`, `evaluation()`, `toFreshnessParts()`, `toFreshness()`, `fromFreshness()`),
   `ChangeTranslator.php`, `ClientTranslator.php` (`toAuthentication()`, `toMfa()`, `unknown()`).
 - `src/Mfa/AdditionalFactorPolicyAdapter.php`, `RequirementCheckAdapter.php`, `PendingSessionResolverAdapter.php`

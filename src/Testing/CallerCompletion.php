@@ -12,15 +12,14 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
 use SineMacula\Laravel\Iam\Mfa\PendingSessionResolverAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\PendingContext;
-use SineMacula\Laravel\Mfa\Context\SessionFirstFactor;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
@@ -43,7 +42,6 @@ final readonly class CallerCompletion
      * @param  \SineMacula\Laravel\Iam\Mfa\PendingSessionResolverAdapter  $pendings
      * @param  \SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter  $completion
      * @param  \SineMacula\Laravel\Iam\Testing\FixtureFactors  $factors
-     * @param  \SineMacula\Laravel\Mfa\Context\SessionFirstFactor  $proofs
      * @param  \SineMacula\Laravel\Mfa\Contracts\RequirementCheck  $check
      */
     public function __construct(
@@ -57,17 +55,12 @@ final readonly class CallerCompletion
         /** The real factor the further proof names. */
         private FixtureFactors $factors,
 
-        /** Reads the pending session's first factor as MFA reads it. */
-        private SessionFirstFactor $proofs,
-
         /** Evaluates the proofs as MFA evaluates them. */
         private RequirementCheck $check,
     ) {}
 
     /**
-     * Complete the sign-in on the guard when it waits first on a further
-     * factor, with a proof of the level (AAL2 when none is given) made now;
-     * any other result is returned as it is.
+     * Complete a sign-in waiting on a further factor, at AAL2 by default.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @param  string  $guard
@@ -79,6 +72,7 @@ final readonly class CallerCompletion
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     public function complete(SignInResult $result, string $guard, ?AssuranceLevel $level, ClientContext $client): SignInResult
@@ -91,7 +85,7 @@ final readonly class CallerCompletion
 
         $pending  = $this->pending($guard, $credential);
         $identity = $pending->identity;
-        $owner    = IdentityReference::of($identity);
+        $owner    = ProofOwner::of($identity);
         $binding  = new ProofBinding($owner->type, $owner->key, $pending->application, $pending->sessionId, Purpose::SIGN_IN);
         $level ??= AssuranceLevel::AAL2;
         $factor = $this->factors->held($identity, $pending->application, $level);
@@ -113,7 +107,7 @@ final readonly class CallerCompletion
      */
     public function satisfy(PendingContext $pending, Proof $proof, ClientContext $client): SignInResult
     {
-        $judged = $this->check->check(Requirement::none(), ...array_filter([$this->proofs->ofPending($pending->identity, $pending), $proof]));
+        $judged = $this->check->check(Requirement::none(), $pending->firstFactor, $proof);
 
         return $this->completion->complete(CallerContext::forPending($pending, ClientTranslator::toMfa($client)), VerificationResult::verified(
             $proof,

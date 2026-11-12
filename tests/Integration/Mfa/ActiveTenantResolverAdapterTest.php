@@ -16,6 +16,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\ActiveTenantResolverAdapter;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use Tests\Concerns\MigratesMembers;
@@ -239,7 +240,9 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     {
         $this->actInTenant($this->createPerson(), self::TENANT);
 
-        self::assertUnresolved(fn (): ?string => $this->adapter()->activeTenant(new Person, self::GUARD), ReferenceKind::IDENTITY);
+        $this->expectException(UnsupportedIdentifierException::class);
+
+        $this->adapter()->activeTenant(new Person, self::GUARD);
     }
 
     /**

@@ -14,7 +14,6 @@ use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBindi
 use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClient;
@@ -25,6 +24,7 @@ use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyChangeGate;
 use SineMacula\Laravel\Mfa\Passkeys\PasskeyRegistration;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * `laravel-authentication`'s passkey factor gate, calling MFA's passkey change
@@ -182,9 +182,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
     }
 
     /**
-     * MFA's caller of the registration: the pending session the credential
-     * names, when one is handed in, or else the identity as an active caller on
-     * the application, served to the client.
+     * MFA's caller: the credential's pending session, else the identity.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -193,6 +191,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
      * @return \SineMacula\Laravel\Mfa\Context\CallerContext
      *
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function caller(MultiFactorAuthenticatable $identity, string $application, MfaClient $client, #[\SensitiveParameter] ?Secret $pending): CallerContext
     {
@@ -202,7 +201,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
 
         $context = $this->pendings->fromCredential($application, $pending->reveal());
 
-        if ($context === null || !IdentityReference::of($context->identity)->is(IdentityReference::of($identity))) {
+        if ($context === null || (array) ProofOwner::of($context->identity) !== (array) ProofOwner::of($identity)) {
             throw new OperationRefusedException(FailureReason::NOT_FOUND, 'The pending credential names no pending sign-in of the identity on the application.');
         }
 
@@ -210,9 +209,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
     }
 
     /**
-     * MFA's registration of the passkey: its credential, what its registration
-     * observed and the enrolment it was bound to, refused when the binding is
-     * for anything else.
+     * MFA's registration of the passkey, refused unless for an enrolment.
      *
      * @param  \SineMacula\Laravel\Authentication\Passkeys\RegisteredPasskey  $passkey
      * @param  \SineMacula\Laravel\Authentication\Proofs\ProofBinding  $binding
@@ -221,6 +218,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
     private function registration(RegisteredPasskey $passkey, AuthenticationBinding $binding): PasskeyRegistration
     {
@@ -228,7 +226,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
             throw self::notForEnrolment();
         }
 
-        $owner = IdentityReference::of($binding->identity);
+        $owner = ProofOwner::of($binding->identity);
 
         return new PasskeyRegistration(
             $passkey->credentialId,

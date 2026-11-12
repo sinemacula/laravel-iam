@@ -30,7 +30,6 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCallers;
 use SineMacula\Laravel\Iam\Mfa\FactorCodeCountersAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
-use SineMacula\Laravel\Iam\Mfa\Translation\IdentityReference;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\ActiveStateResolver;
 use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
@@ -41,6 +40,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\LockoutApplied;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\Seams\Concerns\ChallengeCountersTests;
 use Tests\Concerns\BindsStrayRequests;
 use Tests\Concerns\MigratesMembers;
@@ -590,7 +590,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     #[\Override]
     protected function countedBinding(): ProofBinding
     {
-        $owner = IdentityReference::of($this->person());
+        $owner = ProofOwner::of($this->person());
 
         return new ProofBinding($owner->type, $owner->key, self::GUARD, $this->sessionReference(), Purpose::STEP_UP);
     }
@@ -795,7 +795,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     {
         self::assertInstanceOf(Person::class, $identity);
 
-        $named = IdentityReference::of($identity)->key === $binding->identityKey ? $identity : $this->otherPerson();
+        $named = ProofOwner::of($identity)->key === $binding->identityKey ? $identity : $this->otherPerson();
 
         return $this->app?->make(CodeTranslator::class)->toAuthentication($named, $factor, MfaChannelKind::SMS, $binding) ?? self::fail('The application has not booted.');
     }
