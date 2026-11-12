@@ -4,25 +4,18 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Authorization;
 
-use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Events\QueryExecuted;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
-use SineMacula\Laravel\Authorization\Exceptions\InvalidAuthorizationConfigException;
-use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
-use SineMacula\Laravel\Iam\Authorization\SubtreeGrantees;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
@@ -38,35 +31,18 @@ use Tests\Fixtures\Authorization\Account;
 use Tests\Fixtures\Authorization\AccountTenancy;
 use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Authorization\OrganisationTenancy;
-use Tests\Fixtures\Authorization\Seat;
-use Tests\Fixtures\Authorization\SeatHolder;
-use Tests\Fixtures\Authorization\Staff;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for a move of the application's tree that widens the scope
- * of the people granted in the moved subtree (IAM-6.7, IAM-7.5): a person whose
- * grant is rooted below the tenant of their link by a verified domain is within
- * that tenant, and a move of the granted tenant out from under it takes their
- * grant beyond it with no grant written, so the move itself reports every
- * person granted in the moved subtree to SSO's scope widening, which suspends
- * the link and revokes the session established through it in the move's own
- * transaction, and rolls back with it; nothing is reported while the SSO
- * capability's switch is off; and the people granted are read from every grant
- * table as `laravel-authorization` holds them, under the names it reads them by
- * (a table named by no name refused, as it refuses it), each once, a
- * principal's identity for a principal, a grantee named by its morph alias as
- * the model it maps to, never a grant that has expired, one outside the
- * subtree, one of another tenant type, one to a role, or one to what is no
- * model; and a move reports the people granted in a tenant of another type
- * below the moved one.
+ * Integration tests for a move that takes grants in the moved subtree beyond a
+ * tenant of a verified domain link (IAM-6.7, IAM-7.5): the move reports their
+ * identities to SSO's scope widening in its own transaction.
  *
- * The move's report takes SSO's identity guard and locks the connections
- * holding the person's links inside the move's transaction, so each scenario
- * that commits or rolls back runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Each scenario that commits or rolls back runs at the connection's own level
+ * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
+ * PostgreSQL.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -74,7 +50,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(TreeChanges::class)]
-#[CoversClass(SubtreeGrantees::class)]
 #[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class TreeMoveWideningTest extends TestCase
 {
@@ -234,79 +209,6 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * The people granted in the subtree are read from every grant table, each
-     * once: a role, a permission and a policy to the person, in the tenant and
-     * below it, answer them once; another person, and an identity of another
-     * type that shares the person's key, answer themselves; a principal's grant
-     * answers its identity; a grant that has expired, one outside the subtree,
-     * one of another tenant type, one to a role, one to a grantee that is no
-     * model, and one to a grantee whose row is gone answer nobody.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testThePeopleGrantedAreReadFromEveryGrantTableEachOnce(): void
-    {
-        $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
-        $holder  = SeatHolder::query()->create(['name' => 'Grace Hopper', 'email' => 'grace@example.test']);
-        $seat    = Seat::query()->create(['person_id' => $holder->id, 'tenant_id' => self::GRANTED_CHILD]);
-        $expired = $this->createPerson();
-        $outside = $this->createPerson();
-        $other   = $this->createPerson();
-        $gone    = $this->createPerson();
-
-        $service->grantRole($seat, self::ROLE, tenant: self::organisation(self::GRANTED_CHILD), includeSubtree: false);
-        $service->grantRole($outside, self::ROLE, tenant: self::organisation(self::LINKED), includeSubtree: false);
-        $service->grantRole($expired, self::ROLE, tenant: self::organisation(self::GRANTED), includeSubtree: false, expiresAt: CarbonImmutable::now()->addMinute());
-        $service->grantRole($gone, self::ROLE, tenant: self::organisation(self::GRANTED), includeSubtree: false);
-
-        $this->travel(2)->minutes();
-
-        $another = $this->createPerson();
-        $staff   = Staff::query()->whereKey(self::keyOf($this->person()))->firstOrFail();
-        $grants  = [
-            ['authorizable_permissions', $this->person()->getMorphClass(), self::keyOf($this->person()), self::GRANTED_CHILD, Organisation::TYPE],
-            ['authorizable_policies', $this->person()->getMorphClass(), self::keyOf($this->person()), self::GRANTED, Organisation::TYPE],
-            ['authorizable_permissions', $other->getMorphClass(), self::keyOf($other), self::GRANTED, 'another-type'],
-            ['authorizable_roles', $another->getMorphClass(), self::keyOf($another), self::GRANTED_CHILD, Organisation::TYPE],
-            ['authorizable_roles', $staff->getMorphClass(), self::keyOf($staff), self::GRANTED, Organisation::TYPE],
-            ['authorizable_roles', (new Role)->getMorphClass(), self::keyOf(Role::query()->firstOrFail()), self::GRANTED, Organisation::TYPE],
-            ['authorizable_roles', 'no-such-model', '1', self::GRANTED, Organisation::TYPE],
-        ];
-
-        foreach ($grants as [$table, $type, $id, $tenantId, $tenantType]) {
-            DB::table($table)->insert([
-                self::foreignColumn($table) => self::foreignKey($table),
-                'authorizable_type'         => $type,
-                'authorizable_id'           => $id,
-                'tenant_type'               => $tenantType,
-                'tenant_id'                 => $tenantId,
-            ]);
-        }
-
-        DB::table($gone->getTable())->where('id', self::keyOf($gone))->delete();
-
-        $identities = $this->grantees()->of(self::GRANTED);
-        $found      = array_map(static fn (object $identity): string => $identity::class . ':' . ($identity instanceof Model ? self::keyOf($identity) : ''), $identities);
-
-        self::assertSame(array_keys($identities), range(0, count($identities) - 1));
-
-        sort($found);
-
-        $expected = [
-            Person::class . ':' . self::keyOf($this->person()),
-            Person::class . ':' . self::keyOf($another),
-            Staff::class . ':' . self::keyOf($staff),
-            $seat->getIdentity()::class . ':' . self::keyOf($holder),
-        ];
-
-        sort($expected);
-
-        self::assertSame($expected, $found);
-    }
-
-    /**
      * A move of a subtree holding a tenant of another type reports the people
      * granted there too: a person granted only in an account below the granted
      * organisation has their link suspended.
@@ -343,87 +245,6 @@ final class TreeMoveWideningTest extends TestCase
     }
 
     /**
-     * The grant tables are read under the names `authorization.tables` gives
-     * them.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheGrantTablesAreReadUnderTheirConfiguredNames(): void
-    {
-        Config::set('authorization.tables.authorizable_roles', 'renamed_roles');
-
-        try {
-            $this->grantees()->of(self::GRANTED);
-
-            self::fail('A grant table was read under its default name.');
-        } catch (QueryException $exception) {
-            self::assertStringContainsString('renamed_roles', $exception->getSql());
-        } finally {
-            // The migrations roll back under the name the table was created
-            // with
-            Config::set('authorization.tables.authorizable_roles', 'authorizable_roles');
-        }
-    }
-
-    /**
-     * A grant table named by what is no name is refused, naming its setting, as
-     * `laravel-authorization` refuses it, never read under its default name.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAGrantTableNamedByWhatIsNoNameIsRefused(): void
-    {
-        Config::set('authorization.tables.authorizable_roles', '');
-
-        try {
-            $this->grantees()->of(self::GRANTED);
-
-            self::fail('A grant table named by no name was read.');
-        } catch (InvalidAuthorizationConfigException $exception) {
-            self::assertStringContainsString('authorization.tables.authorizable_roles', $exception->getMessage());
-        } finally {
-            // The migrations roll back under the name the table was created
-            // with
-            Config::set('authorization.tables.authorizable_roles', 'authorizable_roles');
-        }
-    }
-
-    /**
-     * A grantee named by its morph alias is read as the model the alias maps
-     * to.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAGranteeNamedByItsMorphAliasIsRead(): void
-    {
-        $before = Relation::morphMap();
-
-        Relation::morphMap(['granted-staff' => Staff::class]);
-
-        try {
-            DB::table('authorizable_roles')->insert([
-                'role_id'           => Role::query()->value('id'),
-                'authorizable_type' => 'granted-staff',
-                'authorizable_id'   => self::keyOf($this->person()),
-                'tenant_type'       => Organisation::TYPE,
-                'tenant_id'         => self::GRANTED_CHILD,
-            ]);
-
-            $classes = array_map(static fn (object $identity): string => $identity::class, $this->grantees()->of(self::GRANTED_CHILD));
-        } finally {
-            Relation::morphMap($before, false);
-        }
-
-        self::assertContains(Staff::class, $classes);
-    }
-
-    /**
      * Grant the role to the grantee in the tenant alone.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $grantee
@@ -437,61 +258,6 @@ final class TreeMoveWideningTest extends TestCase
         $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
 
         $service->grantRole($grantee, self::ROLE, tenant: self::organisation($tenantId), includeSubtree: false);
-    }
-
-    /**
-     * The column of the table given that holds what is granted.
-     *
-     * @param  string  $table
-     * @return string
-     */
-    private static function foreignColumn(string $table): string
-    {
-        return match ($table) {
-            'authorizable_roles'       => 'role_id',
-            'authorizable_permissions' => 'permission_id',
-            default                    => 'policy_id',
-        };
-    }
-
-    /**
-     * The key of a role, a permission or a policy, for a row of the table
-     * given, stored on first use.
-     *
-     * @param  string  $table
-     * @return string
-     */
-    private static function foreignKey(string $table): string
-    {
-        if ($table === 'authorizable_roles') {
-            return self::keyOf(Role::query()->firstOrFail());
-        }
-
-        if ($table === 'authorizable_permissions') {
-            return self::keyOf(Permission::query()->firstOrCreate(['name' => 'invoices:refund']));
-        }
-
-        $existing = DB::table('policies')->value('id');
-
-        if (is_string($existing)) {
-            return $existing;
-        }
-
-        $id = (string) Str::uuid();
-
-        DB::table('policies')->insert(['id' => $id, 'name' => 'refunds', 'is_system' => false, 'document' => '{"statements":[]}']);
-
-        return $id;
-    }
-
-    /**
-     * The people granted in a subtree, as the move reads them.
-     *
-     * @return \SineMacula\Laravel\Iam\Authorization\SubtreeGrantees
-     */
-    private function grantees(): SubtreeGrantees
-    {
-        return $this->app?->make(SubtreeGrantees::class) ?? self::fail('The application has not booted.');
     }
 
     /**

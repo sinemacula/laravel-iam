@@ -79,7 +79,7 @@ final class AuthorizationActivityTest extends CodesTestCase
             'authorization.permission_unassigned'    => [$change, self::retained(...$scoped)],
             'authorization.policy_attached'          => [$change, self::retained(...$scoped, ...['expires_at'])],
             'authorization.policy_detached'          => [$change, self::retained(...$scoped)],
-            'authorization.boundary_set'             => [$change, self::retained(...$scoped, ...['previous_policy_id'])],
+            'authorization.boundary_set'             => [$change, self::retained(...$scoped, ...['previous_policy'])],
             'authorization.boundary_removed'         => [$change, self::retained(...$scoped)],
             'authorization.guardrail_set'            => [$change, self::retained(...$scoped)],
             'authorization.guardrail_removed'        => [$change, self::retained(...$scoped)],

@@ -296,28 +296,29 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `docs/design/events.md`), and a denial is a fact even when that transaction rolls back. So a decision the mapper
   records, reported while a transaction is open on audit-log's storage connection, is handed to `DeferredRefusals`, as
   `laravel-authentication`'s refusals are, and recorded once the outermost transaction there has ended.
-- Changes. Every other event is a change (`Audit\Mappers\AuthorizationChange`, which reads the fields
-  `laravel-authorization`'s changes share by name, since no contract declares them), dispatched after its call commits,
-  recorded under its own code (`role_created` to `guardrail_removed`, and `grant_expired` for a grantee's role,
-  permission or policy and a role's permission that expired, `grant` naming which), correlated by its call
-  (`authorization:{operation_id}`). Its actor is the call's (`Support\Operation`): the identity behind the acting
-  principal, as that principal; else the reference a trusted console command names; else explicitly no one, for system
-  work (an expiry the pruner found, a write through a model outside the services), so the contributors never name the
-  request's caller for what it did not do. Its subject is what changed: the role, permission or policy; the grantee of a
-  grant or boundary; the guardrail's or resource's policy; the overridden record. Its tenant is the grant's scope's, or
-  the record's owner's, by its key, and explicitly none for a platform-wide change. A change keeps names, the grant's
-  application and subtree, its expiry, and whether the call was trusted; an update keeps the names of the fields it
-  changed, never their values; a policy its document's version and digest, never the document.
+- Changes. Every change is read through `laravel-authorization`'s `AuthorizationMutation` accessors, never its
+  properties, dispatched after its call commits, recorded under the code of its `operation()` (`role_created` to
+  `guardrail_removed`, and `grant_expired` for a grantee's role, permission or policy and a role's permission that
+  expired, `grant` naming which), correlated by its call (`authorization:{operation_id}`). `SystemOverrideUsed` is no
+  mutation, so it is read from its own properties. Its actor is the call's: the identity behind the acting principal, as
+  that principal; else the reference a trusted console command names; else explicitly no one, for system work (an
+  expiry the pruner found, a write through a model outside the services), so the contributors never name the request's
+  caller for what it did not do. Its subject is the mutation's `subject()`: the role, permission or policy; the grantee
+  of a grant or boundary; the guardrail's tenant; the resource, or none for a whole type; and the overridden record. Its
+  tenant is `tenant()`, by its key, and explicitly none for a platform-wide change. A change keeps names, the grant's
+  application and subtree, its expiry as `auditProperties()` writes it (ISO 8601 in UTC), and whether the call was
+  trusted; an update keeps the names of the fields it changed, never their values; a policy its document's version and
+  digest, never the document.
 - Decision this note records, beyond the plan's: four codes IAM-9.2 does not list record events `laravel-authorization`
   dispatches that are changes to who may do what: `grant_expiry_changed` (a grantee's or a role's grant's expiry
   changed), `resource_policy_attached` and `_detached`, and `system_override_used`. Leaving them unrecorded would leave
   a privilege change out of the change-management evidence IAM-9.3 keeps.
-- A role, permission or policy deleted while grantees held it lists them (AUTHZ-15.2), and its record covers them as
-  a bulk operation's subjects, through audit-log's `PendingRecord::covering()` on the builder its capture hands the
-  mapper: each grantee once, read through the morph map, under audit-log's configured bounds, refused rather than
-  truncated beyond them, and refused where the bound store keeps no attachment. A refusal is contained by audit-log's
-  capture (`AuditCaptureFailed`), never thrown to the change's caller. A deletion that took no grant covers nothing,
-  since audit-log refuses an empty bulk operation.
+- A role, permission or policy deleted while grantees held it lists them (AUTHZ-15.2), a permission's roles among them,
+  and its record covers every grantee beyond its subject as a bulk operation's subjects, through audit-log's
+  `PendingRecord::covering()` on the builder its capture hands the mapper: each grantee once, read through the morph
+  map, under audit-log's configured bounds, refused rather than truncated beyond them, and refused where the bound store
+  keeps no attachment. A refusal is contained by audit-log's capture (`AuditCaptureFailed`), never thrown to the
+  change's caller. A deletion that took no grant covers nothing, since audit-log refuses an empty bulk operation.
 - Audit access (IAM-6.10). `Authorization\AuditAccessPolicyAdapter` answers audit-log's `AuditAccessPolicy`, bound
   shared over audit-log's `DenyAllPolicy` (a `singletonIf()`, so the application's own binding is kept) while
   `iam.adapters.authorization` is on, never mandatory. It lists the viewer's actions with `laravel-authorization`'s
@@ -546,8 +547,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `src/IamServiceProvider.php`: `register()`.
 - `src/Audit/CaptureExclusions.php`: `guards()`, `unexcludedGuards()`, `exceptGuards()`, `isGateCaptureOff()`,
   `holds()`, `DRIVERS`, `EXCEPT_GUARDS_KEY`, `GATE_KEY`.
-- `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Mappers/AuthorizationChange.php`: `of()`;
-  `src/Audit/Enums/AuthorizationActivity.php`: `definition()`, `properties()`.
+- `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`; `src/Audit/Enums/AuthorizationActivity.php`:
+  `definition()`, `properties()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`, `subjectOf()`, `UNJUDGED_SESSION`;
   `src/Authorization/SessionPolicySourceAdapter.php`: `withoutCredential()`;
   `src/Authorization/PermissionCatalogue.php`: `permissions()`, `audit()`, `auditCategory()`, `auditOwn()`,
@@ -643,7 +644,9 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testAPreviewIsThePreviewersAboutThePrincipalPreviewed`, `testABreakGlassGrantUsedSucceeds`,
   `testADelegatedChangeIsTheCallersAndCorrelatedByItsOperation`,
   `testTrustedAndSystemChangesNameOnlyWhatTheCallNamed`, `testADeletionCarriesItsGranteesAsItsManifest`,
-  `testADeletionIsRefusedWhereTheStoreKeepsNoAttachment`, `testAChangeIsReadByItsFieldsNames`,
+  `testADeletionIsRefusedWhereTheStoreKeepsNoAttachment`, `testAPermissionDeletionCoversItsRoles`,
+  `testAGuardrailIsAboutItsTenant`, `testASystemOverrideIsTheCallersAboutTheRecord`,
+  `testAChangeAboutNothingCoversEveryGrantee`,
   `testATenantNotKeyedByItsIdentifierIsRecordedWithNoTenant`, `testATenantOfAnotherTypeIsRecordedWithNoTenant`
 - `tests/Integration/Audit/AuthorizationRecordsTest.php` `testARolesLifeIsRecordedCallByCall`,
   `testAPermissionGrantedAndRevokedIsTwoRecords`, `testEachDenialIsRecordedOnceAndNoAllow`

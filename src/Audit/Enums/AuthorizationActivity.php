@@ -171,7 +171,7 @@ enum AuthorizationActivity: string implements ListsProperties
         self::PERMISSION_UNASSIGNED->value    => self::SCOPED,
         self::POLICY_ATTACHED->value          => [...self::SCOPED, 'expires_at'],
         self::POLICY_DETACHED->value          => self::SCOPED,
-        self::BOUNDARY_SET->value             => [...self::SCOPED, 'previous_policy_id'],
+        self::BOUNDARY_SET->value             => [...self::SCOPED, 'previous_policy'],
         self::BOUNDARY_REMOVED->value         => self::SCOPED,
         self::GUARDRAIL_SET->value            => self::SCOPED,
         self::GUARDRAIL_REMOVED->value        => self::SCOPED,

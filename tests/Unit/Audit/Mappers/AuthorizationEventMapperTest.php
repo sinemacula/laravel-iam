@@ -21,6 +21,7 @@ use SineMacula\Laravel\AuditLog\Records\PendingSnapshot;
 use SineMacula\Laravel\AuditLog\Stores\NullAuditStore;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionEffect;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
 use SineMacula\Laravel\Authorization\Evaluation\StatementReference;
@@ -64,7 +65,6 @@ use SineMacula\Laravel\Authorization\Support\Operation;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
-use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationChange;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthorizationEventMapper;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
@@ -75,13 +75,7 @@ use Tests\Fixtures\Authorization\RekeyedTenancy;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the mapper of `laravel-authorization`'s events (IAM-9.1,
- * IAM-9.2, IAM-9.4, IAM-9.5): every change is recorded under its own code,
- * keeping only what its code keeps, by the call's actor, about what changed, in
- * the tenant it holds in and correlated by its operation; of the decisions only
- * a denial, a break-glass grant used and a preview are recorded, each once, a
- * request for more proof and `AuthorizationFailed` never; and a deletion covers
- * its grantees as a bulk operation's subjects.
+ * Unit tests for the mapper of laravel-authorization's events.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -89,7 +83,6 @@ use Tests\Fixtures\Models\Person;
  * @internal
  */
 #[CoversClass(AuthorizationEventMapper::class)]
-#[CoversClass(AuthorizationChange::class)]
 #[CoversClass(TenantTranslator::class)]
 #[CoversClass(TenantReferences::class)]
 final class AuthorizationEventMapperTest extends TestCase
@@ -139,9 +132,10 @@ final class AuthorizationEventMapperTest extends TestCase
         $policy    = new Reference('policy', '5');
         $grantee   = self::person('7');
         $scope     = new GrantScope(new Reference('organisation', self::TENANT), 'admin', false);
+        $tenant    = new GrantScope(new Reference('organisation', self::TENANT));
         $where     = ['application' => 'admin', 'include_subtree' => false];
         $at        = CarbonImmutable::parse('2026-11-09 12:00:00');
-        $stamp     = '2026-11-09T12:00:00.000000Z';
+        $stamp     = '2026-11-09T12:00:00+00:00';
         $digest    = new DocumentDigest(1, str_repeat('a', 64));
         $document  = ['name' => 'Reviewers', 'document_version' => 1, 'document_digest' => str_repeat('a', 64)];
         $changes   = ['before' => ['name' => 'Old', 'description' => 'x'], 'after' => ['name' => 'New']];
@@ -196,9 +190,9 @@ final class AuthorizationEventMapperTest extends TestCase
         ];
 
         yield 'a permission deleted' => [
-            new PermissionDeleted($operation, $grant, 'invoices:refund', null, null, [], [$role]),
+            new PermissionDeleted($operation, $grant, 'invoices:refund', null, null, [], []),
             AuthorizationActivity::PERMISSION_DELETED,
-            [...$call, 'name' => 'invoices:refund', 'grantee_count' => 0, 'role_count' => 1],
+            [...$call, 'name' => 'invoices:refund', 'grantee_count' => 0, 'role_count' => 0],
         ];
 
         yield 'a policy created' => [
@@ -318,7 +312,7 @@ final class AuthorizationEventMapperTest extends TestCase
         yield 'a boundary set' => [
             new BoundarySet($operation, $grantee, $policy, 'Reviewers', $scope, new Reference('policy', '2')),
             AuthorizationActivity::BOUNDARY_SET,
-            [...$call, ...$where, 'name' => 'Reviewers', 'previous_policy_id' => '2'],
+            [...$call, ...$where, 'name' => 'Reviewers', 'previous_policy' => 'policy:2'],
         ];
 
         yield 'a boundary removed' => [
@@ -327,12 +321,16 @@ final class AuthorizationEventMapperTest extends TestCase
             [...$call, ...$where, 'name' => 'Reviewers'],
         ];
 
-        yield 'a guardrail set' => [new GuardrailSet($operation, $policy, 'Reviewers', $scope), AuthorizationActivity::GUARDRAIL_SET, [...$call, ...$where, 'name' => 'Reviewers']];
+        yield 'a guardrail set' => [
+            new GuardrailSet($operation, $policy, 'Reviewers', $tenant),
+            AuthorizationActivity::GUARDRAIL_SET,
+            [...$call, 'include_subtree' => true, 'name' => 'Reviewers'],
+        ];
 
         yield 'a guardrail removed' => [
-            new GuardrailRemoved($operation, $policy, 'Reviewers', $scope),
+            new GuardrailRemoved($operation, $policy, 'Reviewers', $tenant),
             AuthorizationActivity::GUARDRAIL_REMOVED,
-            [...$call, ...$where, 'name' => 'Reviewers'],
+            [...$call, 'include_subtree' => true, 'name' => 'Reviewers'],
         ];
 
         yield 'a resource policy attached' => [
@@ -392,6 +390,8 @@ final class AuthorizationEventMapperTest extends TestCase
 
         yield 'another of its events' => [new class implements AuthorizationEvent {}];
 
+        yield 'a change with no code' => [\Mockery::mock(AuthorizationMutation::class, ['operation' => 'role.archived'])];
+
         yield 'another member\'s event' => [new \stdClass];
     }
 
@@ -405,32 +405,6 @@ final class AuthorizationEventMapperTest extends TestCase
     public function testEachSkippedEventRecordsNothing(object $event): void
     {
         self::assertNull(self::mapper()->map($event, new PendingRecord));
-    }
-
-    /**
-     * An event that names no call is no change, and a change that names nothing
-     * it changed is about nothing.
-     *
-     * @return void
-     */
-    public function testAChangeIsReadByItsFieldsNames(): void
-    {
-        $call = new readonly class (self::operation()) {
-            /**
-             * Constructor.
-             *
-             * @param  \SineMacula\Laravel\Authorization\Support\Operation  $operation
-             */
-            public function __construct(
-
-                /** The call. */
-                public Operation $operation,
-            ) {}
-        };
-
-        self::assertNull(AuthorizationChange::of(new \stdClass));
-        self::assertNull(AuthorizationChange::of($call)?->subject);
-        self::assertSame([], AuthorizationChange::of($call)?->properties);
     }
 
     /**
@@ -624,6 +598,42 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
+     * A guardrail is about its tenant, a policy on a whole resource type none.
+     *
+     * @return void
+     */
+    public function testAGuardrailIsAboutItsTenant(): void
+    {
+        $scope     = new GrantScope(new Reference('organisation', self::TENANT));
+        $policy    = new Reference('policy', '5');
+        $guardrail = self::snapshotOf(new GuardrailSet(self::operation(), $policy, 'Reviewers', $scope));
+        $type      = self::snapshotOf(new ResourcePolicyAttached(self::operation(), Person::class, null, $policy, 'Reviewers', $scope));
+
+        self::assertSame(['type' => 'organisation', 'id' => self::TENANT], $guardrail->subject?->toArray());
+        self::assertNull($type->subject);
+    }
+
+    /**
+     * A system override is the caller's, about the record, in its tenant.
+     *
+     * @return void
+     */
+    public function testASystemOverrideIsTheCallersAboutTheRecord(): void
+    {
+        $tenant   = new Reference('organisation', self::TENANT);
+        $record   = new PendingRecord;
+        $snapshot = self::mapper()->map(new SystemOverrideUsed(self::operation(), new Reference('role', '3'), 'Administrator', $tenant, 'delete'), $record)?->snapshot();
+
+        self::assertInstanceOf(PendingSnapshot::class, $snapshot);
+        self::assertTrue($record->isActorSettled());
+        self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->actor?->toArray());
+        self::assertSame(['type' => 'member', 'id' => '70'], $snapshot->principal?->toArray());
+        self::assertSame(['type' => 'role', 'id' => '3'], $snapshot->subject?->toArray());
+        self::assertSame(['type' => References::TENANT_TYPE, 'id' => self::TENANT], $snapshot->tenant?->toArray());
+        self::assertSame('authorization:' . self::OPERATION, $snapshot->correlationId);
+    }
+
+    /**
      * References are read through the morph map, the tenant by its key.
      *
      * @return void
@@ -637,6 +647,7 @@ final class AuthorizationEventMapperTest extends TestCase
         $snapshot = self::snapshotOf($event);
 
         self::assertSame(['type' => 'person', 'id' => '7'], $snapshot->actor?->toArray());
+        self::assertSame(['type' => 'person', 'id' => '9'], $snapshot->subject?->toArray());
         self::assertSame('person', $snapshot->properties['resource_type'] ?? null);
         self::assertSame(['type' => References::TENANT_TYPE, 'id' => '12'], $snapshot->tenant?->toArray());
     }
@@ -714,6 +725,54 @@ final class AuthorizationEventMapperTest extends TestCase
         self::assertSame(2, $snapshot?->manifest?->count);
         self::assertSame(json_encode([[Person::class, '8'], [Person::class, '9']]), $snapshot->manifest->canonical);
         self::assertSame(4, $snapshot->properties['grantee_count'] ?? null);
+    }
+
+    /**
+     * A permission deletion covers the roles that held it beside its grantees.
+     *
+     * @return void
+     */
+    public function testAPermissionDeletionCoversItsRoles(): void
+    {
+        $container = new Container;
+
+        $container->instance(AuditStore::class, new NullAuditStore);
+
+        $event    = new PermissionDeleted(self::operation(), new Reference('permission', '4'), 'invoices:refund', null, null, [self::person('8')], [new Reference('role', '3')]);
+        $snapshot = self::mapper($container)->map($event, self::captured($container))?->snapshot();
+
+        self::assertSame(json_encode([[Person::class, '8'], ['role', '3']]), $snapshot?->manifest?->canonical);
+        self::assertSame(1, $snapshot->properties['role_count'] ?? null);
+    }
+
+    /**
+     * A change about nothing covers every grantee it altered.
+     *
+     * @return void
+     */
+    public function testAChangeAboutNothingCoversEveryGrantee(): void
+    {
+        $container = new Container;
+
+        $container->instance(AuditStore::class, new NullAuditStore);
+
+        $event = \Mockery::mock(AuthorizationMutation::class, [
+            'operation'       => 'role.deleted',
+            'operationId'     => self::OPERATION,
+            'isTrusted'       => true,
+            'actor'           => null,
+            'actorIdentity'   => null,
+            'subject'         => null,
+            'tenant'          => null,
+            'application'     => null,
+            'grantees'        => [self::person('8')],
+            'auditProperties' => [],
+        ]);
+
+        $snapshot = self::mapper($container)->map($event, self::captured($container))?->snapshot();
+
+        self::assertNull($snapshot?->subject);
+        self::assertSame(json_encode([[Person::class, '8']]), $snapshot?->manifest?->canonical);
     }
 
     /**
