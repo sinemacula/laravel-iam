@@ -555,7 +555,7 @@ final class InteractsWithIamTest extends TestCase
 
         $this->assertBoundIdentity($person, self::OTHER_GUARD)->assertBoundSession(null, self::GUARD);
 
-        self::assertSame(self::OTHER_GUARD, $this->app?->make(CurrentSession::class)->defaultGuard());
+        self::assertSame(self::OTHER_GUARD, Auth::getDefaultDriver());
         self::assertSame(1, $person->sessions()->where('guard', self::OTHER_GUARD)->count());
     }
 

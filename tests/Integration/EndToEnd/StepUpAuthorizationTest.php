@@ -28,7 +28,7 @@ use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
-use SineMacula\Laravel\Iam\Mfa\SignInProofs;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Exceptions\InsufficientAuthenticationException as StepUp;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
@@ -135,7 +135,7 @@ final class StepUpAuthorizationTest extends TestCase
             ->assertJsonPath('error', StepUp::ERROR)
             ->assertJsonPath('requirement.multifactor', ['max_age' => null])
             ->assertJsonPath('has_confirmed_factor', true)
-            ->assertJsonPath('factors.0.id', SignInProofs::factorReference($factor));
+            ->assertJsonPath('factors.0.id', CodeTranslator::reference($factor));
 
         self::assertStringContainsString('insufficient_user_authentication', (string) $refused->headers->get('WWW-Authenticate'));
 

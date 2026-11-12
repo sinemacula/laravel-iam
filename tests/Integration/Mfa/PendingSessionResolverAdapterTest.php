@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Mfa;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
@@ -475,24 +474,6 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A context whose application holds no session service cannot be read
-     * again, and is refused by throwing.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testRevalidatingWithoutASessionServiceIsRefused(): void
-    {
-        $credential = $this->signInPending($this->createPerson());
-        $pending    = $this->pendingContextFor($credential);
-
-        $this->app?->instance('auth', new IlluminateAuthManager($this->app));
-
-        self::assertUnresolvedGuard(self::GUARD, fn (): mixed => $this->pendingResolver()->revalidate($pending));
-    }
-
-    /**
      * Rows of `[field]` that name no body field.
      *
      * @return iterable<string, array{0: mixed}>
@@ -598,23 +579,6 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         self::assertNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST')));
         self::assertUnresolvedGuard($guard, fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential)));
-    }
-
-    /**
-     * An auth manager that is not `laravel-authentication`'s holds no session
-     * service, so a credential is refused.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAnAuthManagerThatIsNotLaravelAuthenticationsIsRefused(): void
-    {
-        $credential = $this->signInPending($this->createPerson());
-
-        $this->app?->instance('auth', new IlluminateAuthManager($this->app));
-
-        self::assertUnresolvedGuard(self::GUARD, fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential)));
     }
 
     /**

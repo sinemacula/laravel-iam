@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Mfa;
 
-use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -36,10 +35,6 @@ use Tests\TestCase;
  * whichever guard. A change to the identity as a whole, which names no guard,
  * goes through the default guard when it holds sessions and otherwise through
  * the first `jwt` guard declared, and is refused when none is.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password, against the members' own defaults: the resolution reads only the
- * guard, so none of this package's adapters takes part.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -321,25 +316,6 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The default guard is the one `Auth::shouldUse()` leaves configured, and
-     * none when nothing names one.
-     *
-     * @return void
-     */
-    public function testTheDefaultGuardIsTheOneConfigured(): void
-    {
-        self::assertSame(self::GUARD, $this->currentSession()->defaultGuard());
-
-        config()->set('auth.defaults.guard', 'elsewhere');
-
-        self::assertSame('elsewhere', $this->currentSession()->defaultGuard());
-
-        config()->set('auth.defaults.guard', null);
-
-        self::assertSame('', $this->currentSession()->defaultGuard());
-    }
-
-    /**
      * The guard an application names is `laravel-authentication`'s guard of
      * that name, and an application that names none, or names a guard that
      * holds no sessions, is unresolved.
@@ -383,8 +359,8 @@ final class CurrentSessionTest extends TestCase
 
     /**
      * The session service is `laravel-authentication`'s for a guard of the
-     * `jwt` driver, and an application whose guard holds no sessions, or an
-     * auth manager that is not `laravel-authentication`'s, is unresolved.
+     * `jwt` driver, and an application whose guard holds no sessions is
+     * unresolved.
      *
      * @return void
      *
@@ -404,10 +380,6 @@ final class CurrentSessionTest extends TestCase
         foreach (['not-a-guard', 'web', 'keys'] as $application) {
             self::assertUnresolvedGuard($application, fn (): mixed => $this->currentSession()->sessions($application));
         }
-
-        $this->app?->instance('auth', new IlluminateAuthManager($this->app));
-
-        self::assertUnresolvedGuard(self::GUARD, fn (): mixed => $this->currentSession()->sessions(self::GUARD));
     }
 
     /**
@@ -457,55 +429,6 @@ final class CurrentSessionTest extends TestCase
         self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
         self::assertIsThePerson($person, Auth::guard('admin')->user());
         self::assertNull(Auth::guard(self::GUARD)->user());
-    }
-
-    /**
-     * The session guards are the guards declared with the `jwt` driver, in the
-     * order they are declared, by their names, passing over guards of other
-     * drivers and entries that are no guard; with no guards declared there are
-     * none.
-     *
-     * @return void
-     */
-    public function testTheSessionGuardsAreTheJwtGuardsInTheOrderDeclared(): void
-    {
-        $guards = $this->guards();
-
-        $this->declareGuards([
-            'web'       => $guards['web'],
-            'admin'     => $this->sessionGuard(),
-            'broken'    => 'not a guard',
-            'keys'      => ['driver' => 'api_key', 'provider' => 'people'],
-            self::GUARD => $guards[self::GUARD],
-            '7'         => $this->sessionGuard(),
-        ]);
-
-        self::assertSame(['admin', self::GUARD, '7'], $this->currentSession()->sessionGuards());
-
-        config()->set('auth.guards', 'not guards');
-
-        self::assertSame([], $this->currentSession()->sessionGuards());
-    }
-
-    /**
-     * A `jwt` guard declared under a number, which the configuration keeps as
-     * an integer key, is named by its text.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAJwtGuardDeclaredUnderANumberIsNamedByItsText(): void
-    {
-        $person = $this->createPerson();
-        $guards = $this->guards();
-
-        config()->set('auth.defaults.guard', 'web');
-
-        $this->declareGuards(['web' => $guards['web'], '7' => $this->sessionGuard()]);
-
-        self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-        self::assertIsThePerson($person, Auth::guard('7')->user());
     }
 
     /**

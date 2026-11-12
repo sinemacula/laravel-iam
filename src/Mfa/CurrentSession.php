@@ -5,18 +5,15 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
-use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
-use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\HasSessions;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
-use SineMacula\Laravel\Authentication\Database\WriteConnection;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Guards\JwtGuard;
-use SineMacula\Laravel\Authentication\SessionRecords\SessionKeyShape;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
@@ -25,47 +22,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * Resolves the sign-in MFA names to `laravel-authentication`'s session: the
- * session of the guard the MFA application is, held by the identity MFA asks
- * about, read by its key where MFA names it and the guard's current one where
- * MFA names none.
- *
- * MFA names a sign-in by its application and a string; an application is the
- * guard of the same name, and the sign-in is the key of one of its sessions.
- * Where MFA hands the sign-in, the session is read by that key (`named()`),
- * whatever the guard holds now; where it hands none, the session is the guard's
- * current one (`current()`, `held()`), and where a contract asks for the
- * identity's current sign-in, the named one must be the guard's current one
- * (`of()`). Nothing is guessed (IAM-8.2): an application that is no session
- * guard (no declared guard of `laravel-authentication`'s `jwt` driver, an
- * `api_key` guard included) throws `UnresolvedReferenceException` of the kind
- * `guard` from every method that resolves a guard alike, a sign-in that is no
- * session of the identity's on the guard, a guard holding no session, or one
- * holding another identity's, throws it of the kind `session`, and a guard
- * holding another of the identity's sessions than the current one named throws
- * `SessionMismatchException`, each inside whatever transaction the member
- * opened, so the change it was making rolls back.
- *
- * It is also where every MFA adapter finds the guard it acts on: the guard the
- * application MFA hands it names (`guard()`), the default guard only where MFA
- * names no application (`defaultGuard()`), the session MFA names (`named()`),
- * the guard's current session when it is the identity's MFA hands over
- * (`current()`, `held()`), `laravel-authentication`'s session service for it
- * (`sessions()`), and the session service a change to the identity as a whole
- * goes through, which names no guard (`identitySessions()`), and every guard
- * that holds sessions, for a session named with no guard (`sessionGuards()`),
- * so every adapter refuses the same misconfiguration the same way; SSO's
- * adapters find them here too, with the session SSO's caller names by its key,
- * of whichever guard (`owned()`). No adapter acts for the identity the guard
- * serves, since MFA hands each its caller as plain values; only the testing
- * helper that verifies the acting session, which is handed none, asks for it
- * (`caller()`). It also tells every adapter that asks
- * `laravel-authentication`'s freshness policy how to ask it
- * (`isInTransaction()`): current inside a transaction on the session model's
- * connection, plainly outside one.
- *
- * It reads the guard's state and the sessions on every call and keeps nothing,
- * so it holds no request state between calls (IAM-8.1).
+ * Resolves the application and sign-in MFA names to a `jwt` guard and its
+ * session, throwing `UnresolvedReferenceException` for anything else (IAM-8.2).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -74,14 +32,10 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
  */
 final readonly class CurrentSession
 {
-    /** @var string The guard driver `laravel-authentication` keeps sessions for. */
-    private const string SESSION_DRIVER = 'jwt';
-
     /**
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Auth\Factory  $auth
-     * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \Illuminate\Database\ConnectionResolverInterface  $database
      */
     public function __construct(
@@ -89,10 +43,7 @@ final readonly class CurrentSession
         /** Resolves the guards. */
         private AuthFactory $auth,
 
-        /** The configuration the guards are declared in. */
-        private Repository $config,
-
-        /** Resolves the connection the session model lives on. */
+        /** Resolves `laravel-authentication`'s storage connection. */
         private ConnectionResolverInterface $database,
     ) {}
 
@@ -118,28 +69,15 @@ final readonly class CurrentSession
     }
 
     /**
-     * The session the sign-in MFA names is, read by its key whatever the guard
-     * holds now: one of the identity's sessions, of the guard the application
-     * names.
-     *
-     * Where MFA hands the sign-in (a step-up's proof binding, a removal, a
-     * change and its judgement, an event's subject), the session is the one it
-     * names, never the guard's current one, so a change made from a queued job,
-     * a console command or a request served by another guard acts on the
-     * sign-in MFA named. It is read through the identity's own `sessions()`
-     * relation on the write connection, so another identity's session is never
-     * found, and a key that cannot be one of the session model's is not
-     * queried. A key that names no session of the identity's, or one of another
-     * guard's, throws `UnresolvedReferenceException` of the kind `session`
-     * (IAM-8.2). Whether the session is still live and active is
-     * `laravel-authentication`'s to judge, under the session's row lock, in the
-     * call it is handed to: a read here would be stale by then.
+     * The identity's session on the application's guard that the sign-in names,
+     * whatever the guard holds now.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
      * @param  string  $session
      * @return \SineMacula\Laravel\Authentication\Contracts\Session
      *
+     * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     public function named(MultiFactorAuthenticatable $identity, string $application, string $session): Session
@@ -153,29 +91,18 @@ final readonly class CurrentSession
 
     /**
      * The identity's session with the key, of whichever guard, or `null` when
-     * the identity holds no sessions, the key cannot be one of the session
-     * model's (no query is made), or the identity has no such session.
-     *
-     * It is read through the identity's own `sessions()` relation on the write
-     * connection, so another identity's session is never found, plainly and
-     * locking nothing. Whether the session is still live and active is
-     * `laravel-authentication`'s to judge, in the call it is handed to.
+     * it has none or holds no sessions at all.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $session
      * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
+     *
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     public function owned(Identity $identity, string $session): (EloquentSession&Model)|null
     {
-        if (!$identity instanceof HasSessions) {
-            return null;
-        }
-
-        $query = $identity->sessions();
-        $model = $query->getModel();
-        $found = SessionKeyShape::matches($model, $session) ? WriteConnection::during($identity, static fn (): mixed => WriteConnection::query($query)->find($session)) : null;
-
-        return $found instanceof EloquentSession ? $found : null;
+        return $identity instanceof HasSessions ? $this->identitySessions()->sessionRecord($identity, $session) : null;
     }
 
     /**
@@ -230,9 +157,8 @@ final readonly class CurrentSession
     }
 
     /**
-     * The identity the application's guard serves, when it is one MFA can hold
-     * factors for: asked by the testing helper that verifies the acting session
-     * alone, never by an adapter, which MFA hands its caller.
+     * The identity the application's guard serves, for the testing helper that
+     * is handed no caller.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
@@ -247,25 +173,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The name of the default guard, as `Auth::shouldUse()` leaves it: the
-     * application MFA names when no application resolver names another, and the
-     * one it makes a change on when it names none.
-     *
-     * @return string
-     */
-    public function defaultGuard(): string
-    {
-        $guard = $this->config->get('auth.defaults.guard');
-
-        return is_string($guard) ? $guard : '';
-    }
-
-    /**
-     * The guard the application names, when one is declared under its name and
-     * it is one of `laravel-authentication`'s guards of the `jwt` driver, the
-     * one kind that holds sessions. Any other, an `api_key` guard included, is
-     * a misconfiguration, so every question about a sign-in on it throws the
-     * same way, never answered as a guard that holds no session now.
+     * The `jwt` guard the application names.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Guards\JwtGuard
@@ -274,19 +182,13 @@ final readonly class CurrentSession
      */
     public function guard(string $application): JwtGuard
     {
-        $guard = is_array($this->config->get('auth.guards.' . $application)) ? $this->auth->guard($application) : null;
+        $guard = in_array($application, Auth::sessionGuards(), true) ? $this->auth->guard($application) : null;
 
-        if (!$guard instanceof JwtGuard) {
-            throw UnresolvedReferenceException::forGuard($application);
-        }
-
-        return $guard;
+        return $guard instanceof JwtGuard ? $guard : throw UnresolvedReferenceException::forGuard($application);
     }
 
     /**
-     * `laravel-authentication`'s session service for the application's guard,
-     * when it is a declared guard of the `jwt` driver, the one kind that holds
-     * sessions.
+     * The session service of the `jwt` guard the application names.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
@@ -295,24 +197,14 @@ final readonly class CurrentSession
      */
     public function sessions(string $application): SessionService
     {
-        $auth = $this->auth;
-
-        if (!$auth instanceof AuthManager) {
-            throw UnresolvedReferenceException::forGuard($application);
-        }
-
         $this->guard($application);
 
-        return $auth->sessions($application);
+        return Auth::sessions($application);
     }
 
     /**
-     * `laravel-authentication`'s session service for a change to the identity
-     * as a whole, which names no session and so no guard: the default guard's
-     * when it is a declared guard of the `jwt` driver, and otherwise the first
-     * such guard declared, so a change made where the default guard holds no
-     * sessions (an admin panel's session guard, a console command, a queued
-     * job) still reaches the identity's sessions.
+     * The session service for a change that names no guard: the default guard's
+     * when it is a `jwt` guard, otherwise the first `jwt` guard's.
      *
      * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
      *
@@ -320,28 +212,15 @@ final readonly class CurrentSession
      */
     public function identitySessions(): SessionService
     {
-        $default  = $this->defaultGuard();
-        $declared = $this->sessionGuards();
+        $default = Auth::getDefaultDriver();
+        $guards  = Auth::sessionGuards();
 
-        return $this->sessions(in_array($default, $declared, true) ? $default : ($declared[0] ?? $default));
+        return $this->sessions(in_array($default, $guards, true) ? $default : ($guards[0] ?? $default));
     }
 
     /**
-     * Whether a transaction is open on the connection
-     * `laravel-authentication`'s session model lives on (its storage
-     * connection, which it refuses a session model off).
-     *
-     * MFA asks an adapter inside its own transaction on that connection (a
-     * factor change, after its locks) and acts on the answer atomically there,
-     * so inside one the adapter asks the freshness policy current: the
-     * session's row locked until the transaction ends, then its proofs read as
-     * committed, so a proof voided before the call never counts and one
-     * recorded before it does, whatever the transaction read first. Outside one
-     * (MFA's route gate, `Mfa::isFresh()`, its contract kits) nothing acts on
-     * the answer atomically, and the policy refuses a current judgement there,
-     * so the adapter asks plainly and locks nothing. This is the line
-     * `laravel-authentication`'s own reads of a session's proofs and first
-     * factor draw too.
+     * Whether a transaction is open on `laravel-authentication`'s storage
+     * connection, where its freshness policy accepts a current judgement.
      *
      * @return bool
      *
@@ -350,29 +229,6 @@ final readonly class CurrentSession
     public function isInTransaction(): bool
     {
         return $this->database->connection(StorageConnection::name())->transactionLevel() > 0;
-    }
-
-    /**
-     * The names of the guards declared with the `jwt` driver, the one kind that
-     * holds sessions, in the order they are declared.
-     *
-     * @return list<string>
-     */
-    public function sessionGuards(): array
-    {
-        $guards = $this->config->get('auth.guards');
-        $named  = [];
-
-        foreach (is_array($guards) ? $guards : [] as $name => $guard) {
-
-            if (!is_array($guard) || ($guard['driver'] ?? null) !== self::SESSION_DRIVER) {
-                continue;
-            }
-
-            $named[] = (string) $name;
-        }
-
-        return $named;
     }
 
     /**

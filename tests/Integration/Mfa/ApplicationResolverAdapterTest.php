@@ -165,15 +165,13 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[default guard]` that name nothing: none, an empty name, and a
-     * blank one.
+     * Rows of `[default guard]` that name nothing: an empty name and a blank
+     * one.
      *
-     * @return iterable<string, array{0: ?string}>
+     * @return iterable<string, array{0: string}>
      */
     public static function provideDefaultGuardsThatNameNothing(): iterable
     {
-        yield 'none' => [null];
-
         yield 'empty' => [''];
 
         yield 'blank' => ['  '];
@@ -183,17 +181,17 @@ final class ApplicationResolverAdapterTest extends TestCase
      * A default guard that names nothing names no application, and is refused
      * as no guard, never answered blank.
      *
-     * @param  ?string  $guard
+     * @param  string  $guard
      * @return void
      */
     #[DataProvider('provideDefaultGuardsThatNameNothing')]
-    public function testADefaultGuardThatNamesNothingIsUnresolved(?string $guard): void
+    public function testADefaultGuardThatNamesNothingIsUnresolved(string $guard): void
     {
         Config::set('auth.defaults.guard', $guard);
 
         $exception = self::assertUnresolved(fn (): string => $this->adapter()->resolve($this->request()));
 
-        self::assertSame(is_string($guard) ? $guard : '', $exception->application);
+        self::assertSame($guard, $exception->application);
     }
 
     /**

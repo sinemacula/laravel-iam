@@ -9,7 +9,6 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
-use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
@@ -63,19 +62,6 @@ final readonly class SignInProofs
         }
 
         return $proofs;
-    }
-
-    /**
-     * The factor's identifier as text, as a proof made with it names it.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
-     * @return string
-     */
-    public static function factorReference(Factor $factor): string
-    {
-        $id = $factor->getFactorIdentifier();
-
-        return is_scalar($id) ? (string) $id : '';
     }
 
     /**
