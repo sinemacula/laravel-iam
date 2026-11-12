@@ -300,8 +300,8 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   Any other identity, such as an admin panel's user on a Laravel session guard, which
   `SubjectResolverAdapter::forUser()` answers as its own subject and identity, so the classifier names it as the
   recipient and every grant to it widens, is one SSO never links, so it has nothing to suspend: its widening is not
-  reported to SSO, its tenants are not resolved, and only the listed hooks run, as `SubtreeGrantees` passes the same
-  grantee over on a move. Decision this note records: SSO's `widened()` would take such a reference as it is, but
+  reported to SSO, its tenants are not resolved, and only the listed hooks run, as a move passes the same grantee over.
+  Decision this note records: SSO's `widened()` would take such a reference as it is, but
   `ScopeWidenings::widen()`, the one core path every widening goes through, takes `laravel-authentication`'s identities,
   and a widening of something SSO cannot hold is no widening to SSO, so the hook passes it over rather than add a second
   path for references.
@@ -365,8 +365,8 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   move the application reports beside a tree is passed on to `Authorization::treeChanged()`, whatever SSO's enforcement
   says. A move widens the scope of everyone granted in the moved subtree with no grant written, so, while the grant hook
   is bound, the move reports each of them to SSO's scope widening in the moved tenant, in the move's transaction
-  (`Authorization\SubtreeGrantees`). The group mapping and its re-sync (IAM-7.2) are there too, the re-sync run once the
-  sign-in has committed.
+  (`GrantScopeQuery::granteesWithin()`). The group mapping and its re-sync (IAM-7.2) are there too, the re-sync run
+  once the sign-in has committed.
 - The permission catalogue, the administrative check and the audit access policy (IAM-6.9, IAM-6.10), and the mapping
   of `laravel-authorization`'s events to the `authorization.*` codes (IAM-9.2), are in `audit-mapping.md`.
 - Forgetting the decisions that depended on authentication (IAM-6.11). `laravel-authorization` decides each check
@@ -595,16 +595,13 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `Iam::treeChanges()->changed()` reports to `laravel-authorization` beside a tree, whatever SSO's enforcement says, and
   `iam:check` makes the tenant resolver mandatory there.
 - A move reports every identity holding a live grant rooted in the moved subtree to SSO's scope widening, in the moved
-  tenant, while the grant hook is bound (`Authorization\SubtreeGrantees`, which the manifest does not list, reading
-  `laravel-authorization`'s grant tables on its connection, under the names its own reader gives them,
-  `Config\TableNames` (laravel-authorization#141), so a renamed table resolves exactly as `laravel-authorization`
-  resolves it and one named by no name is refused rather than read under its default name): the grant half counts a
-  grant below a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant
-  written, and no grant hook runs. The package sees only where a tenant ends up, so this is broader than needed, never
-  narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again. A boundary
-  only narrows, and a grant to a role widens nobody, so neither is read. Every grantee is reported in one widening, so
-  SSO takes all their guards in its order before it locks any connection, and the move cannot deadlock with a grant,
-  reservation or activation of one of them.
+  tenant, while the grant hook is bound (`laravel-authorization`'s `GrantScopeQuery::granteesWithin()`, a principal's
+  grant answering its identity): the grant half counts a grant below a tenant within it, so a move out from under a
+  linked tenant widens the person's scope with no grant written, and no grant hook runs. The package sees only where a
+  tenant ends up, so this is broader than needed, never narrower: a link in a tenant the subtree still stands below is
+  suspended too, latched, and is linked again. A boundary only narrows, and a grant to a role widens nobody, so neither
+  is read. Every grantee is reported in one widening, so SSO takes all their guards in its order before it locks any
+  connection, and the move cannot deadlock with a grant, reservation or activation of one of them.
 - The group re-sync runs once the sign-in's transaction has committed, in a transaction of its own, rather than inside
   it: a re-synced grant that widens reports to SSO's scope widening, which takes the identity's guard, and SSO's lock
   order puts the guard before every connection, which the redemption had already locked, so the re-sync under its locks
@@ -677,8 +674,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetCallers()`.
 - `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
   `toReference()`, `idOf()`; `src/Authorization/IdentityDirectoryAdapter.php`: `principalsOf()`;
-  `src/Authorization/GrantScopeAdapter.php`: `judge()`; `src/Authorization/SubtreeGrantees.php`: `of()`,
-  `tableNamed()`;
+  `src/Authorization/GrantScopeAdapter.php`: `judge()`;
   `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `src/IamServiceProvider.php`:
   `registerSeams()`; `src/Tenancy/ScopeWidenings.php`: `widen()`.
@@ -899,8 +895,6 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `laravel-authorization` renames `authorization.connection`, changes `authorization:check`'s exit codes, or changes
   how a sibling declares its adapters (`Diagnostics\Declarations`, `Diagnostics\Enums\Lifetime`) or how the report
   compares a declaration with the binding: the rows' declarations and `Lifetime::reported()` change with it.
-- `laravel-authorization` changes how it reads a table's name (`Config\TableNames`), or makes it no longer readable
-  from a sibling: `SubtreeGrantees` reads it as `laravel-authorization` then does.
 - `laravel-authorization`'s grant hook runs under its own locks, or a try runs again inside the application's
   transaction: the lock order and retries here change.
 - `laravel-authorization` names a tenant by an identifier of its own, or its default identity directory becomes complete

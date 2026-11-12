@@ -209,9 +209,8 @@ connection and the retry helper in `storage-and-transactions.md`.
   While the application has a tree, it first passes the change on to `laravel-authorization`, whatever enforcement
   says. While the SSO adapters are on too
   (`AuthorizationSeams::reportsWidenings()`), every identity holding a live grant rooted at the moved tenant or below
-  it (`Authorization\SubtreeGrantees`: `laravel-authorization`'s role, permission and policy grants, read on its
-  connection under the names its own `Config\TableNames` gives the tables, a principal's grant answering its identity,
-  tenants of every type in the subtree read) is reported to SSO's scope widening in the moved tenant
+  it (`laravel-authorization`'s `GrantScopeQuery::granteesWithin()`, a principal's grant answering its identity) is
+  reported to SSO's scope widening in the moved tenant
   (`ScopeWidenings::widen()`), in the move's transaction, all of them in one widening, so SSO takes their guards in its
   order before any connection: the grant half counts a grant below
   a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant written, and no
@@ -461,7 +460,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   `changed()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`; `src/Tenancy/TreeChanges.php`: `changed()`;
   `src/IamManager.php`: `treeChanges()`.
 - `src/Authorization/GrantScopeAdapter.php`: `judge()`; `src/Authorization/IdentityDirectoryAdapter.php`:
-  `principalsOf()`, `unscoped()`; `src/Authorization/SubtreeGrantees.php`: `of()`;
+  `principalsOf()`, `unscoped()`;
   `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
   `toReference()`, `idOf()`; `src/Authorization/AuthorizationSeams.php`: `seams()`, `DOMAIN_LINKING`.
 - `src/Contracts/GroupMapping.php`; `src/Contracts/GroupResync.php`; `src/Provisioning/GrantInstruction.php`:

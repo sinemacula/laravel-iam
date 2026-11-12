@@ -6,10 +6,16 @@ namespace SineMacula\Laravel\Iam\Tenancy;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
+use SineMacula\Laravel\Authentication\Database\WriteConnection;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
+use SineMacula\Laravel\Authorization\Services\GrantScopeQuery;
+use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
-use SineMacula\Laravel\Iam\Authorization\SubtreeGrantees;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Sso\Config\Enums\Feature;
 use SineMacula\Laravel\Sso\Config\Features;
@@ -23,8 +29,7 @@ use SineMacula\Laravel\Sso\Config\Features;
  * Report a move inside the transaction that writes it, after the write, and a
  * removal as the move of each child moved out from under the removed tenant.
  * While grants are reported to SSO's scope widening, the identities granted in
- * the moved subtree are reported to it too, together, since no grant hook runs
- * for a move.
+ * the moved subtree are reported to it too, as no grant hook runs for a move.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,7 +56,7 @@ final readonly class TreeChanges
         /** Tells whether the application has a tenant MFA requirement. */
         private TenantMfaRequirements $requirements,
 
-        /** Resolves `laravel-authorization`'s manager on every call. */
+        /** Resolves `laravel-authorization`'s services on every call. */
         private Container $container,
 
         /** Holds the capabilities' switches. */
@@ -102,13 +107,51 @@ final readonly class TreeChanges
      */
     private function reportToAuthorization(string $tenantId): void
     {
+        $tenant = $this->tenants->toReference($tenantId);
+
         if (AuthorizationSeams::reportsWidenings($this->config)) {
 
-            $grantees = $this->container->make(SubtreeGrantees::class)->of($tenantId);
+            $identities = [];
 
-            $this->widenings->widen($grantees, $tenantId, new ClientContext(null, null));
+            foreach ($this->container->make(GrantScopeQuery::class)->granteesWithin($tenant) as $grantee) {
+
+                $identity = self::identityOf($grantee);
+
+                if ($identity === null) {
+                    continue;
+                }
+
+                $identities[] = $identity;
+            }
+
+            $this->widenings->widen($identities, $tenantId, new ClientContext(null, null));
         }
 
-        $this->container->make(AuthorizationManager::class)->treeChanged($this->tenants->toReference($tenantId));
+        $this->container->make(AuthorizationManager::class)->treeChanged($tenant);
+    }
+
+    /**
+     * The identity behind the grantee, a principal's for a principal; `null`
+     * for a grantee that is no model, one of another kind, or one gone.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $grantee
+     * @return ?\SineMacula\Laravel\Authentication\Contracts\Identity
+     */
+    private static function identityOf(Reference $grantee): ?Identity
+    {
+        $class = Relation::getMorphedModel($grantee->type) ?? $grantee->type;
+
+        if (!is_a($class, Model::class, true)) {
+            return null;
+        }
+
+        $blank = new $class;
+        $found = WriteConnection::during($blank, static fn (): ?Model => WriteConnection::query($blank->newQuery())->find($grantee->id));
+
+        return match (true) {
+            $found instanceof Principal => $found->getIdentity(),
+            $found instanceof Identity  => $found,
+            default                     => null,
+        };
     }
 }
