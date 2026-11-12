@@ -15,11 +15,11 @@ use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\LinkEligibilityAdapter;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\PrincipalScopeAdapter;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Sso\Completion\CompletionService;
@@ -74,7 +74,6 @@ use Tests\TestCase;
 #[CoversClass(LinkEligibilityAdapter::class)]
 #[CoversClass(PrincipalScopeAdapter::class)]
 #[CoversClass(TenantMembershipAdapter::class)]
-#[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
 final class TenancyThroughSsoTest extends TestCase
 {
     use LinksByVerifiedDomain, MigratesAuthorization, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -334,6 +333,20 @@ final class TenancyThroughSsoTest extends TestCase
 
         self::assertSame(FailureReason::LINK_SUSPENDED->value, $this->refusal(Purpose::SIGN_IN, null, self::byDomain()));
         self::assertNotNull(DB::table('authentication_sessions')->where('id', self::keyOf($session))->value('revoked_at'));
+    }
+
+    /**
+     * Bind the application's memberships before the seams are bound.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        $app->bind(Memberships::class, FakeMemberships::class);
     }
 
     /**

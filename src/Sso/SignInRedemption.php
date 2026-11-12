@@ -230,7 +230,6 @@ final readonly class SignInRedemption
      * @param  \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
      * @return void
      *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\GroupMappingMisconfiguredException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \LogicException
      * @throws \Throwable

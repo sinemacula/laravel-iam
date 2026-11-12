@@ -22,8 +22,8 @@ use SineMacula\Laravel\Iam\Checks\AuditCheck;
 use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
+use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
-use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
@@ -326,8 +326,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         assert($app instanceof Application);
 
-        $config = $app->make('config');
-        $note   = sprintf(
+        $note = sprintf(
             '%s is still %s while people act in tenants: no record is refused for its tenant unless its model declares its tenancy'
                 . ' (QueryableResource) or names its tenant (AuthorizableResource); name a resolver in `authorization.resource_tenant_resolver`, or bind %s.',
             ResourceTenantResolver::class,
@@ -339,7 +338,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         self::assertSame([], self::notes($this->check()->checks()));
 
-        $config->set(TenancyContracts::MEMBERSHIPS, FakeMemberships::class);
+        $app->bind(Memberships::class, FakeMemberships::class);
 
         self::assertSame([], self::problems($this->check()->checks()));
         self::assertSame([$note], self::notes($this->check()->checks()));
@@ -358,9 +357,10 @@ final class CrossMemberConfigurationCheckTest extends TestCase
      * @return void
      */
     #[WithConfig('authorization.resource_tenant_resolver', OwnResourceTenants::class, defer: false)]
-    #[WithConfig(TenancyContracts::MEMBERSHIPS, FakeMemberships::class, defer: false)]
     public function testAResourceTenantResolverTheApplicationNamesIsNotNoted(): void
     {
+        $this->app?->bind(Memberships::class, FakeMemberships::class);
+
         $this->declare(array_column(Operation::cases(), 'value'));
 
         self::assertSame([], self::problems($this->check()->checks()));

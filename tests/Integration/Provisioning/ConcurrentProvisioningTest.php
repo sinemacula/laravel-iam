@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
+use SineMacula\Laravel\Iam\Contracts\Provisioner;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Models\Link;
@@ -136,7 +136,7 @@ final class ConcurrentProvisioningTest extends TestCase
             $this->raceAnotherFirstSignIn($level);
         }));
 
-        $this->app?->make('config')->set(ProvisioningSettings::KEY, ProvisionsPeople::class);
+        $this->app?->bind(Provisioner::class, ProvisionsPeople::class);
 
         $this->handoff();
 

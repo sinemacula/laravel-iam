@@ -61,7 +61,7 @@ final readonly class LinkEligibilityAdapter implements LinkEligibility
      * @return \SineMacula\Laravel\Sso\Linking\Enums\LinkEligibilityVerdict
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\TenancyMisconfiguredException
+     * @throws \LogicException
      * @throws \Throwable
      */
     #[\Override]

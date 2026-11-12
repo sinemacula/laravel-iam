@@ -18,15 +18,11 @@ connection and the retry helper in `storage-and-transactions.md`.
 
 - What a provisioned identity and its membership are is the application's own. The application implements
   `Contracts\Provisioner` once: `createIdentity(VerifiedResult $result): Identity` and
-  `createMembership(Identity $identity, string $tenantId, VerifiedResult $result): void`, names it in
-  `iam.provisioning.provisioner` or binds it in the container (which wins, IAM-8.4), and
-  `Provisioning\ProvisioningSettings` resolves it from the container at each dispatch, so one bound after this package
-  registers, from a provider's `boot()` or once the application has booted, counts too. With none named or bound
-  (`null`, or blank text), provisioning is off and an unlinked `sign_in` ends as SSO's `unlinked`. A class named that is
-  no provisioner, a value that is no class name at all (`true`, `false`, a number, an array), or a binding that resolves
-  to no provisioner, throws `ProvisionerMisconfiguredException` at the dispatch, before anything is written, never
-  turning provisioning off. `createMembership()` answers nothing: the group mapping grants to the new identity itself,
-  which holds across every principal of it, so nothing reads a principal from it.
+  `createMembership(Identity $identity, string $tenantId, VerifiedResult $result): void`, and binds it in the container.
+  The listener resolves it from the container at each dispatch, so one bound after this package registers, from a
+  provider's `boot()` or once the application has booted, counts too. With none bound, provisioning is off and an
+  unlinked `sign_in` ends as SSO's `unlinked`. `createMembership()` answers nothing: the group mapping grants to the new
+  identity itself, which holds across every principal of it, so nothing reads a principal from it.
 - `Provisioning\ProvisionOnUnlinkedResult` is the package's one listener of SSO's `Events\ResultUnlinked`, registered
   in `boot()` whatever any switch says (`ProvisionOnUnlinkedResult::listen()`, called from
   `IamServiceProvider::boot()`), and doing nothing at all, no read and no transaction, while no provisioner is
@@ -67,15 +63,13 @@ connection and the retry helper in `storage-and-transactions.md`.
 
 - What a membership and the tenant tree are is the application's own. It implements `Contracts\Memberships`
   (`of(Identity): MembershipSet`, every current membership, a platform principal among them, each with the time the
-  person, never an administrator, accepted it, or the set marked incomplete), names it in `iam.tenancy.memberships` or
-  binds it in the container, which wins (IAM-8.4), and implements `laravel-authorization`'s `TenantTree` (IAM-7.5, as
-  amended), which `laravel-authorization`'s `TenantTreeContract` kit tests. Both are resolved on every call
-  (`Tenancy\TenancyContracts`): the tree counts as the application's while it is not `laravel-authorization`'s
-  `FlatTenantTree`, as `laravel-authorization` itself tells. For the memberships, a class named that is no
-  implementation, a value that is no class name, or a binding that resolves to none throws
-  `TenancyMisconfiguredException`. A `Membership` names its tenant
-  by a non-blank opaque id, compared byte for byte, or none for a platform principal; a `MembershipSet` holds each
-  tenant's membership, and a platform principal, once.
+  person, never an administrator, accepted it, or the set marked incomplete), binds it in the container, and implements
+  `laravel-authorization`'s `TenantTree` (IAM-7.5, as amended), which `laravel-authorization`'s `TenantTreeContract` kit
+  tests. Both are resolved on every call (`Tenancy\TenancyContracts`): the tree counts as the application's while it is
+  not `laravel-authorization`'s `FlatTenantTree`, as `laravel-authorization` itself tells. Asked for unbound
+  memberships, `TenancyContracts::memberships()` throws a `LogicException`. A `Membership` names its tenant by a
+  non-blank opaque id, compared byte for byte, or none for a platform principal; a `MembershipSet` holds each tenant's
+  membership, and a platform principal, once.
 - SSO's `TenantMembership` requires its answer, read again inside the redeemer's transaction, to stay true until that
   commits, by a guard the writers of memberships take, and offers no other protection. So `Memberships::of()` takes the
   application's membership guard of the identity as it answers: a lock held until the asking transaction ends, by a
@@ -94,9 +88,9 @@ connection and the retry helper in `storage-and-transactions.md`.
 
   | SSO seam                 | Bound to                        | Default replaced          | While                                  |
   | ------------------------ | ------------------------------- | ------------------------- | -------------------------------------- |
-  | `TenantMembership`       | `TenantMembershipAdapter`       | `NoTenantMembership`      | memberships are named or bound         |
-  | `LinkEligibility`        | `LinkEligibilityAdapter`        | `RefusingLinkEligibility` | memberships are named or bound         |
-  | `PrincipalScope`         | `PrincipalScopeAdapter`         | `RefusingPrincipalScope`  | memberships are named or bound         |
+  | `TenantMembership`       | `TenantMembershipAdapter`       | `NoTenantMembership`      | memberships are bound                  |
+  | `LinkEligibility`        | `LinkEligibilityAdapter`        | `RefusingLinkEligibility` | memberships are bound                  |
+  | `PrincipalScope`         | `PrincipalScopeAdapter`         | `RefusingPrincipalScope`  | memberships are bound                  |
   | `EnforcementInheritance` | `EnforcementInheritanceAdapter` | `OwnTenantInheritance`    | always                                 |
 
   "Bound" means bound by the time every provider has registered, when the seams are bound
@@ -189,25 +183,25 @@ connection and the retry helper in `storage-and-transactions.md`.
   every tenant through the resolver.
 - The provider's groups (IAM-7.2) map to grants through the application's `Contracts\GroupMapping`
   (`grantsFor($connectionId, $tenantId, $groups)`, answering `Provisioning\GrantInstruction`s), found by
-  `Provisioning\GroupSettings`: the binding, else the class `iam.provisioning.groups.mapping` names, else, while
-  `iam.provisioning.groups.map` maps any group, `Provisioning\ConfiguredGroupMapping`. A `GrantInstruction` is a role
-  and whether it reaches the tenants below; it names no tenant, application or expiry, so a connection's groups never
-  grant beyond its tenant and its subtree. The listener asks the mapping once the link is created, after every lock of
-  SSO's, and `Provisioning\GroupGrants::grant()` grants each role to the new identity in the connection's tenant
-  through `laravel-authorization`'s `GrantService`, as trusted system work, in a savepoint of the listener's
-  transaction; the grant hook reports the widening again, finding the identity's guard held and nothing to suspend.
+  `Provisioning\GroupSettings`: the binding, else, while `iam.provisioning.groups.map` maps any group,
+  `Provisioning\ConfiguredGroupMapping`. A `GrantInstruction` is a role and whether it reaches the tenants below; it
+  names no tenant, application or expiry, so a connection's groups never grant beyond its tenant and its subtree. The
+  listener asks the mapping once the link is created, after every lock of SSO's, and `Provisioning\GroupGrants::grant()`
+  grants each role to the new identity in the connection's tenant through `laravel-authorization`'s `GrantService`, as
+  trusted system work, in a savepoint of the listener's transaction; the grant hook reports the widening again, finding
+  the identity's guard held and nothing to suspend.
 - The re-sync (IAM-7.2) is the application's opt-in, `Contracts\GroupResync`
-  (`resync($identity, $connectionId, $tenantId, $groups)`), found by `GroupSettings` from the binding or
-  `iam.provisioning.groups.resync`. `Sso\SignInRedemption` calls it for every redeemed `sign_in` that links an identity
-  and signs it in, once the redemption's transaction has committed, in a transaction of its own through the retry
-  helper, and before the credential is handed out: a re-synced grant that widens reports to SSO's scope widening, which
-  takes the identity's guard, and SSO's lock order puts the guard before the connection, the code and the link the
-  redemption locked, so the re-sync never runs under them. Grants are read on every check, so nothing in the session
-  depends on their being written first, and no request acts on the session before the re-sync commits. A refusal
-  propagates once the sign-in has committed: the code is spent and the session written is never handed out.
-  `Provisioning\MappedGroupResync`, shipped for the application to name, makes the
-  identity's own roles in the tenant exactly the mapping's (`GroupGrants::sync()`: `syncRoles()` in the tenant, then
-  each role's reach), and refuses with no mapping rather than revoke every role.
+  (`resync($identity, $connectionId, $tenantId, $groups)`), found by `GroupSettings` from the binding.
+  `Sso\SignInRedemption` calls it for every redeemed `sign_in` that links an identity and signs it in, once the
+  redemption's transaction has committed, in a transaction of its own through the retry helper, and before the
+  credential is handed out: a re-synced grant that widens reports to SSO's scope widening, which takes the identity's
+  guard, and SSO's lock order puts the guard before the connection, the code and the link the redemption locked, so the
+  re-sync never runs under them. Grants are read on every check, so nothing in the session depends on their being
+  written first, and no request acts on the session before the re-sync commits. A refusal propagates once the sign-in
+  has committed: the code is spent and the session written is never handed out. `Provisioning\MappedGroupResync`,
+  shipped for the application to bind, makes the identity's own roles in the tenant exactly the mapping's
+  (`GroupGrants::sync()`: `syncRoles()` in the tenant, then each role's reach), and refuses with no mapping rather than
+  revoke every role.
 - Every action has one public core method taking plain values, and none takes a request: the listener answers from
   SSO's event alone; `widen()` takes an identity, a tenant id or none, and `laravel-authentication`'s `ClientContext`,
   which a controller builds with `ClientContext::fromRequest()` and a job as `new ClientContext(null, null)`;
@@ -216,9 +210,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   method of the manager's repeating them (the plan's `Iam::widenScope()` and `Iam::treeChanged()`). No adapter reads
   the current request, the current user or a guard's current session: each resolves the identity SSO names through the
   morph map (`IdentityReferences`) and the tenant through `laravel-authentication`'s tenant resolver.
-- The provisioner and the memberships are each found the same way
-  (`Bindings\ConfiguredImplementations`): the application's binding first, then the class named, each failure throwing
-  the contract's own exception (`Bindings\Contracts\ReportsMisconfiguration`).
+- The provisioner, the memberships, the group mapping and the re-sync are the application's container bindings alone.
 - Decisions this note records, beyond the plan's: an identity that is not an Eloquent model with `wasRecentlyCreated`
   set is refused (the grant proves authority, not newness); `createMembership()` answers nothing, since the group
   mapping grants to the identity itself; provisioning is checked at each dispatch, not at registration, and is
@@ -242,7 +234,7 @@ connection and the retry helper in `storage-and-transactions.md`.
 
 1. A `sign_in` resolves to no identity and holds no reservation. SSO issues a grant, registers it to the dispatch and
    dispatches `ResultUnlinked` synchronously, with no transaction of its own open.
-2. The listener asks `ProvisioningSettings` for the provisioner, opens its transaction, and writes the identity, the
+2. The listener resolves the bound provisioner, opens its transaction, and writes the identity, the
    widening, the membership and the link in that order. The helper answers `created`; the transaction commits, and
    SSO reports `LinkCreated` (`provisioning`) after that commit.
 3. SSO's final continuation takes its locks again, resolves the link anew, and issues the handoff bound to it
@@ -271,7 +263,7 @@ connection and the retry helper in `storage-and-transactions.md`.
    `laravel-authorization` drops the resolutions built in the moved tenant and below it, and the moved tenant's
    sessions and its subtree's are judged against the rule they now inherit.
 9. A first sign-in reports groups the mapping maps: the listener grants their roles to the new identity in the
-   connection's tenant once the link is made, and commits them with it. With the re-sync named, a later sign-in
+   connection's tenant once the link is made, and commits them with it. With the re-sync bound, a later sign-in
    reporting other groups grants the roles of a group added and revokes those of a group removed once the sign-in
    commits, before its credential is handed out.
 
@@ -300,7 +292,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   the listener committed: the identity, its membership and the link stay made, and the next sign-in through the
   connection resolves through the link without being offered for provisioning again.
 - **A second provisioning listener**, the application's own, shares the one grant and is refused `grant_invalid`.
-  Register none beside the package's while a provisioner is configured; with none configured, the application's own
+  Register none beside the package's while a provisioner is bound; with none bound, the application's own
   listener is the only one that provisions.
 - **A queued listener** fails loudly: the event refuses to be serialised, so queuing it throws, and nothing is
   provisioned.
@@ -309,7 +301,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   the caller's own rollback undoes it too. SSO's `LinkCandidatesChanged` and a serialisation failure reach the caller
   as its own retry recognises them, and are retried only as its whole transaction. An identity that is no Eloquent
   model throws `UnresolvedReferenceException` before anything is locked (IAM-8.2).
-- **Provisioning with `iam.adapters.sso` off.** The listener still provisions once a provisioner is configured;
+- **Provisioning with `iam.adapters.sso` off.** The listener still provisions once a provisioner is bound;
   SSO's helper then needs the application's linker to be backed by `Contracts\LinkStorage`, or it is SSO's
   `LogicException` with nothing written.
 
@@ -325,7 +317,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   taken up, another tenant's membership, a platform principal or none; SSO then reserves nothing (the sign-in goes on
   as `unlinked`) or refuses a `link` as `link_ineligible`. An identity reference that names nobody throws
   `UnresolvedReferenceException`, memberships that cannot be read throw their failure, and an adapter asked with no
-  memberships configured throws `TenancyMisconfiguredException`, each inside SSO's transaction (IAM-8.2).
+  memberships bound throws a `LogicException`, each inside SSO's transaction (IAM-8.2).
 - **A person reaching beyond the tenant.** Once the adapters are bound over SSO's default, which answers `unknown`, a
   verified domain link whose person holds another tenant's membership or a platform principal is judged
   `outside_tenant` at its next resolution: SSO latches it suspended for good and revokes its sessions. A change that
@@ -382,9 +374,7 @@ connection and the retry helper in `storage-and-transactions.md`.
 
 ## Implementation Anchors
 
-- `src/Contracts/Provisioner.php`; `src/Provisioning/ProvisioningSettings.php`: `provisioner()`, `KEY`;
-  `src/Exceptions/ProvisionerMisconfiguredException.php`: `forClass()`, `forValue()`, `forBinding()`;
-  `config/iam.php`: `provisioning.provisioner`.
+- `src/Contracts/Provisioner.php`.
 - `src/Provisioning/ProvisionOnUnlinkedResult.php`: `listen()`, `handle()`;
   `src/Provisioning/RefusedLink.php`;
   `src/IamServiceProvider.php`: `boot()`.
@@ -396,10 +386,7 @@ connection and the retry helper in `storage-and-transactions.md`.
 
 - `src/Contracts/Memberships.php`; `src/Tenancy/Membership.php`;
   `src/Tenancy/MembershipSet.php`: `in()`, `reachesBeyond()`, `isComplete()`; `src/Tenancy/TenancyContracts.php`:
-  `memberships()`, `tree()`, `subtree()`, `hasMemberships()`, `hasTree()`, `MEMBERSHIPS`;
-  `src/Exceptions/TenancyMisconfiguredException.php`; `config/iam.php`: `tenancy.memberships`;
-  `src/Bindings/ConfiguredImplementations.php`: `find()`, `isConfigured()`, `isNamed()`;
-  `src/Bindings/Contracts/ReportsMisconfiguration.php`.
+  `memberships()`, `tree()`, `subtree()`, `hasTree()`.
 - `src/Tenancy/TenancySeams.php`: `seams()`; `src/Tenancy/IdentityMemberships.php`: `identity()`, `of()`;
   `src/Tenancy/TenantMembershipAdapter.php`: `standing()`; `src/Tenancy/LinkEligibilityAdapter.php`: `judge()`;
   `src/Tenancy/PrincipalScopeAdapter.php`: `judge()`; `src/Tenancy/Contracts/GrantScope.php`;
@@ -413,9 +400,9 @@ connection and the retry helper in `storage-and-transactions.md`.
   `toReference()`, `idOf()`; `src/Authorization/AuthorizationSeams.php`: `seams()`, `DOMAIN_LINKING`.
 - `src/Contracts/GroupMapping.php`; `src/Contracts/GroupResync.php`; `src/Provisioning/GrantInstruction.php`:
   `role()`, `roleWithSubtree()`, `MAX_ROLE_LENGTH`; `src/Provisioning/GroupSettings.php`: `mapping()`, `resync()`,
-  `MAPPING`, `MAP`, `RESYNC`; `src/Provisioning/ConfiguredGroupMapping.php`: `grantsFor()`;
+  `MAP`; `src/Provisioning/ConfiguredGroupMapping.php`: `grantsFor()`;
   `src/Provisioning/GroupGrants.php`: `grant()`, `sync()`, `groupsOf()`; `src/Provisioning/MappedGroupResync.php`:
-  `resync()`; `src/Exceptions/GroupMappingMisconfiguredException.php`: `forMap()`, `forNoMapping()`;
+  `resync()`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `config/iam.php`: `provisioning.groups`.
 - `src/Testing/FakeGroupMapping.php`: `fake()`, `map()`, `refuse()`, `asked()`.
 - `src/Testing/FakeMemberships.php`.
@@ -438,7 +425,7 @@ connection and the retry helper in `storage-and-transactions.md`.
   deadlock simulated once the helper has claimed the grant),
   `testAQueuedListenerFailsLoudlyAndProvisionsNothing`, `testWithNoProvisionerNothingIsProvisioned`,
   `testAuthenticationsUnlinkedResultProvisionsNothing`, `testWithTheSsoAdaptersOffTheHelpersRefusalWritesNothing`
-  (`iam.adapters.sso` off, a provisioner configured: SSO's `LogicException`, no row written);
+  (`iam.adapters.sso` off, a provisioner bound: SSO's `LogicException`, no row written);
   `tests/Integration/Provisioning/ConcurrentProvisioningTest.php` `testTwoFirstSignInsAtOnceAreBothProvisioned` (MySQL
   and PostgreSQL at READ COMMITTED and REPEATABLE READ: the first listener held open past the widening while a forked
   worker provisions a second subject's person on a second database connection, from its start to its commit, and both
@@ -447,10 +434,6 @@ connection and the retry helper in `storage-and-transactions.md`.
   `testWithNoProvisionerTheListenerDoesNothing`, `testAProvisionerBoundOnceBootedIsAsked`,
   `testAnIdentityThatIsNoModelIsRefused`, `testTheSandboxsProvisionerIsAsked`;
   `tests/Unit/Provisioning/RefusedLinkTest.php` `testTheRefusalCarriesTheAnswerAndNamesItsStatus`
-- `tests/Unit/Provisioning/ProvisioningSettingsTest.php` `testWithNoProvisionerProvisioningIsOff`,
-  `testTheClassNamedIsBuilt`, `testTheApplicationsBindingWinsOverTheClassNamed`,
-  `testTheProvisionerIsTheOneBoundWhenAsked`, `testAClassNamedThatIsNoProvisionerFailsClosed`,
-  `testAValueThatIsNoClassNameFailsClosed`, `testABindingThatResolvesToNoProvisionerFailsClosed`
 - `tests/Integration/Tenancy/ScopeWideningsTest.php`, at the connection's own level on every engine, then at READ
   COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
   `testAPrincipalOfAnotherTenantSuspendsTheLinkAndRevokesItsSessions`, `testAPlatformPrincipalSuspendsTheLink` (each
@@ -468,10 +451,9 @@ connection and the retry helper in `storage-and-transactions.md`.
   `testTheMembershipOfExactlyTheTenantIsFound`, `testASetReachesBeyondATenantThroughAnyOtherMembership`,
   `testASetHoldsEachMembershipOnce`; `tests/Unit/Tenancy/UnknownGrantScopeTest.php`
   `testEveryIdentitysGrantsAreUnknown`; `tests/Unit/Tenancy/TenancyContractsTest.php`
-  `testWithNoneMembershipsThrow`, `testTheApplicationsBindingWins`, `testAValueThatIsNoClassNameFailsClosed`,
-  `testAClassThatIsNoImplementationFailsClosed`, `testABindingThatResolvesToNoImplementationFailsClosed`
+  `testUnboundMembershipsThrow`, `testTheBoundMembershipsAreAsked`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` `testWithoutMembershipsSsosMembershipDefaultsStay`,
-  `testMembershipsNamedBindTheMembershipAdapters`, `testTheInheritanceIsMandatoryWhileEnforcingOverATree`,
+  `testTheInheritanceIsMandatoryWhileEnforcingOverATree`,
   `testMembershipsBoundWhileRegisteringBindTheMembershipAdapters`, `testMembershipsBoundWhileBootingBindNothing`,
   `testTheGrantScopeIsAuthorizationsQuery`;
   `tests/Feature/IamServiceProviderTest.php` `testTheGrantScopeIsAuthorizationsQueryUntilSomethingElseIsBound`,
@@ -518,7 +500,8 @@ connection and the retry helper in `storage-and-transactions.md`.
 - `tests/Unit/Provisioning/GrantInstructionTest.php` `testARoleHoldsInTheTenantAloneUnlessItReachesBelow`,
   `testTheLongestNameIsAccepted`, `testAnInvalidNameIsRefused`; `tests/Unit/Provisioning/GroupSettingsTest.php`
   `testWithNothingConfiguredNothingIsMapped`, `testTheMapIsTheMappingWhileNothingElseIs`,
-  `testABindingWinsOverTheClassNamed`, `testAMisconfigurationThrows`, `testTheShippedReSyncRefusesWithNoMapping`;
+  `testABoundMappingWinsOverTheMap`, `testTheBoundReSyncIsAnswered`;
+  `tests/Unit/Provisioning/MappedGroupResyncTest.php` `testItRefusesWithNoMapping`;
   `tests/Unit/Provisioning/ConfiguredGroupMappingTest.php` `testEachRoleIsGrantedOnceInOrder`,
   `testAMisconfiguredMapThrows`, `testAnEmptyMapGrantsNothing`, `testUnmappedGroupsGrantNothing`;
   `tests/Unit/Testing/FakeGroupMappingTest.php`
