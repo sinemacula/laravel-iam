@@ -146,9 +146,9 @@ queued jobs the request dispatches, so the records they leave to the caller name
 purpose once it has refused: a refused SSO redemption, so the code stays unspent; a refused step-up or pending
 completion inside MFA's transaction; a transaction of your own. `laravel-authorization` reports each decision the same
 way, as it is made. A refusal, or a decision recorded, reported while a transaction is open on audit-log's storage
-connection is held and recorded once the outermost transaction there has ended, whichever way it ended, so it is
-recorded once and never lost with the rollback. Every other record is written at once, and is durable
-only once any transaction around it commits.
+connection is written once the outermost transaction there has ended, whichever way it ended (audit-log's
+`afterTransaction()`), so it is recorded once and never lost with the rollback. Every other record is written at once,
+and is durable only once any transaction around it commits.
 
 ## No double records
 
@@ -218,27 +218,25 @@ so a viewer may page through the trail and be denied export:
 
 `{purpose}` is `read`, `count`, `export` or `verify`. The grants become one scope, never wider than any of them:
 
-- the tenants it holds the purpose in, among its own tenant and the tenants your memberships say it belongs to, in the
-  categories every one of those tenants allows, so tenants whose grants share no category see nothing; a principal
-  counts its own grants in a membership tenant only where your `TenantAccess` lets it act there, and elsewhere only its
-  identity's grants;
+- the tenants it holds the purpose in, in the categories every one of those tenants allows, so tenants whose grants
+  share no category see nothing;
 - otherwise, its own activity in the tenants it holds `.own` in;
 - otherwise nothing.
 
-Each tenant is decided as a check there would be, so a platform-wide grant counts in every one of those tenants, but a
-tenant whose own policies deny the purpose is left out. A grant never shows the whole trail: no viewer sees records
-with no tenant, which may be about any tenant's people, and a viewer with no tenant of its own and no membership sees
-nothing, whatever it is granted platform-wide. Grants in more tenants than audit-log's scope holds (100) refuse the
-read rather than show some of them.
+The tenants decided are the viewer's own tenant, the tenants your memberships say it belongs to, and each tenant a
+grant is made in. Each is decided as a check there would be, so a platform-wide grant or one reaching down from a
+tenant above counts there, a tenant whose own policies deny the purpose is left out, and a principal counts its own
+grants only where your `TenantAccess` lets it act, elsewhere only its identity's. A grant never shows the whole trail:
+no viewer sees records with no tenant, which may be about any tenant's people, nor a tenant below a grant's own that it
+is no member of. Grants in more tenants than audit-log's scope holds (100) refuse the read rather than show some of
+them.
 
 Audit-log tells the policy who is reading and why, never how they signed in or how recently. A requirement on the
 authentication itself, such as a fresh multi-factor check, belongs on the route or action that reads the trail,
 enforced before `visibleTo()` is called, with MFA's route gate (`mfa:level=aal2`, see
-[Authorization](authorization.md)) for instance. The policy cannot tell whether such a requirement is met, so it treats
-a permission an authentication requirement guards as not held in the tenant where it guards it, whether the
-requirement is on the allow or on a deny: put freshness on the route, never on the `audit-log.*` grants. This holds
-under this package's requirement checker; one of your own should refuse, by throwing, a subject whose session it cannot
-find, or a deny a requirement guards stops applying to the policy's reads.
+[Authorization](authorization.md)) for instance. The policy cannot tell whether such a requirement is met, so a
+permission whose decision reads one, on an allow or a deny, is not held in that tenant: put freshness on the route,
+never on the `audit-log.*` grants.
 
 Bind your own policy in a service provider's `register()` to decide otherwise, as reading the whole platform's trail
 needs; it is kept ([laravel-audit-log: reading][audit-reading]).

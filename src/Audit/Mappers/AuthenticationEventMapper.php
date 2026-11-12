@@ -38,7 +38,6 @@ use SineMacula\Laravel\Authentication\Events\SignedOutEverywhere;
 use SineMacula\Laravel\Authentication\Events\SteppedUp;
 use SineMacula\Laravel\Authentication\Passwords\Enums\PasswordFlow;
 use SineMacula\Laravel\Iam\Audit\Correlation;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity;
 use SineMacula\Laravel\Iam\Audit\Enums\SessionActivity;
 use SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution;
@@ -98,12 +97,8 @@ use SineMacula\Laravel\Iam\Audit\References;
  * factor's code, which MFA's events name too, `authentication:` for the
  * others), and otherwise by its session.
  *
- * A refusal reported while a transaction is open on audit-log's storage
- * connection, which may roll back (as a redemption, or MFA's verification, does
- * on purpose when `laravel-authentication` refuses it), is not recorded then:
- * it is handed to `DeferredRefusals`, which hands it back to audit-log's
- * capture once the outermost transaction there has ended, and it is described
- * then, from the event alone, as any other refusal is.
+ * A refusal is written once the transaction around it ends, so a rollback
+ * cannot take it (IAM-9.5).
  *
  * Beyond that, it reads nothing but the event and the morph map, and keeps
  * nothing itself.
@@ -181,17 +176,6 @@ final readonly class AuthenticationEventMapper implements EventMapper
     ];
 
     /**
-     * Constructor.
-     *
-     * @param  \SineMacula\Laravel\Iam\Audit\DeferredRefusals  $refusals
-     */
-    public function __construct(
-
-        /** Holds a refusal reported inside a transaction until the outermost one has ended. */
-        private DeferredRefusals $refusals,
-    ) {}
-
-    /**
      * Describe the event on the record, or skip it.
      *
      * @param  object  $event
@@ -206,7 +190,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     {
         $code = $event instanceof AuthenticationEvent ? self::code($event) : null;
 
-        if ($code === null || $this->refusals->defers($event)) {
+        if ($code === null) {
             return null;
         }
 
@@ -231,7 +215,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
         }
 
         if ($event instanceof AuthenticationFailed) {
-            self::refuse($record, $event);
+            self::refuse($record->afterTransaction(), $event);
         }
 
         $subject = $event instanceof AuthenticationFailed && self::isLockout($event) ? null : $snapshot->identity;

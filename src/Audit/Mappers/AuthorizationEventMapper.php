@@ -13,7 +13,6 @@ use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
 use SineMacula\Laravel\Authorization\Events\SystemOverrideUsed;
 use SineMacula\Laravel\Authorization\Support\Reference as AuthorizationReference;
 use SineMacula\Laravel\Iam\Audit\Correlation;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
@@ -89,13 +88,9 @@ final readonly class AuthorizationEventMapper implements EventMapper
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Iam\Audit\DeferredRefusals  $refusals
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      */
     public function __construct(
-
-        /** Holds a decision reported inside a transaction until the outermost one has ended. */
-        private DeferredRefusals $refusals,
 
         /** Names each tenant by the identifier the access policy reads it by. */
         private TenantTranslator $tenants,
@@ -108,7 +103,6 @@ final readonly class AuthorizationEventMapper implements EventMapper
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @return ?\SineMacula\Laravel\AuditLog\Records\PendingRecord
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
      * @throws \LogicException
      */
@@ -124,13 +118,12 @@ final readonly class AuthorizationEventMapper implements EventMapper
     }
 
     /**
-     * Describe a decision worth a record, held while a transaction is open.
+     * Describe a decision worth a record, written once its transaction ends.
      *
      * @param  \SineMacula\Laravel\Authorization\Events\DecisionEvaluated  $event
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @return ?\SineMacula\Laravel\AuditLog\Records\PendingRecord
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \InvalidArgumentException
      * @throws \LogicException
      */
@@ -138,11 +131,11 @@ final readonly class AuthorizationEventMapper implements EventMapper
     {
         $code = self::decisionCode($event);
 
-        if ($code === null || $this->refusals->defers($event)) {
+        if ($code === null) {
             return null;
         }
 
-        Snapshot::describe($record, $code, self::present([
+        Snapshot::describe($record->afterTransaction(), $code, self::present([
             'action'      => $event->action,
             'resource'    => $event->resource,
             'application' => $event->application,

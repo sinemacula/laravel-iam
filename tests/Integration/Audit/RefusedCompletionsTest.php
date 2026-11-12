@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
 use SineMacula\Laravel\Iam\Mfa\StepUpAdapter;
@@ -29,31 +28,15 @@ use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\TestCase;
 
 /**
- * Integration tests proving that a completion of MFA's that
- * `laravel-authentication` refuses leaves its refusal in the audit trail beside
- * MFA's own report (IAM-9.5), in audit-log's own tables on the storage
- * connection, the setup IAM-9.9's read refusal rests on.
- *
- * MFA hands a step-up, and a pending sign-in's completion, to this package's
- * adapters inside its own transaction. `laravel-authentication` reports a
- * refusal of either with `AuthenticationFailed` at once, inside that
- * transaction, and the adapter then throws, so MFA rolls the transaction back
- * and reports its own failed verification once it has. A record written at once
- * inside the transaction would roll back with it, leaving only MFA's generic
- * report; the refusal is held while the transaction is open and recorded once
- * it has rolled back (`DeferredRefusals`), with `laravel-authentication`'s own
- * reason. The session is changed inside MFA's transaction, once MFA has
- * accepted the proof and before the adapter is handed it, as a sign-out another
- * request commits at that moment would change it. Each runs at the connection's
- * own level on every engine, then at READ COMMITTED and REPEATABLE READ on
- * MySQL and PostgreSQL.
+ * A completion of MFA's that `laravel-authentication` refuses is recorded with
+ * its own reason once MFA's transaction has rolled back (IAM-9.5), on every
+ * engine and isolation level.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
  */
-#[CoversClass(DeferredRefusals::class)]
 #[CoversClass(AuthenticationEventMapper::class)]
 #[CoversClass(StepUpAdapter::class)]
 #[CoversClass(PendingCompletionAdapter::class)]
