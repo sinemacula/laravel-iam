@@ -178,7 +178,7 @@ final readonly class FactorCodeCountersAdapter implements FactorCodeCounters
     {
         $factor = $identity->authFactors()->useWritePdo()->get()->first(static fn (Factor $factor): bool => CodeTranslator::reference($factor) === $binding->factor);
 
-        if (!$factor instanceof Factor) {
+        if ($factor === null) {
             return null;
         }
 

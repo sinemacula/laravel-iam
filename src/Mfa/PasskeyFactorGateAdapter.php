@@ -201,7 +201,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
 
         $context = $this->pendings->fromCredential($application, $pending->reveal());
 
-        if ($context === null || (array) ProofOwner::of($context->identity) !== (array) ProofOwner::of($identity)) {
+        if ($context === null || !ProofOwner::of($context->identity)->is(ProofOwner::of($identity))) {
             throw new OperationRefusedException(FailureReason::NOT_FOUND, 'The pending credential names no pending sign-in of the identity on the application.');
         }
 

@@ -209,7 +209,7 @@ final readonly class CurrentSession
         $session = $guard->session();
         $owner   = $guard->identity();
 
-        return $owner !== null && (array) ProofOwner::of($owner) === (array) ProofOwner::of($identity) ? $session : null;
+        return $owner !== null && ProofOwner::of($owner)->is(ProofOwner::of($identity)) ? $session : null;
     }
 
     /**

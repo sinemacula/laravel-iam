@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Testing;
 
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
-use SineMacula\Laravel\Mfa\Contracts\EloquentFactor;
 use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
@@ -30,7 +29,6 @@ final readonly class FixtureFactors
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @return string
      *
-     * @throws \LogicException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
@@ -59,14 +57,12 @@ final readonly class FixtureFactors
      * @param  string  $type
      * @return \SineMacula\Laravel\Mfa\Contracts\Factor
      *
-     * @throws \LogicException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      * @throws \Throwable
      */
     private static function enrol(MultiFactorAuthenticatable $identity, string $application, string $type): Factor
     {
-        $model  = $identity->authFactors()->getModel()->newInstance();
-        $factor = $model instanceof EloquentFactor ? $model : throw new \LogicException(sprintf('The factor model [%s] is not an EloquentFactor.', $model::class));
+        $factor = $identity->authFactors()->getModel()->newInstance();
         $owner  = $factor->authenticatable();
         $holder = ProofOwner::of($identity);
 
