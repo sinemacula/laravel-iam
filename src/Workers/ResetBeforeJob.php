@@ -9,15 +9,8 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\SyncJob;
 
 /**
- * Starts every queued job with every member's request state flushed.
- *
- * A job run on the `sync` connection runs inside the request or command that
- * dispatched it, which owns that state, so it is left alone, as
- * `laravel-authentication`'s own listener leaves it.
- *
- * The scoped instances are left where they are: the queue worker forgets them
- * itself before it fetches each job, and other `JobProcessing` listeners have
- * already filled some for this job by the time this one runs.
+ * Flushes the worker's session before each queued job; `laravel-authentication`
+ * resets its own guards.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,10 +29,11 @@ final readonly class ResetBeforeJob
      */
     public function __invoke(JobProcessing $event): void
     {
+        // A sync job shares the session of the request that dispatched it.
         if ($event->job instanceof SyncJob) {
             return;
         }
 
-        (new WorkerReset(Container::getInstance()))->forgetMemberState();
+        (new WorkerReset(Container::getInstance()))->flushSession();
     }
 }
