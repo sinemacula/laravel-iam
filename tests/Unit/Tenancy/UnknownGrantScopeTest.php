@@ -11,9 +11,7 @@ use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the grant half of SSO's principal scope until
- * `laravel-authorization`'s grant scope query ships (IAM-6.8, Q9): it answers
- * `unknown` for every identity and tenant, never `within_tenant`.
+ * Unit tests for the grant half that answers `unknown`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

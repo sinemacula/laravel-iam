@@ -8,11 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 
 /**
- * A tenant resolver over organisations keyed otherwise than by their
- * identifiers, as an application whose tenants have integer keys and
- * identifiers taken from another column has them: each identifier it knows
- * resolves to the organisation holding the key it maps to, and any other to
- * none.
+ * Resolves identifiers to organisations keyed by another column.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

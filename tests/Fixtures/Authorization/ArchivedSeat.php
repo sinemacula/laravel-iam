@@ -12,13 +12,7 @@ use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 
 /**
- * A principal an application archives rather than deletes: a seat as `Seat`
- * keeps it, but soft-deleted, so the model's global scope hides an archived
- * seat from every query, its grants kept for when it is restored.
- *
- * It is kept in the fixtures' memberships table, its archive time in the
- * `accepted_at` column, which the table already has, on the default connection,
- * the tests' shared storage connection.
+ * A soft-deleted seat, hidden by the model's global scope.
  *
  * @property int $id
  * @property int $person_id

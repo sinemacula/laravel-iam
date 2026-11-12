@@ -12,29 +12,8 @@ use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 
 /**
- * Resolves a tenant a member names by its opaque id to
- * `laravel-authentication`'s tenant, through `laravel-authentication`'s own
- * tenant resolver.
- *
- * SSO names a tenant only by its opaque id; `laravel-authentication` judges a
- * tenant's sessions by the tenant its resolver answers, matching each session's
- * active tenant against that tenant's identifier. So the id resolves to a
- * tenant only when the resolver answers one whose identifier is exactly that
- * id: one answered under another identifier would have the sessions of another
- * tenant judged, and those of this one left standing. A resolver that answers
- * no tenant (`laravel-authentication`'s default, `ResolveNoTenant`, answers
- * none for any id), or one of another identifier, throws
- * `UnresolvedReferenceException` (IAM-8.2), inside whatever transaction the
- * member opened, so the change it was making rolls back rather than leave the
- * tenant's sessions unjudged.
- *
- * The resolver is asked inside `WriteConnection::during()`, as
- * `laravel-authentication` asks it, so a model read the resolver makes is
- * pinned to the write connection, on whichever connection the tenant lives: a
- * replica that has not yet seen a new tenant, or a changed identifier, never
- * answers for it. The resolver is resolved from the container on every call, so
- * whatever the application binds, whenever it binds it, is the one asked, and
- * nothing is kept between calls (IAM-8.1).
+ * Resolves a tenant id through `laravel-authentication`'s tenant resolver on
+ * the write connection, refusing a tenant answered under another identifier.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

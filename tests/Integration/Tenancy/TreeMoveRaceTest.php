@@ -30,21 +30,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for a move of a tenant racing a change of an ancestor's
- * rule (IAM-7.5, Q7), with the application's tenant tree held in the database:
- * the root's rule is turned on, and once the change's first pass has listed the
- * root's subtree, which the moved tenant is not yet in, and read the root's
- * sessions, the tenant is moved under the root on another connection to the
- * same database and the move reported and committed there. The move's passes
- * read the root's rule as it was, the change not yet committed, and revoke
- * nothing; the change's pass after its commit lists the subtree again, finds
- * the moved tenant, and revokes its password session, which the rule now
- * refuses, by the time the change has committed.
- *
- * Run at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL, the move
- * committing inside the change on each, since the move's reads take no lock the
- * change holds. The authorization capability is off, its report of a move being
- * `TreeMoveWideningTest`'s.
+ * Integration tests for a tenant move racing an ancestor's rule change.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -73,10 +59,7 @@ final class TreeMoveRaceTest extends TestCase
     private ?string $rootConnection = null;
 
     /**
-     * Arrange SSO with its enforcement on and no rule yet, the root and the
-     * tenant to move each a root of the stored tree, a tenancy in which
-     * everyone may act in every tenant, and the root's connection marked as
-     * having completed a sign-in, so SSO may enforce it.
+     * Arrange SSO enforcement, two stored roots and an open tenancy.
      *
      * @return void
      */
@@ -103,8 +86,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on the other connection, so the migrations'
-     * rollback never waits on it.
+     * Roll back what is left open, so the migrations' rollback never waits.
      *
      * @return void
      */
@@ -121,10 +103,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * A tenant moved under the root, and its move committed, while the root's
-     * rule is being turned on has its password session revoked by the time the
-     * change has committed, though neither the move's passes nor the change's
-     * first pass judged it under the rule.
+     * A tenant moved under the root while its rule is turned on is revoked.
      *
      * @param  string  $level
      * @return void
@@ -158,8 +137,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * Sign a person in with their password, acting in the tenant, and answer
-     * the session's key.
+     * Sign a person in, acting in the tenant, and return the session key.
      *
      * @param  string  $tenantId
      * @return string
@@ -178,10 +156,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * Move the tenant under the root inside a transaction on the other
-     * connection, made the default (and so every member's storage connection)
-     * while it runs, report the move there, and commit it; answer how many
-     * sessions the move's first pass revoked.
+     * Move and report the tenant elsewhere; return the revocations.
      *
      * @return int
      *
@@ -214,10 +189,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * Once the change's first pass has listed the root's subtree and read the
-     * keys of the root's live sessions with its locking read, inside the
-     * change's transaction, run the move on the other connection, at the level
-     * given.
+     * Run the move once the change's first pass has read the root's sessions.
      *
      * @param  string  $level
      * @param  \Closure(): void  $move
@@ -249,9 +221,7 @@ final class TreeMoveRaceTest extends TestCase
     }
 
     /**
-     * Whether the query is the change's first pass's locking read of the keys
-     * of the root's live sessions, made on the test's connection inside the
-     * change's transaction.
+     * Whether the query is the first pass's locking read of the root.
      *
      * @param  \Illuminate\Database\Events\QueryExecuted  $query
      * @return bool

@@ -26,21 +26,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for an enforcement change racing a sign-in in a tenant that
- * inherits the rule (IAM-7.5), against SSO's acceptance scenario that a change
- * racing a sign-in either sees the new rule or revokes the session the sign-in
- * wrote, re-run with inheritance on: the rule is turned on in the tests'
- * tenant's parent while a password sign-in in the tests' tenant, which takes no
- * lock of SSO's rule and judged the policy, inheritance included, before the
- * rule was turned on, writes its session on another connection to the same
- * database once the change's first pass has read the parent's sessions; the
- * session is revoked by the time the change has committed.
- *
- * On PostgreSQL at either isolation level and on MySQL at READ COMMITTED the
- * sign-in commits during the change, before the change's pass over the tests'
- * tenant or its second pass; on MySQL at REPEATABLE READ the first pass's
- * locking read holds the gap the session's row would go in, so the sign-in
- * commits once the change has, before the second pass runs.
+ * Integration tests for a rule change racing an inheriting tenant's sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,10 +48,7 @@ final class InheritedEnforcementRaceTest extends TestCase
     private ?string $parentConnection = null;
 
     /**
-     * Arrange SSO with its enforcement on and no rule yet, the tests' tenant
-     * below its parent, a tenancy in which everyone may act in every tenant,
-     * and the parent's connection marked as having completed a sign-in, so SSO
-     * may enforce it.
+     * Arrange SSO enforcement, the tree, an open tenancy and the parent.
      *
      * @return void
      */
@@ -92,8 +75,7 @@ final class InheritedEnforcementRaceTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on the other connection, so the migrations'
-     * rollback never waits on it.
+     * Roll back what is left open, so the migrations' rollback never waits.
      *
      * @return void
      */
@@ -106,9 +88,7 @@ final class InheritedEnforcementRaceTest extends TestCase
     }
 
     /**
-     * A password session that entered the tests' tenant on another connection
-     * while its parent's rule was being turned on, recorded at the policy as it
-     * was, is revoked by the time the change has committed.
+     * A session that entered an inheriting tenant during the change is revoked.
      *
      * @param  string  $level
      * @return void

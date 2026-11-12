@@ -12,7 +12,7 @@ use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 
 /**
- * Unit tests for finding the application's memberships (IAM-7.4).
+ * Unit tests for finding the application's memberships.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

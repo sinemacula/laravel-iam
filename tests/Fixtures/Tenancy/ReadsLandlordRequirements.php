@@ -9,8 +9,7 @@ use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * MFA's tenant requirement read through a landlord model, refusing a tenant the
- * connection does not hold.
+ * MFA's tenant requirement read through a landlord model.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -20,8 +19,7 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
 final readonly class ReadsLandlordRequirements implements TenantRequirement
 {
     /**
-     * Multifactor authentication for a tenant the connection holds, as it reads
-     * it.
+     * Multifactor authentication for a tenant the connection holds.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application

@@ -32,24 +32,7 @@ use Tests\Fixtures\Sso\PlainIdentity;
 use Tests\TestCase;
 
 /**
- * Integration tests for reporting that a person comes to hold a principal
- * (IAM-7.3), through SSO's scope widening, against the revocation checks of
- * SSO's guide to this package: inside the transaction that gives it, the
- * person's link by a verified domain in a connection of another tenant is
- * suspended and the sessions established through it are revoked in that
- * transaction, whatever any setting says, and a second report suspends and
- * revokes nothing more; several people reported together are each suspended; a
- * link in the new principal's own tenant is left alone, and a platform
- * principal reaches every tenant's; outside a transaction it is a
- * `LogicException` with nothing locked or written; a revocation that throws
- * rolls the report back, so a caller that catches it keeps no suspension; and
- * an identity that cannot be named throws before anything is touched. Every
- * suspension SSO reports carries the IP address and user agent of the client
- * the caller handed in, as SSO's guide's context check asks.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for reporting that a person comes to hold a principal.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -81,8 +64,7 @@ final class ScopeWideningsTest extends TestCase
     private \ArrayObject $suspended;
 
     /**
-     * Arrange SSO, and give the person a link by a verified domain in a
-     * connection of the other tenant, with a session established through it.
+     * Arrange SSO and a domain link in the other tenant with a session.
      *
      * @return void
      *
@@ -113,11 +95,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * A membership of the tenant suspends the person's link by a verified
-     * domain in the other tenant's connection and revokes the session
-     * established through it, in the transaction that gives the membership,
-     * and SSO reports the suspension for the client the caller handed in;
-     * reported again, it suspends and revokes nothing more.
+     * A principal of another tenant suspends the link and revokes its sessions.
      *
      * @param  ?string  $level
      * @return void
@@ -146,8 +124,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * Several people reported together each have their link by a verified
-     * domain in the other tenant's connection suspended.
+     * Several people reported together are each suspended.
      *
      * @param  ?string  $level
      * @return void
@@ -169,9 +146,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * A platform principal, of no tenant, reaches beyond every tenant, so the
-     * link in the other tenant's connection is suspended too, reported for the
-     * client the caller handed in.
+     * A platform principal suspends the link.
      *
      * @param  ?string  $level
      * @return void
@@ -192,8 +167,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * A report for a client with no IP address or user agent, as a job's, is
-     * reported so.
+     * A client with nothing known is reported so.
      *
      * @param  ?string  $level
      * @return void
@@ -212,8 +186,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * A membership of the link's own tenant is inside it: the link is left
-     * active, and its session standing.
+     * A principal of the link's own tenant leaves it alone.
      *
      * @param  ?string  $level
      * @return void
@@ -234,9 +207,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * Outside a transaction on the storage connection it is SSO's
-     * `LogicException`, with nothing suspended or revoked and no transaction
-     * left open.
+     * Outside a transaction it is refused.
      *
      * @return void
      *
@@ -261,8 +232,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * The report is the change's: rolled back with the caller's transaction,
-     * the link is active again and its session standing.
+     * It rolls back with the caller's transaction.
      *
      * @param  ?string  $level
      * @return void
@@ -293,9 +263,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * A revocation that throws fails the report, in a savepoint of the caller's
-     * transaction rolled back, so a caller that catches it and commits keeps no
-     * suspension.
+     * A revocation that throws leaves no suspension.
      *
      * @param  ?string  $level
      * @return void
@@ -355,8 +323,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * An identity that is no Eloquent model cannot be named to SSO, and throws
-     * before anything is locked.
+     * An identity that cannot be named throws.
      *
      * @return void
      *
@@ -370,8 +337,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * Assert SSO reported one suspension, of the person's link by a verified
-     * domain, for the client given.
+     * Assert one suspension of the link was reported for the client.
      *
      * @param  ?string  $ip
      * @param  ?string  $userAgent
@@ -389,8 +355,7 @@ final class ScopeWideningsTest extends TestCase
     }
 
     /**
-     * Link the person by a verified domain in the other tenant's connection, to
-     * a subject of their own; answer the link's id.
+     * Link the person by domain in the other tenant and return the link id.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return string

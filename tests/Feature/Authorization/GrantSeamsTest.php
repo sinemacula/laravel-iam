@@ -28,8 +28,7 @@ use Tests\Fixtures\Authorization\RecordingGrantHook;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams `laravel-authorization` reads the grants through
- * (IAM-6.7, IAM-6.8): its identity directory and its grant hook.
+ * Feature tests for the identity directory and grant hook seams.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,8 +44,7 @@ final class GrantSeamsTest extends TestCase
     private array $authorization = [];
 
     /**
-     * The grant hook is bound whatever hooks the application lists, which run
-     * once, before it.
+     * The grant hook is bound, and listed hooks run once before it.
      *
      * @return void
      *
@@ -77,8 +75,7 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * An identity directory named in `laravel-authorization`'s configuration is
-     * kept, and `iam:check` passes it.
+     * A directory named in authorization's config is kept by `iam:check`.
      *
      * @return void
      *
@@ -155,8 +152,7 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * With linking by a verified domain on, `iam:check` refuses the composite
-     * left standing with SSO's switch off.
+     * With domain linking on, `iam:check` refuses the composite.
      *
      * @return void
      *
@@ -170,8 +166,7 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * A widening of an identity of another kind is passed over, and the listed
-     * hooks still run for it once.
+     * Another identity kind is passed over and the listed hooks still run.
      *
      * @return void
      *
@@ -197,8 +192,7 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * Load the configuration, then set what the test names in
-     * `laravel-authorization`'s configuration.
+     * Load the configuration with the test's authorization settings.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

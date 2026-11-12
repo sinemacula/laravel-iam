@@ -27,15 +27,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
 
 /**
- * Integration tests for the subject resolver's lifetime as
- * `laravel-authorization`'s resolution memo reads it (IAM-6.1, IAM-8.1): one
- * resolver for a request or job, as `laravel-authorization`'s own scoped
- * default is, so the tenant it resolved for the request is kept while the
- * resolver that resolved it is the one bound, and checks after the first in one
- * request are answered from the memo, reading nothing again.
- *
- * The checks run on every engine, and at READ COMMITTED and REPEATABLE READ on
- * MySQL and PostgreSQL.
+ * Integration tests for the subject resolver's lifetime against the memo.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,9 +47,7 @@ final class SubjectResolutionMemoTest extends TestCase
     private const int REPEATS = 3;
 
     /**
-     * Checks asked again in one request keep the tenant resolved for it, and
-     * read nothing from the database, the first check's resolution answering
-     * them.
+     * Repeat checks in one request are answered from the memo.
      *
      * @param  ?string  $level
      * @return void
@@ -77,8 +67,7 @@ final class SubjectResolutionMemoTest extends TestCase
     }
 
     /**
-     * Define the route that checks once, then again, counting what the repeat
-     * checks read and whether the tenant resolved for the request is kept.
+     * Define the route that checks twice and counts the repeat's reads.
      *
      * @param  mixed  $router
      * @return void
@@ -118,9 +107,7 @@ final class SubjectResolutionMemoTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then sign members in on the guard
-     * people sign in on, and declare the invoice permissions, set before any
-     * provider registers.
+     * Sign members in on the people guard and declare the permissions.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -154,8 +141,7 @@ final class SubjectResolutionMemoTest extends TestCase
     }
 
     /**
-     * Sign the member in with their password, and return the session's access
-     * token.
+     * Sign the member in and return the access token.
      *
      * @param  \Tests\Fixtures\Authorization\Member  $member
      * @return string

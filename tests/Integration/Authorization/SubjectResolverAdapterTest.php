@@ -27,21 +27,7 @@ use Tests\Fixtures\Models\Machine;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization`'s subject resolver, answered
- * from `laravel-authentication`'s caller (IAM-6.1): the request's caller is the
- * subject, its principal with its identity, active tenant, application and
- * session; a request with no caller has none. The model Laravel's Gate hands
- * over is the caller, with its session, only when it is the default guard's
- * principal or the identity acting as it, and the request's caller is never
- * read for it; any other principal is a subject in its own tenant with no
- * session, and any other model, an identity that is not the caller's and no
- * principal among them, is its own subject. A default guard that is not
- * `laravel-authentication`'s is answered as `laravel-authorization`'s own
- * resolver answers it, but for a principal, which still acts for its identity
- * in its own tenant.
- *
- * Each scenario that signs in runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for the subject resolver answered from the caller.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,9 +44,7 @@ final class SubjectResolverAdapterTest extends TestCase
     private const string CALLER_MEMO = 'authentication.caller';
 
     /**
-     * The request's caller is the subject: its principal, its identity, no
-     * tenant for a person acting in none, its guard as the application, and its
-     * session's key.
+     * The request's caller is the subject.
      *
      * @param  ?string  $level
      * @return void
@@ -79,9 +63,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A caller the guard holds without a session (one bound in trust, as an
-     * application's own sign-in binds it) is the subject with no session, so no
-     * authentication requirement is met for it.
+     * A caller without a session is the subject with none.
      *
      * @param  ?string  $level
      * @return void
@@ -114,9 +96,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The model the Gate hands over is the caller, with its tenant and session,
-     * when it is the default guard's principal, and the request's caller is
-     * never read for it.
+     * The guard's own principal is the caller, with its session.
      *
      * @param  ?string  $level
      * @return void
@@ -139,9 +119,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Any other principal is a subject in its own tenant with no session: one
-     * the caller names, and the caller's own model while the guard has not
-     * resolved who it serves.
+     * Any other principal has no session.
      *
      * @param  ?string  $level
      * @return void
@@ -164,9 +142,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * The caller's own model loaded again, apart from the one the guard holds
-     * (`Auth::user()->fresh()`, a find by the caller's key, the model handed
-     * over before the guard resolved), is still the caller, with its session.
+     * A reloaded copy of the caller is the caller.
      *
      * @param  ?string  $level
      * @return void
@@ -193,11 +169,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * In a long-lived worker, whose jobs share one request, each job is decided
-     * about its own caller: once the worker resets between jobs, as it does
-     * before each one, the first job's caller is no subject of the next, which
-     * is decided about the one it signs in, and a job that signs nobody in has
-     * no subject.
+     * Each job in a worker is decided about its own caller.
      *
      * @param  ?string  $level
      * @return void
@@ -232,9 +204,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity that is not the caller's and no principal is its own subject
-     * and identity, with no tenant and no session, as `laravel-authorization`'s
-     * own resolver answers it, and so is any other model.
+     * A non-principal identity and any other model are their own subject.
      *
      * @return void
      */
@@ -248,9 +218,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A default guard that is not `laravel-authentication`'s is answered as
-     * `laravel-authorization`'s own resolver answers it: its user, as its own
-     * subject on the guard, and no subject without one.
+     * Another kind of guard is answered as authorization's own resolver.
      *
      * @param  ?string  $level
      * @return void
@@ -278,11 +246,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * On a default guard that is not `laravel-authentication`'s, a person
-     * signed in with the request's session carries no cap, since such a session
-     * carries no scopes, so the session policy source looks nothing up for it
-     * and caps nothing; a user with no session, and any other model, says
-     * nothing of its scopes and is its own subject as that resolver answers it.
+     * A session on another kind of guard carries no cap.
      *
      * @return void
      *
@@ -319,8 +283,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[the machine signed in, its model]`: a machine identity of its
-     * own, and a principal acting for one.
+     * Rows of `[machine signed in, its model]`.
      *
      * @return iterable<string, array{0: class-string<\Illuminate\Contracts\Auth\Authenticatable&\Illuminate\Database\Eloquent\Model>}>
      */
@@ -332,10 +295,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * On a default guard that is not `laravel-authentication`'s, a machine
-     * signed in with the request's session is said to carry none granted, never
-     * no cap, so the session policy source allows it nothing, however it is a
-     * machine.
+     * A machine's session on another kind of guard is allowed nothing.
      *
      * @param  class-string<\Illuminate\Contracts\Auth\Authenticatable&\Illuminate\Database\Eloquent\Model>  $kind
      * @return void
@@ -370,10 +330,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * A principal handed in is decided about with the identity it acts for and
-     * in its own tenant whichever guard is the default: one that is not
-     * `laravel-authentication`'s answers it as `laravel-authentication`'s does,
-     * only on that guard, never as its own identity in no tenant.
+     * A principal keeps its identity and tenant whatever the default guard.
      *
      * @return void
      *
@@ -436,8 +393,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Assert the subject is the one expected: the same models, compared as
-     * models where they are, the same tenant, application, guard and session.
+     * Assert the subject matches the one expected.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $expected
      * @param  ?\SineMacula\Laravel\Authorization\Subject  $actual
@@ -455,8 +411,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Assert the subject is the seat, acting for the person who holds it, in
-     * the organisation it names, on the guard given, with no session.
+     * Assert the subject is the seat acting for its holder, with no session.
      *
      * @param  \Tests\Fixtures\Authorization\Seat  $seat
      * @param  \Tests\Fixtures\Authorization\Staff  $staff
@@ -487,8 +442,7 @@ final class SubjectResolverAdapterTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application under test, as anything that
-     * asks for it does.
+     * Resolve the abstract from the application under test.
      *
      * @param  string  $abstract
      * @return mixed

@@ -25,17 +25,7 @@ use Tests\Fixtures\Tenancy\RecordsMembershipReadModes;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's tenant membership, answered from the
- * application's memberships (IAM-7.4): a membership of exactly the tenant
- * asked, accepted by the person, is the standing, at the time the person
- * accepted it; one not accepted, another tenant's, a platform principal or none
- * is no standing; an incomplete set answers the memberships it holds; the
- * memberships are asked on the write connection inside SSO's transaction; and
- * an identity that cannot be resolved, memberships that cannot be read, or none
- * configured, throw.
- *
- * The scenarios run at the connection's own level on every engine, then at READ
- * COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for SSO's tenant membership answered from memberships.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,8 +42,7 @@ final class TenantMembershipAdapterTest extends TestCase
     private const string TENANT = 'tenant-1';
 
     /**
-     * A membership of the tenant the person accepted is the standing, at the
-     * time they accepted it, inside SSO's transaction.
+     * An accepted membership is the standing.
      *
      * @param  ?string  $level
      * @return void
@@ -78,8 +67,7 @@ final class TenantMembershipAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[memberships]`: each set that holds no membership of the tenant
-     * the person accepted.
+     * Rows of `[memberships]` holding no accepted membership of the tenant.
      *
      * @return iterable<string, array{0: list<\SineMacula\Laravel\Iam\Tenancy\Membership>}>
      */
@@ -118,8 +106,7 @@ final class TenantMembershipAdapterTest extends TestCase
     }
 
     /**
-     * An incomplete set answers the membership it holds: holding it is known,
-     * whatever else the set misses.
+     * An incomplete set answers the membership it holds.
      *
      * @return void
      *
@@ -136,9 +123,7 @@ final class TenantMembershipAdapterTest extends TestCase
     }
 
     /**
-     * The memberships are asked pinned to the write connection, for the
-     * identity the reference names, and the connection reads from its replica
-     * again afterwards.
+     * The memberships are asked on the write connection.
      *
      * @return void
      *
@@ -201,8 +186,7 @@ final class TenantMembershipAdapterTest extends TestCase
     }
 
     /**
-     * Asked with no memberships bound, the adapter throws rather than answer no
-     * membership.
+     * With no memberships bound it throws.
      *
      * @return void
      *

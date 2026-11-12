@@ -9,14 +9,8 @@ use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 
 /**
- * The grant half of SSO's principal scope while the authorization
- * capability's switch (`iam.adapters.authorization`) is off, and this package
- * answers no grant from `laravel-authorization`'s grant scope query
- * (`Authorization\GrantScopeAdapter`): `unknown` for every identity and
- * tenant, so the principal scope never answers `within_tenant` on the
- * memberships alone (fail closed; Q9). An application that binds the
- * authorization seams itself binds its own grant half too. It reads nothing and
- * keeps nothing, so it is shared.
+ * The grant scope while the authorization adapters are off: always `unknown`,
+ * so the principal scope fails closed.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -26,7 +20,7 @@ use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 final readonly class UnknownGrantScope implements GrantScope
 {
     /**
-     * `unknown`: nothing here can tell where the identity's grants reach.
+     * Answer `unknown` for every identity and tenant.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $tenantId

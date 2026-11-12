@@ -16,8 +16,7 @@ use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use Tests\TestCase;
 
 /**
- * Feature tests for audit-log's access policy answered from
- * `laravel-authorization`'s grants (IAM-6.10).
+ * Feature tests for audit-log's access policy answered from grants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

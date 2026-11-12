@@ -21,14 +21,7 @@ use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 
 /**
- * A person who signs in and acts as themselves, as the fixtures' `Person` does
- * (`laravel-authentication`'s identity and principal in one model, with
- * sessions, and MFA's identity), who is `laravel-authorization`'s identity too,
- * holding roles, permissions and policies.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection, and signs in with its email address and
- * password.
+ * A person who signs in as themselves and holds authorization grants.
  *
  * @property int $id
  * @property string $name
@@ -69,8 +62,7 @@ final class Member extends User implements AuthorizableIdentity, CanBeActive, Ha
     }
 
     /**
-     * The attributes cast on read and write: the email address, kept in its
-     * normal form, the password, hashed, and the active flag.
+     * The attributes cast on read and write.
      *
      * @return array<string, string>
      */

@@ -10,14 +10,7 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 
 /**
- * The application's memberships as `Contracts\Memberships` asks them to be
- * kept: read from the tests' application's store (`StoredMembership`) on the
- * write connection, by a locking read that takes the application's membership
- * guard, a shared lock on each of the person's membership rows, held until the
- * asking transaction ends; every writer that revokes one (`revoke()`) deletes
- * the row, so it waits for that transaction to commit.
- *
- * Every membership the person holds is read, so the set is complete.
+ * Memberships read under a shared lock that revoking waits on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,9 +38,7 @@ final readonly class GuardedMemberships implements Memberships
     }
 
     /**
-     * Revoke the person's membership of the tenant on the connection given, or
-     * the default one, as the application's writer would: its row is deleted,
-     * once the guard is free, and how many rows were is answered.
+     * Revoke the membership by deleting its row, returning the rows deleted.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $tenantId

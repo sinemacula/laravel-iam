@@ -10,9 +10,7 @@ use SineMacula\Laravel\Authorization\Evaluation\RequirementResult;
 use SineMacula\Laravel\Authorization\Subject;
 
 /**
- * An application's own requirement checker, which it names in
- * `laravel-authorization`'s configuration
- * (`authorization.requirement_checker`): it finds every part unmet.
+ * An application's own requirement checker that finds every part unmet.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -11,7 +11,7 @@ use SineMacula\Laravel\Mfa\Database\StorageConnection;
 
 /**
  * Has `laravel-authorization` forget the request's decisions once an identity's
- * authentication changes (IAM-6.11, AUTHZ-12.3).
+ * authentication changes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -32,11 +32,7 @@ final readonly class DecisionCacheInvalidation
     ) {}
 
     /**
-     * Forget the decisions at once, and again if a transaction open on the
-     * storage connection rolls back.
-     *
-     * Every open transaction is waited on, since Laravel 12 does not tell a
-     * committed savepoint of its parent's rollback.
+     * Forget the decisions now, and again if a storage transaction rolls back.
      *
      * @param  object  $identity
      * @param  ?string  $session
@@ -53,14 +49,14 @@ final readonly class DecisionCacheInvalidation
             $this->forget($identity, $session);
         };
 
+        // Laravel 12 hides a parent's rollback from a committed savepoint.
         foreach (ConnectionTransactions::open(StorageConnection::name()) as $transaction) {
             $transaction->addCallbackForRollback($again);
         }
     }
 
     /**
-     * Have `laravel-authorization` forget the decisions, naming the session and
-     * identity whose authentication changed.
+     * Have `laravel-authorization` forget the decisions.
      *
      * @param  object  $identity
      * @param  ?string  $session

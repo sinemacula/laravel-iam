@@ -35,11 +35,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for judging a subtree's sessions against the tenant policy
- * (IAM-7.5): every session in the tenant and the tenants below it, of whatever
- * type, is judged, every other left alone; with a flat tree only the tenant is;
- * and once the change commits, only the tenants the subtree has gained are
- * judged again here.
+ * Integration tests for judging a subtree's sessions against the policy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +58,7 @@ final class SubtreePolicyChangesTest extends TestCase
     private const string APART = 'organisation-2';
 
     /**
-     * Arrange an account below an organisation, an organisation apart, and a
-     * tenant requirement asking each of them for a second factor.
+     * Arrange an account below an organisation, one apart, and a requirement.
      *
      * @return void
      */
@@ -83,8 +78,7 @@ final class SubtreePolicyChangesTest extends TestCase
     }
 
     /**
-     * A change judges every session in the tenant and in the tenant of another
-     * type below it, and none apart.
+     * Every session in the subtree is judged.
      *
      * @param  ?string  $level
      * @return void
@@ -112,8 +106,7 @@ final class SubtreePolicyChangesTest extends TestCase
     }
 
     /**
-     * With `laravel-authorization`'s flat tree only the tenant's own sessions
-     * are judged.
+     * With a flat tree only the tenant is judged.
      *
      * @return void
      *
@@ -135,9 +128,7 @@ final class SubtreePolicyChangesTest extends TestCase
     }
 
     /**
-     * Once the change commits, the subtree is listed again and only the tenant
-     * it gained meanwhile is resolved and judged; the tenants first listed are
-     * left to `laravel-authentication`'s own second pass.
+     * Once it commits, only tenants the subtree gained are judged.
      *
      * @return void
      *
@@ -175,8 +166,7 @@ final class SubtreePolicyChangesTest extends TestCase
     }
 
     /**
-     * Have every tenant require a second factor, which no password session
-     * holds.
+     * Have every tenant require a second factor.
      *
      * @return void
      */

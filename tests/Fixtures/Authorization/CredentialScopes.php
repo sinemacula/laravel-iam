@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Subject;
 
 /**
- * An application's own session policy source, which it names in
- * `laravel-authorization`'s configuration (`authorization.session.source`): it
- * caps no subject.
+ * An application's own session policy source that caps no subject.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -50,29 +50,7 @@ use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's enforcement reaching `laravel-authentication`'s
- * sessions through the tenant authentication policy this package binds
- * (IAM-4.4, IAM-4.5), against SSO's acceptance scenarios, with SSO's own
- * enforcement and the people's sessions acting in the enforcing tenant: a
- * sign-in through a satisfying connection names on its provenance the
- * enforcement version the redemption judged under its locks, also when the rule
- * changed after the flow completed, and records the policy's version; a
- * password sign-in is refused as `sso_required` unless the person is exempt,
- * whose exemption is reported; an exempt person's sign-in and re-authentication
- * this package redeems through another tenant's connection report the exemption
- * with the client each was redeemed for, a later judgement of the session with
- * none; and a withdrawn exemption the application reports as a policy change
- * ends that session; an enforcement change revokes, in its own transaction, the
- * sessions the rule no longer allows and keeps an exempt person's and a
- * compliant one's; turning a rule off revokes nothing; a
- * session records the very version the policy answers while nothing changes;
- * the policy takes no lock of its own under the session's, with SSO's stored
- * rule read; and a tenant MFA requirement the application starts to hold
- * revokes the sessions without its factor once the tenant's policy is reported
- * changed.
- *
- * Each scenario that commits runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for SSO enforcement through the tenant policy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -89,9 +67,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     private ?ExemptsIdentities $exemptions = null;
 
     /**
-     * Arrange SSO with its enforcement on, a tenancy in which everyone may act
-     * in every tenant, and the application's break-glass rule, exempting nobody
-     * until a test says so.
+     * Arrange SSO enforcement, an open tenancy and an exemption rule.
      *
      * @return void
      */
@@ -114,11 +90,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A sign-in in the enforcing tenant through a satisfying connection names
-     * on its provenance the version of the rule the redemption judged under its
-     * locks, the rule as it changed after the flow completed, never the one the
-     * completion checked, and records the policy's own version, composed of
-     * that rule, as the session's.
+     * A sign-in names the enforcement version judged under the locks.
      *
      * @param  ?string  $level
      * @return void
@@ -154,9 +126,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A password sign-in in the enforcing tenant is refused as `sso_required`,
-     * with no session and no pending continuation, and no exemption is
-     * reported.
+     * A password sign-in in the enforcing tenant is refused.
      *
      * @param  ?string  $level
      * @return void
@@ -181,8 +151,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * An exempt person signs in with a password in the enforcing tenant, and
-     * the exemption is reported once, for the tenant and the application.
+     * An exempt person signs in with a password.
      *
      * @param  ?string  $level
      * @return void
@@ -210,14 +179,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * An exempt person signs in, and then re-authenticates, through the tests'
-     * tenant's connection, which SSO judges against that tenant's rule alone
-     * (none), to act in another tenant whose rule names only its own
-     * connection: each exemption is reported with the IP address and user agent
-     * of the client its redemption was made for, the sign-in's naming no
-     * session and the re-authentication's the session renewed; the next
-     * judgement of the session, which no redemption of this request makes,
-     * reports it with no client, as a job's.
+     * An exempt redemption reports the exemption with its client.
      *
      * @param  ?string  $level
      * @return void
@@ -271,14 +233,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * An enforcement change revokes, inside its own transaction, every session
-     * acting in the tenant the rule no longer allows (a password session), and
-     * keeps a session through a satisfying connection and an exempt person's
-     * password session, whose exemption is reported by each of the change's two
-     * passes, since each asks the policy, and so the gate, for it; SSO reports
-     * the change once, its report never dropped by the second pass, which runs
-     * only once SSO's own commit callbacks have; turning the rule off
-     * afterwards revokes nothing, and is reported once too.
+     * An enforcement change revokes the sessions the rule no longer allows.
      *
      * @param  ?string  $level
      * @return void
@@ -320,13 +275,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A second pass that throws, here because the tenant's MFA requirement can
-     * no longer answer once the change has committed, propagates from the
-     * change, which stays durable: the rule is stored as changed, the first
-     * pass's revocation stands, and the session through the rule's connection
-     * stands too. `laravel-authentication` runs the second pass as a commit
-     * callback queued before SSO's report of the change, so the report is not
-     * sent.
+     * A second pass that throws leaves the change durable.
      *
      * @param  ?string  $level
      * @return void
@@ -368,10 +317,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * An exemption the application withdraws ends the exempt person's password
-     * session in the enforcing tenant once the application reports the tenant's
-     * policy changed, as it must: nothing else judges the session again, so
-     * until then it stands.
+     * A withdrawn exemption reported as a policy change revokes the session.
      *
      * @param  ?string  $level
      * @return void
@@ -400,8 +346,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A session acting in another tenant is never judged by a tenant's
-     * enforcement change.
+     * Another tenant's sessions are not judged.
      *
      * @param  ?string  $level
      * @return void
@@ -421,9 +366,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A tenant MFA requirement the application starts to hold ends the tenant's
-     * sessions without its factor once the tenant's policy is reported changed,
-     * as the application reports it, whatever SSO's enforcement says.
+     * A tenant MFA requirement revokes the sessions without its factor.
      *
      * @param  ?string  $level
      * @return void
@@ -446,9 +389,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * A session records the very version the policy answers for it while
-     * nothing changes, so a report that the tenant's policy changed when it did
-     * not judges it no more and revokes nothing.
+     * An unchanged policy records the version answered.
      *
      * @param  ?string  $level
      * @return void
@@ -479,12 +420,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * Asked while the transaction holds the session's row locked, as a refresh,
-     * a switch, an external re-authentication and `tenantPolicyChanged()` ask
-     * it, the policy reads SSO's stored rule and its satisfying connections
-     * with SSO's own enforcement, judges by the connection the context names,
-     * the one the session came through, and takes no lock of its own, at either
-     * isolation level.
+     * The policy takes no lock under the session's lock.
      *
      * @param  string  $level
      * @return void
@@ -514,8 +450,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * Redeem the handoff for the guard through the connection, the sign-in
-     * asking to act in the tenant, for the tests' client.
+     * Redeem the handoff in the tenant for the tests' client.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
@@ -530,8 +465,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * Sign the person in with their password on the guard, asking to act in the
-     * tenant given.
+     * Sign the person in with their password in the given tenant.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $tenant
@@ -577,10 +511,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * Require every session acting in the tenant to come through the tests'
-     * connection, once a sign-in through it has completed, as SSO requires
-     * before it enforces a connection, through the person the connection links
-     * when one is linked already, and answer the rule's version.
+     * Require sessions in the tenant to come through the tests' connection.
      *
      * @param  bool  $linked
      * @return ?string
@@ -634,9 +565,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * Queue the callback on the change's own transaction as its first pass
-     * reads the tenant's sessions on the test's connection, so it runs once the
-     * change has committed, before the second pass.
+     * Queue the callback for after the change commits, before pass two.
      *
      * @param  \Closure(): void  $callback
      * @return void

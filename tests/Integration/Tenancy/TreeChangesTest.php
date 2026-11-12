@@ -38,24 +38,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for a change of the application's tenant tree it reports
- * (IAM-7.5, Q7): a tenant moved under an enforcing ancestor has its sessions,
- * and those of every tenant below it, judged in the move's transaction and once
- * more once it commits, while SSO's enforcement or a tenant MFA requirement is
- * on, every other tenant's left alone; a removal, reported as the move of each
- * child moved out from under the removed tenant once written, judges those
- * children against the new structure; with neither on nothing is judged; a
- * tenant moved under an ancestor while the ancestor's rule is turned on
- * is judged by the change's pass after the commit, which lists the subtree
- * again; a move that rolls back revokes nothing; without a tree only the tenant
- * itself is judged; and a subtree tenant that cannot be resolved throws with
- * nothing judged. The authorization capability is off, its report of the move
- * being `AuthorizationTreeChangesTest`'s and `TreeMoveWideningTest`'s.
- *
- * Each scenario that commits runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL;
- * a move that rolls back and a subtree tenant that cannot be resolved commit
- * nothing, so run at the connection's own level alone.
+ * Integration tests for application-reported tenant tree changes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -83,9 +66,7 @@ final class TreeChangesTest extends TestCase
     private const string STILL = 'still';
 
     /**
-     * Arrange SSO, the tree before the move (the enforcing root, the tenant to
-     * move with its child, and a tenant that stays), and a tenancy in which
-     * everyone may act in every tenant.
+     * Arrange SSO, the tree before the move and an open tenancy.
      *
      * @return void
      */
@@ -106,9 +87,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A tenant moved under an enforcing root, reported in the move's
-     * transaction, has its sessions and its child's revoked there, the root's
-     * compliant ones and every other tenant's left alone.
+     * A move under an enforcing ancestor revokes the moved subtree.
      *
      * @param  ?string  $level
      * @return void
@@ -143,11 +122,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A tenant removed, its child moved out from under it to below the
-     * enforcing root and reported as moved once the restructure is written, has
-     * the child's session revoked in the removal's transaction, judged against
-     * the rule the new structure applies; the removed tenant's own session is
-     * left to `tenantDeactivated()`, and every other tenant's alone.
+     * A removal is reported as the move of each child once written.
      *
      * @param  ?string  $level
      * @return void
@@ -181,8 +156,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A session that enters the moved subtree after the first pass, inside the
-     * move's transaction, is revoked once the move commits.
+     * A session entering the subtree during the move is judged once it commits.
      *
      * @param  ?string  $level
      * @return void
@@ -212,10 +186,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A tenant moved under the root while the root's rule is being turned on,
-     * after the change's first pass has listed the root's subtree and before
-     * the change commits, has its sessions revoked by the change's pass after
-     * the commit, which lists the subtree again.
+     * A tenant moved in while the rule is turned on is judged once it commits.
      *
      * @param  ?string  $level
      * @return void
@@ -255,8 +226,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A move whose transaction rolls back revokes nothing, the second pass
-     * dropped with it.
+     * A move that rolls back revokes nothing.
      *
      * @return void
      *
@@ -285,8 +255,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * With SSO's enforcement off and no tenant MFA requirement, nothing any
-     * tenant requires can follow the tree, so nothing is judged.
+     * With neither enforcement nor a requirement nothing is judged.
      *
      * @param  ?string  $level
      * @return void
@@ -309,9 +278,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * With SSO's enforcement off but a tenant MFA requirement the application
-     * binds, a move judges the moved subtree against the requirement, which the
-     * application may pass down its tree itself.
+     * A tenant requirement alone judges the moved subtree.
      *
      * @param  ?string  $level
      * @return void
@@ -375,9 +342,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * A tenant of the subtree the tenant resolver cannot resolve throws inside
-     * the move's transaction, before any tenant is judged, so the move rolls
-     * back with every session standing.
+     * An unresolvable subtree tenant throws with nothing judged.
      *
      * @return void
      *
@@ -412,8 +377,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * Turn SSO's enforcement on and the root's rule on, satisfied by the tests'
-     * connection, which belongs to the root; answer its version.
+     * Enforce the root through the tests' connection and return the version.
      *
      * @return ?string
      */
@@ -436,8 +400,7 @@ final class TreeChangesTest extends TestCase
     }
 
     /**
-     * Sign the person in with their password, acting in the tenant, and return
-     * the session.
+     * Sign the person in, acting in the tenant, and return the session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $tenantId

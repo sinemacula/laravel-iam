@@ -8,8 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableTenant;
 
 /**
- * An organisation whose key, which `laravel-authorization` keys its grants by,
- * is not its identifier, which `laravel-authentication` records on a session.
+ * An organisation whose key differs from its identifier.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +33,7 @@ final readonly class RekeyedOrganisation implements AuthorizableTenant, Tenant
     ) {}
 
     /**
-     * The organisation's identifier, as `laravel-authentication` records it on
-     * a session.
+     * The organisation's identifier, as recorded on a session.
      *
      * @return string
      */

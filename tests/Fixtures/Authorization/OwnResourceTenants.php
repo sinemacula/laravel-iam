@@ -9,9 +9,7 @@ use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
 use SineMacula\Laravel\Authorization\Support\Reference;
 
 /**
- * An application's own resource tenant resolver, which answers no record's
- * tenant: only its being the application's, not its answers, is what a test
- * reads.
+ * An application's own resource tenant resolver that answers nothing.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

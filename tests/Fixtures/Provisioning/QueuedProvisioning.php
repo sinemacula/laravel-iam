@@ -8,9 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use SineMacula\Laravel\Sso\Events\ResultUnlinked;
 
 /**
- * A provisioning listener an application wrongly queues: by the time a queued
- * listener ran, the handoff would be issued and the grant void, so SSO's event
- * refuses to be serialised and queuing it fails at once.
+ * A provisioning listener wrongly queued, which SSO's event refuses.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

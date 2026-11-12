@@ -16,14 +16,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
 
 /**
- * Feature tests for having `laravel-authorization` forget the decisions of the
- * request once an identity's authentication changes (IAM-6.11): the request's
- * last decision is forgotten whatever it read and whoever it was about, the
- * identity a model or not, a session named or none; and a decision recorded
- * after the change is forgotten again should the transaction on the storage
- * connection roll back, the enclosing one included when the change was made in
- * a savepoint that committed, but kept once it commits. Every decision is
- * recorded and read through `laravel-authorization`'s facade.
+ * Feature tests for forgetting decisions on an authentication change.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,8 +33,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     private const string SESSION = 'the-changed-session';
 
     /**
-     * Rows of `[whether the identity whose authentication changed is a model,
-     * the session it changed in]`.
+     * Rows of `[identity is a model, session]`.
      *
      * @return iterable<string, array{0: bool, 1: ?string}>
      */
@@ -57,9 +49,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * The request's last decision is forgotten whatever the change names, even
-     * one that read no authentication requirement, about nobody, made in no
-     * session: `laravel-authorization` forgets every decision of the request.
+     * The request's last decision is forgotten whatever the change names.
      *
      * @param  bool  $aModel
      * @param  ?string  $session
@@ -78,9 +68,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A decision recorded after the change, inside the transaction on the
-     * storage connection, is forgotten again when that transaction rolls back,
-     * since the proofs it read were never committed.
+     * A decision recorded before a rollback is forgotten again.
      *
      * @return void
      *
@@ -106,11 +94,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A change made inside a savepoint that commits, as MFA's own transaction
-     * is when the caller opened one, waits on the enclosing transaction too: a
-     * decision recorded after it is forgotten again when the enclosing
-     * transaction rolls back, on every version of Laravel, including one that
-     * never tells a savepoint that has committed of that rollback.
+     * A committed savepoint still waits on the enclosing transaction.
      *
      * @return void
      *
@@ -141,8 +125,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Outside any transaction, the change forgets the decision at once, and
-     * waits on nothing.
+     * Outside a transaction the decision is forgotten at once.
      *
      * @return void
      *
@@ -163,9 +146,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A decision recorded after the change, inside the transaction on the
-     * storage connection, is kept once that transaction commits, since it read
-     * the proofs that committed.
+     * A decision recorded before a commit is kept.
      *
      * @return void
      *

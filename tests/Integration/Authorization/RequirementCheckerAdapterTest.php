@@ -40,21 +40,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization`'s requirement checker, answered
- * by MFA's requirement check on the proofs of the subject's own session
- * (IAM-6.3): a requirement is unmet until the session steps up through MFA and
- * met once it has, until a maximum age bounds it; each part is judged as MFA
- * judges it; the proofs of another identity's session, and of the subject's
- * other sessions, never count; the session must act in the subject's tenant,
- * named in `laravel-authentication`'s terms or `laravel-authorization`'s; a
- * session no longer live meets nothing; whatever cannot be resolved or judged
- * is refused by throwing, which `laravel-authorization` reads as undecidable;
- * and inside a transaction the proofs are read current, so a factor removal
- * committed after the transaction's first read shows.
- *
- * Each scenario that reads stored proofs runs at the connection's own level on
- * every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for the requirement checker answered by MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,9 +54,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     use ChangesSessionsElsewhere, InteractsWithIam, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /**
-     * The requirement is unmet until the session steps up through MFA, and met
-     * once it has, with no instant it stops being met while no maximum age
-     * bounds it.
+     * A requirement is unmet until the session steps up.
      *
      * @param  ?string  $level
      * @return void
@@ -93,8 +77,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * A maximum age bounds the answer: met until the step-up is that old, and
-     * unmet once it is older.
+     * A maximum age bounds the answer.
      *
      * @param  ?string  $level
      * @return void
@@ -124,10 +107,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * Each part is judged as MFA judges it: an authenticator app meets an
-     * additional verification, multifactor authentication and AAL2, but no
-     * phishing resistance and no AAL3, and the parts left unmet are named as
-     * `laravel-authorization` names them.
+     * Each part is judged as MFA judges it.
      *
      * @param  ?string  $level
      * @return void
@@ -155,10 +135,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * The proofs judged are the subject's own: the subject's other session,
-     * never stepped up, meets nothing, and another identity's session is never
-     * judged, whether the subject names its key or a principal acting for
-     * another identity names it.
+     * Only the subject's own session is judged.
      *
      * @param  ?string  $level
      * @return void
@@ -184,10 +161,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * A subject that is not a principal is judged only on its own session: one
-     * paired with another identity's stepped-up session, whether a model of its
-     * own or an object that is no identity at all, is refused, and never meets
-     * that identity's requirement on that identity's proofs.
+     * A subject paired with another identity's session is refused.
      *
      * @param  ?string  $level
      * @return void
@@ -215,11 +189,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * The session must act in the subject's tenant: a stepped-up session acting
-     * in no tenant answers for no subject in one, and a tenant that cannot be
-     * compared is refused; once the session acts in the tenant, named by an
-     * integer or by text, it answers for the subject in it, and for no subject
-     * in none.
+     * The session must act in the subject's tenant.
      *
      * @param  ?string  $level
      * @return void
@@ -252,13 +222,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * A tenant in `laravel-authorization`'s own terms is read as it reads one,
-     * by its key: its `Reference`, which a listing in a scope puts on the
-     * request's subject, and a model of the application's, each answer for the
-     * subject in the session's tenant and are refused in another; a reference
-     * naming no key, a model not yet stored, and a tenant of
-     * `laravel-authentication`'s naming itself by no string or integer cannot
-     * be read, and are refused.
+     * A tenant in authorization's terms is read by its key.
      *
      * @param  ?string  $level
      * @return void
@@ -292,9 +256,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA reads as inactive meets no requirement, as MFA's own
-     * route gate has it: a person deactivated after stepping up meets nothing
-     * on the proofs made before, and meets the requirement again once active.
+     * An inactive identity meets no requirement.
      *
      * @param  ?string  $level
      * @return void
@@ -350,11 +312,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * What cannot be resolved is refused by throwing: a subject with no session
-     * (which `laravel-authorization` never hands the checker) or no guard, an
-     * identity MFA cannot hold factors for, a guard
-     * that holds no sessions and a key naming no session of the identity's;
-     * and so is a level MFA does not know, before anything is read.
+     * What cannot be resolved or judged is refused.
      *
      * @param  ?string  $level
      * @return void
@@ -385,11 +343,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * A principal that is not its identity is judged on the session of the
-     * identity it acts for, where the subject names none, and refused where the
-     * subject names another identity, whose session it never judges; so is a
-     * principal that is a model of its own, by the identity it acts for, not by
-     * itself.
+     * A principal is judged on the identity it acts for.
      *
      * @param  ?string  $level
      * @return void
@@ -422,9 +376,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * The proofs reach MFA's check after the first factor, oldest first, as
-     * MFA's own requirement check is handed them: the readers return the
-     * further proofs newest first.
+     * The proofs reach MFA after the first factor, oldest first.
      *
      * @param  ?string  $level
      * @return void
@@ -477,9 +429,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * The checker's answer depends on the subject's session alone, so it is
-     * scope invariant, and a statement stating a requirement compiles in a
-     * query scope.
+     * The checker is scope invariant.
      *
      * @return void
      *
@@ -491,9 +441,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction the proofs are read current: a removal of the factor
-     * committed on another connection after the transaction's first read shows,
-     * and the requirement is unmet.
+     * Inside a transaction the proofs are read current.
      *
      * @param  string  $level
      * @return void
@@ -526,8 +474,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * Ask the bound checker whether the subject's session meets the requirement
-     * the operand states.
+     * Ask the bound checker about the operand's requirement.
      *
      * @param  array<string, array<string, int|string>>  $operand
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
@@ -587,8 +534,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * Assert asking whether the subject's session is multifactor is refused as
-     * unresolvable, of the kind given.
+     * Assert the multifactor question is refused as unresolvable.
      *
      * @param  \SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind  $kind
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
@@ -610,8 +556,7 @@ final class RequirementCheckerAdapterTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application under test, as anything that
-     * asks for it does.
+     * Resolve the abstract from the application under test.
      *
      * @param  string  $abstract
      * @return mixed

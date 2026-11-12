@@ -20,17 +20,7 @@ use Tests\Fixtures\Authorization\Staff;
 use Tests\TestCase;
 
 /**
- * Integration tests of a grant made to an identity that is no principal
- * (IAM-6.1, AUTHZ-2.2, AUTHZ-11.3), with this package's subject resolver bound:
- * the identity is its own subject, so the grant hook finds it the recipient of
- * the grant and the grant is written, and a check about it, through
- * `laravel-authorization`'s manager and Laravel's Gate alike, is decided on its
- * own grants rather than refused.
- *
- * The grant is written inside `laravel-authorization`'s transaction, where its
- * widening classifier reads the grantee's grants with locking reads, so it runs
- * at the connection's own level on every engine, then at READ COMMITTED and
- * REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for a grant to an identity that is no principal.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,10 +48,7 @@ final class IdentityGranteeTest extends TestCase
     }
 
     /**
-     * A grant to an identity that is no principal reaches the grant hook as a
-     * grant to the identity itself and is written; the identity is then allowed
-     * what it was granted, and nothing else, through the manager and the Gate
-     * alike.
+     * A grant to a non-principal identity is written and decided.
      *
      * @param  ?string  $level
      * @return void

@@ -21,8 +21,7 @@ use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
- * Feature tests for asking the application's binding of MFA's tenant
- * requirement.
+ * Feature tests for the application's binding of MFA's tenant requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +46,7 @@ final class TenantMfaRequirementsTest extends TestCase
     }
 
     /**
-     * The binding is asked for the identity, the application and the tenant id,
-     * and its answer translated.
+     * The binding is asked and its answer translated.
      *
      * @return void
      */
@@ -63,8 +61,7 @@ final class TenantMfaRequirementsTest extends TestCase
     }
 
     /**
-     * With MFA's default, nothing is required and the identity is not asked
-     * about.
+     * With MFA's default nothing is required.
      *
      * @return void
      */
@@ -74,8 +71,7 @@ final class TenantMfaRequirementsTest extends TestCase
     }
 
     /**
-     * Once a requirement is bound, an identity MFA holds no factors for is
-     * refused.
+     * An identity with no MFA factors is refused once a requirement is bound.
      *
      * @return void
      *

@@ -9,35 +9,8 @@ use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 
 /**
- * When `laravel-authentication`'s scope registry and application access are
- * mandatory (IAM-10.2), read from the configuration as it stands: the binding
- * rule declares them as it applies (`AuthorizationSeams`) and `iam:check` reads
- * them again as it runs.
- *
- * - The scope registry is mandatory while any application accepts a machine
- *   credential (IAM-6.5): a guard whose sign-in methods list `api_key` or
- *   `client_credentials`. Left on `laravel-authentication`'s default then
- *   (`AcceptAnyScope`), a credential could be issued scopes that name no
- *   permission, and a typo in one would cap a machine to nothing, or a scope
- *   meant for a later permission would reach it unseen.
- * - Application access is mandatory while `authorization.application_access`
- *   maps an application to the permission to use it (IAM-6.6). Left on
- *   `laravel-authentication`'s default then (`AdmitAnyPrincipal`), every
- *   principal could sign in to that application, refresh and switch there,
- *   whatever its grants say.
- *
- * Which machine credentials a guard accepts is `laravel-authentication`'s
- * application policy's to say (`ApplicationPolicy::allowsMethod()`), which an
- * application may replace to read them from somewhere other than the
- * configuration (a database, a tenant's settings), so the bound policy is asked
- * for each configured guard, once the container is handed in, as `iam:check`
- * hands it; a guard whose settings the policy refuses accepts nothing. Where no
- * container is handed in, or no policy is bound, a guard's methods are read as
- * `laravel-authentication`'s default policy reads them: the guard's own
- * `application.methods` where its `application` block holds that key,
- * `authentication.application.methods` otherwise. A value that is no list of
- * names accepts nothing, as far as the mandate goes; it is
- * `authentication:check`'s to refuse.
+ * Whether `laravel-authentication`'s scope registry and application access must
+ * be bound, read from the configuration.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,10 +26,7 @@ final readonly class AccessMandates
     public const string APPLICATION_ACCESS = 'authorization.application_access';
 
     /**
-     * Whether any guard accepts a machine credential, so a credential's scopes
-     * must name real permissions: as the bound application policy answers for
-     * each guard, where the container given binds one, and as the configuration
-     * lists the guard's methods otherwise.
+     * Whether any guard accepts a machine credential.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  ?\Illuminate\Contracts\Container\Container  $container
@@ -89,8 +59,7 @@ final readonly class AccessMandates
     }
 
     /**
-     * Whether `authorization.application_access` maps any application to the
-     * permission to use it.
+     * Whether `authorization.application_access` maps any application.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -103,10 +72,7 @@ final readonly class AccessMandates
     }
 
     /**
-     * Whether the application policy lets the guard accept a machine
-     * credential; a guard whose settings it refuses
-     * (`InvalidArgumentException`) accepts nothing, as far as the mandate goes:
-     * it is `authentication:check`'s to refuse.
+     * Whether the policy lets the guard accept a machine credential.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy  $policy
      * @param  string  $guard
@@ -121,6 +87,7 @@ final readonly class AccessMandates
                     return true;
                 }
             } catch (\InvalidArgumentException) {
+                // `authentication:check` reports refused guard settings.
                 return false;
             }
         }
@@ -129,9 +96,7 @@ final readonly class AccessMandates
     }
 
     /**
-     * The sign-in methods the guard's configuration lists: its own, where its
-     * `application` block holds them, `laravel-authentication`'s default
-     * otherwise; none where the value is no list, and only the names in it.
+     * The guard's sign-in methods, else `laravel-authentication`'s default.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  mixed  $guard

@@ -23,14 +23,8 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 
 /**
- * The seams `laravel-authorization` joins the other members through (IAM-6.1 to
- * IAM-6.8, IAM-6.10), switched by `iam.adapters.authorization`. The requirement
- * checker also needs the MFA capability, and the grant hook the SSO capability.
- * Each adapter bound over one of `laravel-authorization`'s contracts is
- * declared to its configuration report, so `authorization:check` names it. The
- * subject resolver and application access are scoped: the resolver because
- * `laravel-authorization` keeps the request's resolved tenant only while the
- * same resolver is bound.
+ * The seams joining `laravel-authorization` to the other members, switched by
+ * `iam.adapters.authorization`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,8 +54,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
     ) {}
 
     /**
-     * Return the bindings between `laravel-authorization` and the other
-     * members.
+     * The bindings between `laravel-authorization` and the other members.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -75,6 +68,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
         $domains  = static fn (): bool => filter_var($config->get(self::DOMAIN_LINKING), FILTER_VALIDATE_BOOL);
 
         return [
+            // Its resolved tenant lasts only while the same resolver is bound.
             self::authorizationRow(SubjectResolver::class, SubjectResolverAdapter::class, $on, Lifetime::SCOPED),
             self::authorizationRow(AuthenticationContext::class, AuthenticationContextAdapter::class, $on),
             self::authorizationRow(AuthenticationRequirementChecker::class, RequirementCheckerAdapter::class, $on && MfaSeams::isOn($config)),
@@ -88,8 +82,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
     }
 
     /**
-     * Whether the switch is on: `false`, `0`, `off` and `no` turn it off, and
-     * anything else, a missing value included, leaves it on.
+     * Whether the switch is on; only a false-like value turns it off.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -102,9 +95,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
     }
 
     /**
-     * Whether `laravel-authorization`'s grants are reported to SSO's scope
-     * widening, which names each grant's tenant through
-     * `laravel-authentication`'s tenant resolver.
+     * Whether grants are reported to SSO's scope widening.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -115,8 +106,7 @@ final readonly class AuthorizationSeams implements ProvidesSeams
     }
 
     /**
-     * The binding of an adapter over one of `laravel-authorization`'s
-     * contracts, declared to its configuration report once bound.
+     * A binding declared to `laravel-authorization`'s configuration report.
      *
      * @param  class-string  $contract
      * @param  class-string  $adapter

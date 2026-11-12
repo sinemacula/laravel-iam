@@ -13,12 +13,7 @@ use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Iam\Authorization\AccessMandates;
 
 /**
- * Unit tests for when `laravel-authentication`'s scope registry and application
- * access are mandatory: the registry while any guard accepts a machine
- * credential, its own methods read over `laravel-authentication`'s default as
- * `laravel-authentication` reads them, or as the bound application policy
- * answers where one is bound, and application access while
- * `authorization.application_access` maps an application.
+ * Unit tests for when the scope registry and application access are mandatory.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -65,9 +60,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * The scope registry is mandatory while any guard accepts an API key or a
-     * client credentials exchange, its own methods read over
-     * `laravel-authentication`'s default.
+     * The registry is mandatory while a guard accepts a machine credential.
      *
      * @param  array<string, mixed>  $configuration
      * @param  bool  $accepts
@@ -80,11 +73,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * With a container handed in that binds an application policy, the policy
-     * says which machine credentials each configured guard accepts, whatever
-     * its configured methods list: a guard it lets accept an API key or a
-     * client credentials exchange makes the registry mandatory, and a guard
-     * whose settings it refuses accepts nothing.
+     * The bound application policy says which machine credentials count.
      *
      * @return void
      *
@@ -129,8 +118,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * Application access is mandatory while `authorization.application_access`
-     * maps an application to the permission to use it.
+     * Application access is mandatory while an application is mapped.
      *
      * @param  mixed  $access
      * @param  bool  $names
@@ -143,8 +131,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * Refuse a guard's settings, as `laravel-authentication`'s policy refuses a
-     * guard whose `application` block is not set.
+     * Refuse a guard's settings, as authentication's policy does.
      *
      * @return never
      *
@@ -156,8 +143,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * A container binding an application policy that accepts each guard's one
-     * method given, and no other.
+     * A container binding a policy that accepts each guard's given method.
      *
      * @param  array<string, string>  $methods
      * @return \Illuminate\Container\Container
@@ -176,8 +162,7 @@ final class AccessMandatesTest extends TestCase
     }
 
     /**
-     * The configuration of the guards given, over `laravel-authentication`'s
-     * default methods given, when any.
+     * The configuration of the guards, over the given default methods.
      *
      * @param  array<string, mixed>  $guards
      * @param  mixed  $default

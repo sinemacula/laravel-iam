@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 
 /**
- * A tenant resolver written to `laravel-authentication`'s contract: a plain
- * model read of the landlord's tenant, which pins nothing itself and relies on
- * being asked inside `WriteConnection::during()`, as the contract promises.
+ * A tenant resolver that reads the landlord model without pinning.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

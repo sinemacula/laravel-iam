@@ -7,9 +7,7 @@ namespace Tests\Fixtures\Authorization\Enums;
 use SineMacula\Laravel\Authorization\Contracts\PermissionEnum;
 
 /**
- * The permissions an application declares for its reports, and the permission
- * to use its API at all, which `authorization.application_access` maps the API
- * to.
+ * Report permissions and the API access permission.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

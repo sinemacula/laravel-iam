@@ -24,8 +24,7 @@ use Tests\Fixtures\Authorization\CredentialScopes;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams that cap a machine's checks by its credential's
- * scopes and hold who may use an application to its grants (IAM-6.5, IAM-6.6).
+ * Feature tests for the machine scope cap and application access seams.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -61,8 +60,7 @@ final class AccessSeamsTest extends TestCase
     }
 
     /**
-     * Application access is one for a unit of work, forgotten by the worker
-     * reset.
+     * Application access is forgotten by the worker reset.
      *
      * @return void
      *
@@ -99,8 +97,7 @@ final class AccessSeamsTest extends TestCase
     }
 
     /**
-     * With the switch off, `iam:check` refuses the members' defaults while they
-     * are mandatory.
+     * With the switch off, `iam:check` refuses mandatory member defaults.
      *
      * @return void
      *
@@ -135,8 +132,7 @@ final class AccessSeamsTest extends TestCase
     }
 
     /**
-     * A source named in `laravel-authorization`'s configuration passes
-     * `iam:check`, with the switch on or off.
+     * A source named in authorization's config passes `iam:check`.
      *
      * @param  bool  $on
      * @return void
@@ -159,8 +155,7 @@ final class AccessSeamsTest extends TestCase
     }
 
     /**
-     * Which machine credentials a guard accepts is the bound application
-     * policy's to say.
+     * The bound application policy says which credentials a guard accepts.
      *
      * @return void
      *
@@ -193,8 +188,7 @@ final class AccessSeamsTest extends TestCase
     }
 
     /**
-     * Load the configuration, then turn the switch off and name the source
-     * where the test says so, before any provider registers.
+     * Load the configuration with the test's switch and source applied.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

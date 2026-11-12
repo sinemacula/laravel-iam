@@ -20,10 +20,7 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use Tests\Fixtures\Sso\PlainIdentity;
 
 /**
- * Unit tests for writing the grants a person's provider groups give (IAM-7.2):
- * the groups SSO reports are read as a list, a single group as a list of one
- * and none as none, and an identity that is no Eloquent model is refused before
- * anything is read or written.
+ * Unit tests for writing the grants a person's provider groups give.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +31,7 @@ use Tests\Fixtures\Sso\PlainIdentity;
 final class GroupGrantsTest extends TestCase
 {
     /**
-     * Rows of `[attributes, groups]`: what a result reports, and the groups
-     * read from it.
+     * Rows of `[attributes, groups]`.
      *
      * @return iterable<string, array{0: array<string, list<string>|string>, 1: list<string>}>
      */
@@ -64,8 +60,7 @@ final class GroupGrantsTest extends TestCase
     }
 
     /**
-     * An identity that is no Eloquent model cannot be granted anything, and is
-     * refused before the tenant is resolved.
+     * An identity that is not a model is refused.
      *
      * @return void
      *

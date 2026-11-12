@@ -19,15 +19,8 @@ use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * `laravel-authorization`'s grant hook, answered by SSO's scope widening
- * (IAM-6.7, AUTHZ-11.3, SSO-8.8).
- *
- * It runs in the grant's transaction before `laravel-authorization` takes a
- * lock, so SSO's identity guard is taken first, as SSO's lock order asks. A
- * tenant whose key does not resolve back to that tenant refuses the grant, and
- * a grantee that is no `laravel-authentication` identity is passed over, as SSO
- * holds nothing of it. SSO's `LinkCandidatesChanged` is handed on as a
- * serialisation failure, which `laravel-authorization` tries again.
+ * Reports a widening grant to SSO's scope widening in the grant's transaction,
+ * before `laravel-authorization` locks, as SSO's lock order asks.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -56,8 +49,7 @@ final readonly class GrantHookAdapter implements GrantHook
     ) {}
 
     /**
-     * Report the widening to SSO for each tenant the widening grants hold in;
-     * throw to refuse the grant.
+     * Report the widening to SSO; throw to refuse the grant.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
      * @return void
@@ -71,6 +63,7 @@ final readonly class GrantHookAdapter implements GrantHook
     #[\Override]
     public function beforeWidening(GrantWidening $widening): void
     {
+        // SSO holds nothing of a grantee that is not an identity.
         if (!$this->identities->namesIdentity($widening->identity->type)) {
             return;
         }
@@ -79,9 +72,7 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * Report the widening to SSO for each tenant the widening grants hold in,
-     * for the `laravel-authentication` identity it names and the client it
-     * carries.
+     * Report the widening to SSO for each tenant its grants hold in.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
      * @return void
@@ -99,9 +90,7 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * Report the widening to SSO for one tenant, handing SSO's refusal of link
-     * candidates that changed under its lock on as Laravel's concurrency error,
-     * which `laravel-authorization` tries again.
+     * Report the widening for one tenant; a changed candidate is retried.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?string  $tenantId
@@ -120,9 +109,7 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * SSO's refusal of link candidates that changed under its lock, as
-     * Laravel's concurrency error with the SQLSTATE of a serialisation failure,
-     * SSO's refusal kept as its cause.
+     * SSO's refusal as a serialisation failure `laravel-authorization` retries.
      *
      * @param  \SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged  $changed
      * @return \Illuminate\Database\DeadlockException
@@ -133,8 +120,7 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * The id SSO names the tenant a grant holds in by, refused as the grant's
-     * tenant when it does not resolve back to that same tenant.
+     * The grant tenant's id, refused unless it resolves back to that tenant.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
      * @return string
@@ -151,8 +137,7 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * The distinct tenants the widening grants hold in, each once, in the order
-     * the grants name them: a tenant's id, or `null` for a platform-wide grant.
+     * The distinct tenant ids the grants hold in, `null` for platform-wide.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
      * @return list<?string>

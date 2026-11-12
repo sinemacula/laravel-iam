@@ -13,32 +13,8 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
- * Writes the grants a person's provider groups give them (IAM-7.2), through
- * `laravel-authorization`'s grant service, as trusted system work: no acting
- * principal decides them, and each grant row records none.
- *
- * Every grant is of a role to the identity itself, which holds across every
- * principal of it, in the connection's tenant, named to `laravel-authorization`
- * through `laravel-authentication`'s tenant resolver (`TenantTranslator`), and
- * in every application. `grant()` adds the instructions' roles, for a person
- * just provisioned, who holds nothing yet; `sync()` makes the identity's own
- * roles in the tenant exactly the instructions' (`syncRoles()`), revoking every
- * other role the identity itself holds there, then sets each one's reach, so a
- * re-sync never leaves a role the groups no longer give, nor grants one they do
- * not. Roles granted to the identity's principals, in other tenants or
- * platform-wide are never touched.
- *
- * Each call runs in a savepoint of the caller's transaction on the storage
- * connection, which `authorization.connection` must name (this package aligns
- * it): a grant on another connection would commit apart from the provisioning
- * or the sign-in. A grant that widens the identity's scope reports it to SSO
- * first, through the grant hook (`Authorization\GrantHookAdapter`). Inside the
- * caller's transaction `laravel-authorization` never retries a conflict with
- * its hook, but throws it for the caller's own retry. A role name it does not
- * find, an identity that is no Eloquent model, a tenant that cannot be
- * resolved, and whatever the hook or the service throws, propagate, so the
- * caller's transaction rolls back. It reads no request, nor the current user,
- * and keeps nothing between calls (IAM-8.1).
+ * Writes the roles a person's provider groups give the identity in the
+ * connection's tenant, through `laravel-authorization`'s grant service.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -117,8 +93,7 @@ final readonly class GroupGrants
     }
 
     /**
-     * The groups SSO reports for the result, each as the provider sent it: a
-     * list, a single group, or none when the connection maps none.
+     * The groups SSO reports for the result.
      *
      * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
      * @return list<string>
@@ -131,8 +106,7 @@ final readonly class GroupGrants
     }
 
     /**
-     * The identity as `laravel-authorization`'s grantee: the Eloquent model
-     * itself, so a role is looked up under its own guard.
+     * The identity's Eloquent model, so a role is looked up under its guard.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return \Illuminate\Database\Eloquent\Model

@@ -11,13 +11,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 
 /**
- * A person whose principals are listed by a query of the application's own, no
- * Eloquent query or relation: `laravel-authentication`'s identity owning
- * principals, whose `principals()` answers a builder no directory can set a
- * model's global scopes aside on.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection.
+ * A person whose principals come from a non-Eloquent query.
  *
  * @property int $id
  * @property string $name

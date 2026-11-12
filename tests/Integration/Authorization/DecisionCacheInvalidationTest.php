@@ -33,21 +33,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of forgetting the decision `laravel-authorization` keeps
- * once the authentication it read changes (IAM-6.11), with every adapter of
- * this package's bound: a member allowed a refund through a recent multifactor
- * requirement, its session stepped up with one authenticator app and, later,
- * another, removes the later one through MFA in the same request, and the allow
- * is no longer the last decision, while the next check is refused; and a member
- * refused for want of a step-up steps up through MFA in the same request, and
- * the refusal is no longer the last decision, while the next check allows.
- *
- * `laravel-authorization` decides every check afresh, so the next check reads
- * the session's proofs as they are either way; the decision it keeps is the
- * request's last, which an application's error handler reads to explain a
- * refusal, and which would otherwise outlive the proofs it read until its
- * requirement lapsed. Everything runs on every engine, and at READ COMMITTED
- * and REPEATABLE READ on MySQL and PostgreSQL.
+ * End-to-end tests for forgetting decisions when authentication changes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,10 +54,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     private const int MAX_AGE = 120;
 
     /**
-     * A factor removed in the request that checked the refund leaves no allow
-     * behind that read the proofs it made, and the next check is refused: the
-     * session's step-up with the factor kept, which MFA's freshness takes for
-     * the removal, is too old for the refund.
+     * Removing a factor forgets the allow that read its proof.
      *
      * @param  ?string  $level
      * @return void
@@ -100,8 +83,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A step-up through MFA in the request refused for want of one leaves no
-     * refusal behind that read the proofs before it, and the next check allows.
+     * Passing a step-up forgets the refusal that read the earlier proofs.
      *
      * @param  ?string  $level
      * @return void
@@ -123,9 +105,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Define the routes the requests are made to, on the stateless guard: each
-     * checks the refund, makes the change through MFA, then reads the last
-     * decision and checks again.
+     * Define routes that check, change through MFA, and check again.
      *
      * @param  mixed  $router
      * @return void
@@ -147,9 +127,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then sign members in on the guard
-     * people sign in on, and declare the invoice permissions, set before any
-     * provider registers.
+     * Sign members in on the people guard and declare the permissions.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -166,8 +144,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Step the request's caller up through MFA with the factor and code it
-     * sends, answering whether MFA verified it.
+     * Step the caller up through MFA, answering whether it verified.
      *
      * @param  \Illuminate\Http\Request  $request
      * @return bool
@@ -180,9 +157,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Check the refund, make the change, then answer whether the last decision
-     * was the check's before the change, the change made, the last decision's
-     * effect after it, and the refund checked again.
+     * Check, change, then report the decisions before and after.
      *
      * @param  \Closure(): bool  $change
      * @return \Illuminate\Http\JsonResponse
@@ -204,8 +179,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A member whose only grant is a policy allowing a refund while its session
-     * was made multifactor within `MAX_AGE`.
+     * A member allowed a refund only after a recent multifactor step-up.
      *
      * @return \Tests\Fixtures\Authorization\Member
      */
@@ -231,8 +205,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Sign the member in with their password and return the session's access
-     * token.
+     * Sign the member in and return the access token.
      *
      * @param  \Tests\Fixtures\Authorization\Member  $member
      * @return string
@@ -255,8 +228,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A confirmed authenticator app factor of the member's on the guard's
-     * application.
+     * A confirmed authenticator app factor of the member's.
      *
      * @param  \Tests\Fixtures\Authorization\Member  $member
      * @return \SineMacula\Laravel\Mfa\Models\Factor
@@ -274,8 +246,7 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * Make a request as a new one, with the bearer token and nothing the
-     * previous request bound.
+     * Make a fresh request with the bearer token.
      *
      * @param  string  $method
      * @param  string  $uri

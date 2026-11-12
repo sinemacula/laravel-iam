@@ -10,10 +10,7 @@ use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * SSO's exemption contract as a break-glass rule an application keeps: the
- * identities the test exempts (`exempt()`) are exempt from every tenant's
- * enforcement, and nobody else is. Each question is kept, so a test can tell
- * whether, and for whom, SSO's exemption gate asked.
+ * A break-glass exemption for the identities the test names.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -15,7 +15,7 @@ use SineMacula\Laravel\Iam\Provisioning\GroupSettings;
 use SineMacula\Laravel\Iam\Testing\FakeGroupMapping;
 
 /**
- * Unit tests for finding the application's group mapping and re-sync (IAM-7.2).
+ * Unit tests for finding the application's group mapping and re-sync.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,8 +48,7 @@ final class GroupSettingsTest extends TestCase
     }
 
     /**
-     * With nothing bound and no group mapped, groups map to nothing, and
-     * nothing is re-synced.
+     * With nothing configured nothing is mapped.
      *
      * @param  ?array<string, string>  $map
      * @return void

@@ -25,13 +25,7 @@ use Tests\Fixtures\Sso\PlainIdentity;
 use Tests\TestCase;
 
 /**
- * Feature tests for the registration of the listener that provisions SSO's
- * unlinked results (IAM-7.1): it is registered on SSO's event whatever any
- * switch says, does nothing at all while no provisioner is bound, asks the
- * provisioner bound when the event is dispatched, never one kept since, and
- * resolves the listener and its collaborators from the application current at
- * the dispatch, so under Octane the request's sandbox's provisioner is the one
- * asked, through the worker's events dispatcher.
+ * Feature tests for the listener that provisions SSO's unlinked results.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,8 +49,7 @@ final class ProvisioningListenerTest extends TestCase
     }
 
     /**
-     * With no provisioner bound, a dispatch does nothing: no transaction is
-     * opened and nothing is read or written.
+     * With no provisioner bound, a dispatch does nothing.
      *
      * @return void
      */
@@ -75,8 +68,7 @@ final class ProvisioningListenerTest extends TestCase
     }
 
     /**
-     * A provisioner bound once the application has booted is the one asked at
-     * the next dispatch.
+     * A provisioner bound after boot is the one asked.
      *
      * @return void
      *
@@ -93,9 +85,7 @@ final class ProvisioningListenerTest extends TestCase
     }
 
     /**
-     * An identity that is no Eloquent model is refused as one the provisioner
-     * did not create, whatever it says of itself, before anything else is
-     * asked.
+     * An identity that is not a model is refused.
      *
      * @return void
      */
@@ -112,9 +102,7 @@ final class ProvisioningListenerTest extends TestCase
     }
 
     /**
-     * Under Octane, the provisioner the request's sandbox binds is the one
-     * asked, through the events dispatcher the worker resolved before the
-     * sandbox was made, never the worker's own.
+     * Under Octane, the sandbox's provisioner is asked.
      *
      * @return void
      */

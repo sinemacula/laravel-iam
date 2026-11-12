@@ -38,17 +38,7 @@ use Tests\Fixtures\Providers\TurnsMfaOffWhileRegistering;
 use Tests\TestCase;
 
 /**
- * Feature tests for rendering `laravel-authorization`'s insufficient
- * authentication exception as MFA's step-up (IAM-6.4): the first candidate
- * requirement MFA can express is the one asked for, whole, with the factors MFA
- * offers the caller; only a refusal decided on the caller's own session is
- * mapped, so one about a subject the caller names stays Laravel's 403; a
- * refusal none of whose requirements MFA can express stays Laravel's 403, as
- * does any other HTTP exception; and the mapping is registered only while the
- * authorization and MFA capabilities' switches are both on as the seams were
- * bound, so it agrees with the requirement checker, and only on Laravel's own
- * exception handler, whether it is resolved before the mapping registers or
- * after.
+ * Feature tests for rendering insufficient authentication as MFA's step-up.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -65,8 +55,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     private const string SESSION = 'the-callers-session';
 
     /**
-     * Resolve the request's caller as a subject signed in with the session the
-     * refusals are decided on, as the bound subject resolver would.
+     * Resolve the caller as signed in with the refusals' session.
      *
      * @return void
      */
@@ -79,9 +68,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * The first candidate MFA can express is the one asked for, whole, with the
-     * factors MFA offers the caller and whether it holds a confirmed one: none
-     * for nobody.
+     * The first candidate MFA can express is asked for, with its factors.
      *
      * @return void
      *
@@ -115,11 +102,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Only a refusal decided on the caller's own session asks for a step-up:
-     * one about a subject the caller named, decided on no session, one decided
-     * on another session, one carrying no decision, and any refusal while the
-     * caller holds no session, ask for none, as no step-up by the caller could
-     * meet them.
+     * Only a refusal decided on the caller's own session asks for a step-up.
      *
      * @return void
      *
@@ -144,8 +127,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Thrown from a route, a refusal about a subject the caller named, decided
-     * on no session, stays Laravel's 403.
+     * A refusal about a named subject stays Laravel's 403.
      *
      * @return void
      */
@@ -155,8 +137,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Thrown from a route whose request has no subject, the refusal stays
-     * Laravel's 403: the request holds no session a step-up could meet it in.
+     * A refusal with no subject stays Laravel's 403.
      *
      * @return void
      */
@@ -172,8 +153,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Thrown from a route, the refusal is rendered as MFA's step-up: Laravel's
-     * 401 with MFA's message, absent a rendering of the application's.
+     * A refusal from a route renders as MFA's 401 step-up.
      *
      * @return void
      */
@@ -183,8 +163,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * A refusal MFA cannot express, and any other HTTP exception, stay as
-     * Laravel renders them.
+     * What MFA cannot express renders as Laravel renders it.
      *
      * @return void
      */
@@ -217,9 +196,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * The mapping is registered on Laravel's handler once it is resolved, and
-     * on it at once when it already is; a handler that is not Laravel's is left
-     * alone.
+     * The mapping registers on Laravel's handler whenever it is resolved.
      *
      * @return void
      *
@@ -266,8 +243,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * The MFA switch turned off in a later provider's `register()` leaves
-     * neither the requirement checker nor the mapping bound.
+     * Turning MFA off later binds neither the checker nor the mapping.
      *
      * @return void
      *
@@ -288,8 +264,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Define the routes that throw: a refusal MFA can express, one it cannot,
-     * and another HTTP exception.
+     * Define the routes that throw.
      *
      * @param  mixed  $router
      * @return void
@@ -306,8 +281,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Resolve the request's caller, on the application under test, as a subject
-     * signed in with the session the refusals are decided on.
+     * Resolve the caller as signed in with the refusals' session.
      *
      * @return void
      */
@@ -321,8 +295,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Fail the request with the exception given, as a route that refuses it
-     * does.
+     * Fail the request with the exception, as a refusing route does.
      *
      * @param  \Throwable  $exception
      * @return never
@@ -335,9 +308,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * A bare application, sharing this test's application's mapping, with every
-     * capability switched on; this test's application stays the one current, as
-     * the one serving the request would.
+     * A bare application sharing this test's mapping, every switch on.
      *
      * @return \Illuminate\Foundation\Application
      */
@@ -355,8 +326,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application, as whatever the container
-     * holds for it, not as its member binds it.
+     * Resolve whatever the container holds for the abstract.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @param  string  $abstract
@@ -386,8 +356,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * `laravel-authorization`'s refusal with a candidate for each operand,
-     * decided on the caller's session.
+     * A refusal with a candidate per operand, on the caller's session.
      *
      * @param  array<string, array<string, int|string>>  ...$operands
      * @return \SineMacula\Laravel\Authorization\Exceptions\InsufficientAuthenticationException
@@ -400,9 +369,7 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * `laravel-authorization`'s refusal with a candidate for each operand, as
-     * `authorize()` throws it: carrying its decision, made in the session
-     * given, or in none.
+     * A refusal with a candidate per operand, decided in the given session.
      *
      * @param  ?string  $session
      * @param  array<string, array<string, int|string>>  ...$operands

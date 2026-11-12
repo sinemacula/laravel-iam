@@ -11,9 +11,7 @@ use SineMacula\Laravel\Iam\Contracts\Memberships;
 use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 
 /**
- * The application's memberships, decorated to record whether the identity's own
- * connection read from its writer while each question was asked, so a test can
- * tell an adapter asks them pinned to the write connection.
+ * Memberships that record whether each read was pinned to the writer.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

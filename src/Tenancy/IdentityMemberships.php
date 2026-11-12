@@ -10,21 +10,8 @@ use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * Reads the current memberships of an identity SSO names by reference, from the
- * application's memberships (IAM-7.4), for the adapters that answer SSO's
- * tenant membership, link eligibility and principal scope.
- *
- * The reference resolves through the morph map (`IdentityReferences`), on the
- * write connection, and one that names nobody throws
- * `UnresolvedReferenceException` (IAM-8.2), inside whatever transaction SSO
- * opened, so the judgement fails rather than answer for nobody. The
- * application's memberships are asked inside `WriteConnection::during()` for
- * the identity, so a model read they make is pinned to the write connection, on
- * whichever connection the memberships live: a replica that has not yet seen a
- * membership accepted or revoked never answers for it, and the membership guard
- * they take as they answer is held in SSO's transaction, until it ends.
- * Whatever the memberships throw propagates. Stateless (IAM-8.1): the
- * memberships are resolved on every call.
+ * Reads the application's memberships of an identity SSO names, on the write
+ * connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +49,7 @@ final readonly class IdentityMemberships
     }
 
     /**
-     * The identity's current memberships, as the application answers them on
-     * the write connection.
+     * The identity's current memberships, read on the write connection.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return \SineMacula\Laravel\Iam\Tenancy\MembershipSet

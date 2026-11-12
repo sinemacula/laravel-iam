@@ -18,7 +18,7 @@ use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
 use SineMacula\Laravel\Iam\Testing\FakeGroupMapping;
 
 /**
- * Unit tests for the shipped group re-sync (IAM-7.2).
+ * Unit tests for the shipped group re-sync.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
