@@ -11,7 +11,8 @@ use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
  * The `authorization.*` codes `laravel-authorization`'s events are recorded
  * under (IAM-9.2): its decisions worth a record (a denial, a break-glass grant
  * used, a preview) and every change it makes to roles, permissions, policies,
- * grants, boundaries and guardrails, and every grant that expires.
+ * role exclusions, grants, boundaries and guardrails, and every grant that
+ * expires.
  *
  * Every definition is version 1 and drops every property it does not list. The
  * decisions are in the `security` category; every change is a change to who may
@@ -21,11 +22,13 @@ use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
  * `laravel-authorization`'s own decisions (IAM-9.6), so no code is defined
  * twice.
  *
- * Beyond the codes IAM-9.2 lists, four record what `laravel-authorization`
+ * Beyond the codes IAM-9.2 lists, six record what `laravel-authorization`
  * reports and IAM-9.2 names no code for, each a change to who may do what: a
- * grant's expiry changed (`grant_expiry_changed`), a policy attached to or
- * detached from a resource (`resource_policy_attached`, `_detached`), and a
- * protected record changed by a system override (`system_override_used`).
+ * pair of mutually exclusive roles declared or removed
+ * (`role_exclusion_declared`, `_removed`), a grant's expiry changed
+ * (`grant_expiry_changed`), a policy attached to or detached from a resource
+ * (`resource_policy_attached`, `_detached`), and a protected record changed by
+ * a system override (`system_override_used`).
  *
  * A code keeps names, ids, scopes and times, never a policy's document (only
  * its version and digest) nor a context value (only the keys a decision
@@ -55,6 +58,12 @@ enum AuthorizationActivity: string implements ListsProperties
 
     // A role was deleted
     case ROLE_DELETED = 'authorization.role_deleted';
+
+    // Two roles were declared mutually exclusive
+    case ROLE_EXCLUSION_DECLARED = 'authorization.role_exclusion_declared';
+
+    // A pair of mutually exclusive roles was removed
+    case ROLE_EXCLUSION_REMOVED = 'authorization.role_exclusion_removed';
 
     // A permission was created
     case PERMISSION_CREATED = 'authorization.permission_created';
@@ -143,6 +152,9 @@ enum AuthorizationActivity: string implements ListsProperties
     /** @var list<string> What a code about a policy keeps of it. */
     private const array DOCUMENT = [...self::CALL, 'name', 'document_version', 'document_digest'];
 
+    /** @var list<string> What a code about a pair of mutually exclusive roles keeps. */
+    private const array ROLE_EXCLUSION = [...self::CALL, 'role_name', 'excluded_role', 'excluded_role_name'];
+
     /** @var list<string> What a code about a role's permission keeps. */
     private const array ROLE_PERMISSION = [...self::CALL, 'role_name', 'permission_name'];
 
@@ -157,6 +169,8 @@ enum AuthorizationActivity: string implements ListsProperties
         self::ROLE_CREATED->value             => [...self::DEFINITION, 'system'],
         self::ROLE_UPDATED->value             => [...self::DEFINITION, 'changes'],
         self::ROLE_DELETED->value             => [...self::DEFINITION, 'grantee_count', 'permission_count'],
+        self::ROLE_EXCLUSION_DECLARED->value  => self::ROLE_EXCLUSION,
+        self::ROLE_EXCLUSION_REMOVED->value   => self::ROLE_EXCLUSION,
         self::PERMISSION_CREATED->value       => [...self::DEFINITION, 'system'],
         self::PERMISSION_UPDATED->value       => [...self::DEFINITION, 'changes'],
         self::PERMISSION_DELETED->value       => [...self::DEFINITION, 'grantee_count', 'role_count'],

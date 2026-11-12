@@ -607,7 +607,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   re-sync rows of `ProvisionOnUnlinkedResultTest` and `SignInRedemptionTest` are
   that end-to-end test too, and the tree change row of `TreeChangesTest` is `AuthorizationTreeChangesTest`.
 - The audit access policy is a row of `AuthorizationSeams` over audit-log's `DenyAllPolicy`, shared and never
-  mandatory. The mapper's codes are `Audit\Enums\AuthorizationActivity`, as `audit-mapping.md` fixed, with four codes
+  mandatory. The mapper's codes are `Audit\Enums\AuthorizationActivity`, as `audit-mapping.md` fixed, with six codes
   beyond IAM-9.2's list and the role sequence in `tests/Integration/Audit/AuthorizationRecordsTest.php` rather than
   `RecordSequencesTest`; the administrative operations are `Authorization\Enums\AdministrativeOperation`, and the
   check takes the subject as a plain value, which the plan's signature did not (`audit-mapping.md`).
