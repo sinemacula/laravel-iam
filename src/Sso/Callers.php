@@ -13,33 +13,8 @@ use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
 
 /**
- * Names the caller of the application's own call into SSO as SSO takes it
- * (IAM-4.6, IAM-4.10, SSO-2.12): `laravel-authentication`'s `Caller`, read
- * where the application reads the request (`Auth::caller()`), as SSO's
- * `Identities\Caller`, the identity and the session SSO hands its freshness and
- * link confirmation contracts.
- *
- * SSO's management helpers, its link removal and a `link` flow's start each
- * take that caller, and this package's adapters judge the caller they are
- * handed and nothing else, so the application hands SSO the caller this names
- * (`of()`); a `link` redemption names its own (`LinkRedemption`). The identity
- * is named as SSO names an identity, its morph class and its key
- * (`IdentityReferences::reference()`), after the caller's guard is resolved as
- * one that holds sessions: either throws `UnresolvedReferenceException`
- * otherwise (IAM-8.2). The session is the one the caller's access credential
- * holds, by its key, while it is a session of the caller's guard that the
- * caller's identity owns; a caller with no session, a refresh or pending
- * credential, or a session of another guard or identity is named with none, so
- * SSO's freshness is `stale` for it, and its link confirmation `dependent`.
- *
- * A caller named while a transaction is open on the storage connection is named
- * with no session too: the freshness adapter reads the session plainly, and a
- * plain read inside a transaction opened before the call may answer from a
- * snapshot older than it (MySQL's `REPEATABLE READ`), still counting a proof
- * voided, or a session revoked, before then. So name the caller with no
- * transaction open, as SSO's own transaction is opened after the call.
- *
- * It keeps nothing between calls (IAM-8.1).
+ * Names the caller of the application's own call into SSO as SSO's `Caller`,
+ * with its own session only while no transaction is open.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -64,8 +39,7 @@ final readonly class Callers
     ) {}
 
     /**
-     * The caller as SSO takes it: its identity, and the session its access
-     * credential holds while it is the caller's own and no transaction is open.
+     * The caller as SSO takes it.
      *
      * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @return \SineMacula\Laravel\Sso\Identities\Caller
@@ -81,15 +55,14 @@ final readonly class Callers
         $identity = $this->identities->reference($caller->identity);
         $session  = self::sessionOf($caller);
 
+        // A plain read in an older transaction may see a stale snapshot.
         return $session === null || $this->sessions->isInTransaction()
             ? new SsoCaller($identity)
             : new SsoCaller($identity, SignIn::reference($session, $caller->guard));
     }
 
     /**
-     * The session the caller's access credential holds, when it is an Eloquent
-     * session of the caller's guard that the caller's identity owns, or `null`
-     * otherwise.
+     * The session the caller's access credential holds, if the caller owns it.
      *
      * @param  \SineMacula\Laravel\Authentication\Callers\Caller  $caller
      * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null

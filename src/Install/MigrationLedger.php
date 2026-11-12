@@ -8,7 +8,7 @@ use Illuminate\Filesystem\Filesystem;
 
 /**
  * Recognises a member's published migration by its base name, whatever its
- * timestamp (IAM-2.1).
+ * timestamp.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -49,8 +49,8 @@ final class MigrationLedger
     }
 
     /**
-     * The copy of a migration beside its destination that shares its base name
-     * and names the member's namespace.
+     * The published copy beside the destination with its base name and
+     * namespace.
      *
      * @param  string  $destination
      * @param  string  $namespace

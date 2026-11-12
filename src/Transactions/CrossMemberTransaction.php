@@ -13,8 +13,7 @@ use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 
 /**
  * Runs a change that spans members in one transaction on the storage
- * connection, retried on a concurrency failure only when it opens the outermost
- * transaction there (IAM-11.2).
+ * connection, retried on a concurrency failure only when outermost.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +46,7 @@ final readonly class CrossMemberTransaction
     ) {}
 
     /**
-     * Run the work, retried up to the attempts given or configured; Laravel
-     * never retries a nested transaction.
+     * Run the work, retried up to the given or configured attempts.
      *
      * @template T
      *
@@ -73,12 +71,10 @@ final readonly class CrossMemberTransaction
     }
 
     /**
-     * Run the work, rethrowing a concurrency failure anywhere in its chain with
-     * an integer SQLSTATE 40001.
+     * Run the work, rethrowing any concurrency failure as SQLSTATE 40001.
      *
      * Laravel's detector misses SSO's `LinkCandidatesChanged`, and a nested
-     * transaction drops a string SQLSTATE, which PostgreSQL's serialisation
-     * failure needs to be recognised.
+     * transaction drops PostgreSQL's string SQLSTATE.
      *
      * @template T
      *

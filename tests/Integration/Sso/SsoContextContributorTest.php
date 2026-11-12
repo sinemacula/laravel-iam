@@ -32,19 +32,7 @@ use Tests\Fixtures\Sso\AcceptsTheProvidersContext;
 use Tests\TestCase;
 
 /**
- * Integration tests for the `sso` namespace of `laravel-authentication`'s
- * authentication context, against SSO's context acceptance scenarios: a session
- * a sign-in through SSO established contributes exactly SSO's twelve keys, each
- * the value SSO's projection gives its stored provenance, the instants in
- * `Provenance::INSTANT_FORMAT`, so `Auth::context()` builds; a fact the sign-in
- * did not state is held as `null`, never absent; any other session contributes
- * no key; a re-authentication leaves every key as it was; and a stored
- * provenance SSO cannot restore, or a provenance that cannot be read, fails the
- * build rather than contribute nothing.
- *
- * Each scenario that reads a stored session runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for the `sso` namespace of the authentication context.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -85,10 +73,8 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A session a sign-in through SSO established contributes exactly SSO's
-     * keys, each without its prefix and with the value SSO's projection gives
-     * the stored provenance, its instants strings in SSO's instant format, so
-     * the context builds and reads each back by its full name.
+     * A session SSO established contributes exactly SSO's keys, as its
+     * projection gives them.
      *
      * @param  ?string  $level
      * @return void
@@ -129,11 +115,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A fact the sign-in did not state is held with a `null` value, never left
-     * out: SSO's default evidence policy accepts nothing, so the session's
-     * provider methods are none and its raw context classes `null`, and an
-     * OpenID provider states no session deadline, each still a key of the
-     * namespace.
+     * A fact the sign-in did not state is held as `null`, never left out.
      *
      * @return void
      *
@@ -152,8 +134,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A session no external provider established contributes no `sso` key: the
-     * namespace holds nothing, and a key's default is answered.
+     * A session no external provider established contributes no key.
      *
      * @param  ?string  $level
      * @return void
@@ -176,8 +157,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A session an external provider established with no stored form
-     * contributes no key: its provenance holds no provider context.
+     * An external session with no stored provider context contributes no key.
      *
      * @return void
      *
@@ -196,8 +176,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A re-authentication through SSO records no provider context, so every
-     * `sso` key is the sign-in's, as it was.
+     * A re-authentication leaves every `sso` key as the sign-in set it.
      *
      * @return void
      *
@@ -225,8 +204,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A stored provenance this version of SSO did not write fails the build
-     * with SSO's `UnexpectedValueException`, never as an empty contribution.
+     * A stored provenance SSO cannot restore fails the build.
      *
      * @return void
      *
@@ -248,8 +226,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * A database error reading the session's provenance fails the build too,
-     * never read as no stored form.
+     * A database error reading the provenance fails the build.
      *
      * @return void
      *
@@ -269,8 +246,8 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * Sign the person in through SSO, the provider's ID token tailored as
-     * given, failing unless a session starts active, and return it.
+     * Sign the person in through SSO with the given ID token, and return the
+     * active session.
      *
      * @param  ?\Closure(\SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken): \SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken  $tailor
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
@@ -316,8 +293,7 @@ final class SsoContextContributorTest extends TestCase
     }
 
     /**
-     * The provider context `laravel-authentication` keeps with the session,
-     * decoded: SSO's stored provenance.
+     * The session's stored provider context, decoded.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $session
      * @return array<array-key, mixed>

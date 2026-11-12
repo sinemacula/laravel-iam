@@ -46,9 +46,7 @@ use Tests\Concerns\RunsInOctaneSandboxes;
 use Tests\TestCase;
 
 /**
- * Feature tests for the services the `Iam` facade calls: each helper hands its
- * call to the capability's own service, resolved from the application current
- * when it is called, an Octane request's sandbox included.
+ * Feature tests for the services the `Iam` facade calls.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -61,8 +59,8 @@ final class IamManagerTest extends TestCase
     use RunsInOctaneSandboxes;
 
     /**
-     * A cross-member transaction runs the work in one transaction on the
-     * storage connection and returns what it returns.
+     * A transaction runs the work on the storage connection and returns its
+     * result.
      *
      * @return void
      *
@@ -77,8 +75,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Without attempts of its own, the transaction is attempted as often as the
-     * configuration says before its failure is rethrown.
+     * A transaction is attempted as often as the configuration says.
      *
      * @return void
      *
@@ -92,7 +89,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The attempts given are passed on, in place of the configured ones.
+     * Attempts given replace the configured ones.
      *
      * @return void
      *
@@ -104,9 +101,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Each redemption of SSO's handoff codes is reached through its own
-     * service, resolved afresh each time it is asked for, so nothing of one
-     * redemption is kept for the next.
+     * Each redemption has its own service, resolved afresh each time.
      *
      * @return void
      *
@@ -125,8 +120,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The service that names a caller as SSO takes it is its own, resolved on
-     * each call.
+     * The callers service is resolved on each call.
      *
      * @return void
      *
@@ -141,8 +135,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The service a tenant's reported policy change goes through is its own,
-     * resolved on each call.
+     * The tenant policy service is resolved on each call.
      *
      * @return void
      *
@@ -157,8 +150,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The service a principal's scope widening is reported through is its own,
-     * resolved on each call.
+     * The scope widening service is resolved on each call.
      *
      * @return void
      *
@@ -173,8 +165,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The service a change of the tenant tree is reported through is its own,
-     * resolved on each call.
+     * The tree change service is resolved on each call.
      *
      * @return void
      *
@@ -189,8 +180,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The members' scheduled work is registered on the schedule handed in, by
-     * this package's own schedule.
+     * The members' scheduled work is registered on the schedule handed in.
      *
      * @return void
      *
@@ -209,10 +199,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * The manager resolved once in the worker's application, before Octane
-     * clones it for a request, resolves every service in the request's own
-     * sandbox, never in the worker's application: the services the sandbox
-     * binds are the ones answered, through the manager and the facade alike.
+     * A manager resolved before Octane clones the app resolves in the sandbox.
      *
      * @return void
      *
@@ -255,8 +242,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * A redemption service the application binds is the one the manager
-     * answers.
+     * A redemption service the application binds is the one answered.
      *
      * @return void
      *
@@ -272,8 +258,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Resetting the worker state resets `laravel-authentication`'s guards and
-     * forgets the members' scoped instances.
+     * The worker reset resets the guards and forgets the scoped instances.
      *
      * @return void
      *
@@ -295,10 +280,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Resetting the worker state forgets `laravel-authorization`'s request
-     * state as the member binds it: the resolved tenant, the resolution cache,
-     * the last decision, the policy evaluator, the manager and the defaults
-     * behind its resolvers are each built afresh for the next unit of work.
+     * The worker reset forgets laravel-authorization's request state.
      *
      * @return void
      *
@@ -325,9 +307,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Resetting the worker state forgets the last decision read through
-     * `laravel-authorization`'s `Authorization` facade, which keeps the manager
-     * it first resolved, as well as the one the container holds.
+     * The worker reset forgets the decision the `Authorization` facade holds.
      *
      * @return void
      *
@@ -348,10 +328,8 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Reset by hand between the units of work of a long-running command, the
-     * worker state keeps what the command itself holds: the callbacks it queued
-     * with `defer()` still run as it finishes, its `Context` is kept, and the
-     * audit log's command frame is still the current one.
+     * A reset by hand keeps the command's deferred callbacks, context and
+     * frame.
      *
      * @return void
      *
@@ -387,8 +365,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Run work that always fails with a retryable failure, and return how many
-     * times it ran before the failure was rethrown.
+     * How many times always-retryable work runs before its failure is rethrown.
      *
      * @param  ?int  $attempts
      * @return int
@@ -414,7 +391,7 @@ final class IamManagerTest extends TestCase
     }
 
     /**
-     * Return the manager the facade calls.
+     * The manager the facade calls.
      *
      * @return \SineMacula\Laravel\Iam\IamManager
      *

@@ -16,9 +16,7 @@ use Tests\Concerns\RunsChecks;
 use Tests\TestCase;
 
 /**
- * Feature tests for the check that the `mfa` namespace of the authentication
- * context is registered, and the `sso` namespace while SSO is in use
- * (IAM-10.2).
+ * Feature tests for the context namespaces check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +29,7 @@ final class ContextNamespacesCheckTest extends TestCase
     use RunsChecks;
 
     /**
-     * The check always applies, and asks only for `mfa` while SSO is not in
-     * use, and for `sso` too while it is.
+     * The check asks for `sso` only while SSO is in use.
      *
      * @return void
      */
@@ -49,8 +46,7 @@ final class ContextNamespacesCheckTest extends TestCase
     }
 
     /**
-     * The contributors this package registers while its MFA and SSO
-     * capabilities are on pass.
+     * This package's own contributors pass.
      *
      * @return void
      */
@@ -62,8 +58,7 @@ final class ContextNamespacesCheckTest extends TestCase
     }
 
     /**
-     * With the SSO capability off, no contributor is registered, and SSO in use
-     * fails until the application registers its own.
+     * SSO in use without an `sso` contributor fails.
      *
      * @return void
      */
@@ -82,9 +77,7 @@ final class ContextNamespacesCheckTest extends TestCase
     }
 
     /**
-     * With the MFA capability off, no `mfa` contributor is registered, and the
-     * check fails, whether or not SSO is in use, until the application
-     * registers its own.
+     * No `mfa` contributor fails, whether or not SSO is in use.
      *
      * @return void
      */

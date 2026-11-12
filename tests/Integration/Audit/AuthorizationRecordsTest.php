@@ -26,18 +26,7 @@ use Tests\Fixtures\Authorization\Staff;
 use Tests\TestCase;
 
 /**
- * Contract tests pinning the records `laravel-authorization`'s events become
- * (IAM-9.1, IAM-9.2, IAM-9.5): a role created, assigned to two people and
- * deleted is three records of one call each, each correlated by its call, the
- * deletion carrying both grantees as its manifest; a permission granted and
- * revoked is two; a denied check is one record, an `authorize()` that throws is
- * one more, never two, and an allowed check is none. The records reach
- * audit-log's fake store through its whole capture pipeline, which refuses a
- * code no definition registers, so every code is proven defined.
- *
- * Every grant is written inside `laravel-authorization`'s transaction, so each
- * sequence runs at the connection's own level on every engine, then at READ
- * COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Contract tests for the records `laravel-authorization`'s events become.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,8 +44,8 @@ final class AuthorizationRecordsTest extends TestCase
     private FakeAuditStore $store;
 
     /**
-     * Store the invoice permissions, record grant hooks rather than widen
-     * anyone's scope, and keep the records in the fake store.
+     * Store the invoice permissions, record grant hooks and keep records in the
+     * fake store.
      *
      * @return void
      */
@@ -75,9 +64,8 @@ final class AuthorizationRecordsTest extends TestCase
     }
 
     /**
-     * A role created, assigned to two people and deleted is recorded, each
-     * change once, correlated by its own call, and the deletion carries both
-     * grantees as its manifest.
+     * A role's life is recorded call by call, the deletion covering both
+     * grantees.
      *
      * @param  ?string  $level
      * @return void
@@ -140,8 +128,8 @@ final class AuthorizationRecordsTest extends TestCase
     }
 
     /**
-     * A denied check is one record, a denial `authorize()` throws one more,
-     * never two, and an allowed check none.
+     * A denial is one record, a thrown `authorize()` one more, and an allow
+     * none.
      *
      * @return void
      *

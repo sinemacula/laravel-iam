@@ -28,7 +28,7 @@ use Tests\TestCase;
 
 /**
  * A refused redemption rolls back and its refusal is recorded once, after the
- * rollback (IAM-9.5), on every engine and isolation level.
+ * rollback.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,10 +59,8 @@ final class RefusedRedemptionsTest extends TestCase
     }
 
     /**
-     * A refused external sign-in rolls its redemption back and is recorded
-     * once, after the rollback, as `authentication.sign_in_failed` with
-     * `laravel-authentication`'s reason, correlated as the SSO sign-in it
-     * ended.
+     * A refused external sign-in is recorded once after the rollback,
+     * correlated as its SSO sign-in.
      *
      * @param  ?string  $level
      * @return void
@@ -92,10 +90,8 @@ final class RefusedRedemptionsTest extends TestCase
     }
 
     /**
-     * A refused external re-authentication rolls its redemption back and is
-     * recorded once, after the rollback, as `session.reauthentication_failed`
-     * with `laravel-authentication`'s reason, correlated as the SSO flow it
-     * ended.
+     * A refused external re-authentication is recorded once after the rollback,
+     * correlated as its flow.
      *
      * @param  ?string  $level
      * @return void
@@ -149,8 +145,7 @@ final class RefusedRedemptionsTest extends TestCase
     }
 
     /**
-     * Allow, or stop allowing, sign-in through an external provider on the
-     * guard, as its configuration would, for the guards resolved from now on.
+     * Allow or stop allowing external sign-in on the guard.
      *
      * @param  bool  $allowed
      * @return void

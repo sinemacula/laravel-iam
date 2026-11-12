@@ -16,8 +16,7 @@ use SineMacula\Laravel\Sso\Protocols\DriverScope;
 use Tests\TestCase;
 
 /**
- * Feature tests for the `Iam` facade: it stands for the `iam` manager and hands
- * each call to it.
+ * Feature tests for the `Iam` facade.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,8 +40,7 @@ final class IamTest extends TestCase
     }
 
     /**
-     * A cross-member transaction called through the facade runs the work in one
-     * transaction and returns what it returns.
+     * A transaction through the facade runs the work and returns its result.
      *
      * @return void
      */
@@ -52,8 +50,7 @@ final class IamTest extends TestCase
     }
 
     /**
-     * The facade answers each redemption service of SSO's handoff codes, and
-     * the service that names a caller as SSO takes it.
+     * The facade answers each SSO redemption service and the callers service.
      *
      * @return void
      */
@@ -93,8 +90,7 @@ final class IamTest extends TestCase
     }
 
     /**
-     * Resetting the worker state through the facade forgets the members' scoped
-     * instances.
+     * Resetting worker state through the facade forgets scoped instances.
      *
      * @return void
      *

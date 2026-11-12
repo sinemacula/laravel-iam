@@ -7,11 +7,8 @@ namespace SineMacula\Laravel\Iam\Storage;
 use Illuminate\Contracts\Config\Repository;
 
 /**
- * The one storage connection every member keeps its tables on, as
- * `iam.storage.connection` names it, and the member keys that must name the
- * same one (IAM-2.3): each member's storage connection, and
- * `laravel-authorization`'s `authorization.connection`, which its models, its
- * migrations and its own transactions use.
+ * The one storage connection every member keeps its tables on, and the member
+ * keys that must name it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -38,13 +35,12 @@ final readonly class StorageConnection
      */
     public function __construct(
 
-        /** The configuration the connection is read from, on every call. */
+        /** Read on every call. */
         private Repository $config,
     ) {}
 
     /**
-     * Return the shared storage connection's name, or `null` for the default
-     * connection, which an empty string also means.
+     * The shared connection's name, or null for the default.
      *
      * @return ?string
      *
@@ -56,9 +52,9 @@ final readonly class StorageConnection
     }
 
     /**
-     * Read a connection key: a name, or `null` for the default connection,
-     * which an empty string also means. Anything else fails closed rather than
-     * falling back to another connection.
+     * Read a connection key: a name, or null (or empty) for the default.
+     *
+     * Anything else fails closed instead of falling back.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  string  $key

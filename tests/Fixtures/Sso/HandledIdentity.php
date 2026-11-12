@@ -8,12 +8,8 @@ use Illuminate\Foundation\Auth\User;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An Eloquent identity keyed by a handle it is given, a string, rather than by
- * an incrementing integer.
- *
- * Its table is created by the test that needs it; on SQLite its key is compared
- * case-insensitively, as a MySQL `_ci` collation compares it, so a reference
- * naming it in another case finds it on every engine that matches one.
+ * An Eloquent identity keyed by a string handle, compared case-insensitively on
+ * SQLite.
  *
  * @property string $id
  *

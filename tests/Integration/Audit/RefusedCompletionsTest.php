@@ -28,9 +28,8 @@ use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\TestCase;
 
 /**
- * A completion of MFA's that `laravel-authentication` refuses is recorded with
- * its own reason once MFA's transaction has rolled back (IAM-9.5), on every
- * engine and isolation level.
+ * An MFA completion `laravel-authentication` refuses is recorded once MFA's
+ * transaction rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,10 +51,8 @@ final class RefusedCompletionsTest extends TestCase
     private const string SESSIONS = 'authentication_sessions';
 
     /**
-     * A step-up `laravel-authentication` refuses, its session revoked once MFA
-     * accepted the factor, rolls MFA's transaction back and leaves both
-     * reports: `laravel-authentication`'s refusal, with its own reason, then
-     * MFA's failed verification.
+     * A refused step-up leaves the refusal, with its own reason, then MFA's
+     * failed verification.
      *
      * @param  ?string  $level
      * @return void
@@ -89,10 +86,8 @@ final class RefusedCompletionsTest extends TestCase
     }
 
     /**
-     * A pending sign-in whose completion `laravel-authentication` refuses, its
-     * session revoked once MFA accepted the factor, rolls MFA's transaction
-     * back and leaves both reports: `laravel-authentication`'s refused sign-in,
-     * with its own reason, then MFA's failed verification.
+     * A refused pending completion leaves the refused sign-in, then MFA's
+     * failed verification.
      *
      * @param  ?string  $level
      * @return void
@@ -131,7 +126,7 @@ final class RefusedCompletionsTest extends TestCase
 
     /**
      * Have MFA's step-up and pending completion make the change first, inside
-     * MFA's transaction, then hand the proof to this package's adapters.
+     * MFA's transaction.
      *
      * @param  \Closure(): void  $change
      * @return void

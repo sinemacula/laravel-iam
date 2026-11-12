@@ -13,10 +13,10 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Tenancy\MembershipSet;
 
 /**
- * Memberships for tests: each identity holds what the test granted it
- * (`grant()`), complete unless marked `incomplete()`, and throws once told to
- * `failFor()` it. `fake()` binds a fresh instance; bind one before boot for
- * SSO's membership adapters to bind.
+ * Memberships for tests: each identity holds what `grant()` gave it, complete
+ * unless marked `incomplete()`, and throws once told to `failFor()` it.
+ *
+ * Bind it before boot for SSO's membership adapters to bind.
  *
  * @api
  *
@@ -28,7 +28,7 @@ final class FakeMemberships implements Memberships
     /** @var class-string The contract the fake is bound as. */
     public const string MEMBERSHIPS = Memberships::class;
 
-    /** @var array<string, array<string, \SineMacula\Laravel\Iam\Tenancy\Membership>> Each identity's memberships, by its key and then the tenant's. */
+    /** @var array<string, array<string, \SineMacula\Laravel\Iam\Tenancy\Membership>> Each identity's memberships, by identity key then tenant. */
     private array $memberships = [];
 
     /** @var array<string, bool> Whether each identity's set is incomplete, by key. */
@@ -41,8 +41,7 @@ final class FakeMemberships implements Memberships
     private array $asked = [];
 
     /**
-     * Bind a fresh fake as the application's memberships in the container
-     * given, or the application's own, and return it.
+     * Bind a fresh fake as the memberships and return it.
      *
      * @param  ?\Illuminate\Contracts\Container\Container  $container
      * @return self
@@ -57,8 +56,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * Have the identity hold the membership from now on, in place of any it
-     * held of the same tenant.
+     * Grant the membership, replacing any of the same tenant.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  \SineMacula\Laravel\Iam\Tenancy\Membership  $membership
@@ -72,8 +70,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * Have the identity no longer hold its membership of the tenant, or its
-     * platform principal for `null`.
+     * Revoke the tenant's membership, or the platform principal for `null`.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?string  $tenantId
@@ -87,8 +84,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * Have the identity's set answered incomplete from now on, as one the
-     * application cannot read in full.
+     * Answer the identity's set as incomplete from now on.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return self
@@ -101,8 +97,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * Have every question about the identity throw, as an application's
-     * memberships that cannot be read do.
+     * Throw on every question about the identity from now on.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?\Throwable  $failure
@@ -116,8 +111,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * The identity's memberships as the test granted them, complete unless it
-     * was marked incomplete, or the failure the test told it to throw.
+     * The identity's granted memberships, unless told to fail.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return \SineMacula\Laravel\Iam\Tenancy\MembershipSet
@@ -139,8 +133,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * Every question asked so far, in order: the identity's class and its
-     * identifier.
+     * Every question asked, in order.
      *
      * @return list<array{identity: class-string, id: string}>
      */
@@ -150,7 +143,7 @@ final class FakeMemberships implements Memberships
     }
 
     /**
-     * The key the identity is known by: its class and its identifier.
+     * The identity's key: its class and identifier.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return string

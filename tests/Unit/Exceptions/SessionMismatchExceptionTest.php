@@ -20,8 +20,7 @@ use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 final class SessionMismatchExceptionTest extends TestCase
 {
     /**
-     * The exception names the guard and says the change is refused, naming
-     * neither session.
+     * The message names the guard but neither session.
      *
      * @return void
      */

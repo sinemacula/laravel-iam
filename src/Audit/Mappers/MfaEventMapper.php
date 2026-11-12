@@ -38,36 +38,7 @@ use SineMacula\Laravel\Mfa\Events\VerificationPassed;
 use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 
 /**
- * Records MFA's events (`MfaEvent`) in audit-log, from each event alone
- * (IAM-9.1, IAM-9.4), each under its own `MfaActivity` code.
- *
- * A failed verification's reason is the record's (MFA conceals none from the
- * client), and a lockout is recorded as denied. The record's actor is the
- * operator the event names (a reset, a lifted lockout, a factor its failures
- * disabled enabled again, a removal, recovery codes made or removed for someone
- * else), else the identity for its own action, explicitly no one for a failed
- * verification, whose author was never proven, and for what MFA did by itself
- * (an enrolment expired, a factor disabled or a lockout applied after too many
- * failures), and the caller for an enrolment abandoned. A lockout lifted,
- * factor removed or recovery codes made or removed with no operator named is
- * the identity's own, as MFA documents a lift with no actor as the identity's.
- * MFA abandons an enrolment for the identity replacing or cancelling it, for an
- * operator resetting its factors and by itself once its confirmation attempts
- * run out, and names neither cause nor operator, so the record leaves its actor
- * to the contributors (the person or the operator serving the call) rather than
- * name the identity as having acted. Its subject is the identity, and its
- * principal, tenant, session and client MFA's context's; the MFA application
- * stands for the guard, which is the same name in this package. A code sent and
- * a verification are correlated by their challenge (`mfa:{challenge}`), which
- * `laravel-authentication`'s refusal of a factor's code names too, and every
- * other event by its session.
- *
- * Both events of one confirmation (`VerificationPassed`, `FactorConfirmed`) and
- * of one recovery code's use (`RecoveryCodeUsed`, `RecoveryCodesLow`) are two
- * facts and are recorded once each. A reset's reason, which an operator gives
- * in words, is never recorded: reasons are codes.
- *
- * It reads nothing but the event and the morph map, and keeps nothing.
+ * Records MFA's events under their `MfaActivity` codes, from each event alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -142,8 +113,7 @@ final readonly class MfaEventMapper implements EventMapper
     }
 
     /**
-     * The code the event is recorded under, or `null` for an event that is not
-     * one of MFA's own.
+     * The code the event is recorded under; `null` for any other event.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return ?\SineMacula\Laravel\Iam\Audit\Enums\MfaActivity
@@ -154,7 +124,8 @@ final readonly class MfaEventMapper implements EventMapper
     }
 
     /**
-     * Who the record says acted when the event names no operator.
+     * Who the record says acted when the event names no operator; MFA's
+     * `EnrollmentAbandoned` names no cause or operator, so it is the caller's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution
@@ -172,8 +143,7 @@ final readonly class MfaEventMapper implements EventMapper
     }
 
     /**
-     * The operator the event names as having acted on someone else's factors,
-     * if any.
+     * The operator the event names as acting on someone else's factors.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return ?\SineMacula\Laravel\AuditLog\Records\Reference
@@ -236,9 +206,7 @@ final readonly class MfaEventMapper implements EventMapper
     }
 
     /**
-     * The properties the event describes itself with: the application, the
-     * purpose, the factor and what the event adds; a value the event does not
-     * have is left out. The code's definition decides which are kept.
+     * The application, purpose, factor and event details, less any null.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return array<string, mixed>

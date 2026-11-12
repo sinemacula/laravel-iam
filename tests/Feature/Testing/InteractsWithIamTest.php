@@ -70,20 +70,7 @@ use Tests\Fixtures\Testing\ResolvesMemberships;
 use Tests\TestCase;
 
 /**
- * Acting as a caller across the suite, with every adapter bound as an
- * application gets them.
- *
- * `actingAsCaller()` arranges the identity, the principal, the active tenant,
- * the session, the MFA level and the SSO provenance in one call, by signing the
- * person in for real, so each adapter reads them from the session as it reads a
- * real caller's: MFA's route gate, MFA's active-tenant resolver and the `sso`
- * context namespace included. A machine identity is acted as without a session.
- *
- * Acting on a session verified at a given level: MFA's proof store is this
- * package's, so MFA's own `actingAsVerified()` is refused without this
- * package's recorder, and `actingOnVerifiedSession()` arranges the same through
- * `laravel-authentication`'s step-up instead, with a factor the person holds,
- * so the proof counts and MFA's route gate lets the session through.
+ * Feature tests for acting as a caller with every adapter bound.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -136,10 +123,7 @@ final class InteractsWithIamTest extends TestCase
         . ' or, in a test, through InteractsWithIam::actingOnVerifiedSession().';
 
     /**
-     * Without this package's recorder, MFA's `actingAsVerified()` records
-     * synthetic proofs through the proof store, which only
-     * `laravel-authentication` writes to here, so it is refused, and the
-     * refusal names the helper that arranges it instead.
+     * Without the recorder, MFA's `actingAsVerified()` is refused by the store.
      *
      * @return void
      *
@@ -159,8 +143,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A session verified at AAL2 passes MFA's route gate on the next request,
-     * where it did not before.
+     * A session verified at AAL2 passes MFA's route gate on the next request.
      *
      * @return void
      *
@@ -176,8 +159,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The helper is public, so code outside the test case, a helper object of
-     * the application's own say, can arrange a verified session through it.
+     * Code outside the test case can arrange a verified session.
      *
      * @return void
      *
@@ -194,8 +176,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The levels and the further proof each is verified with: its factor's
-     * type, its channel, and the channel's reference when it is not the factor.
+     * Each level with its further proof's factor type, channel and reference.
      *
      * @return iterable<string, array{\SineMacula\Laravel\Mfa\Enums\AssuranceLevel, string, \SineMacula\Laravel\Mfa\Enums\ChannelKind, ?string, bool, list<string>}>
      */
@@ -207,10 +188,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The further proof is recorded by `laravel-authentication` on the session,
-     * for a step-up, made with a confirmed factor the person holds on the
-     * guard's application, so the store counts it after the first factor, and
-     * the session evaluates at exactly the level.
+     * The further proof is recorded with a factor the person holds.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  string  $type
@@ -262,9 +240,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A passkey's proof observes presence, user verification, phishing
-     * resistance and a hardware-protected key, so a policy that rates such
-     * evidence AAL3 lets the session through an AAL3 gate.
+     * A passkey session passes an AAL3 gate under a policy that rates it AAL3.
      *
      * @return void
      *
@@ -287,8 +263,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * MFA's default policy rates a passkey AAL2, so asking for AAL3 under it
-     * fails, naming what was asked, what was reached and what is unmet.
+     * AAL3 is refused under MFA's default policy, naming what is unmet.
      *
      * @return void
      *
@@ -305,8 +280,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A session already verified past the level asked for is refused rather
-     * than handed to a test that meant it to stop short.
+     * A session already verified past the level asked for is refused.
      *
      * @return void
      *
@@ -325,8 +299,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The unclassified level supports nothing, so it is refused before any
-     * factor is enrolled or any proof recorded.
+     * The unclassified level is refused before anything changes.
      *
      * @return void
      *
@@ -350,10 +323,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A person acting as a caller is signed in for real: the guard binds the
-     * person, as their own default principal, on a live, active session of the
-     * guard's, started under the password from the testing client, holding its
-     * first factor alone, so MFA's route gate refuses it a level.
+     * A person acts on a live session they signed in to, holding one factor.
      *
      * @return void
      *
@@ -383,8 +353,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The principal given is the one the sign-in chooses, and the session is
-     * started under the method given.
+     * The session uses the principal and method given.
      *
      * @return void
      *
@@ -402,8 +371,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A principal the identity holds beside its default one is the one the
-     * sign-in chooses: the session records it, and the test acts as it.
+     * A principal held beside the default is the one the session records.
      *
      * @return void
      *
@@ -427,8 +395,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A principal the identity does not hold is refused at sign-in, and nothing
-     * is left behind.
+     * A principal the identity does not hold is refused, leaving nothing.
      *
      * @return void
      *
@@ -453,8 +420,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Signed in with credentials, the session's first factor is the one the
-     * method proves, the password's, so MFA judges it.
+     * Signed in with credentials, the session holds the method's first factor.
      *
      * @return void
      *
@@ -473,9 +439,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Credentials that sign in another identity than the caller are refused
-     * inside the sign-in's transaction, so the test never acts as someone it
-     * did not name and the other identity's session is rolled back with it.
+     * Credentials of another identity are refused and rolled back.
      *
      * @return void
      *
@@ -516,8 +480,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The helper is public, so code outside the test case, a helper object of
-     * the application's own say, can act as a caller through it.
+     * Code outside the test case can act as a caller.
      *
      * @return void
      *
@@ -534,8 +497,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A person is signed in on the guard named, not the default one, and the
-     * guard named becomes the default.
+     * A person is signed in on the guard named, which becomes the default.
      *
      * @return void
      *
@@ -560,9 +522,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The tenant is chosen at sign-in, so the session records it and MFA's
-     * active-tenant resolver, which reads the session, answers it, and the
-     * guard binds it, so `Auth::tenant()` answers it too, on every request.
+     * The tenant is recorded on the session and bound on the guard.
      *
      * @return void
      *
@@ -631,8 +591,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A tenant the sign-in admits, but the tenant resolver this package reads
-     * does not, is refused with this package's exception once the person acts.
+     * A tenant the sign-in admits but this package cannot resolve is refused.
      *
      * @return void
      *
@@ -678,10 +637,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A tenant named that is the principal's own is admitted at sign-in by
-     * `laravel-authentication` without asking a tenant resolver, but still
-     * needs one to act in it: under the default `ResolveNoTenant`, the helper
-     * throws this package's exception once the person has signed in.
+     * Naming the principal's own tenant still needs a tenant resolver.
      *
      * @return void
      *
@@ -706,8 +662,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * With no tenant named, the person acts in the principal's own tenant, as
-     * `laravel-authentication` admits it, with no tenant resolver.
+     * With no tenant named, the principal's own tenant needs no resolver.
      *
      * @return void
      *
@@ -726,9 +681,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * With a level, the session is verified at exactly that level, so MFA's
-     * route gate lets it through, with the further proof made with a factor the
-     * person holds.
+     * A caller verified at a level passes MFA's route gate.
      *
      * @return void
      *
@@ -745,8 +698,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A level for a session started with no first factor MFA can judge is
-     * refused before the person is signed in: MFA accepts no proof after it.
+     * A level for a started session is refused before sign-in.
      *
      * @return void
      *
@@ -768,8 +720,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Rows of a level asked of an SSO caller under MFA's default combination
-     * policy, and the level the session reaches instead.
+     * Each level asked through SSO and the level reached instead.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: string}>
      */
@@ -781,11 +732,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Under MFA's default combination policy the provider's sign-in adds no
-     * level, so no level can be verified through SSO: the email code AAL1
-     * proves is unclassified on its own, and the authenticator app AAL2 proves
-     * reaches AAL1. A test of a level through SSO binds the combination policy
-     * the application binds.
+     * Under MFA's default policy, no level is verified through SSO.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  string  $reached
@@ -803,8 +750,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Every part composes in the one call: the tenant, the level and the SSO
-     * provenance land on the same session.
+     * The tenant, level and SSO provenance land on one session.
      *
      * @return void
      *
@@ -835,10 +781,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Through SSO, the person signs in as a redemption SSO admitted signs them
-     * in: under `external_provider`, through the provenance's connection and
-     * link, with the provenance as the session's provider context, which the
-     * `sso` context namespace reads back.
+     * An SSO caller's session carries the provenance as its provider context.
      *
      * @return void
      *
@@ -872,8 +815,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Provenance that names no time the provider authenticated the person signs
-     * them in as authenticated now, to the whole second.
+     * Provenance with no provider time signs in as authenticated now.
      *
      * @return void
      *
@@ -893,8 +835,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The redemption recorded for the SSO caller's sign-in is forgotten once
-     * the sign-in returns, so nothing later in the test finds it.
+     * The SSO caller's redemption is forgotten once the sign-in returns.
      *
      * @return void
      *
@@ -912,8 +853,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Provenance with no link is refused: under this package every SSO session
-     * is established through a link.
+     * Provenance with no link is refused.
      *
      * @return void
      *
@@ -928,8 +868,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A method the guard does not allow refuses the sign-in, naming the guard
-     * and the reason, so the test never acts on a session it did not mean to.
+     * A method the guard does not allow is refused, naming the reason.
      *
      * @return void
      *
@@ -966,8 +905,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Scopes limit only a machine, so scopes for a person are refused before
-     * anything is signed in.
+     * Scopes for a person are refused before anything is signed in.
      *
      * @return void
      *
@@ -989,8 +927,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A machine signs in to no session: the test acts as it, limited to the
-     * scopes given, or to none, and in the tenant given.
+     * A machine acts without a session, limited to its scopes.
      *
      * @return void
      *
@@ -1030,8 +967,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A machine holds no session, so a session or an MFA level for one is
-     * refused.
+     * A session or MFA level for a machine is refused.
      *
      * @param  ?\SineMacula\Laravel\Iam\Testing\CallerSession  $session
      * @param  ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
@@ -1051,10 +987,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A person who already holds a confirmed factor, under an application that
-     * then requires one at sign-in, is signed in with a proof made with that
-     * factor: the pending sign-in is completed, no factor is enrolled, and the
-     * session holds the first factor and the sign-in's proof.
+     * A factor holder completes the pending sign-in with that factor.
      *
      * @return void
      *
@@ -1086,8 +1019,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The levels a holder of an authenticator app is verified at, and the types
-     * of the factors they then hold.
+     * Each level a holder is verified at, and the factor types they then hold.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: list<string>}>
      */
@@ -1099,9 +1031,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A holder of a factor completes the pending sign-in and is verified at
-     * exactly the level asked for, with the factor they hold when it is of the
-     * level's type.
+     * A factor holder is verified at exactly the level asked for.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  list<string>  $types
@@ -1128,8 +1058,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A holder of a factor signed in through SSO is signed in with it too, and
-     * the session keeps SSO's provenance.
+     * A factor holder signed in through SSO keeps the provenance.
      *
      * @return void
      *
@@ -1152,9 +1081,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A holder of a factor verified at AAL1 completes the sign-in with an email
-     * code, AAL1's evidence, so the session reaches exactly AAL1: an email
-     * factor is enrolled beside the one they hold.
+     * A holder verified at AAL1 completes the sign-in with an email code.
      *
      * @return void
      *
@@ -1180,10 +1107,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A session started with no first factor MFA can judge cannot take the
-     * further factor the application requires of a person who holds one, so
-     * acting as the holder on one is refused, saying what to do instead, and
-     * nothing is left behind.
+     * A started session of a factor holder is refused, naming what to do.
      *
      * @return void
      *
@@ -1212,9 +1136,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Only a sign-in that waits first on a further factor, and kept its pending
-     * credential, is completed: one that waits first on a choice of principal,
-     * or kept no credential, is handed back as it is, with nothing recorded.
+     * Only a sign-in waiting first on a further factor is completed.
      *
      * @return void
      *
@@ -1254,10 +1176,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A started session's first factor is on the `unknown` channel, so a
-     * further proof made after it does not complete a holder's sign-in: the
-     * sign-in stays pending on the factor, with nothing more enrolled, which is
-     * why `CallerSignIn` never completes a started session.
+     * A further proof after a started session's first factor leaves it pending.
      *
      * @return void
      *
@@ -1281,9 +1200,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A person verified once holds the factor `$verified` enrolled, so they can
-     * be acted as again, verified again, in another tenant, at another level,
-     * or with no level, each on a new session.
+     * A verified person can be acted as again, each time on a new session.
      *
      * @return void
      *
@@ -1320,8 +1237,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The credentials a session signed in with are held wrapped, so neither a
-     * dump nor an export shows them.
+     * Credentials are held wrapped, so no dump or export shows them.
      *
      * @return void
      */
@@ -1359,9 +1275,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Allow the passkey and the `external_provider` method beside the password
-     * on the guard, so a caller can start a session under another method, and
-     * sign in through SSO.
+     * Allow passkey and `external_provider` sign-ins beside the password.
      *
      * @return list<string>
      */
@@ -1372,8 +1286,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * Declare the guard machines authenticate on with an API key, and create a
-     * machine.
+     * Declare an API key machine guard and create a machine.
      *
      * @return \Tests\Fixtures\Models\Machine
      */
@@ -1498,8 +1411,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * A confirmed factor of the type the person holds, enrolled through the
-     * guard's application.
+     * Give the person a confirmed factor of the type.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $type
@@ -1542,8 +1454,7 @@ final class InteractsWithIamTest extends TestCase
     }
 
     /**
-     * The newest proof `laravel-authentication` recorded on the session,
-     * failing the test unless it is the only one after the first factor.
+     * The session's only proof after the first factor.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof

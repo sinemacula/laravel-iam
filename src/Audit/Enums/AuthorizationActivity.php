@@ -8,31 +8,8 @@ use SineMacula\Laravel\AuditLog\Definitions\EventDefinition;
 use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
- * The `authorization.*` codes `laravel-authorization`'s events are recorded
- * under (IAM-9.2): its decisions worth a record (a denial, a break-glass grant
- * used, a preview) and every change it makes to roles, permissions, policies,
- * role exclusions, grants, boundaries and guardrails, and every grant that
- * expires.
- *
- * Every definition is version 1 and drops every property it does not list. The
- * decisions are in the `security` category; every change is a change to who may
- * do what, in the `access_management` category (IAM-9.3), so it can be kept
- * longer than routine denials. None is `authorization.gate_denied`, which
- * audit-log ships for its Gate capture, left off while this package maps
- * `laravel-authorization`'s own decisions (IAM-9.6), so no code is defined
- * twice.
- *
- * Beyond the codes IAM-9.2 lists, six record what `laravel-authorization`
- * reports and IAM-9.2 names no code for, each a change to who may do what: a
- * pair of mutually exclusive roles declared or removed
- * (`role_exclusion_declared`, `_removed`), a grant's expiry changed
- * (`grant_expiry_changed`), a policy attached to or detached from a resource
- * (`resource_policy_attached`, `_detached`), and a protected record changed by
- * a system override (`system_override_used`).
- *
- * A code keeps names, ids, scopes and times, never a policy's document (only
- * its version and digest) nor a context value (only the keys a decision
- * depended on are named, and not kept).
+ * The `authorization.*` codes `laravel-authorization`'s decisions and changes
+ * are recorded under; changes are `access_management`, so they are kept longer.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,7 +18,6 @@ use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
  */
 enum AuthorizationActivity: string implements ListsProperties
 {
-    // A check was denied
     case ACCESS_DENIED = 'authorization.access_denied';
 
     // A check was allowed by a break-glass grant
@@ -49,51 +25,29 @@ enum AuthorizationActivity: string implements ListsProperties
 
     // A check was previewed for another principal
     case ACCESS_PREVIEWED = 'authorization.access_previewed';
-
-    // A role was created
-    case ROLE_CREATED = 'authorization.role_created';
-
-    // A role was updated
-    case ROLE_UPDATED = 'authorization.role_updated';
-
-    // A role was deleted
-    case ROLE_DELETED = 'authorization.role_deleted';
+    case ROLE_CREATED     = 'authorization.role_created';
+    case ROLE_UPDATED     = 'authorization.role_updated';
+    case ROLE_DELETED     = 'authorization.role_deleted';
 
     // Two roles were declared mutually exclusive
     case ROLE_EXCLUSION_DECLARED = 'authorization.role_exclusion_declared';
 
     // A pair of mutually exclusive roles was removed
     case ROLE_EXCLUSION_REMOVED = 'authorization.role_exclusion_removed';
-
-    // A permission was created
-    case PERMISSION_CREATED = 'authorization.permission_created';
-
-    // A permission was updated
-    case PERMISSION_UPDATED = 'authorization.permission_updated';
-
-    // A permission was deleted
-    case PERMISSION_DELETED = 'authorization.permission_deleted';
-
-    // A policy was created
-    case POLICY_CREATED = 'authorization.policy_created';
-
-    // A policy was updated
-    case POLICY_UPDATED = 'authorization.policy_updated';
-
-    // A policy was deleted
-    case POLICY_DELETED = 'authorization.policy_deleted';
+    case PERMISSION_CREATED     = 'authorization.permission_created';
+    case PERMISSION_UPDATED     = 'authorization.permission_updated';
+    case PERMISSION_DELETED     = 'authorization.permission_deleted';
+    case POLICY_CREATED         = 'authorization.policy_created';
+    case POLICY_UPDATED         = 'authorization.policy_updated';
+    case POLICY_DELETED         = 'authorization.policy_deleted';
 
     // A permission was granted to a role
     case PERMISSION_GRANTED = 'authorization.permission_granted';
 
     // A permission was revoked from a role
     case PERMISSION_REVOKED = 'authorization.permission_revoked';
-
-    // A role was assigned to a grantee
-    case ROLE_ASSIGNED = 'authorization.role_assigned';
-
-    // A role was unassigned from a grantee
-    case ROLE_UNASSIGNED = 'authorization.role_unassigned';
+    case ROLE_ASSIGNED      = 'authorization.role_assigned';
+    case ROLE_UNASSIGNED    = 'authorization.role_unassigned';
 
     // A permission was assigned to a grantee
     case PERMISSION_ASSIGNED = 'authorization.permission_assigned';
@@ -105,30 +59,14 @@ enum AuthorizationActivity: string implements ListsProperties
     case POLICY_ATTACHED = 'authorization.policy_attached';
 
     // A policy was detached from a grantee
-    case POLICY_DETACHED = 'authorization.policy_detached';
-
-    // A grantee's permission boundary was set
-    case BOUNDARY_SET = 'authorization.boundary_set';
-
-    // A grantee's permission boundary was removed
-    case BOUNDARY_REMOVED = 'authorization.boundary_removed';
-
-    // A guardrail was set
-    case GUARDRAIL_SET = 'authorization.guardrail_set';
-
-    // A guardrail was removed
-    case GUARDRAIL_REMOVED = 'authorization.guardrail_removed';
-
-    // A grant expired
-    case GRANT_EXPIRED = 'authorization.grant_expired';
-
-    // A grant's expiry changed
-    case GRANT_EXPIRY_CHANGED = 'authorization.grant_expiry_changed';
-
-    // A policy was attached to a resource
+    case POLICY_DETACHED          = 'authorization.policy_detached';
+    case BOUNDARY_SET             = 'authorization.boundary_set';
+    case BOUNDARY_REMOVED         = 'authorization.boundary_removed';
+    case GUARDRAIL_SET            = 'authorization.guardrail_set';
+    case GUARDRAIL_REMOVED        = 'authorization.guardrail_removed';
+    case GRANT_EXPIRED            = 'authorization.grant_expired';
+    case GRANT_EXPIRY_CHANGED     = 'authorization.grant_expiry_changed';
     case RESOURCE_POLICY_ATTACHED = 'authorization.resource_policy_attached';
-
-    // A policy was detached from a resource
     case RESOURCE_POLICY_DETACHED = 'authorization.resource_policy_detached';
 
     // A protected record was changed by a system override
@@ -197,8 +135,7 @@ enum AuthorizationActivity: string implements ListsProperties
     ];
 
     /**
-     * The definition of this case's code: version 1, its category, the
-     * properties it lists kept and every other one dropped.
+     * This case's definition, dropping every property it does not list.
      *
      * @return \SineMacula\Laravel\AuditLog\Definitions\EventDefinition
      *
@@ -222,8 +159,7 @@ enum AuthorizationActivity: string implements ListsProperties
     }
 
     /**
-     * The category this case's code is stored under: a decision's is
-     * `security`, any change's `access_management`.
+     * The category this case's code is stored under.
      *
      * @return string
      */

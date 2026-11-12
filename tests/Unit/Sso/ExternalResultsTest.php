@@ -18,11 +18,8 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use Tests\Fixtures\Sso\Redemptions;
 
 /**
- * Unit tests for building `laravel-authentication`'s external result from a
- * redemption SSO admitted: every value is the redemption's own, the evidence is
- * what SSO accepted alone, the provider context is the captured provenance's
- * stored form, and a re-authentication's result takes the renewal's time and
- * evidence and carries no provider context.
+ * Unit tests for building `laravel-authentication`'s external result from an
+ * admitted redemption.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,9 +30,7 @@ use Tests\Fixtures\Sso\Redemptions;
 final class ExternalResultsTest extends TestCase
 {
     /**
-     * A sign-in's result takes every value from the redemption: the result's
-     * connection, issuer, subject, tenant, provider time and request reference,
-     * and the redemption's deadline, enforcement version and link.
+     * A sign-in's result takes every value from the redemption.
      *
      * @return void
      */
@@ -55,8 +50,8 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * The evidence is what SSO's evidence contract accepted, its methods, raw
-     * context and time, never the result's own raw authentication context.
+     * The evidence is what SSO accepted, never the result's raw authentication
+     * context.
      *
      * @return void
      */
@@ -71,8 +66,7 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * The provider context is the captured provenance in its stored form,
-     * exactly.
+     * The provider context is the captured provenance's stored form.
      *
      * @return void
      */
@@ -85,8 +79,8 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * A redemption that accepted no evidence and captured no provenance gives
-     * the result neither, and one with no provider time gives none.
+     * A redemption with no evidence, provenance or provider time gives the
+     * result none.
      *
      * @return void
      */
@@ -123,8 +117,8 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * A re-authentication's result takes the renewal's provider time and
-     * evidence, the redemption's other values, and no provider context.
+     * A re-authentication's result takes the renewal's time and evidence, and
+     * no provider context.
      *
      * @return void
      */
@@ -149,8 +143,8 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * A renewal that accepted no evidence gives the result none, whatever the
-     * redemption accepted.
+     * A renewal with no evidence gives the result none, whatever the redemption
+     * accepted.
      *
      * @return void
      */
@@ -162,8 +156,7 @@ final class ExternalResultsTest extends TestCase
     }
 
     /**
-     * A redemption that redeemed nothing builds no result, for a sign-in or a
-     * re-authentication.
+     * A redemption that redeemed nothing builds no result.
      *
      * @return void
      */

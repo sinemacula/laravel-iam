@@ -12,7 +12,7 @@ use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 use SineMacula\Laravel\Iam\Testing\FakeGroupMapping;
 
 /**
- * Unit tests for the fake group mapping (IAM-7.2).
+ * Unit tests for the fake group mapping.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -29,9 +29,7 @@ final class FakeGroupMappingTest extends TestCase
     private const string TENANT = 'tenant-1';
 
     /**
-     * Each group maps to the grants it was told, a role named by its name
-     * holding in the tenant alone, each grant answered once in the order the
-     * groups first name it, and every question is kept.
+     * Each group maps to its grants, each once, and every question is kept.
      *
      * @return void
      */
@@ -48,8 +46,7 @@ final class FakeGroupMappingTest extends TestCase
     }
 
     /**
-     * Once told to refuse, every question throws what it was told, or its own
-     * refusal, and is still kept.
+     * Once told to refuse, every question throws and is still kept.
      *
      * @return void
      *
@@ -79,8 +76,7 @@ final class FakeGroupMappingTest extends TestCase
     }
 
     /**
-     * `fake()` binds a fresh fake as the application's group mapping in the
-     * container given, or the application's own.
+     * `fake()` binds a fresh fake as the group mapping.
      *
      * @return void
      */

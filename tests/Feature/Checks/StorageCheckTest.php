@@ -13,9 +13,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Feature tests for the storage check (IAM-2.3) at deploy: every member key on
- * the shared connection, the shared connection configured, every identity model
- * on it, and audit-log's connection noted when it is another.
+ * Feature tests for the storage check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +29,7 @@ final class StorageCheckTest extends TestCase
     private const string ELSEWHERE = 'elsewhere';
 
     /**
-     * The application the tests boot, every member and its identity model on
-     * the default connection, passes with nothing to note.
+     * Everything on the default connection passes with nothing to note.
      *
      * @return void
      */
@@ -63,8 +60,7 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * A shared connection `database.connections` does not configure is
-     * reported, with the identity model left on the default connection.
+     * A shared connection `database.connections` lacks is reported.
      *
      * @return void
      */
@@ -85,9 +81,7 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * An identity model on another connection, or no Eloquent model at all, is
-     * reported once, however many guards sign people in through it; a guard of
-     * another driver, or one whose provider names no model, is not read.
+     * An identity model elsewhere, or no model at all, is reported once.
      *
      * @return void
      */
@@ -114,11 +108,7 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * A `jwt` or `api_key` guard naming no provider, or an empty one, signs
-     * people in through the default user provider, as `laravel-authentication`
-     * and Laravel resolve it, so its model is read: one on another connection
-     * is reported. With no default provider, such a guard is not read, as
-     * Laravel never reads a provider under an empty name.
+     * A guard naming no provider reads the default provider's model.
      *
      * @return void
      */
@@ -161,8 +151,7 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * An identity model whose connection is named, the shared one by its own
-     * name, passes.
+     * A model naming the shared connection explicitly passes.
      *
      * @return void
      */
@@ -185,8 +174,7 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
-     * Audit-log's storage connection, when it is another than the shared one,
-     * is noted, which is no problem; left empty, it is the default one.
+     * Audit-log on another connection is noted, not failed.
      *
      * @return void
      */

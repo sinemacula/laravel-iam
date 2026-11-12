@@ -18,7 +18,7 @@ use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
 
 /**
  * Flushes the suite's request state between units of work in a long-lived
- * process (IAM-11.3).
+ * process.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,8 +47,7 @@ final readonly class WorkerReset
     ) {}
 
     /**
-     * Flush the guards, the session, the suite's scoped instances and the
-     * facade roots, keeping every other scoped instance.
+     * Flush the guards, session, the suite's scoped instances and facade roots.
      *
      * @return void
      *
@@ -79,8 +78,7 @@ final readonly class WorkerReset
     }
 
     /**
-     * Flush the session and reset the guards already resolved, keeping the
-     * scoped instances.
+     * Flush the session and reset the resolved guards.
      *
      * @return void
      *
@@ -96,8 +94,7 @@ final readonly class WorkerReset
 
         $auth = $this->container->make('auth');
 
-        // Under Octane the shared manager may still hold the last request's
-        // sandbox.
+        // Under Octane the shared manager may hold the last request's sandbox.
         if ($this->container instanceof Application) {
             $auth->setApplication($this->container);
         }
@@ -106,8 +103,7 @@ final readonly class WorkerReset
     }
 
     /**
-     * Flush the session already resolved, where `laravel-mfa`'s default proof
-     * store keeps its proofs.
+     * Flush the resolved session, which holds laravel-mfa's default proofs.
      *
      * @return void
      *

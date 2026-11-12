@@ -30,10 +30,7 @@ use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
- * Feature tests for `iam:check` (IAM-10.1): it runs every member's check and
- * this package's own, reports each, and exits non-zero on any failure; and the
- * storage refusal at boot stands aside for it, so it reports a mismatch rather
- * than stopping before it can.
+ * Feature tests for `iam:check`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,8 +43,7 @@ final class CheckCommandTest extends TestCase
     use MigratesAuditLog;
 
     /**
-     * An application configured as the suite needs it, its tables migrated and
-     * the package's schedule registered, passes every check and exits zero.
+     * A fully configured application passes every check and exits zero.
      *
      * @return void
      */
@@ -72,8 +68,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * MFA's default left on a mandatory seam fails the run, reported under
-     * `seams`.
+     * MFA's default on a mandatory seam fails the run under `seams`.
      *
      * @return void
      */
@@ -90,8 +85,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * While SSO is in use, `iam:check` reports this package's check of SSO's
-     * side under `sso`, each problem once.
+     * While SSO is in use, its side is reported once under `sso`.
      *
      * @return void
      */
@@ -120,8 +114,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * A member's own check failing fails the run, though this package's checks
-     * find only a note: audit-log's storage on a connection nobody configures.
+     * A member's own failing check fails the run.
      *
      * @return void
      */
@@ -144,8 +137,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * A member that never registered does not stop `iam:check` at boot: its
-     * check command is reported missing, and the run fails.
+     * A member that never registered is reported missing and fails the run.
      *
      * @return void
      */
@@ -167,8 +159,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * A member key on another connection does not stop `iam:check` at boot: it
-     * is reported, and the run fails.
+     * A storage mismatch fails the run instead of refusing boot.
      *
      * @return void
      */
@@ -184,9 +175,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * A broken `laravel-authorization` setting does not stop `iam:check` at
-     * boot: `laravel-authorization` boots for diagnosis under it, and its own
-     * check reports the setting and fails the run.
+     * A broken authorization setting is reported by its check, not at boot.
      *
      * @return void
      */
@@ -203,8 +192,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * Give `laravel-authorization` a bulk chunk size that is no number, with
-     * `iam:check` as the process's command, before any provider registers.
+     * Break an authorization setting with `iam:check` as the command.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -217,8 +205,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * Point MFA's storage at another connection, with `iam:check` as the
-     * process's command, before any provider registers.
+     * Point MFA's storage elsewhere with `iam:check` as the command.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -234,11 +221,7 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * Configure what the suite needs and the members ship without: audit-log's
-     * exclusions and refusal of unregistered codes, MFA's operations declared
-     * under `laravel-authentication`'s freshness, a tenant resolver, which the
-     * grant hook names a widening grant's tenant through, the package's
-     * schedule, and audit-log's spill channel in its documented format.
+     * Configure what the suite needs and the members ship without.
      *
      * @return void
      */

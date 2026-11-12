@@ -24,14 +24,7 @@ use Tests\Fixtures\Storage\RecordsMemberConnections;
 use Tests\TestCase;
 
 /**
- * Feature tests for keeping every member's storage connection on the one this
- * package configures (IAM-2.3): unset member keys are given it as this package
- * registers, a member key naming the same connection boots, and one naming
- * another refuses boot, whatever order the providers register in.
- *
- * With `iam.storage.connection` unset, the shared connection is the default
- * one: nothing is written, and only a member key naming a connection other than
- * the default refuses boot.
+ * Feature tests for aligning every member on the shared storage connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,8 +51,7 @@ final class ConnectionAlignmentTest extends TestCase
     private array $environment = [];
 
     /**
-     * Destroy the application, then clear the environment variables the test
-     * set.
+     * Destroy the application, then clear the test's environment variables.
      *
      * @return void
      */
@@ -74,8 +66,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Every unset member key, `null` or empty, is given the shared connection,
-     * and nothing else in the member's configuration changes.
+     * Every unset member key is given the shared connection, and nothing else.
      *
      * @return void
      */
@@ -96,8 +87,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member key that names a connection is left as it is, whether or not it
-     * is the shared one; `assertAligned()` judges it.
+     * A member key that names a connection is left for `assertAligned()`.
      *
      * @return void
      */
@@ -111,8 +101,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member whose configuration is not merged yet is left alone, so the
-     * value it merges from its own environment later is never masked.
+     * A member whose configuration is not merged yet is left alone.
      *
      * @return void
      */
@@ -129,8 +118,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A merged member whose configuration has no storage key yet is given one,
-     * beside what it has.
+     * A merged member without a storage key is given one.
      *
      * @return void
      */
@@ -148,8 +136,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * What a call writes is returned, keyed by the member key, and nothing it
-     * leaves is.
+     * The keys a call wrote are returned, and nothing it left.
      *
      * @return void
      */
@@ -165,9 +152,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A key an earlier call wrote, and that still holds what it wrote, follows
-     * the shared connection once that changes, back to unset when it is unset;
-     * a key the application changed since is its own, and is left.
+     * A key this package wrote follows the shared connection; edited ones stay.
      *
      * @return void
      */
@@ -193,10 +178,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Given the application, a member whose service provider has not registered
-     * yet is left alone even when its configuration is present, as an
-     * application's published configuration is before any provider registers; a
-     * member whose provider has registered is aligned.
+     * Given the application, a member not yet registered is left alone.
      *
      * @return void
      */
@@ -226,8 +208,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * With no shared connection, the members' unset keys already mean the
-     * default connection, so nothing is written: an empty key stays empty.
+     * With no shared connection, nothing is written.
      *
      * @param  ?string  $shared
      * @return void
@@ -244,8 +225,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member key that is neither a name, `null` nor empty fails closed rather
-     * than being overwritten.
+     * A malformed member key fails closed rather than being overwritten.
      *
      * @return void
      */
@@ -279,8 +259,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Rows of `[shared, members, default]`: a shared connection, the member
-     * keys' values in order, and the default connection, all of which agree.
+     * Rows of `[shared, members, default]` that agree.
      *
      * @return iterable<string, array{0: ?string, 1: list<?string>, 2: string}>
      */
@@ -294,8 +273,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Keys that resolve to the same connection agree, an unset or empty one
-     * resolving to the default, and checking them changes nothing.
+     * Keys resolving to one connection agree, and the check changes nothing.
      *
      * @param  ?string  $shared
      * @param  list<?string>  $members
@@ -314,9 +292,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Rows of `[shared, members, default, key, member]`: a shared connection,
-     * the member keys' values in order and the default connection, which
-     * disagree, then the first member key that differs and what it names.
+     * Rows of `[shared, members, default, key, member]` that disagree at `key`.
      *
      * @return iterable<string, array{0: ?string, 1: list<?string>, 2: string, 3: string, 4: ?string}>
      */
@@ -330,9 +306,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member key resolving to another connection than the shared one is
-     * refused, naming the first such key, what it names, and the shared
-     * connection as configured.
+     * A member key resolving to another connection is refused, naming it.
      *
      * @param  ?string  $shared
      * @param  list<?string>  $members
@@ -374,8 +348,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * The members after one whose configuration is not merged are still
-     * checked.
+     * The members after an unmerged one are still checked.
      *
      * @return void
      */
@@ -390,9 +363,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Given the application, a member whose service provider has not registered
-     * yet is not checked, even when its configuration is present; the members
-     * whose providers have registered still are.
+     * Given the application, a member not yet registered is not checked.
      *
      * @return void
      */
@@ -409,8 +380,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Given the application, the members after one whose provider has not
-     * registered are still checked.
+     * The members after an unregistered one are still checked.
      *
      * @return void
      */
@@ -425,8 +395,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Rows of `[key, provider]`: each member key that is aligned, and the
-     * service provider of its member.
+     * Rows of `[key, provider]`: each aligned member key and its provider.
      *
      * @return iterable<string, array{0: string, 1: class-string<\Illuminate\Support\ServiceProvider>}>
      */
@@ -438,8 +407,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member whose service provider has not registered is refused, naming the
-     * provider and the member's key.
+     * An unregistered member is refused, naming its provider and key.
      *
      * @param  string  $key
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
@@ -473,8 +441,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A malformed member key fails closed rather than counting as the default
-     * connection.
+     * A malformed member key fails closed rather than meaning the default.
      *
      * @return void
      */
@@ -491,9 +458,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Booted in any provider order, every member key the application leaves
-     * unset names the shared connection, and the rest of each member's
-     * configuration is the member's own.
+     * Unset member keys get the shared connection in any provider order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -518,8 +483,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * The shared connection is written as this package registers, so a provider
-     * registering after it, before anything boots, already reads it.
+     * The shared connection is written as this package registers.
      *
      * @return void
      */
@@ -536,8 +500,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member key the application set to the shared connection boots in any
-     * provider order.
+     * A member key naming the shared connection boots in any provider order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -554,9 +517,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * A member key the application set to another connection refuses boot in
-     * any provider order, even where the member merges its configuration after
-     * this package registers.
+     * A member key naming another connection refuses boot in any order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -575,10 +536,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * An application whose published SSO configuration lacks the `storage`
-     * block keeps SSO's own connection from its environment, which then refuses
-     * boot, in any provider order: this package writes nothing into the
-     * published configuration before SSO has merged its own over it.
+     * A published SSO config without `storage` keeps SSO's own connection.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -597,8 +555,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * With no shared connection, every member key the application leaves unset
-     * stays unset, meaning the default connection, in any provider order.
+     * With no shared connection, unset member keys stay unset.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -612,8 +569,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * With no shared connection, a member key naming a connection other than
-     * the default refuses boot, naming the default as the shared connection.
+     * With no shared connection, a key off the default refuses boot.
      *
      * @return void
      */
@@ -630,9 +586,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Build a configuration with the given shared connection, member key values
-     * in `MEMBER_KEYS` order, and default connection, and with every aligned
-     * member merged except the one named as unmerged.
+     * A configuration with the given connections, leaving one member unmerged.
      *
      * @param  ?string  $shared
      * @param  list<?string>  $members
@@ -660,8 +614,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Return an application on which every member's service provider has
-     * registered but that of the member whose root or key is given.
+     * An application with every member registered but the one given.
      *
      * @param  ?string  $missing
      * @return \Illuminate\Contracts\Foundation\Application
@@ -704,8 +657,7 @@ final class ConnectionAlignmentTest extends TestCase
     }
 
     /**
-     * Set environment variables for the next application, to be cleared once
-     * the test ends.
+     * Set environment variables for the next application, cleared at teardown.
      *
      * @param  array<string, string>  $variables
      * @return void

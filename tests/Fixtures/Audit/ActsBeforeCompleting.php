@@ -14,10 +14,8 @@ use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * MFA's step-up and pending completion as this package's adapters make them,
- * after running the change it is given first: inside MFA's transaction, once
- * MFA has accepted the proof and before `laravel-authentication` locks the
- * session, as a change another request commits at that moment would land.
+ * MFA's step-up and pending completion, running a change inside MFA's
+ * transaction first.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -63,8 +61,7 @@ final readonly class ActsBeforeCompleting implements PendingCompletion, StepUp
     }
 
     /**
-     * Make the change, then satisfy the caller's pending session as the adapter
-     * does.
+     * Make the change, then satisfy the pending session as the adapter does.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result

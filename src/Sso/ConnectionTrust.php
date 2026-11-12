@@ -9,18 +9,8 @@ use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Models\Connection;
 
 /**
- * Whether a tenant trusts an SSO connection on an application: the connection
- * is the tenant's own (SSO's connection records its tenant), or the tenant's
- * enforcement on the application names it (`Contracts\Enforcement::policy()`,
- * as an inheriting tenant's rule names the enforcing tenant's connections). One
- * tenant's trust in a connection is never another's (IAM-4.6, SSO-8.7).
- *
- * It is asked by `ExternalEvidencePolicyAdapter` for a tenant's requirement,
- * and by the proof translator before it lets MFA see an external provider's
- * proof naming its connection, so both judge a tenant's trust the same way. The
- * connection is read on the write connection, without a lock, and SSO's
- * enforcement is resolved on each call, so nothing is kept between calls
- * (IAM-8.1) and asking under a session's row lock inverts nothing.
+ * Whether a tenant trusts an SSO connection on an application: the tenant's
+ * own, or one its enforcement names.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,8 +31,7 @@ final readonly class ConnectionTrust
     ) {}
 
     /**
-     * Whether the tenant trusts the connection on the application: it is the
-     * tenant's own, or the tenant's enforcement on the application names it.
+     * Whether the tenant trusts the connection on the application.
      *
      * @param  string  $tenantId
      * @param  string  $connectionId
@@ -59,8 +48,7 @@ final readonly class ConnectionTrust
     }
 
     /**
-     * The tenant SSO records the connection as belonging to, read on the write
-     * connection, or `null` when there is no such connection.
+     * The tenant SSO records for the connection, read on the write connection.
      *
      * @param  string  $connectionId
      * @return ?string

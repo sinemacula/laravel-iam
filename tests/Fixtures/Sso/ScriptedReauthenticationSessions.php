@@ -15,13 +15,8 @@ use SineMacula\Laravel\Sso\Flows\Enums\SessionStanding;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * Stands in for the package's reauthentication sessions adapter, answering as
- * it does, except where a test scripts one of the ways an adapter could break
- * the one-renewal rule: recording no renewal, recording one for another
- * session, or recording one while answering the session as not signed in, so
- * SSO refuses the redemption with a renewal still recorded.
- *
- * It counts every renewal SSO asks for, so a test tells how often it was asked.
+ * The package's reauthentication sessions adapter, with scripted breaks of the
+ * one-renewal rule.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -76,8 +71,8 @@ final class ScriptedReauthenticationSessions implements ReauthenticationSessions
     }
 
     /**
-     * Answer as the package's adapter does, unless the script records a renewal
-     * and answers not signed in.
+     * Answer as the package's adapter does, unless the script answers not
+     * signed in.
      *
      * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
      * @param  string  $sessionId

@@ -7,8 +7,7 @@ namespace Tests\Fixtures\Checks;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 
 /**
- * A check that answers as the test scripts it: whether it applies, and the
- * closures it hands back, or what building them throws.
+ * A check that applies, returns closures or throws as the test scripts.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

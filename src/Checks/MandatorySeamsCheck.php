@@ -14,11 +14,11 @@ use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 
 /**
- * Every mandatory seam is bound off its member's permissive or inert default,
- * as that member says (IAM-10.2). Which seams are mandatory is read from each
- * capability's rows as the configuration stands now, whatever the capability's
- * switch says. While SSO is in use, the seams `SsoBridgeCheck` holds are left
- * to it.
+ * Checks every mandatory seam is bound off its member's permissive or inert
+ * default.
+ *
+ * Mandates are read from the configuration as it stands, whatever the switches
+ * say. While SSO is in use, `SsoBridgeCheck` covers its seams.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -27,10 +27,10 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
  */
 final readonly class MandatorySeamsCheck implements Check
 {
-    /** @var string Why an unbound mandatory seam is refused. */
+    /** @var string The failure for an unbound mandatory seam. */
     private const string UNBOUND = '%s is unbound; bind %s, or an implementation of your own, to it.';
 
-    /** @var string Why a mandatory seam on its member's default is refused. */
+    /** @var string The failure for a mandatory seam on its member's default. */
     private const string ON_DEFAULT = '%s is still bound to its member\'s permissive or inert default; '
         . 'bind %s, or an implementation of your own, to it.';
 
@@ -42,7 +42,7 @@ final readonly class MandatorySeamsCheck implements Check
      */
     public function __construct(
 
-        /** The container the seams are bound in, and the capabilities resolved from. */
+        /** The container the seams are bound in. */
         private Container $container,
 
         /** The configuration the mandates are read from. */
@@ -61,8 +61,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * The check always applies: a seam that is not mandatory now is simply not
-     * checked.
+     * The check always applies; a seam not mandatory now is skipped.
      *
      * @return bool
      */
@@ -73,8 +72,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * One check for each mandatory seam of every capability the check of SSO's
-     * side does not hold.
+     * One check per mandatory seam the SSO bridge check does not cover.
      *
      * @return list<\Closure(): mixed>
      *
@@ -87,8 +85,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * One check for each mandatory seam the capabilities declare now, each
-     * refusing a seam left unbound or on a member's default.
+     * One check per mandatory seam of the capabilities.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams  ...$capabilities
      * @return list<\Closure(): mixed>
@@ -99,8 +96,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * The capabilities whose mandatory seams this check reports: every one but
-     * those the check of SSO's side holds.
+     * The capabilities this check covers.
      *
      * @return list<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>
      *
@@ -131,8 +127,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * One check for each seam, refusing it left unbound or on a member's
-     * default.
+     * One check per seam.
      *
      * @param  array<array-key, \SineMacula\Laravel\Iam\Bindings\SeamBinding>  $bindings
      * @return list<\Closure(): mixed>
@@ -145,8 +140,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * The capabilities whose mandatory seams this package's check of SSO's side
-     * reports while SSO is in use; none while it is not.
+     * The capabilities the SSO bridge check covers while SSO is in use.
      *
      * @return list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>>
      */
@@ -156,7 +150,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * Refuse a mandatory seam that is unbound or holds its member's default.
+     * Refuse a seam that is unbound or holds its member's default.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
      * @return void

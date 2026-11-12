@@ -7,15 +7,8 @@ namespace SineMacula\Laravel\Iam\Exceptions;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 
 /**
- * Thrown when `laravel-authentication` refuses the external re-authentication a
- * `reauthenticate` handoff code SSO admitted was redeemed for (IAM-4.2).
- *
- * A failed access token result (`link_mismatch`, `sso_required`,
- * `additional_factor_required` or any other) is thrown out of the redemption's
- * transaction, so SSO's consumption of the code rolls back with it, and nothing
- * reports a renewal that did not happen. The failed result is carried as
- * `laravel-authentication` answered it, for the application to answer the
- * client from once the transaction has rolled back.
+ * Thrown when laravel-authentication refuses the re-authentication an SSO
+ * handoff code was redeemed for; the redemption rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,14 +28,14 @@ final class ExternalReauthenticationRefusedException extends \RuntimeException
         // What was refused, and why.
         string $message,
 
-        /** The failed access token result, as laravel-authentication answered it. */
+        /** The failed result, for the application to answer the client from. */
         public readonly AccessTokenResult $result,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for the failed re-authentication, naming its reason.
+     * Build an exception naming the result's reason.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\AccessTokenResult  $result
      * @return self

@@ -7,17 +7,8 @@ namespace SineMacula\Laravel\Iam\Exceptions;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 
 /**
- * Thrown when `laravel-authentication` refuses the external sign-in a `sign_in`
- * handoff code SSO admitted was redeemed for (IAM-4.1).
- *
- * A refusal by `laravel-authentication` (`sso_required`, `method_not_allowed`,
- * `external_result_unlinked`, `link_mismatch` or any other) is thrown out of
- * the redemption's transaction, so SSO's consumption of the code, a
- * reservation's activation and the connection's completed sign-in are rolled
- * back with it, and nothing reports a sign-in that did not happen: the code
- * stays unspent until it expires. The failed result is carried as
- * `laravel-authentication` answered it, for the application to answer the
- * client from once the transaction has rolled back.
+ * Thrown when laravel-authentication refuses the sign-in an SSO handoff code
+ * was redeemed for; the redemption rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -37,14 +28,14 @@ final class ExternalSignInRefusedException extends \RuntimeException
         // What was refused, and why.
         string $message,
 
-        /** The failed sign-in, as laravel-authentication answered it. */
+        /** The failed result, for the application to answer the client from. */
         public readonly SignInResult $result,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for the failed sign-in, naming its reason.
+     * Build an exception naming the result's reason.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @return self

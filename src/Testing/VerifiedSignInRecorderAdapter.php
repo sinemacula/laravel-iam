@@ -34,8 +34,8 @@ use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
  * Begins MFA's `actingAsVerified()` sign-in and records its proofs through
  * `laravel-authentication`, which alone writes a session's proofs here.
  *
- * Holds the pending credential of the sign-in it began until the further proof
- * completes it; it is bound transient, so nothing reaches another sign-in.
+ * Bound transient, so the pending credential it holds never reaches another
+ * sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,25 +44,25 @@ use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
  */
 final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
 {
-    /** @var string The method the session is started with, and MFA's helper names its first factor by. */
+    /** @var string The method the session starts with and MFA names its first factor by. */
     private const string METHOD = 'password';
 
     /** @var string The `amr` value of the password first factor. */
     private const string AMR = 'pwd';
 
-    /** @var string Why a sign-in that did not activate, nor wait on a further factor, is refused. */
+    /** @var string Why a sign-in neither active nor waiting on a further factor is refused. */
     private const string NOT_SIGNED_IN = 'The identity was not signed in on guard [%s] for actingAsVerified(): [%s].';
 
-    /** @var string Why a pending sign-in the further proof did not activate is refused. */
+    /** @var string Why a sign-in the further proof did not activate is refused. */
     private const string STILL_PENDING = 'The further proof did not activate the pending sign-in on guard [%s] for actingAsVerified(): [%s].';
 
-    /** @var string Why a first factor other than the pending sign-in's own is refused. */
+    /** @var string Why a first factor other than the sign-in's own is refused. */
     private const string NOT_ITS_FIRST_FACTOR = 'Only the sign-in\'s own first factor, the password it was started with, is kept.';
 
-    /** @var string Why a proof bound to no sign-in this began nor the identity's current one is refused. */
+    /** @var string Why a proof bound to no current sign-in is refused. */
     private const string UNBOUND = 'The proof is not bound to its identity\'s current sign-in, so it cannot be recorded.';
 
-    /** @var array<string, \SineMacula\Laravel\Authentication\Secrets\Secret> The pending credential of the sign-in begun, by its session id. */
+    /** @var array<string, \SineMacula\Laravel\Authentication\Secrets\Secret> The pending credentials of begun sign-ins, by session id. */
     private array $waiting = [];
 
     /**
@@ -80,7 +80,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
         /** Finds the identity and the guard's session service. */
         private readonly CurrentSession $current,
 
-        /** Keeps an active sign-in's own first factor and names the current sign-in. */
+        /** Keeps an active sign-in's first factor and names the current sign-in. */
         private readonly ProofStoreAdapter $store,
 
         /** The real factor the further proof names. */
@@ -92,13 +92,12 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
         /** Completes a pending session with the further proof. */
         private readonly CallerCompletion $completion,
 
-        /** Runs each sign-in and completion in one transaction on the storage connection. */
+        /** Runs each sign-in and completion on the storage connection. */
         private readonly CrossMemberTransaction $transaction,
     ) {}
 
     /**
-     * Start a session for the identity from a password first factor as of the
-     * time given, act on it once it is active, and return its id.
+     * Start a password session as of the time given and return its id.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -173,8 +172,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
     }
 
     /**
-     * The identity's confirmed factor of the level's type, enrolled on the
-     * application when it holds none.
+     * The identity's confirmed factor for the level, enrolled when missing.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -192,8 +190,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
     }
 
     /**
-     * The id of the session the sign-in began: acted on once active, or its
-     * pending credential kept while it waits on a further factor.
+     * The begun session's id, acting on it or keeping its pending credential.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @param  string  $application
@@ -228,8 +225,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
     }
 
     /**
-     * Complete the pending session the proof is bound to at the proof's time,
-     * and act on it once active.
+     * Complete the pending session at the proof's time and act on it.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  \SineMacula\Laravel\Authentication\Secrets\Secret  $credential
@@ -257,8 +253,7 @@ final class VerifiedSignInRecorderAdapter implements VerifiedSignInRecorder
     }
 
     /**
-     * Refuse a first factor that is not the password the pending session was
-     * started with.
+     * Refuse a first factor other than the pending session's password.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @return void

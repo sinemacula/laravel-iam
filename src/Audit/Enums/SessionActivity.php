@@ -9,23 +9,7 @@ use SineMacula\Laravel\Iam\Audit\Contracts\ListsProperties;
 
 /**
  * The `session.*` codes `laravel-authentication`'s session events are recorded
- * under (IAM-9.2): a session created, pending, activated, returned to pending,
- * revoked, refreshed, switched, stepped up and reauthenticated, an identity's
- * sessions ended together, and the refusal of each session action, named by its
- * flow.
- *
- * A user's own sign-out is audit-log's `authentication.signed_out`, which means
- * the same; every other revocation is `session.revoked`, which keeps the
- * revocation's reason as a property, since a success carries no outcome reason.
- * A record whose actor is left to the caller keeps the principal the event
- * names, since the record's principal is the caller's: a revocation's or a
- * return to pending's the session's (`session_principal_type`,
- * `session_principal_id`), and a bulk sign-out's its principal scope
- * (`scope_principal_type`, `scope_principal_id`), none for an identity's. Every
- * definition is version 1, in the `security` category, and drops every property
- * it does not list. A refusal keeps the sign-in method, the wait of a
- * rate-limited one, and whether its reason is concealed from the client, so the
- * reason is never rendered to an end user.
+ * under; a user's own sign-out is audit-log's `authentication.signed_out`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -41,9 +25,7 @@ enum SessionActivity: string implements ListsProperties
     case PENDING = 'session.pending';
 
     // A session that returned to pending was activated again
-    case ACTIVATED = 'session.activated';
-
-    // An active session returned to pending
+    case ACTIVATED           = 'session.activated';
     case RETURNED_TO_PENDING = 'session.returned_to_pending';
 
     // A session was revoked, for any reason but its user's own sign-out
@@ -56,27 +38,15 @@ enum SessionActivity: string implements ListsProperties
     case REFRESHED = 'session.refreshed';
 
     // A session switched the principal it acts as, its active tenant, or both
-    case SWITCHED = 'session.switched';
-
-    // A session was stepped up with a further factor
-    case STEPPED_UP = 'session.stepped_up';
-
-    // A session was reauthenticated
+    case SWITCHED        = 'session.switched';
+    case STEPPED_UP      = 'session.stepped_up';
     case REAUTHENTICATED = 'session.reauthenticated';
-
-    // A refresh-token exchange was refused
-    case REFRESH_FAILED = 'session.refresh_failed';
-
-    // A switch of principal or tenant was refused
-    case SWITCH_FAILED = 'session.switch_failed';
+    case REFRESH_FAILED  = 'session.refresh_failed';
+    case SWITCH_FAILED   = 'session.switch_failed';
 
     // A sign-out by refresh credential was refused
-    case SIGN_OUT_FAILED = 'session.sign_out_failed';
-
-    // A step-up was refused
-    case STEP_UP_FAILED = 'session.step_up_failed';
-
-    // A reauthentication was refused
+    case SIGN_OUT_FAILED         = 'session.sign_out_failed';
+    case STEP_UP_FAILED          = 'session.step_up_failed';
     case REAUTHENTICATION_FAILED = 'session.reauthentication_failed';
 
     // A session failed its recheck after a factor was removed or changed
@@ -95,8 +65,7 @@ enum SessionActivity: string implements ListsProperties
     private const array SESSION = ['session_principal_type', 'session_principal_id'];
 
     /**
-     * The definition of this case's code: version 1, the `security` category,
-     * the properties it lists kept and every other one dropped.
+     * This case's definition, dropping every property it does not list.
      *
      * @return \SineMacula\Laravel\AuditLog\Definitions\EventDefinition
      *

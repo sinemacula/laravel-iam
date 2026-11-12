@@ -13,15 +13,8 @@ use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Sso\Events\EventContext as SsoContext;
 
 /**
- * Who and what a member's event is about, read from its context alone and
- * written onto a record in one shape for every member (IAM-9.5).
- *
- * MFA's and SSO's application stands for the guard of the same name, and SSO's
- * tenant is the active one, else the connection's. An actor taken from the
- * event brings its principal and tenant, explicitly none when the event names
- * none; an actor left to the caller, or an operator, leaves the principal to
- * the contributors. The event's guard, session and client beat the
- * contributors'; a part the event names none of is left to them.
+ * Who and what a member's event is about, read from its context and written
+ * onto a record in one shape for every member.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -149,7 +142,8 @@ final readonly class Snapshot
     }
 
     /**
-     * Write the subject, actor, principal, tenant, guard, session and client.
+     * Write the subject, actor, principal, tenant, guard, session and client;
+     * an actor left to the caller or an operator leaves the principal open.
      *
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution  $attribution
