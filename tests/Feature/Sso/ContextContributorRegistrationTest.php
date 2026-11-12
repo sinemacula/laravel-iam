@@ -35,8 +35,7 @@ use Tests\TestCase;
  * contributor under each exactly once, once every provider has booted, in every
  * provider order, `laravel-authentication` registered from another provider's
  * `boot()` included, and only while the matching capability's switch is on as
- * the binding rule read it, so a provider that turns a switch over once this
- * package has registered leaves the contributor and the adapters agreeing; a
+ * the seams were bound, so the contributor and the adapters agree; a
  * contributor the application registered under either namespace from any
  * provider's `boot()` is kept, and one it registers once the application has
  * booted is `laravel-authentication`'s refusal.
@@ -100,21 +99,20 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A provider that turns the MFA switch off once this package has registered
-     * comes too late for the bindings and for the contributor alike: both stay
-     * on.
+     * The MFA switch turned off in a later provider's `register()` turns off
+     * the bindings and the contributor alike.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheMfaSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn(): void
+    public function testTheMfaSwitchTurnedOffWhileRegisteringTurnsOffTheBindingsAndTheContributor(): void
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, TurnsMfaOffWhileRegistering::class]);
 
         self::assertFalse(MfaSeams::isOn($this->application()->make('config')));
-        self::assertInstanceOf(ProofStoreAdapter::class, $this->bound(ProofStore::class));
-        self::assertSame(self::CONTRIBUTORS, $this->registered());
+        self::assertNotInstanceOf(ProofStoreAdapter::class, $this->bound(ProofStore::class));
+        self::assertSame(['sso' => SsoContextContributor::class], $this->registered());
     }
 
     /**
@@ -148,39 +146,37 @@ final class ContextContributorRegistrationTest extends TestCase
     }
 
     /**
-     * A provider that turns the switch off once this package has registered, as
-     * an application provider's `register()` does, comes too late for the
-     * bindings and for the contributor alike: both stay on.
+     * The SSO switch turned off in a later provider's `register()` turns off
+     * the bindings and the contributor alike.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn(): void
+    public function testTheSwitchTurnedOffWhileRegisteringTurnsOffTheBindingsAndTheContributor(): void
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, TurnsSsoOffWhileRegistering::class]);
 
         self::assertFalse(SsoSeams::isOn($this->application()->make('config')));
-        self::assertInstanceOf(ExternalEvidencePolicyAdapter::class, $this->bound(ExternalEvidencePolicy::class));
-        self::assertSame(self::CONTRIBUTORS, $this->registered());
+        self::assertInstanceOf(InsufficientExternalEvidence::class, $this->bound(ExternalEvidencePolicy::class));
+        self::assertSame(['mfa' => MfaContextContributor::class], $this->registered());
     }
 
     /**
-     * A provider that turns the switch on once this package has registered with
-     * it off comes too late for the bindings and for the contributor alike:
-     * both stay off.
+     * The SSO switch turned on in a later provider's `register()` turns on the
+     * bindings and the contributor alike.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheSwitchTurnedOnLaterLeavesTheBindingsAndTheContributorOff(): void
+    public function testTheSwitchTurnedOnWhileRegisteringTurnsOnTheBindingsAndTheContributor(): void
     {
         $this->bootInOrder([TurnsSsoOffWhileRegistering::class, ...self::MEMBER_PROVIDERS, IamServiceProvider::class, TurnsSsoOnWhileRegistering::class]);
 
         self::assertTrue(SsoSeams::isOn($this->application()->make('config')));
-        self::assertInstanceOf(InsufficientExternalEvidence::class, $this->bound(ExternalEvidencePolicy::class));
-        self::assertSame(['mfa' => MfaContextContributor::class], $this->registered());
+        self::assertInstanceOf(ExternalEvidencePolicyAdapter::class, $this->bound(ExternalEvidencePolicy::class));
+        self::assertSame(self::CONTRIBUTORS, $this->registered());
     }
 
     /**

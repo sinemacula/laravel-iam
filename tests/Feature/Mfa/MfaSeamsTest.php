@@ -16,7 +16,6 @@ use SineMacula\Laravel\Authentication\Contracts\RequirementCheck as Authenticati
 use SineMacula\Laravel\Authentication\Factors\NeverRequireAdditionalFactor;
 use SineMacula\Laravel\Authentication\Requirements\MeetNoRequirement;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Mfa\AdditionalFactorPolicyAdapter;
@@ -57,23 +56,16 @@ use SineMacula\Laravel\Mfa\Contracts\StepUp;
 use SineMacula\Laravel\Mfa\Exceptions\InvalidConfigurationException;
 use SineMacula\Laravel\Mfa\Http\MiddlewareSessionTransition;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
-use SineMacula\Laravel\Mfa\Proofs\ProofBindings;
 use SineMacula\Laravel\Mfa\Proofs\ProofStoreCompletion;
 use SineMacula\Laravel\Mfa\Proofs\SessionProofStore;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
-use Tests\Concerns\PermutesProviderOrder;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams `laravel-authentication` and MFA join through:
- * every adapter replaces its member's default, MFA's closure-bound proof store
- * and `laravel-authentication`'s shared factor code counters included, in every
- * provider order; an application's own binding is kept or wins as the binding
- * rule says (IAM-8.4); and the capability's switch turns every binding off at
- * once.
+ * Feature tests for the seams `laravel-authentication` and MFA join through.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -83,8 +75,6 @@ use Tests\TestCase;
 #[CoversClass(MfaSeams::class)]
 final class MfaSeamsTest extends TestCase
 {
-    use PermutesProviderOrder;
-
     /** @var array<class-string, class-string> Each seam, with the adapter bound over it. */
     private const array ADAPTERS = [
         AdditionalFactorPolicy::class         => AdditionalFactorPolicyAdapter::class,
@@ -130,67 +120,20 @@ final class MfaSeamsTest extends TestCase
     private array $types = ['totp'];
 
     /**
-     * Every adapter is bound over its member's default, MFA's proof store
-     * (bound with a closure its proof bindings declare) included, in every
-     * provider order.
+     * Every adapter is bound over its member's default.
      *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    #[DataProvider('provideProviderOrders')]
-    public function testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder(array $providers): void
+    public function testEveryAdapterIsBoundOverItsMembersDefault(): void
     {
-        $this->bootInOrder($providers);
-
         $this->assertResolvesTo(self::ADAPTERS);
-        $this->assertOutcome(array_keys(self::ADAPTERS), []);
     }
 
     /**
-     * An application binding made before any provider registers is kept over
-     * every seam, in every provider order.
-     *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    #[DataProvider('provideProviderOrders')]
-    public function testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept(array $providers): void
-    {
-        [$bindings, $instances] = self::applicationBindings();
-
-        $this->bootInOrder($providers, before: $bindings);
-
-        $this->assertResolvesToInstances($instances);
-        $this->assertOutcome([], array_keys(self::ADAPTERS));
-    }
-
-    /**
-     * An application binding made once every provider has registered replaces
-     * every adapter, in every provider order.
-     *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    #[DataProvider('provideProviderOrders')]
-    public function testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins(array $providers): void
-    {
-        [$bindings, $instances] = self::applicationBindings();
-
-        $this->bootInOrder($providers, after: $bindings);
-
-        $this->assertResolvesToInstances($instances);
-        $this->assertOutcome(array_keys(self::ADAPTERS), []);
-    }
-
-    /**
-     * An MFA application offering `sms` refuses to boot while no one-time code
-     * sender is bound for MFA's senders to forward to.
+     * An MFA application offering `sms` refuses to boot with no one-time code
+     * sender bound.
      *
      * @return void
      */
@@ -211,8 +154,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * With the switch off nothing is bound, and every member keeps its own
-     * default.
+     * With the switch off every member keeps its own default.
      *
      * @return void
      *
@@ -222,7 +164,7 @@ final class MfaSeamsTest extends TestCase
     public function testTheSwitchOffBindsNothing(): void
     {
         $this->assertResolvesTo(self::MEMBER_DEFAULTS);
-        $this->assertOutcome([], []);
+        self::assertFalse($this->app?->bound(VerifiedSignInRecorder::class));
     }
 
     /**
@@ -257,8 +199,7 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * The switch is read leniently: `false`, as a boolean or as text, `0`,
-     * `off` and `no` turn every binding off; anything else leaves them on.
+     * The switch is read leniently.
      *
      * @param  mixed  $value
      * @param  bool  $on
@@ -269,23 +210,22 @@ final class MfaSeamsTest extends TestCase
     {
         $config = new Repository(['iam' => ['adapters' => ['mfa' => $value]]]);
 
-        foreach (self::seams()->seams($config) as $binding) {
+        self::assertSame($on, MfaSeams::isOn($config));
 
-            self::assertNotNull($binding->appliesWhen);
-            self::assertSame($on, ($binding->appliesWhen)($config), $binding->abstract);
+        foreach ((new MfaSeams)->seams($config) as $binding) {
+            self::assertSame($on, $binding->on, $binding->abstract);
         }
     }
 
     /**
-     * Every binding is transient over the member's own default (none for the
-     * recorder of MFA's test helper, which MFA does not bind), and only
-     * revocation on factor removal and reset is mandatory (IAM-3.7).
+     * Every binding is transient, and only revocation on factor removal is
+     * mandatory.
      *
      * @return void
      */
-    public function testEveryBindingIsTransientOverItsMembersDefault(): void
+    public function testEveryBindingIsTransientAndOnlyRevocationIsMandatory(): void
     {
-        $bindings = self::seams()->seams(new Repository);
+        $bindings = (new MfaSeams)->seams(new Repository);
 
         self::assertSame(self::ADAPTERS, array_combine(
             array_map(static fn (SeamBinding $binding): string => $binding->abstract, $bindings),
@@ -293,17 +233,8 @@ final class MfaSeamsTest extends TestCase
         ));
 
         foreach ($bindings as $binding) {
-
             self::assertSame(Lifetime::TRANSIENT, $binding->lifetime, $binding->abstract);
-            self::assertSame($binding->abstract === SessionRevoker::class, $binding->mandatory, $binding->abstract);
-
-            $defaults = match ($binding->abstract) {
-                ProofStore::class             => [ProofBindings::class],
-                VerifiedSignInRecorder::class => [],
-                default                       => [self::MEMBER_DEFAULTS[$binding->abstract]],
-            };
-
-            self::assertSame($defaults, $binding->memberDefaults, $binding->abstract);
+            self::assertSame($binding->abstract === SessionRevoker::class, $binding->isMandatory(), $binding->abstract);
         }
     }
 
@@ -316,38 +247,6 @@ final class MfaSeamsTest extends TestCase
     protected function mfaTypes(): array
     {
         return $this->types;
-    }
-
-    /**
-     * The table of seams.
-     *
-     * @return \SineMacula\Laravel\Iam\Mfa\MfaSeams
-     */
-    private static function seams(): MfaSeams
-    {
-        return new MfaSeams;
-    }
-
-    /**
-     * The application's own binding of every seam, each a closure this test
-     * declares returning its own instance, with those instances.
-     *
-     * @return array{0: array<string, \Closure(): object>, 1: array<string, object>}
-     */
-    private static function applicationBindings(): array
-    {
-        $bindings  = [];
-        $instances = [];
-
-        foreach (array_keys(self::ADAPTERS) as $abstract) {
-
-            $instance = \Mockery::mock($abstract);
-
-            $instances[$abstract] = $instance;
-            $bindings[$abstract]  = static fn (): object => $instance;
-        }
-
-        return [$bindings, $instances];
     }
 
     /**
@@ -366,40 +265,5 @@ final class MfaSeamsTest extends TestCase
         foreach ($expected as $abstract => $concrete) {
             self::assertInstanceOf($concrete, $this->app?->make($abstract), $abstract);
         }
-    }
-
-    /**
-     * Assert each seam resolves to the given instance.
-     *
-     * @param  array<string, object>  $expected
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function assertResolvesToInstances(array $expected): void
-    {
-        foreach ($expected as $abstract => $instance) {
-            self::assertSame($instance, $this->app?->make($abstract), $abstract);
-        }
-    }
-
-    /**
-     * Assert the binding rule bound and kept exactly the given seams among the
-     * seams this table declares, in the order they are declared.
-     *
-     * @param  list<string>  $bound
-     * @param  list<string>  $kept
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function assertOutcome(array $bound, array $kept): void
-    {
-        $outcome = $this->app?->make(BindingOutcome::class);
-        $seams   = array_keys(self::ADAPTERS);
-
-        self::assertInstanceOf(BindingOutcome::class, $outcome);
-        self::assertSame($bound, array_values(array_intersect($outcome->bound, $seams)));
-        self::assertSame($kept, array_values(array_intersect($outcome->kept, $seams)));
     }
 }

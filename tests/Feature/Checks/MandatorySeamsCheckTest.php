@@ -11,19 +11,14 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\ExternalIdentityLinks;
 use SineMacula\Laravel\Authentication\Contracts\PasskeyFactorGate;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
-use SineMacula\Laravel\Authentication\External\NoExternalLinks;
-use SineMacula\Laravel\Authentication\Passkeys\NoPasskeyFactors;
-use SineMacula\Laravel\Authentication\Tenancy\RequireNothingOfTenants;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
-use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\ContextSeams;
-use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -31,33 +26,20 @@ use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
-use SineMacula\Laravel\Mfa\Requirements\NoActiveTenant;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
-use SineMacula\Laravel\Sso\Enforcement\OwnTenantInheritance;
-use SineMacula\Laravel\Sso\Flows\NoReauthenticationSessions;
 use SineMacula\Laravel\Sso\Links\LinkStore;
-use SineMacula\Laravel\Sso\Links\NoLinks;
 use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
-use SineMacula\Laravel\Sso\Revocation\RevocationScope;
 use Tests\Concerns\RunsChecks;
-use Tests\Fixtures\Bindings\Adapter;
-use Tests\Fixtures\Bindings\Contracts\PlainSeam;
-use Tests\Fixtures\Bindings\Contracts\SharedSeam;
-use Tests\Fixtures\Bindings\DeclaredSeams;
-use Tests\Fixtures\Bindings\MemberDefault;
-use Tests\Fixtures\Checks\ExtensibleDefault;
 use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
  * Feature tests for the check that every mandatory seam is bound off its
- * member's permissive or inert default (IAM-10.2): each mandatory seam and the
- * condition it is mandatory under, read from the binding rule's own rows as the
- * configuration and the container stand when the check runs.
+ * member's default (IAM-10.2).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -73,8 +55,7 @@ final class MandatorySeamsCheckTest extends TestCase
     use RunsChecks;
 
     /**
-     * The application the package binds passes: every mandatory seam holds this
-     * package's adapter, SSO's in use or not.
+     * The adapters this package binds pass, SSO in use or not.
      *
      * @return void
      */
@@ -88,166 +69,73 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * Rows of `[seam, member default]` for the seams that are always mandatory.
+     * Every seam that is always mandatory fails on its member's default, with
+     * the capabilities off.
      *
-     * @return iterable<string, array{class-string, class-string}>
-     */
-    public static function alwaysMandatory(): iterable
-    {
-        yield 'SSO\'s session revocation' => [SessionRevocation::class, NoSessionRevocation::class];
-        yield 'MFA\'s session revoker' => [SessionRevoker::class, GenerationSessionRevoker::class];
-        yield 'the passkey factor gate' => [PasskeyFactorGate::class, NoPasskeyFactors::class];
-    }
-
-    /**
-     * A seam that is always mandatory, bound back to its member's default,
-     * fails, naming the seam and the default.
-     *
-     * @param  class-string  $seam
-     * @param  class-string  $default
      * @return void
      */
-    #[DataProvider('alwaysMandatory')]
-    public function testASeamLeftOnItsMembersDefaultFails(string $seam, string $default): void
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    public function testTheMembersDefaultsFail(): void
     {
-        $this->app?->bind($seam, $default);
+        $problem = SessionRevocation::class . ' is still bound to its member\'s permissive or inert default; bind '
+            . SessionRevocationAdapter::class . ', or an implementation of your own, to it.';
 
         $problems = self::problems($this->check()->checks());
 
-        self::assertCount(1, $problems);
-        self::assertStringContainsString($seam . ' is still bound to ' . $default, $problems[0]);
+        self::assertCount(3, $problems);
+        self::assertStringStartsWith(SessionRevoker::class . ' is still bound', $problems[0]);
+        self::assertStringStartsWith(PasskeyFactorGate::class . ' is still bound', $problems[1]);
+        self::assertSame($problem, $problems[2]);
     }
 
     /**
-     * With this package's SSO capability off, the application binds SSO's seams
-     * itself, under the same mandate: SSO's session revocation, left on SSO's
-     * default, fails.
+     * A member's default something has already resolved still fails.
      *
      * @return void
      */
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    public function testAResolvedMembersDefaultFails(): void
+    {
+        $this->app?->make(PasskeyFactorGate::class);
+
+        self::assertStringStartsWith(PasskeyFactorGate::class . ' is still bound', self::problems($this->check()->checks())[1]);
+    }
+
+    /**
+     * The application's own binding passes, as a class, an instance or a
+     * closure.
+     *
+     * @return void
+     */
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
     #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
-    public function testAMandatorySeamIsCheckedWithItsCapabilityOff(): void
-    {
-        $problem = SessionRevocation::class . ' is still bound to ' . NoSessionRevocation::class
-            . ', its member\'s permissive or inert default; bind ' . SessionRevocationAdapter::class . ', or an implementation of your own, to it.';
-
-        self::assertSame([$problem], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * A member default something has already resolved, held as the shared
-     * instance, is read from the instance and fails as well.
-     *
-     * @return void
-     */
-    public function testAResolvedMemberDefaultFails(): void
-    {
-        $this->app?->singleton(SessionRevocation::class, NoSessionRevocation::class);
-        $this->app?->make(SessionRevocation::class);
-
-        self::assertStringContainsString(SessionRevocation::class . ' is still bound to ' . NoSessionRevocation::class, self::problems($this->check()->checks())[0]);
-    }
-
-    /**
-     * A seam bound to the application's own implementation passes, by class
-     * name or as an instance.
-     *
-     * @return void
-     */
     public function testTheApplicationsOwnBindingPasses(): void
     {
         $implementation = new class {};
 
         $this->app?->bind(SessionRevocation::class, $implementation::class);
         $this->app?->instance(SessionRevoker::class, $implementation);
+        $this->app?->bind(PasskeyFactorGate::class, static fn (): object => $implementation);
 
         self::assertSame([], self::problems($this->check()->checks()));
     }
 
     /**
-     * A seam bound to an anonymous implementation of the application's own
-     * passes, as an instance or by its class name, though the anonymous class
-     * is named after the member's contract it implements; with SSO in use, the
-     * seams the check of SSO's side holds are read alike.
+     * MFA's own default bound back by the application is still MFA's default,
+     * as MFA says.
      *
      * @return void
      */
-    public function testAnAnonymousImplementationOfTheApplicationsOwnPasses(): void
+    public function testMfasDefaultBoundByNameFails(): void
     {
-        $revocation = new class implements SessionRevocation {
-            /**
-             * Revoke the sessions in the scope.
-             *
-             * @param  \SineMacula\Laravel\Sso\Revocation\RevocationScope  $scope
-             * @return void
-             */
-            #[\Override]
-            public function revoke(RevocationScope $scope): void {}
-        };
+        $this->app?->bind(SessionRevoker::class, GenerationSessionRevoker::class);
 
-        $this->app?->instance(SessionRevocation::class, $revocation);
-
-        self::assertSame([], self::problems($this->check()->checks()));
-
-        $this->app?->offsetUnset(SessionRevocation::class);
-        $this->app?->bind(SessionRevocation::class, $revocation::class);
-
-        self::assertSame([], self::problems($this->check()->checks()));
-
-        $this->useSso();
-
-        self::assertSame([], self::problems($this->mandates()));
+        self::assertStringStartsWith(SessionRevoker::class . ' is still bound', self::problems($this->check()->checks())[0]);
     }
 
     /**
-     * A seam bound to an anonymous subclass of its member's default fails, as
-     * an instance or by its class name, naming the default it extends.
-     *
-     * @return void
-     */
-    public function testAnAnonymousSubclassOfAMembersDefaultFails(): void
-    {
-        $subclass = new class extends ExtensibleDefault {};
-        $checks   = $this->check()->checksFor(new DeclaredSeams(
-            new SeamBinding(PlainSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true, holdsDefault: MemberDefault::isPackageDefault(...)),
-            new SeamBinding(SharedSeam::class, Adapter::class, [ExtensibleDefault::class], mandatory: true, holdsDefault: MemberDefault::isPackageDefault(...)),
-        ));
-
-        $this->app?->instance(PlainSeam::class, $subclass);
-        $this->app?->bind(SharedSeam::class, $subclass::class);
-
-        $problems = self::problems($checks);
-
-        self::assertCount(2, $problems);
-        self::assertStringContainsString(PlainSeam::class . ' is still bound to ' . ExtensibleDefault::class . ',', $problems[0]);
-        self::assertStringContainsString(SharedSeam::class . ' is still bound to ' . ExtensibleDefault::class . ',', $problems[1]);
-    }
-
-    /**
-     * A seam bound through a closure of the application's own fails: what it
-     * returns cannot be read without building it, and the check takes nothing
-     * on trust, so the seam is bound by class name or as an instance instead.
-     * One something has already resolved is read from its instance.
-     *
-     * @return void
-     */
-    public function testAnApplicationsClosureFails(): void
-    {
-        $this->app?->bind(SessionRevoker::class, static fn (): object => new \stdClass);
-
-        $problem = SessionRevoker::class . ' is bound through a closure, whose implementation cannot be read without building it; bind '
-            . SessionRevokerAdapter::class . ', or an implementation of your own, to it by class name or as an instance.';
-
-        self::assertSame([$problem], self::problems($this->check()->checks()));
-
-        $this->app?->singleton(SessionRevoker::class, static fn (): object => new class {});
-        $this->app?->make(SessionRevoker::class);
-
-        self::assertSame([], self::problems($this->check()->checks()));
-    }
-
-    /**
-     * A mandatory seam left unbound fails, naming the adapter to bind.
+     * An unbound mandatory seam fails, naming the adapter to bind.
      *
      * @return void
      */
@@ -260,69 +148,46 @@ final class MandatorySeamsCheckTest extends TestCase
         $problem = Linker::class . ' is unbound; bind ' . LinkStore::class . ', or an implementation of your own, to it.';
 
         self::assertSame([$problem], self::problems($this->mandates()));
-
-        $this->app?->offsetUnset(SessionRevoker::class);
-
-        self::assertStringStartsWith(SessionRevoker::class . ' is unbound', self::problems($this->check()->checks())[0]);
     }
 
     /**
-     * While SSO is in use, the seams this package's check of SSO's side holds
-     * are left to it, so each is reported once: the bridge reports SSO's linker
-     * left on its default, and this check does not.
+     * While SSO is in use, the seams the check of SSO's side holds are left to
+     * it.
      *
      * @return void
      */
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
     public function testTheSeamsSsosCheckHoldsAreLeftToIt(): void
     {
         $this->useSso();
-
-        $this->app?->bind(Linker::class, NoLinks::class);
 
         self::assertSame([], self::problems($this->check()->checks()));
 
         $bridge = $this->app?->make(SsoBridgeCheck::class);
 
-        assert($bridge instanceof SsoBridgeCheck);
-
-        self::assertStringContainsString(Linker::class . ' is still bound to ' . NoLinks::class, self::problems($bridge->checks())[0]);
+        self::assertInstanceOf(SsoBridgeCheck::class, $bridge);
+        self::assertStringStartsWith(SessionRevocation::class . ' is still bound', self::problems($bridge->checks())[0]);
     }
 
     /**
-     * The links and the link store are mandatory only while SSO is in use: left
-     * on their defaults, they pass while it is not, and fail once a protocol is
-     * switched on, or its switch is malformed. The linker is SSO's own link
-     * store, which passes.
+     * The links and the linker are mandatory only while SSO is in use.
      *
      * @return void
      */
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
     public function testTheLinksAreMandatoryWhileSsoIsInUse(): void
     {
-        $this->app?->bind(ExternalIdentityLinks::class, NoExternalLinks::class);
-        $this->app?->bind(Linker::class, NoLinks::class);
+        $this->app?->instance(SessionRevocation::class, new NoSessionRevocation);
 
-        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], self::problems($this->mandates()));
 
         $this->app?->make('config')->set('sso.features.oidc', 'sometimes');
 
         $problems = self::problems($this->mandates());
 
         self::assertCount(2, $problems);
-        self::assertStringContainsString(ExternalIdentityLinks::class, $problems[0]);
-        self::assertStringContainsString(Linker::class, $problems[1]);
-    }
-
-    /**
-     * Rows of `[seam, member default]` for the seams mandatory while SSO's
-     * enforcement or a tenant MFA requirement is on.
-     *
-     * @return iterable<string, array{class-string, class-string}>
-     */
-    public static function mandatoryUnderTenantRules(): iterable
-    {
-        yield 'the re-authentication sessions' => [ReauthenticationSessions::class, NoReauthenticationSessions::class];
-        yield 'the tenant authentication policy' => [TenantAuthenticationPolicy::class, RequireNothingOfTenants::class];
-        yield 'MFA\'s active tenant resolver' => [ActiveTenantResolver::class, NoActiveTenant::class];
+        self::assertStringStartsWith(ExternalIdentityLinks::class, $problems[0]);
+        self::assertStringStartsWith(Linker::class, $problems[1]);
     }
 
     /**
@@ -331,100 +196,63 @@ final class MandatorySeamsCheckTest extends TestCase
      *
      * @return iterable<string, array{\Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
-    public static function tenantRules(): iterable
+    public static function provideTenantRules(): iterable
     {
         yield 'enforcement' => [static function (Application $app): void {
             $app->make('config')->set(TenancySeams::ENFORCEMENT, true);
         }];
+
         yield 'a requirement bound' => [static function (Application $app): void {
             $app->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
         }];
     }
 
     /**
-     * Every combination of a seam mandatory under a tenant's rule and the way
-     * the rule is turned on.
-     *
-     * @return iterable<string, array{class-string, class-string, \Closure(\Illuminate\Contracts\Foundation\Application): void}>
-     */
-    public static function seamsUnderEachRule(): iterable
-    {
-        foreach (self::mandatoryUnderTenantRules() as $seam => [$abstract, $default]) {
-
-            foreach (self::tenantRules() as $rule => [$turnOn]) {
-                yield $seam . ' under ' . $rule => [$abstract, $default, $turnOn];
-            }
-        }
-    }
-
-    /**
      * The re-authentication sessions, the tenant authentication policy and
-     * MFA's active tenant resolver pass on their defaults until SSO's
-     * enforcement or a tenant MFA requirement is on, and fail from then.
+     * MFA's active tenant resolver are mandatory once a tenant's rule is on.
      *
-     * @param  class-string  $seam
-     * @param  class-string  $default
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $turnOn
      * @return void
      */
-    #[DataProvider('seamsUnderEachRule')]
-    public function testASeamIsMandatoryWhileATenantsRuleIsOn(string $seam, string $default, \Closure $turnOn): void
+    #[DataProvider('provideTenantRules')]
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    public function testTheTenantSeamsAreMandatoryWhileATenantsRuleIsOn(\Closure $turnOn): void
     {
-        $this->app?->bind($seam, $default);
+        $seams = [ReauthenticationSessions::class, TenantAuthenticationPolicy::class, ActiveTenantResolver::class];
 
-        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], array_values(array_filter(self::problems($this->mandates()), static fn (string $problem): bool => self::names($problem, $seams))));
 
         $turnOn($this->app ?? self::fail('The application has not booted.'));
 
-        $problems = self::problems($this->check()->checks());
+        $refused = array_values(array_filter(self::problems($this->mandates()), static fn (string $problem): bool => self::names($problem, $seams)));
 
-        self::assertCount(1, $problems);
-        self::assertStringContainsString($seam . ' is still bound to ' . $default, $problems[0]);
+        self::assertCount(3, $refused);
     }
 
     /**
-     * The enforcement inheritance is mandatory while the application binds a
-     * tenant tree to `laravel-authorization` and SSO's enforcement is on:
-     * neither alone makes it so.
+     * The enforcement inheritance is mandatory while enforcing over a tenant
+     * tree, and neither alone makes it so.
      *
      * @return void
      */
-    public function testTheInheritanceIsMandatoryWhileATreeAndEnforcementAreOn(): void
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    public function testTheInheritanceIsMandatoryWhileEnforcingOverATree(): void
     {
-        $config = $this->app?->make('config');
+        $inheritance = static fn (string $problem): bool => str_starts_with($problem, EnforcementInheritance::class);
 
-        $this->app?->bind(EnforcementInheritance::class, OwnTenantInheritance::class);
         $this->app?->instance(TenantTree::class, new StoredTenantTree);
 
-        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], array_filter(self::problems($this->mandates()), $inheritance));
 
         $this->app?->instance(TenantTree::class, new FlatTenantTree);
-        $config?->set(TenancySeams::ENFORCEMENT, 'true');
+        $this->app?->make('config')->set(TenancySeams::ENFORCEMENT, 'true');
 
-        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], array_filter(self::problems($this->mandates()), $inheritance));
 
         $this->app?->instance(TenantTree::class, new StoredTenantTree);
 
-        self::assertStringContainsString(EnforcementInheritance::class . ' is still bound to ' . OwnTenantInheritance::class, self::problems($this->check()->checks())[0]);
-    }
-
-    /**
-     * A seam the binding rule kept with the application's binding is reported
-     * as a note, which is no problem; with no outcome kept, there is none.
-     *
-     * @return void
-     */
-    public function testEachSeamTheRuleKeptIsNoted(): void
-    {
-        self::assertSame([], self::notes($this->check()->checks()));
-
-        $this->app?->instance(BindingOutcome::class, new BindingOutcome([], [SessionRevocation::class]));
-
-        self::assertSame([SessionRevocation::class . ' keeps the application\'s binding, not this package\'s adapter.'], self::notes($this->check()->checks()));
-
-        $this->app?->offsetUnset(BindingOutcome::class);
-
-        self::assertSame([], self::notes($this->check()->checks()));
+        self::assertCount(1, array_filter(self::problems($this->mandates()), $inheritance));
     }
 
     /**
@@ -439,6 +267,18 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
+     * Whether the problem names one of the seams.
+     *
+     * @param  string  $problem
+     * @param  list<string>  $seams
+     * @return bool
+     */
+    private static function names(string $problem, array $seams): bool
+    {
+        return array_filter($seams, static fn (string $seam): bool => str_starts_with($problem, $seam . ' ')) !== [];
+    }
+
+    /**
      * Put SSO in use.
      *
      * @return void
@@ -449,8 +289,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The checks of every mandatory seam every capability declares now, those
-     * `sso:check` holds included.
+     * The checks of every mandatory seam, those `sso:check` holds included.
      *
      * @return list<\Closure(): mixed>
      */
@@ -471,7 +310,7 @@ final class MandatorySeamsCheckTest extends TestCase
     {
         $check = $this->app?->make(MandatorySeamsCheck::class);
 
-        assert($check instanceof MandatorySeamsCheck);
+        self::assertInstanceOf(MandatorySeamsCheck::class, $check);
 
         return $check;
     }

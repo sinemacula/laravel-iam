@@ -4,11 +4,9 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Checks;
 
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Container\Container;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
-use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
@@ -16,34 +14,11 @@ use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 
 /**
- * Every mandatory seam is bound to something other than its member's permissive
- * or inert default (IAM-10.2).
- *
- * Which seams are mandatory, and when, is the binding rule's own data: each
- * capability's rows (`SeamBinding::isMandatory()`), declared again from the
- * configuration and the container as they stand when the check runs, so a
- * mandate that follows a setting (SSO's enforcement, MFA's tenant requirement,
- * a tenant tree, SSO in use, the machine credentials the bound application
- * policy accepts) is read as it is now. A mandatory seam is checked whatever
- * this package's capability switch says: with the switch off, the application
- * binds the seam itself, under the same mandate.
- *
- * A mandatory seam fails when it is unbound, when its member says it still
- * holds the member's default (`SeamBinding::$holdsDefault`), or when its live
- * binding (`SeamHolders`) names one of the row's member defaults, as a seam the
- * application bound to a member's default class by name does. A binding that
- * names no class (a closure of the application's own, whose implementation
- * cannot be read without building it) is refused too: the check takes nothing
- * on trust, so a mandatory seam is bound by class name or as an instance.
- *
- * While SSO is in use, the seams of the capabilities this package's check of
- * SSO's side holds (`SsoBridgeCheck::CAPABILITIES`) are left to that check, so
- * each mandatory seam is reported once; while SSO is not in use, the bridge
- * does not apply, and they are checked here.
- *
- * The binding rule's outcome (`BindingOutcome`), the seams it bound and kept as
- * the application registered, is reported as a note for every seam it kept with
- * the application's binding, so the application sees which of its bindings won.
+ * Every mandatory seam is bound off its member's permissive or inert default,
+ * as that member says (IAM-10.2). Which seams are mandatory is read from each
+ * capability's rows as the configuration stands now, whatever the capability's
+ * switch says. While SSO is in use, the seams `SsoBridgeCheck` holds are left
+ * to it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -55,24 +30,15 @@ final readonly class MandatorySeamsCheck implements Check
     /** @var string Why an unbound mandatory seam is refused. */
     private const string UNBOUND = '%s is unbound; bind %s, or an implementation of your own, to it.';
 
-    /** @var string Why a mandatory seam on a member's default is refused. */
-    private const string ON_DEFAULT = '%s is still bound to %s, its member\'s permissive or inert default; '
+    /** @var string Why a mandatory seam on its member's default is refused. */
+    private const string ON_DEFAULT = '%s is still bound to its member\'s permissive or inert default; '
         . 'bind %s, or an implementation of your own, to it.';
-
-    /** @var string Why a mandatory seam whose implementation cannot be read is refused. */
-    private const string OPAQUE = '%s is bound through a closure, whose implementation cannot be read without building it; '
-        . 'bind %s, or an implementation of your own, to it by class name or as an instance.';
-
-    /** @var string The note of a seam the binding rule kept with the application's binding. */
-    private const string KEPT = '%s keeps the application\'s binding, not this package\'s adapter.';
 
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \Illuminate\Container\Container  $container
      * @param  \Illuminate\Contracts\Config\Repository  $config
-     * @param  \SineMacula\Laravel\Iam\Checks\SeamHolders  $holders
-     * @param  \SineMacula\Laravel\Iam\Bindings\MemberDefaults  $defaults
      */
     public function __construct(
 
@@ -81,12 +47,6 @@ final readonly class MandatorySeamsCheck implements Check
 
         /** The configuration the mandates are read from. */
         private Repository $config,
-
-        /** Names the class each seam's live binding answers with. */
-        private SeamHolders $holders,
-
-        /** Tells whether a seam holds its member's own binding. */
-        private MemberDefaults $defaults = new MemberDefaults,
     ) {}
 
     /**
@@ -114,8 +74,7 @@ final readonly class MandatorySeamsCheck implements Check
 
     /**
      * One check for each mandatory seam of every capability the check of SSO's
-     * side does not hold, then a note for each seam the binding rule kept with
-     * the application's binding.
+     * side does not hold.
      *
      * @return list<\Closure(): mixed>
      *
@@ -124,7 +83,7 @@ final readonly class MandatorySeamsCheck implements Check
     #[\Override]
     public function checks(): array
     {
-        return [...$this->checksFor(...$this->capabilities()), ...$this->keptNotes($this->kept())];
+        return $this->checksFor(...$this->capabilities());
     }
 
     /**
@@ -197,7 +156,7 @@ final readonly class MandatorySeamsCheck implements Check
     }
 
     /**
-     * Refuse a mandatory seam that is unbound or bound to a member's default.
+     * Refuse a mandatory seam that is unbound or holds its member's default.
      *
      * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
      * @return void
@@ -210,73 +169,8 @@ final readonly class MandatorySeamsCheck implements Check
             throw new \LogicException(sprintf(self::UNBOUND, $binding->abstract, $binding->adapter));
         }
 
-        $holder = $this->holderOf($binding);
-
-        if ($holder === null) {
-            throw new \LogicException(sprintf(self::OPAQUE, $binding->abstract, $binding->adapter));
+        if ($binding->holdsDefault($this->container)) {
+            throw new \LogicException(sprintf(self::ON_DEFAULT, $binding->abstract, $binding->adapter));
         }
-
-        if (!in_array($holder, $binding->memberDefaults, true)) {
-            return;
-        }
-
-        throw new \LogicException(sprintf(self::ON_DEFAULT, $binding->abstract, $holder, $binding->adapter));
-    }
-
-    /**
-     * The class the seam's live binding answers with, or the row's default
-     * class while the member says the seam holds its default.
-     *
-     * @param  \SineMacula\Laravel\Iam\Bindings\SeamBinding  $binding
-     * @return ?string
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function holderOf(SeamBinding $binding): ?string
-    {
-        if ($this->defaults->holdsDefault($this->container, $binding->abstract, $binding->holdsDefault)) {
-            return $binding->memberDefaults[0] ?? $binding->abstract;
-        }
-
-        return $this->holders->of($this->container, $binding->abstract);
-    }
-
-    /**
-     * The binding rule's outcome, as the provider kept it; `null` when none is
-     * bound.
-     *
-     * @return ?\SineMacula\Laravel\Iam\Bindings\BindingOutcome
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function outcome(): ?BindingOutcome
-    {
-        $outcome = $this->container->bound(BindingOutcome::class) ? $this->container->make(BindingOutcome::class) : null;
-
-        return $outcome instanceof BindingOutcome ? $outcome : null;
-    }
-
-    /**
-     * The seams the binding rule kept with the application's binding; none when
-     * no outcome is bound.
-     *
-     * @return list<class-string>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    private function kept(): array
-    {
-        return $this->outcome()->kept ?? [];
-    }
-
-    /**
-     * A note for every seam given, each kept with the application's binding.
-     *
-     * @param  array<array-key, string>  $kept
-     * @return list<\Closure(): mixed>
-     */
-    private function keptNotes(array $kept): array
-    {
-        return array_values(array_map(static fn (string $abstract): \Closure => static fn (): string => sprintf(self::KEPT, $abstract), $kept));
     }
 }

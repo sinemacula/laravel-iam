@@ -12,9 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\ExternalIdentityLinks;
-use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
-use SineMacula\Laravel\Iam\Checks\SeamHolders;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
@@ -79,6 +77,7 @@ final class SsoBridgeCheckTest extends TestCase
         $policy->shouldReceive('allowsMethod')->andReturnUsing(static fn (string $guard): bool => in_array($guard, ['api', 'admin'], true));
 
         $this->container->instance(ContainerContract::class, $this->container);
+        $this->container->instance(Container::class, $this->container);
         $this->container->instance(ApplicationPolicy::class, $policy);
         $this->container->bind(TenantRequirement::class, NoTenantRequirement::class);
 
@@ -231,7 +230,7 @@ final class SsoBridgeCheckTest extends TestCase
      */
     private function check(): SsoBridgeCheck
     {
-        $seams = new MandatorySeamsCheck($this->container, $this->config, new SeamHolders(new MemberDefaults));
+        $seams = new MandatorySeamsCheck($this->container, $this->config);
 
         return new SsoBridgeCheck($this->container, $this->config, $seams);
     }

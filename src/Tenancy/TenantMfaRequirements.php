@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
-use Illuminate\Contracts\Container\Container;
+use Illuminate\Container\Container;
 use SineMacula\Laravel\Authentication\Database\WriteConnection;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
@@ -12,6 +12,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 
@@ -29,7 +30,7 @@ final readonly class TenantMfaRequirements
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \Illuminate\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator  $translator
      */
     public function __construct(
@@ -42,16 +43,13 @@ final readonly class TenantMfaRequirements
     ) {}
 
     /**
-     * Whether MFA's tenant requirement is bound to something other than MFA's
-     * default.
+     * Whether MFA's tenant requirement is bound off MFA's default.
      *
      * @return bool
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     public function isConfigured(): bool
     {
-        return !$this->requirement() instanceof NoTenantRequirement;
+        return !MfaServiceProvider::isPackageDefault($this->container, TenantRequirement::class);
     }
 
     /**

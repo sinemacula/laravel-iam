@@ -660,8 +660,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `testGrantsBeyondTheLimitAreRefused`, `testAViewerNamedByAReferenceIsTheModelItNames`,
   `testAPermissionARequirementGuardsIsNotHeldThere`
 - `tests/Feature/Authorization/AuditAccessSeamTest.php`
-  `testThePolicyIsBoundOverAuditLogsDefaultInEveryProviderOrder`, `testTheApplicationsPolicyBoundFirstIsKept`,
-  `testTheApplicationsPolicyBoundLastWins`, `testTheSwitchOffKeepsDenyAll`
+  `testThePolicyIsBoundOverAuditLogsDefault`, `testTheSwitchOffKeepsDenyAll`
 - `tests/Integration/Authorization/AdministrativeCheckTest.php` `testAGrantInTheObjectsTenantAllowsTheOperationThere`,
   `testADenialThrowsAndIsRecordedOnce`, `testARefusalForWantOfAProofOnNoSessionIsRecorded`,
   `testASubjectWithNoTenantIsDecidedOnThePlatform`, `testASubjectInATenantIsDecidedThereWhateverTheRequestsTenant`,

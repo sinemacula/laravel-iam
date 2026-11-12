@@ -8,8 +8,6 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
@@ -24,27 +22,17 @@ use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
 use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\SessionPolicySourceAdapter;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
-use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
-use Tests\Concerns\PermutesProviderOrder;
 use Tests\Fixtures\Authorization\NamedIdentityDirectory;
 use Tests\Fixtures\Authorization\NamedSubjectResolver;
 use Tests\TestCase;
 
 /**
  * Feature tests for the declaration of each adapter bound over one of
- * `laravel-authorization`'s contracts to its configuration report: in every
- * provider order, `authorization:check` names each as declared by
- * `laravel-iam`, with its class and its lifetime, and the closure declared is the one bound over the
- * contract; a binding made over an adapter afterwards shows the declaration
- * overridden, and an instance bound over it shows that; and nothing is declared
- * over the application's own binding, over a class the application names in
- * `laravel-authorization`'s configuration where it was bound first, for a row
- * whose switch is off, or at all while the capability's switch is.
+ * `laravel-authorization`'s contracts to its configuration report.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,13 +40,10 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(AuthorizationSeams::class)]
-#[CoversClass(BindingRule::class)]
 #[CoversClass(SeamBinding::class)]
 #[CoversClass(Lifetime::class)]
 final class DeclaredAuthorizationSeamsTest extends TestCase
 {
-    use PermutesProviderOrder;
-
     /** @var array<class-string, array{class-string, string}> Each contract declared, with the adapter declared and its lifetime. */
     private const array DECLARED = [
         SubjectResolver::class                  => [SubjectResolverAdapter::class, 'scoped'],
@@ -72,21 +57,19 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     /** @var array<string, mixed> What the application sets in `laravel-authorization`'s configuration before any provider registers. */
     private array $authorization = [];
 
+    /** @var bool Whether the application binds every declared contract itself, as its own provider's `register()` would. */
+    private bool $bindsItsOwn = false;
+
     /**
-     * In every provider order, each adapter is declared by `laravel-iam` with
-     * the very closure bound over its contract, and `authorization:check` names
-     * it as declared, its declaration standing, and passes.
+     * Each adapter is declared with the closure bound over its contract, and
+     * `authorization:check` shows it standing and passes.
      *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
      * @throws \JsonException
      */
-    #[DataProvider('provideProviderOrders')]
-    public function testEveryAdapterIsDeclaredAndStandsInEveryProviderOrder(array $providers): void
+    public function testEveryAdapterIsDeclaredAndStands(): void
     {
-        $this->bootInOrder($providers);
-
         $app          = $this->application();
         $declarations = Declarations::of($app);
 
@@ -132,19 +115,17 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * In every provider order, a binding the application makes over each
-     * adapter once every provider has registered shows the declaration
-     * overridden.
+     * A binding made over each adapter shows its declaration overridden.
      *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
      * @throws \JsonException
      */
-    #[DataProvider('provideProviderOrders')]
-    public function testABindingMadeOverAnAdapterShowsItOverriddenInEveryProviderOrder(array $providers): void
+    public function testABindingMadeOverAnAdapterShowsItOverridden(): void
     {
-        $this->bootInOrder($providers, after: self::applicationBindings());
+        foreach (self::applicationBindings() as $contract => $binding) {
+            $this->application()->bind($contract, $binding);
+        }
 
         [, $seams] = $this->report();
 
@@ -157,8 +138,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * An instance bound over an adapter shows the declaration with an instance
-     * bound over it.
+     * An instance bound over an adapter is shown.
      *
      * @return void
      *
@@ -177,19 +157,17 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * In every provider order, nothing is declared over a binding the
-     * application makes before any provider registers, which the binding rule
-     * keeps.
+     * Nothing is declared over the application's own binding.
      *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
      * @throws \JsonException
      */
-    #[DataProvider('provideProviderOrders')]
-    public function testNothingIsDeclaredOverAnApplicationBindingInEveryProviderOrder(array $providers): void
+    public function testNothingIsDeclaredOverAnApplicationBinding(): void
     {
-        $this->bootInOrder($providers, before: self::applicationBindings());
+        $this->bindsItsOwn = true;
+
+        $this->refreshApplication();
 
         self::assertSame([], Declarations::of($this->application())->all());
 
@@ -201,39 +179,31 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * In every provider order, a class the application names in
-     * `laravel-authorization`'s configuration is reported as configured: where
-     * `laravel-authorization` registered first, the binding rule keeps it and
-     * declares nothing; where this package registered first, the adapter it
-     * bound and declared is overridden by the class.
+     * A class named in `laravel-authorization`'s configuration is reported as
+     * configured, and nothing is declared over it.
      *
-     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
      *
      * @throws \JsonException
      */
-    #[DataProvider('provideProviderOrders')]
-    public function testAConfiguredClassIsReportedAsConfiguredInEveryProviderOrder(array $providers): void
+    public function testAConfiguredClassIsReportedAsConfigured(): void
     {
         $this->authorization = ['subject_resolver' => NamedSubjectResolver::class, 'identity_directory' => NamedIdentityDirectory::class];
 
-        $this->bootInOrder($providers);
-
-        $first = array_search(AuthorizationServiceProvider::class, $providers, true) < array_search(IamServiceProvider::class, $providers, true);
+        $this->refreshApplication();
 
         [, $seams] = $this->report();
 
         foreach ([SubjectResolver::class, IdentityDirectory::class] as $contract) {
             self::assertSame('configured', $seams[$contract]['origin'], $contract);
-            self::assertSame($first ? null : 'overridden', $seams[$contract]['declaration']['state'] ?? null, $contract);
+            self::assertNull($seams[$contract]['declaration'], $contract);
         }
 
         self::assertSame('standing', $seams[AuthenticationContext::class]['declaration']['state'] ?? null);
     }
 
     /**
-     * With the capability's switch off, nothing is declared, and the report
-     * names no declaration.
+     * With the switch off nothing is declared.
      *
      * @return void
      *
@@ -252,9 +222,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * With the MFA and SSO capabilities' switches off, the requirement checker
-     * and the grant hook, which follow them, are not declared, and the rest
-     * are.
+     * A row whose switch is off is not declared.
      *
      * @return void
      */
@@ -268,8 +236,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Set what the test names in `laravel-authorization`'s configuration before
-     * any provider registers, as the application's own configuration would.
+     * Set what the test names in `laravel-authorization`'s configuration.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -285,9 +252,28 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * A binding of the application's own for each contract declared, each
-     * building a stand-in for the contract, its authentication context naming
-     * the namespace `laravel-authorization` checks it for as it boots.
+     * Seed the environment, then make the application's own bindings where the
+     * test says so, as its provider's `register()` would.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        if (!$this->bindsItsOwn) {
+            return;
+        }
+
+        foreach (self::applicationBindings() as $contract => $binding) {
+            $app->bind($contract, $binding);
+        }
+    }
+
+    /**
+     * A stand-in of the application's own for each contract declared.
      *
      * @return array<class-string, \Closure(): object>
      */

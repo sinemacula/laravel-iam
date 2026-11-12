@@ -4,37 +4,16 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Bindings;
 
+use Illuminate\Container\Container;
+use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
+use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
+use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
+use SineMacula\Laravel\Mfa\MfaServiceProvider;
+use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
- * One member seam this package binds an adapter over, declared as data so the
- * binding rule applies every binding in one place.
- *
- * The rule binds the adapter only where the seam is unbound or still bound to
- * the member's own default, as the member whose contract the seam is says (its
- * `isPackageDefault()`, `$holdsDefault`), so an application's binding is never
- * replaced. A binding whose switch is off binds nothing, so a feature the
- * application leaves off changes nothing.
- *
- * The switch reads the configuration as every member will hold it once
- * registered: the application's, with each member's packaged configuration
- * beneath it, so a switch on a member's feature (`sso.features`, MFA's factor
- * types) reads the same whatever order the providers register in, and whether
- * the configuration is cached or not. A value a provider sets after this
- * package registers, or in a `boot()`, is read too late.
- *
- * An adapter that must give way to the member's own default while what it
- * answers from is missing names how the container builds it (`$factory`): the
- * closure is bound in the adapter's place, with the row's lifetime, and handed
- * the container, so it answers the adapter or the member's default as the
- * application stands when it is built.
- *
- * A binding over a member's seam that the member reports on can declare the
- * adapter to that member once bound (`$declare`): the rule hands it the closure
- * the container now holds for the seam, the very one it registered, so the
- * member's report can tell the adapter, still bound, from a binding made over
- * it later. A binding the rule keeps, or whose switch is off, binds nothing and
- * declares nothing.
+ * One member seam this package binds an adapter over (IAM-8.4).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -43,65 +22,104 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
  */
 final readonly class SeamBinding
 {
-    /** @var \Closure(\Illuminate\Container\Container, string): bool Whether the seam holds its member's default, as the member says. */
-    public \Closure $holdsDefault;
+    /** @var string Prefix of the keys scoped adapters are held under, so the seam itself never joins the scoped instances. */
+    public const string SCOPED_PREFIX = 'iam.scoped:';
 
     /**
      * Constructor.
      *
      * @param  class-string  $abstract
      * @param  class-string  $adapter
-     * @param  list<class-string>  $memberDefaults
+     * @param  bool  $on
      * @param  \SineMacula\Laravel\Iam\Bindings\Enums\Lifetime  $lifetime
-     * @param  ?\Closure(\Illuminate\Contracts\Config\Repository): bool  $appliesWhen
      * @param  bool|\Closure(): bool  $mandatory
-     * @param  ?\Closure(\Illuminate\Container\Container, string): bool  $holdsDefault
-     * @param  ?\Closure(\Illuminate\Contracts\Container\Container): object  $factory
-     * @param  ?\Closure(\Illuminate\Contracts\Container\Container, (\Closure(mixed...): mixed)|null): void  $declare
+     * @param  ?\Closure(\Illuminate\Container\Container, \Closure(\Illuminate\Container\Container): mixed): void  $declare
      */
     public function __construct(
 
         /** The member's contract. */
         public string $abstract,
 
-        /** This package's implementation of the contract. */
+        /** This package's implementation of it. */
         public string $adapter,
 
-        /** The member's own default classes. */
-        public array $memberDefaults,
+        /** Whether the adapter is bound at all. */
+        public bool $on = true,
 
         /** How long the container keeps the adapter. */
         public Lifetime $lifetime = Lifetime::TRANSIENT,
 
-        /** The switch that turns the binding on, read from configuration; `null` is always on. */
-        public ?\Closure $appliesWhen = null,
-
-        /** Whether the seam must be bound off its permissive default for the suite to be safe, as the checks report; a closure is asked only when they read it (`isMandatory()`). */
+        /** Whether `iam:check` refuses the member's default here; a closure is asked only when the check reads it. */
         public bool|\Closure $mandatory = false,
 
-        // The answer given in place of the member's own `isPackageDefault()`.
-        ?\Closure $holdsDefault = null,
-
-        /** How the container builds the seam, handed the container, when it is not the adapter alone; `null` builds the adapter. */
-        public ?\Closure $factory = null,
-
-        /** Declares the adapter to the member's own report once the rule has bound it, handed the container and the closure bound over the seam; `null` declares nothing. */
+        /** Declares the bound adapter to the member, given the closure bound over the seam. */
         public ?\Closure $declare = null,
-    ) {
-        $this->holdsDefault = $holdsDefault ?? MemberDefaults::answerOf($abstract);
-    }
+    ) {}
 
     /**
-     * Whether the seam must be bound off its permissive default, asking the
-     * closure the row was given, if any, only now: a mandate that asks a
-     * service the application binds (`laravel-authentication`'s application
-     * policy) is read when the checks run, never while providers register or on
-     * each boot, when the binding rule reads the rows.
+     * Whether `iam:check` refuses the member's default on this seam.
      *
      * @return bool
      */
     public function isMandatory(): bool
     {
         return $this->mandatory instanceof \Closure ? ($this->mandatory)() : $this->mandatory;
+    }
+
+    /**
+     * Whether the seam still holds its member's own default, as that member
+     * says.
+     *
+     * @param  \Illuminate\Container\Container  $container
+     * @return bool
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function holdsDefault(Container $container): bool
+    {
+        $member = match (true) {
+            str_starts_with($this->abstract, 'SineMacula\Laravel\Authentication\\') => AuthenticationServiceProvider::class,
+            str_starts_with($this->abstract, 'SineMacula\Laravel\Authorization\\')  => AuthorizationServiceProvider::class,
+            str_starts_with($this->abstract, 'SineMacula\Laravel\Mfa\\')            => MfaServiceProvider::class,
+            str_starts_with($this->abstract, 'SineMacula\Laravel\Sso\\')            => SsoServiceProvider::class,
+            str_starts_with($this->abstract, 'SineMacula\Laravel\AuditLog\\')       => AuditLogServiceProvider::class,
+            default                                                                 => throw new \InvalidArgumentException($this->abstract . ' is no member\'s contract.'),
+        };
+
+        return $member::isPackageDefault($container, $this->abstract);
+    }
+
+    /**
+     * Bind the adapter where the seam is unbound or holds its member's
+     * default; any other binding is the application's and stays.
+     *
+     * @param  \Illuminate\Container\Container  $container
+     * @return void
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function apply(Container $container): void
+    {
+        if (!$this->on || ($container->bound($this->abstract) && !$this->holdsDefault($container))) {
+            return;
+        }
+
+        $key = $this->adapter;
+
+        if ($this->lifetime === Lifetime::SCOPED) {
+            $key = self::SCOPED_PREFIX . $this->abstract;
+
+            $container->scoped($key, $this->adapter);
+        }
+
+        $concrete = static fn (Container $container): mixed => $container->make($key);
+
+        $container->bind($this->abstract, $concrete, $this->lifetime === Lifetime::SHARED);
+
+        if ($this->declare === null) {
+            return;
+        }
+
+        ($this->declare)($container, $concrete);
     }
 }

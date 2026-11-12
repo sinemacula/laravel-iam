@@ -22,10 +22,10 @@ use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionStage;
 use SineMacula\Laravel\Authorization\Evaluation\RequirementFreshness;
 use SineMacula\Laravel\Authorization\Evaluation\UnmetRequirement;
 use SineMacula\Laravel\Authorization\Exceptions\InsufficientAuthenticationException as AuthorizationRefusal;
+use SineMacula\Laravel\Authorization\Resolvers\RefusingRequirementChecker;
 use SineMacula\Laravel\Authorization\Subject;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
-use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
@@ -45,9 +45,8 @@ use Tests\TestCase;
  * mapped, so one about a subject the caller names stays Laravel's 403; a
  * refusal none of whose requirements MFA can express stays Laravel's 403, as
  * does any other HTTP exception; and the mapping is registered only while the
- * authorization and MFA capabilities' switches are both on, as the binding rule
- * read them, so a provider writing a switch once this package has registered
- * leaves it agreeing with the requirement checker, and only on Laravel's own
+ * authorization and MFA capabilities' switches are both on as the seams were
+ * bound, so it agrees with the requirement checker, and only on Laravel's own
  * exception handler, whether it is resolved before the mapping registers or
  * after.
  *
@@ -267,17 +266,14 @@ final class InsufficientAuthenticationMappingTest extends TestCase
     }
 
     /**
-     * A provider that turns the MFA capability's switch off once this package
-     * has registered leaves the mapping registered, as the requirement checker
-     * MFA judges with is still bound: the two follow the switches as the
-     * binding rule read them, so the refusal is still rendered as MFA's
-     * step-up.
+     * The MFA switch turned off in a later provider's `register()` leaves
+     * neither the requirement checker nor the mapping bound.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testTheMappingFollowsTheSwitchesAsTheBindingRuleReadThem(): void
+    public function testTheMappingFollowsTheSwitchesAsTheSeamsWereBound(): void
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class, TurnsMfaOffWhileRegistering::class]);
 
@@ -286,9 +282,9 @@ final class InsufficientAuthenticationMappingTest extends TestCase
         $this->resolveTheCallerOnTheSession();
 
         self::assertFalse(MfaSeams::isOn($app->make('config')));
-        self::assertInstanceOf(RequirementCheckerAdapter::class, self::resolve($app, AuthenticationRequirementChecker::class));
+        self::assertInstanceOf(RefusingRequirementChecker::class, self::resolve($app, AuthenticationRequirementChecker::class));
 
-        $this->postJson('/refund')->assertUnauthorized();
+        $this->postJson('/refund')->assertForbidden();
     }
 
     /**

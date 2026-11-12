@@ -207,12 +207,8 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
     /**
      * While a tenant's rule reaches a session, or a grant is reported to SSO's
-     * scope widening, `laravel-authentication`'s tenant resolver left on its
-     * default, resolved or not, or bound to `ResolveNoTenant` by name, is
-     * refused, since MFA's tenant requirement, the tree's changes and SSO's
-     * revocation resolve the session's tenant through it, and the grant hook
-     * the tenant of every grant that widens; a resolver of the application's
-     * own, as an instance, a class name or a closure, passes.
+     * scope widening, `laravel-authentication`'s default tenant resolver is
+     * refused, resolved or not; the application's own resolver passes.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $rule
      * @return void
@@ -234,7 +230,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
 
-        $app->singleton(TenantResolver::class, ResolveNoTenant::class);
+        $app->instance(TenantResolver::class, new ResolveNoTenant);
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
 

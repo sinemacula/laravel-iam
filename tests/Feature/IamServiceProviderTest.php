@@ -7,7 +7,6 @@ namespace Tests\Feature;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Config\Repository;
 use Illuminate\Console\Application as Artisan;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Foundation\Application as FoundationApplication;
@@ -27,13 +26,12 @@ use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
+use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
-use SineMacula\Laravel\Iam\Bindings\BindingOutcome;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
@@ -66,7 +64,6 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Tests\Concerns\PermutesProviderOrder;
 use Tests\Concerns\ReadsRawListeners;
 use Tests\Fixtures\Providers\RecordsAuthorizationContextWhileBooting;
-use Tests\Fixtures\Providers\RecordsBindingOutcome;
 use Tests\Fixtures\Providers\RecordsSettlementWhileBooting;
 use Tests\Fixtures\Providers\RegistersIamWhileBooting;
 use Tests\Fixtures\Providers\RegistersSsoOnceBooted;
@@ -181,7 +178,7 @@ final class IamServiceProviderTest extends TestCase
         $binding = $callers->hold(self::factorCodeBinding(), $caller);
 
         self::assertSame($caller, $app->make(FactorCodeCallers::class)->of($binding));
-        self::assertSame($callers, $app->make(BindingRule::SCOPED_PREFIX . FactorCodeCallers::class));
+        self::assertSame($callers, $app->make(SeamBinding::SCOPED_PREFIX . FactorCodeCallers::class));
 
         $app->make(IamManager::class)->resetWorkerState();
 
@@ -417,8 +414,8 @@ final class IamServiceProviderTest extends TestCase
     /**
      * While a console command that lists, describes, discovers, caches or
      * clears configuration runs, a mismatch is not refused, so it can still be
-     * inspected and cleared; the unset keys are still aligned and the binding
-     * rule still applied.
+     * inspected and cleared; the unset keys are still aligned and the seams
+     * still bound.
      *
      * @param  list<string>  $arguments
      * @return void
@@ -433,7 +430,7 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertSame(self::ELSEWHERE, $this->config()->get('sso.storage.connection'));
         self::assertSame(self::CONNECTION, $this->config()->get('mfa.storage.connection'));
-        self::assertTrue($this->application()->bound(BindingOutcome::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $this->application()->make(GrantScope::class));
     }
 
     /**
@@ -469,7 +466,7 @@ final class IamServiceProviderTest extends TestCase
 
         self::assertFalse($this->config()->get($key));
         self::assertTrue($this->application()->isBooted());
-        self::assertTrue($this->application()->bound(BindingOutcome::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $this->application()->make(GrantScope::class));
     }
 
     /**
@@ -513,7 +510,6 @@ final class IamServiceProviderTest extends TestCase
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     #[DataProvider('provideConnectionKeyNames')]
     public function testAConnectionKeyThatIsNotANameIsRefusedAsThePackageRegisters(string $key): void
@@ -602,38 +598,9 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The binding rule's outcome is kept in the container for the checks: it
-     * bound every capability's seams over the members' defaults, MFA's, the
-     * passkey factor gate, its context's, SSO's and `laravel-authorization`'s,
-     * and kept none, the application binding nothing of its own, offering no
-     * passkeys, naming no memberships, and leaving SSO's evidence off, so MFA
-     * keeps its own passkey gateway, and SSO its own evidence policy, tenant
-     * membership, link eligibility and principal scope.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testTheBindingRulesOutcomeIsKeptForTheChecks(): void
-    {
-        $outcome = $this->app?->make(BindingOutcome::class);
-        $mfa     = (new MfaSeams)->seams(new Repository);
-        $sso     = [...(new SsoSeams)->seams(new Repository), ...(new TenancySeams(new Container))->seams(new Repository)];
-        $mfa     = [...$mfa, ...(new PasskeySeams)->seams(new Repository), ...(new ContextSeams)->seams(new Repository)];
-        $rows    = [...$mfa, ...$sso, ...(new AuthorizationSeams)->seams(new Repository)];
-        $tenancy = [TenantMembership::class, LinkEligibility::class, PrincipalScope::class];
-        $unbound = [PasskeyGateway::class, EvidencePolicy::class, ...$tenancy];
-        $seams   = array_values(array_diff(array_map(static fn (SeamBinding $binding): string => $binding->abstract, $rows), $unbound));
-
-        self::assertInstanceOf(BindingOutcome::class, $outcome);
-        self::assertSame($seams, $outcome->bound);
-        self::assertSame([], $outcome->kept);
-        self::assertSame($outcome, $this->app?->make(BindingOutcome::class));
-    }
-
-    /**
-     * The binding rule runs as the package registers, so its outcome is kept
-     * before the next provider registers, in every provider order.
+     * Every adapter is bound over its member's default in every provider order,
+     * except the passkey gateway, SSO's evidence policy and SSO's membership
+     * seams, which stay off by default.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -641,13 +608,59 @@ final class IamServiceProviderTest extends TestCase
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     #[DataProvider('provideProviderOrders')]
-    public function testTheBindingRuleAppliesAsThePackageRegisters(array $providers): void
+    public function testEveryAdapterIsBoundOverItsMembersDefault(array $providers): void
     {
-        $at = (int) array_search(IamServiceProvider::class, $providers, true);
+        $this->bootInOrder($providers);
 
-        $this->bootInOrder([...array_slice($providers, 0, $at + 1), RecordsBindingOutcome::class, ...array_slice($providers, $at + 1)]);
+        $app = $this->application();
+        $off = [PasskeyGateway::class, EvidencePolicy::class, TenantMembership::class, LinkEligibility::class, PrincipalScope::class];
 
-        self::assertTrue($this->application()->make(RecordsBindingOutcome::RECORDED));
+        FakeOneTimeCodeSender::fake($app);
+
+        foreach ($this->rows() as $row) {
+
+            self::assertSame(in_array($row->abstract, $off, true), $row->holdsDefault($app), $row->abstract);
+
+            if (!$row->on) {
+                continue;
+            }
+
+            self::assertInstanceOf($row->adapter, $app->make($row->abstract), $row->abstract);
+        }
+    }
+
+    /**
+     * The application's own binding of every seam wins over the adapter in
+     * every provider order, whether it is made before any provider registers or
+     * in an application provider's `register()`.
+     *
+     * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[DataProvider('provideProviderOrders')]
+    public function testTheApplicationsBindingWinsOverTheAdapter(array $providers): void
+    {
+        $bindings  = [];
+        $instances = [];
+
+        foreach ($this->rows() as $row) {
+
+            $instance = \Mockery::mock($row->abstract)->shouldIgnoreMissing([]);
+
+            $instances[$row->abstract] = $instance;
+            $bindings[$row->abstract]  = static fn (): object => $instance;
+        }
+
+        foreach (['before' => [$bindings, []], 'after' => [[], $bindings]] as $when => [$before, $after]) {
+
+            $this->bootInOrder($providers, $before, $after);
+
+            foreach ($instances as $abstract => $instance) {
+                self::assertSame($instance, $this->application()->make($abstract), $when . ': ' . $abstract);
+            }
+        }
     }
 
     /**
@@ -673,8 +686,8 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A late registration applies the binding rule again at once, and leaves no
-     * booting callback behind.
+     * A late registration binds the seams at once, and leaves no booting
+     * callback behind.
      *
      * @return void
      *
@@ -683,13 +696,13 @@ final class IamServiceProviderTest extends TestCase
     public function testALateRegistrationSettlesAtOnceAndLeavesNoBootingCallback(): void
     {
         $app       = $this->application();
-        $before    = $app->make(BindingOutcome::class);
         $callbacks = new \ReflectionProperty(FoundationApplication::class, 'bootingCallbacks');
         $count     = count((array) $callbacks->getValue($app));
 
+        $app->offsetUnset(GrantScope::class);
         $app->register(IamServiceProvider::class, true);
 
-        self::assertNotSame($before, $app->make(BindingOutcome::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $app->make(GrantScope::class));
         self::assertCount($count, (array) $callbacks->getValue($app));
     }
 
@@ -715,11 +728,8 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package binds `laravel-authorization`'s seams again in the booting
-     * phase, before the first provider boots, in every provider order, so a
-     * provider's `boot()` resolves the adapter even where
-     * `laravel-authorization`, registering after this package, bound its own
-     * default over it.
+     * The seams are bound before the first provider boots, in every provider
+     * order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -727,7 +737,7 @@ final class IamServiceProviderTest extends TestCase
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     #[DataProvider('provideProviderOrders')]
-    public function testLaravelAuthorizationsSeamsAreBoundAgainBeforeAnyProviderBoots(array $providers): void
+    public function testTheSeamsAreBoundBeforeAnyProviderBoots(array $providers): void
     {
         $this->bootInOrder([RecordsAuthorizationContextWhileBooting::class, ...$providers]);
 
@@ -736,21 +746,20 @@ final class IamServiceProviderTest extends TestCase
 
     /**
      * Registered from another provider's `boot()`, once the booting callbacks
-     * have run, the package still applies the binding rule as it registers, and
-     * its outcome is kept.
+     * have run, the package still binds the seams.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testARegistrationWhileTheApplicationBootsAppliesTheBindingRule(): void
+    public function testARegistrationWhileTheApplicationBootsBindsTheSeams(): void
     {
         $this->bootInOrder([...self::MEMBER_PROVIDERS, RegistersIamWhileBooting::class]);
 
         $app = $this->application();
 
         self::assertTrue($app->providerIsLoaded(IamServiceProvider::class));
-        self::assertInstanceOf(BindingOutcome::class, $app->make(BindingOutcome::class));
+        self::assertInstanceOf(GrantScopeAdapter::class, $app->make(GrantScope::class));
     }
 
     /**
@@ -773,18 +782,16 @@ final class IamServiceProviderTest extends TestCase
 
     /**
      * The package settles once: booting its provider again, after a member key
-     * has been pointed at another connection, neither checks nor aligns the
-     * storage connections again, and keeps the binding rule's outcome.
+     * has been pointed at another connection, neither binds the seams nor
+     * checks or aligns the storage connections again.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
     public function testThePackageSettlesOnlyOnce(): void
     {
         $app      = $this->application();
-        $outcome  = $app->make(BindingOutcome::class);
         $provider = $app->getProvider(IamServiceProvider::class);
 
         self::assertInstanceOf(IamServiceProvider::class, $provider);
@@ -793,11 +800,13 @@ final class IamServiceProviderTest extends TestCase
         $this->config()->set('sso.storage.connection', self::ELSEWHERE);
         $this->config()->set('mfa.storage.connection', null);
 
+        $app->offsetUnset(GrantScope::class);
+
         $provider->boot();
 
         self::assertSame(self::ELSEWHERE, $this->config()->get('sso.storage.connection'));
         self::assertNull($this->config()->get('mfa.storage.connection'));
-        self::assertSame($outcome, $app->make(BindingOutcome::class));
+        self::assertFalse($app->bound(GrantScope::class));
     }
 
     /**
@@ -1046,8 +1055,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The capabilities whose seams the binding rule applies, which `iam:check`
-     * reads the mandatory seams from too, are every capability's, in order.
+     * Every capability's seams are bound and checked, in order.
      *
      * @return void
      */
@@ -1207,5 +1215,27 @@ final class IamServiceProviderTest extends TestCase
         self::assertInstanceOf(Repository::class, $config);
 
         return $config;
+    }
+
+    /**
+     * Every capability's rows, as the application's configuration declares
+     * them.
+     *
+     * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function rows(): array
+    {
+        $app  = $this->application();
+        $rows = [];
+
+        foreach (IamServiceProvider::seamProviders() as $provider) {
+            foreach ($app->make($provider)->seams($this->config()) as $row) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 }
