@@ -230,7 +230,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 
 - `Audit\Mappers\AuthorizationEventMapper` is mapped for `laravel-authorization`'s marker
   (`Contracts\AuthorizationEvent`, which `IdentityEvent` extends), so every event it dispatches is described here and
-  only here. Its codes are `Audit\Enums\AuthorizationActivity` (29 codes): the decisions in `security`, every change in
+  only here. Its codes are `Audit\Enums\AuthorizationActivity` (31 codes): the decisions in `security`, every change in
   `access_management` (IAM-9.3). Audit-log's own `authorization.gate_denied` stays its own: Gate capture is off.
 - Decisions. `laravel-authorization` dispatches `DecisionEvaluated` for every check, allows included (configurable
   firing is its BL-72, not built), and `AuthorizationFailed` a second time for a denial `authorize()` throws. The mapper
@@ -277,10 +277,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   application and subtree, its expiry as `auditProperties()` writes it (ISO 8601 in UTC), and whether the call was
   trusted; an update keeps the names of the fields it changed, never their values; a policy its document's version and
   digest, never the document.
-- Decision this note records, beyond the plan's: four codes IAM-9.2 does not list record events `laravel-authorization`
-  dispatches that are changes to who may do what: `grant_expiry_changed` (a grantee's or a role's grant's expiry
-  changed), `resource_policy_attached` and `_detached`, and `system_override_used`. Leaving them unrecorded would leave
-  a privilege change out of the change-management evidence IAM-9.3 keeps.
+- Decision this note records, beyond the plan's: six codes IAM-9.2 does not list record events `laravel-authorization`
+  dispatches that are changes to who may do what: `role_exclusion_declared` and `_removed` (a pair of mutually
+  exclusive roles, about its first role, keeping both names and the second role's reference), `grant_expiry_changed`
+  (a grantee's or a role's grant's expiry changed), `resource_policy_attached` and `_detached`, and
+  `system_override_used`. Leaving them unrecorded would leave a privilege change out of the change-management evidence
+  IAM-9.3 keeps.
 - A role, permission or policy deleted while grantees held it lists them (AUTHZ-15.2), a permission's roles among them,
   and its record covers every grantee beyond its subject as a bulk operation's subjects, through audit-log's
   `PendingRecord::covering()` on the builder its capture hands the mapper: each grantee once, read through the morph

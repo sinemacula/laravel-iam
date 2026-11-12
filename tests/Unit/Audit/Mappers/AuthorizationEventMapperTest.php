@@ -54,6 +54,8 @@ use SineMacula\Laravel\Authorization\Events\Resource\PolicyAttached as ResourceP
 use SineMacula\Laravel\Authorization\Events\Resource\PolicyDetached as ResourcePolicyDetached;
 use SineMacula\Laravel\Authorization\Events\Role\Created as RoleCreated;
 use SineMacula\Laravel\Authorization\Events\Role\Deleted as RoleDeleted;
+use SineMacula\Laravel\Authorization\Events\Role\ExclusionDeclared;
+use SineMacula\Laravel\Authorization\Events\Role\ExclusionRemoved;
 use SineMacula\Laravel\Authorization\Events\Role\PermissionExpired as RolePermissionExpired;
 use SineMacula\Laravel\Authorization\Events\Role\PermissionExpiryChanged as RolePermissionExpiryChanged;
 use SineMacula\Laravel\Authorization\Events\Role\PermissionGranted as RolePermissionGranted;
@@ -175,6 +177,18 @@ final class AuthorizationEventMapperTest extends TestCase
             new RoleDeleted($operation, $role, 'Billing', null, null, [], [$grant]),
             AuthorizationActivity::ROLE_DELETED,
             [...$call, 'name' => 'Billing', 'grantee_count' => 0, 'permission_count' => 1],
+        ];
+
+        yield 'a role exclusion declared' => [
+            new ExclusionDeclared($operation, $role, 'Billing', new Reference('role', '6'), 'Approvals', null),
+            AuthorizationActivity::ROLE_EXCLUSION_DECLARED,
+            [...$call, 'role_name' => 'Billing', 'excluded_role' => 'role:6', 'excluded_role_name' => 'Approvals'],
+        ];
+
+        yield 'a role exclusion removed' => [
+            new ExclusionRemoved($operation, $role, 'Billing', new Reference('role', '6'), 'Approvals', null),
+            AuthorizationActivity::ROLE_EXCLUSION_REMOVED,
+            [...$call, 'role_name' => 'Billing', 'excluded_role' => 'role:6', 'excluded_role_name' => 'Approvals'],
         ];
 
         yield 'a permission created' => [
@@ -625,6 +639,31 @@ final class AuthorizationEventMapperTest extends TestCase
 
         self::assertSame(['type' => 'organisation', 'id' => self::TENANT], $guardrail->subject?->toArray());
         self::assertNull($type->subject);
+    }
+
+    /**
+     * A role exclusion is the caller's, about the pair's first role, in the
+     * tenant that owns the pair.
+     *
+     * @return void
+     */
+    public function testARoleExclusionIsAboutItsFirstRoleInItsTenant(): void
+    {
+        $tenant  = new Reference('organisation', self::TENANT);
+        $role    = new Reference('role', '3');
+        $other   = new Reference('role', '6');
+        $changes = [
+            self::snapshotOf(new ExclusionDeclared(self::operation(), $role, 'Billing', $other, 'Approvals', $tenant)),
+            self::snapshotOf(new ExclusionRemoved(self::operation(), $role, 'Billing', $other, 'Approvals', $tenant)),
+        ];
+
+        foreach ($changes as $snapshot) {
+            self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->actor?->toArray());
+            self::assertSame(['type' => 'role', 'id' => '3'], $snapshot->subject?->toArray());
+            self::assertSame(['type' => References::TENANT_TYPE, 'id' => self::TENANT], $snapshot->tenant?->toArray());
+            self::assertSame('authorization:' . self::OPERATION, $snapshot->correlationId);
+            self::assertNull($snapshot->manifest);
+        }
     }
 
     /**

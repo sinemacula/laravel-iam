@@ -33,6 +33,8 @@ final readonly class AuthorizationEventMapper implements EventMapper
         'role.created'                       => AuthorizationActivity::ROLE_CREATED,
         'role.updated'                       => AuthorizationActivity::ROLE_UPDATED,
         'role.deleted'                       => AuthorizationActivity::ROLE_DELETED,
+        'role.exclusion.declared'            => AuthorizationActivity::ROLE_EXCLUSION_DECLARED,
+        'role.exclusion.removed'             => AuthorizationActivity::ROLE_EXCLUSION_REMOVED,
         'permission.created'                 => AuthorizationActivity::PERMISSION_CREATED,
         'permission.updated'                 => AuthorizationActivity::PERMISSION_UPDATED,
         'permission.deleted'                 => AuthorizationActivity::PERMISSION_DELETED,

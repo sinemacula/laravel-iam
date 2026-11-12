@@ -54,6 +54,7 @@ final class AuthorizationActivityTest extends CodesTestCase
         $decision   = ['action', 'resource', 'application', 'policies'];
         $definition = ['trusted', 'name', 'guard'];
         $document   = ['trusted', 'name', 'document_version', 'document_digest'];
+        $excluded   = ['trusted', 'role_name', 'excluded_role', 'excluded_role_name'];
         $granted    = ['trusted', 'role_name', 'permission_name'];
         $scoped     = ['trusted', 'name', 'application', 'include_subtree'];
         $change     = 'access_management';
@@ -65,6 +66,8 @@ final class AuthorizationActivityTest extends CodesTestCase
             'authorization.role_created'             => [$change, self::retained(...$definition, ...['system'])],
             'authorization.role_updated'             => [$change, self::retained(...$definition, ...['changes'])],
             'authorization.role_deleted'             => [$change, self::retained(...$definition, ...['grantee_count', 'permission_count'])],
+            'authorization.role_exclusion_declared'  => [$change, self::retained(...$excluded)],
+            'authorization.role_exclusion_removed'   => [$change, self::retained(...$excluded)],
             'authorization.permission_created'       => [$change, self::retained(...$definition, ...['system'])],
             'authorization.permission_updated'       => [$change, self::retained(...$definition, ...['changes'])],
             'authorization.permission_deleted'       => [$change, self::retained(...$definition, ...['grantee_count', 'role_count'])],
