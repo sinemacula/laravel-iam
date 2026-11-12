@@ -223,12 +223,13 @@ so a viewer may page through the trail and be denied export:
 - otherwise, its own activity in the tenants it holds `.own` in;
 - otherwise nothing.
 
-The tenants are those its grants are made in, a grant that reaches its subtree counting in every tenant below. A
-platform-wide grant counts in the viewer's own tenant and the tenants your memberships say it belongs to. Each tenant is
-decided as a check there would be, so a tenant whose own policies deny the purpose is left out, and a principal counts
-its own grants only where your `TenantAccess` lets it act, elsewhere only its identity's. A grant never shows the whole
-trail: no viewer sees records with no tenant, which may be about any tenant's people. Grants in more tenants than
-audit-log's scope holds (100), a large subtree included, refuse the read rather than show some of them.
+The tenants decided are the viewer's own tenant, the tenants your memberships say it belongs to, and each tenant a
+grant is made in. Each is decided as a check there would be, so a platform-wide grant or one reaching down from a
+tenant above counts there, a tenant whose own policies deny the purpose is left out, and a principal counts its own
+grants only where your `TenantAccess` lets it act, elsewhere only its identity's. A grant never shows the whole trail:
+no viewer sees records with no tenant, which may be about any tenant's people, nor a tenant below a grant's own that it
+is no member of. Grants in more tenants than audit-log's scope holds (100) refuse the read rather than show some of
+them.
 
 Audit-log tells the policy who is reading and why, never how they signed in or how recently. A requirement on the
 authentication itself, such as a fresh multi-factor check, belongs on the route or action that reads the trail,

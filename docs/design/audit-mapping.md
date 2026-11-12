@@ -320,11 +320,12 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   keeps no attachment. A refusal is contained by audit-log's capture (`AuditCaptureFailed`), never thrown to the
   change's caller. A deletion that took no grant covers nothing, since audit-log refuses an empty bulk operation.
 - Audit access (IAM-6.10). `Authorization\AuditAccessPolicyAdapter` answers audit-log's `AuditAccessPolicy`, bound
-  shared over audit-log's `DenyAllPolicy` while `iam.adapters.authorization` is on, never mandatory. It finds where a
-  grant route gives the viewer each of the purpose's permissions with `laravel-authorization`'s access review
-  (`ReviewQuery::holdings()->forAction()`, run trusted), a subtree expanded and a platform-wide route read in the
-  viewer's own tenant and its memberships, then decides each tenant with `heldPermissionsFor()`, counting only a
-  permission whose decision read no authentication requirement, since the policy is never told the reader's session. A
+  shared over audit-log's `DenyAllPolicy` while `iam.adapters.authorization` is on, never mandatory. It decides the
+  viewer's own tenant, its memberships and each tenant `laravel-authorization`'s access review names as the origin of a
+  route giving one of the purpose's permissions (`ReviewQuery::holdings()->forAction()`, run trusted), each with
+  `heldPermissionsFor()`, so a platform-wide or subtree grant counts wherever that tenant's decision says it reaches.
+  Only a permission whose decision read no authentication requirement counts, since the policy is never told the
+  reader's session. A
   principal is decided as its identity alone where `TenantAccess::mayActIn()` refuses it. The catalogue
   (`Authorization\PermissionCatalogue`) declares `audit-log.{purpose}`, `audit-log.{purpose}.{category}` and
   `audit-log.{purpose}.own`, and the scope is `tenants()` narrowed to the categories every tenant allows, else
@@ -608,7 +609,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `tests/Integration/Audit/AuthorizationTrailTest.php` `testAViewerNeverReadsBeyondItsScope`,
   `testADenialInsideATransactionIsRecordedOnceItEnds`
 - `tests/Integration/Authorization/AuditAccessPolicyAdapterTest.php` `testATenantGrantIsSeenInItsTenant`,
-  `testAPlatformGrantIsSeenInTheViewersTenantsThatAllowIt`, `testASubtreeGrantIsSeenInEveryTenantBelowIt`,
+  `testAPlatformGrantIsSeenInTheViewersTenantsThatAllowIt`, `testASubtreeGrantIsSeenInTheViewersTenantsBelowIt`,
   `testTheScopeIsNeverWiderThanAnyTenantsGrant`, `testAnOwnActivityGrantSeesOnlyTheViewersOwnActivity`,
   `testAPermissionWhoseDecisionReadsARequirementIsNotHeld`, `testAPrincipalsGrantsCountOnlyWhereItMayAct`
 - `tests/Feature/Authorization/AuditAccessSeamTest.php`

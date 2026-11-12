@@ -95,7 +95,7 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A tenant grant is seen in its tenant, and memberships are not read.
+     * A tenant grant is seen in its tenant, a member of it or not.
      *
      * @return void
      *
@@ -116,7 +116,6 @@ final class AuditAccessPolicyAdapterTest extends TestCase
         self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants($scope));
         self::assertNull($scope->categories());
         self::assertFalse($scope->includesTenantless());
-        self::assertSame([], $this->memberships->asked());
     }
 
     /**
@@ -145,20 +144,21 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A subtree grant is seen in every tenant below it.
+     * A subtree grant is seen at its root and in the viewer's tenants below it,
+     * never in another tenant below it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testASubtreeGrantIsSeenInEveryTenantBelowIt(): void
+    public function testASubtreeGrantIsSeenInTheViewersTenantsBelowIt(): void
     {
         $first = new Reference(Organisation::TYPE, self::FIRST);
 
         $this->app?->instance(TenantTree::class, FakeTenantTree::of([
             [$first, null],
             [new Reference(Organisation::TYPE, self::SECOND), $first],
-            [new Reference(Organisation::TYPE, self::THIRD), null],
+            [new Reference(Organisation::TYPE, self::THIRD), $first],
         ]));
 
         $subtree = $this->viewer();
@@ -166,6 +166,8 @@ final class AuditAccessPolicyAdapterTest extends TestCase
 
         $subtree->givePermission('audit-log.read', tenant: $first);
         $node->givePermission('audit-log.read', tenant: $first, includeSubtree: false);
+        $this->member($subtree, self::SECOND);
+        $this->member($node, self::SECOND);
 
         self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants(self::scope($subtree)));
         self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope($node)));

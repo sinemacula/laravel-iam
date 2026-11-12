@@ -21,8 +21,6 @@ use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\Evaluation\HeldPermission;
 use SineMacula\Laravel\Authorization\Reviews\AccessReview;
-use SineMacula\Laravel\Authorization\Reviews\Enums\ReachKind;
-use SineMacula\Laravel\Authorization\Reviews\OriginScope;
 use SineMacula\Laravel\Authorization\Reviews\ReviewQuery;
 use SineMacula\Laravel\Authorization\Reviews\ReviewScope;
 use SineMacula\Laravel\Authorization\Subject;
@@ -103,9 +101,8 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     }
 
     /**
-     * The tenants, keyed by id, where a grant route gives the subject any of
-     * the actions: a subtree expanded, and a platform-wide route read in the
-     * subject's own tenant and the tenants its identity is a member of.
+     * The tenants, keyed by id, to decide the actions in: the subject's own and
+     * its memberships, and each tenant a grant route giving one is made in.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  list<string>  $actions
@@ -121,46 +118,23 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     {
         $reviews    = $container->make(AccessReview::class);
         $translator = $container->make(TenantTranslator::class);
-        $tenants    = [];
-        $isPlatform = false;
+        $tenants    = self::memberships($subject, $translator, $container);
 
+        // A subtree grant is decided at its root, and below it only in the
+        // viewer's tenants, whose own decision says whether it reaches them.
         foreach ($actions as $action) {
             foreach ($reviews->trustedStream(ReviewQuery::holdings($subject, ReviewScope::everywhere())->forAction($action)) as $row) {
-                $reach = $row->evidence?->reach;
+                $root = $row->evidence?->reach->tenant();
 
-                if ($reach?->reach() === ReachKind::PLATFORM) {
-                    $isPlatform = true;
+                if ($root === null) {
+                    continue;
                 }
 
-                foreach (self::within($reach, $container) as $tenant) {
-                    $tenants[$translator->idOf($tenant)] = $tenant;
-                }
+                $tenants[$translator->idOf($root)] = $root;
             }
         }
 
-        return $isPlatform ? $tenants + self::memberships($subject, $translator, $container) : $tenants;
-    }
-
-    /**
-     * The tenants a route reaches by name: its tenant, and those below it when
-     * it reaches its subtree.
-     *
-     * @param  ?\SineMacula\Laravel\Authorization\Reviews\OriginScope  $reach
-     * @param  \Illuminate\Container\Container  $container
-     * @return list<\SineMacula\Laravel\Authorization\Support\Reference>
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \UnexpectedValueException
-     */
-    private static function within(?OriginScope $reach, Container $container): array
-    {
-        $root = $reach?->tenant();
-
-        return match (true) {
-            $root === null         => [],
-            $reach->includeSubtree => $container->make(TenancyContracts::class)->subtree($root),
-            default                => [$root],
-        };
+        return $tenants;
     }
 
     /**
