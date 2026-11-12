@@ -74,11 +74,8 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
  * neither commits until the caller's does, and the re-sync runs under the
  * redemption's locks after all.
  *
- * `laravel-authentication` reports its refusal (`AuthenticationFailed`) at
- * once, inside the transaction; the audit trail holds that report while the
- * transaction is open and records it once the transaction has rolled back
- * (`Audit\DeferredRefusals`), so the refused sign-in is recorded once, and
- * never in the transaction that rolls it back (IAM-9.5).
+ * The refusal `laravel-authentication` reports inside the transaction is
+ * recorded once it has rolled back (IAM-9.5).
  *
  * The admitted redemption is forgotten as each attempt starts and ends, so a
  * retried attempt never answers from one rolled back. What it answers leaves

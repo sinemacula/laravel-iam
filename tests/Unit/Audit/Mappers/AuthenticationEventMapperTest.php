@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\AuditLog\Capture\Enums\CapturedActivity;
 use SineMacula\Laravel\AuditLog\Records\Enums\Outcome;
+use SineMacula\Laravel\AuditLog\Records\Enums\Timing;
 use SineMacula\Laravel\AuditLog\Records\PendingRecord;
 use SineMacula\Laravel\AuditLog\Records\PendingSnapshot;
 use SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent;
@@ -49,7 +50,6 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Passwords\Enums\PasswordFlow;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Iam\Audit\Correlation;
-use SineMacula\Laravel\Iam\Audit\DeferredRefusals;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity;
 use SineMacula\Laravel\Iam\Audit\Enums\SessionActivity;
 use SineMacula\Laravel\Iam\Audit\Mappers\AuthenticationEventMapper;
@@ -219,7 +219,7 @@ final class AuthenticationEventMapperTest extends TestCase
     #[DataProvider('provideSkippedEvents')]
     public function testNoiseIsSkipped(AuthenticationEvent $event): void
     {
-        self::assertNull((new AuthenticationEventMapper(new DeferredRefusals))->map($event, new PendingRecord));
+        self::assertNull((new AuthenticationEventMapper)->map($event, new PendingRecord));
     }
 
     /**
@@ -229,7 +229,7 @@ final class AuthenticationEventMapperTest extends TestCase
      */
     public function testAnotherEventIsSkipped(): void
     {
-        self::assertNull((new AuthenticationEventMapper(new DeferredRefusals))->map(new \stdClass, new PendingRecord));
+        self::assertNull((new AuthenticationEventMapper)->map(new \stdClass, new PendingRecord));
     }
 
     /**
@@ -298,7 +298,7 @@ final class AuthenticationEventMapperTest extends TestCase
     {
         $record   = new PendingRecord;
         $event    = new AuthenticationFailed(self::context(), $flow, FailureReason::INVALID_CREDENTIALS, 'ada@example.test', 30);
-        $snapshot = (new AuthenticationEventMapper(new DeferredRefusals))->map($event, $record)?->snapshot();
+        $snapshot = (new AuthenticationEventMapper)->map($event, $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertSame($code->value, $snapshot->code?->value);
@@ -311,6 +311,20 @@ final class AuthenticationEventMapperTest extends TestCase
         self::assertSame('session:' . self::SESSION, $snapshot->correlationId);
         self::assertArrayNotHasKey('identifier', $snapshot->properties ?? []);
         self::assertArrayNotHasKey('concealed', $snapshot->properties ?? []);
+    }
+
+    /**
+     * A refusal is written once its transaction ends, so a rollback keeps it;
+     * any other event takes audit-log's default.
+     *
+     * @return void
+     */
+    public function testOnlyARefusalWaitsForItsTransactionToEnd(): void
+    {
+        $refusal = new AuthenticationFailed(self::context(), AuthenticationFlow::SIGN_IN, FailureReason::INVALID_CREDENTIALS);
+
+        self::assertSame(Timing::AFTER_TRANSACTION, self::snapshotOf($refusal)->timing);
+        self::assertNull(self::snapshotOf(new SessionCreated(self::context()))->timing);
     }
 
     /**
@@ -341,7 +355,7 @@ final class AuthenticationEventMapperTest extends TestCase
     {
         $record   = new PendingRecord;
         $event    = new AuthenticationFailed(self::context(), AuthenticationFlow::SIGN_IN, FailureReason::RATE_LIMITED, 'ada@example.test', 30);
-        $snapshot = (new AuthenticationEventMapper(new DeferredRefusals))->map($event, $record)?->snapshot();
+        $snapshot = (new AuthenticationEventMapper)->map($event, $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertSame(CapturedActivity::LOCKED_OUT->value, $snapshot->code?->value);
@@ -512,7 +526,7 @@ final class AuthenticationEventMapperTest extends TestCase
     public function testTheIdentitysOwnActionIsAttributedFromTheEvent(): void
     {
         $record   = new PendingRecord;
-        $snapshot = (new AuthenticationEventMapper(new DeferredRefusals))->map(new SessionCreated(self::context()), $record)?->snapshot();
+        $snapshot = (new AuthenticationEventMapper)->map(new SessionCreated(self::context()), $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertTrue($record->isActorSettled());
@@ -557,7 +571,7 @@ final class AuthenticationEventMapperTest extends TestCase
         $context = new EventContext('api', new ClientContext(null, null), self::person(), sessionId: self::SESSION);
         $record  = new PendingRecord;
 
-        (new AuthenticationEventMapper(new DeferredRefusals))->map(new SessionCreated($context), $record);
+        (new AuthenticationEventMapper)->map(new SessionCreated($context), $record);
 
         $record->fillPrincipal(References::of(Person::class, '99'));
         $record->fillTenant(References::tenant('elsewhere'));
@@ -608,7 +622,7 @@ final class AuthenticationEventMapperTest extends TestCase
     public function testWhatTheMemberDoesNotAttributeIsTheCallers(AuthenticationEvent $event): void
     {
         $record   = new PendingRecord;
-        $snapshot = (new AuthenticationEventMapper(new DeferredRefusals))->map($event, $record)?->snapshot();
+        $snapshot = (new AuthenticationEventMapper)->map($event, $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertFalse($record->isActorSettled());
@@ -646,7 +660,7 @@ final class AuthenticationEventMapperTest extends TestCase
     {
         $record = new PendingRecord;
 
-        (new AuthenticationEventMapper(new DeferredRefusals))->map($event, $record);
+        (new AuthenticationEventMapper)->map($event, $record);
 
         self::assertTrue($record->isActorSettled());
         self::assertNull($record->snapshot()->actor);
@@ -925,7 +939,7 @@ final class AuthenticationEventMapperTest extends TestCase
     {
         Relation::morphMap(['person' => Person::class]);
 
-        $record = (new AuthenticationEventMapper(new DeferredRefusals))->map($event, new PendingRecord) ?? self::fail('The event was skipped.');
+        $record = (new AuthenticationEventMapper)->map($event, new PendingRecord) ?? self::fail('The event was skipped.');
 
         $record->fillActor(References::of('admin', '99'));
         $record->fillPrincipal(References::of('admin', '99'));
@@ -963,7 +977,7 @@ final class AuthenticationEventMapperTest extends TestCase
      */
     private static function snapshotOf(object $event): PendingSnapshot
     {
-        $record = (new AuthenticationEventMapper(new DeferredRefusals))->map($event, new PendingRecord);
+        $record = (new AuthenticationEventMapper)->map($event, new PendingRecord);
 
         self::assertInstanceOf(PendingRecord::class, $record);
 
