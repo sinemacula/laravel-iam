@@ -619,8 +619,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `tests/Integration/Authorization/GrantWideningTransactionTest.php` is not created: provisioning with groups in one
   transaction is `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php`, and a refusal rolling the grant and the
   widening back, inside `laravel-authorization`'s transaction and inside the application's, is
-  `GrantHookAdapterTest`. The retries are `laravel-authorization`'s own, proved by its suite, and provisioning is
-  attempted once. The provisioning and re-sync rows of `ProvisionOnUnlinkedResultTest` and `SignInRedemptionTest` are
+  `GrantHookAdapterTest`. The retries are `laravel-authorization`'s own, proved by its suite. The provisioning and
+  re-sync rows of `ProvisionOnUnlinkedResultTest` and `SignInRedemptionTest` are
   that end-to-end test too, and the tree change row of `TreeChangesTest` is `AuthorizationTreeChangesTest`.
 - The audit access policy is a row of `AuthorizationSeams` over audit-log's `DenyAllPolicy`, shared and never
   mandatory. The mapper's codes are `Audit\Enums\AuthorizationActivity`, as `audit-mapping.md` fixed, with four codes
