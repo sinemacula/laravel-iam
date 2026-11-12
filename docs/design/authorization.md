@@ -235,8 +235,8 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     `laravel-authentication`'s machines are its `MachineIdentity`. So a subject that is a machine identity, whose
     identity is one, or a principal acting for one, is capped to nothing wherever no credential of its own caps it,
     marker or not, and a machine never borrows scopes it was not issued nor goes uncapped for want of them. What a
-    subject naming no credential carries is `SessionPolicySourceAdapter::withoutCredential()`, which the audit access
-    policy says of its viewer and the subject resolver of a user signed in with a Laravel session.
+    subject naming no credential carries is `SessionPolicySourceAdapter::withoutCredential()`, which the subject
+    resolver says of a user signed in with a Laravel session.
 - The scope registry (`ScopeRegistryAdapter`). Each scope is asked of `laravel-authorization`'s registry alone, and every
   one it does not accept is rejected, in the order given, so `laravel-authentication` refuses to issue or rotate the
   credential. The registry is the application's binding of `laravel-authorization`'s contract where it binds one, and
@@ -543,9 +543,6 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
     the key with the identifier (`TenantTranslator`), refusing a tenant keyed otherwise wherever it names one, the
     grant hook and the tree included. Letting `AuthorizableTenant` name `laravel-authentication`'s identifier would
     close it.
-  - `laravel-authorization` has no query for the tenants where a subject holds an action, so the audit access policy
-    lists the viewer's actions in the tenants its memberships name, and a grant in any other tenant, or reached only
-    through a subtree, is not seen (`audit-mapping.md`). A read-only query naming those tenants would close it.
   - `laravel-authorization` dispatches `DecisionEvaluated` for every check, allows included (its BL-72), so the mapper
     filters denials itself; and a decision's `usedBreakGlass` is always `false` until break-glass grants exist (its
     BL-70), so `authorization.break_glass_used` is defined and mapped but never recorded (`audit-mapping.md`).
@@ -899,7 +896,6 @@ Part (b) follows the manifest's remaining rows, with these departures:
   transaction: the lock order and retries here change.
 - `laravel-authorization` names a tenant by an identifier of its own, or its default identity directory becomes complete
   under another subject resolver: `TenantTranslator` and `IdentityDirectoryAdapter` change or go.
-- `laravel-authorization` adds a query for the tenants where a subject holds an action: the audit access policy uses it.
 - `laravel-authorization` changes where `for()` decides a `Subject` naming a tenant, or one marked as acting on the
   platform (`Subject::$platform`): `AdministrativeCheck` marks a subject naming no tenant, and keeps one naming a tenant
   as it is, on that ground.
