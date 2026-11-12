@@ -747,7 +747,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testARefusalAboutANamedSubjectStaysLaravels403`, `testARefusalWithNoSubjectStaysLaravels403`,
   `testARefusalIsRenderedAsMfasStepUp`, `testWhatIsNotMappedIsRenderedAsLaravelRendersIt`,
   `testTheMappingIsRegisteredOnLaravelsHandlerWheneverItIsResolved`,
-  `testTheMappingFollowsTheSwitchesAsTheBindingRuleReadThem`
+  `testTheMappingFollowsTheSwitchesAsTheSeamsWereBound`
 - `tests/Integration/EndToEnd/StepUpAuthorizationTest.php` (every isolation level)
   `testARequirementDeniesUntilTheSessionStepsUpThroughMfa`, `testARefusalAboutANamedMemberIsNoStepUp`,
   `testAMemberWithNoConfirmedFactorIsToldItHoldsNone`, `testARequirementMfaCannotJudgeIsUndecidable`,

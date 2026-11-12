@@ -179,7 +179,7 @@ final class IamServiceProviderTest extends TestCase
 
             $record = $app->make($class);
 
-            self::assertSame($record, $app->make(BindingRule::SCOPED_PREFIX . $class));
+            self::assertSame($record, $app->make(SeamBinding::SCOPED_PREFIX . $class));
 
             $app->forgetScopedInstances();
 
