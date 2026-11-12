@@ -20,16 +20,8 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
 /**
  * The services an application calls through the `Iam` facade.
  *
- * Each helper hands its call to the capability's own service, resolved when it
- * is called from the application current then, never from one kept since, so
- * the manager keeps no state of its own and is safe to share across requests
- * and jobs: resolved once in a long-lived process, before Octane clones the
- * application for a request, it still resolves each service in that request's
- * own sandbox, with the request's own records. An action with a service of its
- * own (a redemption of SSO's handoff codes, a tenant's policy change, a change
- * of the tenant tree) is reached through an accessor answering that service,
- * whose one method the application calls with plain values, never through a
- * second method of the manager's that repeats it.
+ * Each is resolved from the current container on every call, so the manager
+ * holds no state and is safe under Octane.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -37,8 +29,8 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
 final readonly class IamManager
 {
     /**
-     * Run a change that spans members in one transaction on the storage
-     * connection, retried only when outermost.
+     * Run a cross-member change in one transaction, retried only when
+     * outermost.
      *
      * @template T
      *
@@ -55,9 +47,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that redeems a `sign_in` handoff code SSO issued and signs
-     * the person it links in through `laravel-authentication`, in one
-     * transaction (IAM-4.1).
+     * The service that redeems SSO's `sign_in` handoff codes.
      *
      * @return \SineMacula\Laravel\Iam\Sso\SignInRedemption
      *
@@ -69,9 +59,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that redeems a `reauthenticate` handoff code SSO issued and
-     * renews the session it names through `laravel-authentication`, with one
-     * write, in one transaction (IAM-4.2).
+     * The service that redeems SSO's `reauthenticate` handoff codes.
      *
      * @return \SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption
      *
@@ -83,9 +71,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that redeems a `link` handoff code SSO issued, linking the
-     * caller to the provider's subject through SSO's standalone redemption
-     * (IAM-4.3).
+     * The service that redeems SSO's `link` handoff codes.
      *
      * @return \SineMacula\Laravel\Iam\Sso\LinkRedemption
      *
@@ -97,9 +83,8 @@ final readonly class IamManager
     }
 
     /**
-     * The service that names the caller of the application's own call into SSO
-     * as SSO takes it (IAM-4.6): SSO's management helpers, its link removal and
-     * a `link` flow's start take that caller, and SSO's freshness judges it.
+     * The service that names the caller of the application's own calls into
+     * SSO.
      *
      * @return \SineMacula\Laravel\Iam\Sso\Callers
      *
@@ -111,11 +96,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that applies a change of a tenant's authentication policy the
-     * application reports itself, of its tenant MFA requirement or of its SSO
-     * exemptions, to the sessions acting in the tenant, with the strict cut-off
-     * `laravel-authentication` asks for: once in place, inside the transaction
-     * that publishes the change, and once more once that commits (IAM-4.5).
+     * The service that applies a tenant's authentication policy change.
      *
      * @return \SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges
      *
@@ -127,10 +108,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that reports, first inside the transaction that gives a
-     * person a principal, that they come to hold it, through SSO's scope
-     * widening: a membership created or accepted, or a platform principal
-     * created (IAM-7.3).
+     * The service that reports a person coming to hold a principal.
      *
      * @return \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings
      *
@@ -142,11 +120,7 @@ final readonly class IamManager
     }
 
     /**
-     * The service that applies a change of the application's tenant tree it
-     * reports itself, a tenant moved (a child of a removed tenant included), to
-     * the sessions acting in that tenant and every tenant below it, inside the
-     * transaction that writes the change, after the write, and once more once
-     * that commits (IAM-7.5).
+     * The service that applies a tenant moved within the tenant tree.
      *
      * @return \SineMacula\Laravel\Iam\Tenancy\TreeChanges
      *
@@ -158,11 +132,7 @@ final readonly class IamManager
     }
 
     /**
-     * Register the members' scheduled work they leave to the application on its
-     * schedule (IAM-2.6), from `withSchedule()` or a service provider:
-     * `mfa:prune`, SSO's operations schedule and, while audit-log delivers
-     * through its outbox, `audit-log:drain`; never audit-log's own seal, sweep,
-     * verify or prune, which it schedules itself.
+     * Register the members' scheduled work they leave to the application.
      *
      * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
      * @return void
@@ -177,14 +147,7 @@ final readonly class IamManager
     }
 
     /**
-     * Flush every member's request state between the units of work of a
-     * long-lived process other than Octane's workers and the queue's, which
-     * reset it themselves: every guard already resolved, the session already
-     * resolved, the scoped instances the members keep request state in, and the
-     * roots the facades resolved, so a facade such as `Authorization` reads the
-     * next unit's state too. What the process holds for itself (Laravel's
-     * `Context`, the callbacks queued with `defer()`, the audit log's execution
-     * frames) is kept.
+     * Flush request state in a long-lived process other than Octane or queues.
      *
      * @return void
      *
@@ -196,7 +159,7 @@ final readonly class IamManager
     }
 
     /**
-     * The application current now, which each service is resolved from.
+     * The current container.
      *
      * @return \Illuminate\Container\Container
      */

@@ -15,11 +15,7 @@ use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 use Tests\TestCase;
 
 /**
- * Feature tests for registering the members' scheduled work they leave to the
- * application (IAM-2.6): `mfa:prune` and `authorization:prune` daily, SSO's
- * operations schedule while SSO is in use, `audit-log:drain` every minute while
- * audit-log delivers through its outbox, and never audit-log's own seal, sweep,
- * verify or prune.
+ * Feature tests for registering the members' scheduled work.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,8 +29,7 @@ final class IamScheduleTest extends TestCase
     private const array AUDIT_LOG_OWN = ['audit-log:seal', 'audit-log:seal --sweep', 'audit-log:verify --strict --sweep-first', 'audit-log:prune'];
 
     /**
-     * With SSO not in use and audit-log delivering synchronously, only
-     * `mfa:prune` and `authorization:prune` are scheduled, daily.
+     * Without SSO and with sync delivery, only the daily prunes are scheduled.
      *
      * @return void
      */
@@ -44,9 +39,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * While SSO is in use, its operations schedule registers `sso:prune` once,
-     * with the domain rechecks, the metadata refresh and the key expiry report,
-     * each at its configured cadence.
+     * While SSO is in use, its operations are scheduled once at their cadences.
      *
      * @return void
      *
@@ -68,8 +61,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * While audit-log delivers through its outbox, the drain is scheduled every
-     * minute, until the outbox is empty.
+     * With outbox delivery, the drain is scheduled every minute.
      *
      * @return void
      *
@@ -117,9 +109,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * Audit-log's own seal, sweep, verify and prune, which it schedules on the
-     * application's schedule itself, are never registered again, whatever is
-     * switched on.
+     * Audit-log's own scheduled tasks are never registered again.
      *
      * @return void
      *
@@ -152,8 +142,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * A malformed SSO cadence is SSO's own refusal, thrown as the schedule is
-     * built, so a scheduler never starts with it.
+     * A malformed SSO cadence is refused as the schedule is built.
      *
      * @return void
      *
@@ -170,8 +159,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * Return each task registered on a fresh schedule through the facade, as
-     * its command and its cron expression.
+     * Each task on a fresh schedule, as its command and cron expression.
      *
      * @return list<array{string, string}>
      */
@@ -212,8 +200,7 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * Return the Artisan command a task runs, without the PHP binary and the
-     * Artisan script.
+     * The Artisan command a task runs, without the PHP binary and script.
      *
      * @param  \Illuminate\Console\Scheduling\Event  $event
      * @return string

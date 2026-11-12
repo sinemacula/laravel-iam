@@ -5,9 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Fixtures\Workers;
 
 /**
- * Stands in for Octane's `RequestReceived` event, which is dispatched by name
- * since Octane is not installed: it carries the request's sandbox as Octane's
- * event does.
+ * Stands in for Octane's `RequestReceived` event, carrying the sandbox.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

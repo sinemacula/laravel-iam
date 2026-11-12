@@ -22,15 +22,15 @@ interface Check
     public function subject(): string;
 
     /**
-     * Whether what the check covers is on. It must not throw.
+     * Whether what the check covers is on; it must not throw.
      *
      * @return bool
      */
     public function applies(): bool;
 
     /**
-     * The checks, each a closure that throws for a problem, returns a note for
-     * something to report without failing, and returns nothing otherwise.
+     * The checks: each throws for a problem, returns a note, or returns
+     * nothing.
      *
      * @return list<\Closure(): mixed>
      */

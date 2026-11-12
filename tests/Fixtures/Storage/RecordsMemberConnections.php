@@ -9,9 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * Records every member's storage connection as it stands when this provider
- * registers, so a test that registers it straight after this package's can tell
- * what this package's `register()` wrote, before any `booting()` callback runs.
+ * Records each member's storage connection as this provider registers.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

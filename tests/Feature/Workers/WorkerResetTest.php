@@ -15,9 +15,7 @@ use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use Tests\TestCase;
 
 /**
- * Feature tests for flushing every member's request state against the scoped
- * bindings the installed members actually make, so a scoped binding a member
- * adds is never left out of the reset.
+ * Feature tests for the worker reset against the members' real scoped bindings.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -43,10 +41,7 @@ final class WorkerResetTest extends TestCase
     private const string AUDIT_LOG_NAMESPACE = 'SineMacula\Laravel\AuditLog\\';
 
     /**
-     * The reset forgets every scoped instance the installed members and this
-     * package bind for a unit of work's request state, as the members bind
-     * them, so the next unit of work builds its own: `laravel-authentication`'s
-     * `KeptSessions`, `RequiredWork` and `WatchedSessions` among them.
+     * The reset forgets every scoped instance the members and package bind.
      *
      * @return void
      *
@@ -70,8 +65,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset keeps every other scoped instance: `laravel-audit-log`'s and
-     * Laravel's own.
+     * The reset keeps audit-log's and Laravel's scoped instances.
      *
      * @return void
      *
@@ -93,9 +87,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset points `laravel-authentication`'s auth manager at the
-     * application being reset before it resets the guards, so the guards are
-     * reset to that application's request, not to one the manager held before.
+     * The reset points the auth manager at the application being reset.
      *
      * @return void
      *
@@ -115,9 +107,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Whether the scoped abstract is one an installed member, other than
-     * `laravel-audit-log`, or this package binds: a class of its namespace, or
-     * a key under its name.
+     * Whether a member other than audit-log, or this package, binds it.
      *
      * @param  string  $abstract
      * @return bool
@@ -135,8 +125,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Return the string abstracts the application keeps as scoped, read from
-     * the property Laravel's own `forgetScopedInstances()` reads.
+     * The scoped abstracts, as `forgetScopedInstances()` reads them.
      *
      * @return list<string>
      */

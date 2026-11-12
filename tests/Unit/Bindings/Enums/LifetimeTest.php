@@ -10,8 +10,7 @@ use SineMacula\Laravel\Authorization\Diagnostics\Enums\Lifetime as ReportedLifet
 use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 
 /**
- * Unit tests for the lifetimes an adapter can be bound with, and the lifetime
- * `laravel-authorization`'s configuration report names each by.
+ * Unit tests for the adapter lifetimes and how authorization reports them.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -22,8 +21,7 @@ use SineMacula\Laravel\Iam\Bindings\Enums\Lifetime;
 final class LifetimeTest extends TestCase
 {
     /**
-     * The lifetimes are transient, shared and scoped, in that order, each
-     * backed by its name.
+     * The lifetimes are transient, shared and scoped, each backed by its name.
      *
      * @return void
      */
@@ -33,8 +31,7 @@ final class LifetimeTest extends TestCase
     }
 
     /**
-     * Each lifetime is named in `laravel-authorization`'s configuration report
-     * by its own, a shared adapter as a singleton.
+     * Each lifetime is reported by its own; shared is reported as singleton.
      *
      * @return void
      */

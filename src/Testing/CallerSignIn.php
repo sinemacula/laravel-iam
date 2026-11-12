@@ -33,42 +33,12 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 
 /**
- * Signs a caller in for `Concerns\InteractsWithIam::actingAsCaller()`, as the
- * application signs people in, so the session it acts on is a live, active
- * session `laravel-authentication` wrote, holding its first factor and the
- * principal and the active tenant the sign-in chose, and, through SSO, the
- * provenance a redemption records.
+ * Signs a test caller in through the members' real sign-in paths: started, with
+ * credentials, or through an admitted SSO redemption.
  *
- * A session `CallerSession::started()` is started through
- * `laravel-authentication`'s `start()`, as an application starts one for an
- * identity it verified itself; one `CallerSession::signedIn()` is signed in
- * through `signIn()` with the credentials, which must sign in the very identity
- * acted as. One `CallerSession::throughSso()` is signed in as `Iam::signIns()`
- * signs a person in once SSO admitted a redemption: the redemption is recorded
- * for the request (`AdmittedRedemptions`), with the identity as the link's and
- * the provenance as SSO's, and `signInExternally()` is handed the external
- * result built from it, so the link contract finds the identity and the session
- * records the connection, the link and the provenance as its provider context,
- * which the `sso` context namespace reads back. The provider's issuer is
- * `ISSUER` and its subject names the identity's key; neither is kept beyond the
- * sign-in, and the record is forgotten once the sign-in returns, whether it
- * signed in or not.
- *
- * Every sign-in comes from the client `client()` names, runs in this package's
- * cross-member transaction on the storage connection, and must activate the
- * very identity acted as. A sign-in left pending on a further factor, as a
- * person who already holds a confirmed factor is left under an application that
- * then requires one, is completed in that transaction (`CallerCompletion`) when
- * the session holds a first factor MFA can judge (signed in with credentials or
- * through SSO). A refusal, a sign-in still pending (on a choice of principal,
- * or a started session on a further factor), or one that signed in another
- * identity, throws a `LogicException` naming the guard and the reason (for a
- * started session, what to do instead) inside that transaction, so whatever the
- * sign-in wrote is rolled back with it and a test never acts on, or leaves
- * behind, a session it did not mean to.
- *
- * Stateless: the guard's session service and the request's record are resolved
- * on every call.
+ * Each sign-in runs in one cross-member transaction and throws a
+ * `LogicException` inside it when it does not activate the identity, so nothing
+ * it wrote is kept.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -77,13 +47,13 @@ use SineMacula\Laravel\Sso\Sessions\Provenance;
  */
 final readonly class CallerSignIn
 {
-    /** @var string The issuer the provider of an SSO caller's sign-in asserts. */
+    /** @var string The issuer of an SSO caller's provider. */
     public const string ISSUER = 'https://provider.iam.test';
 
-    /** @var string The address a caller signs in from (TEST-NET-1, RFC 5737). */
+    /** @var string The caller's address (TEST-NET-1, RFC 5737). */
     public const string CLIENT_IP = '192.0.2.1';
 
-    /** @var string The user agent a caller signs in with. */
+    /** @var string The caller's user agent. */
     public const string CLIENT_AGENT = 'laravel-iam-testing';
 
     /**
@@ -97,28 +67,24 @@ final readonly class CallerSignIn
      */
     public function __construct(
 
-        /** Resolves the request's record of the admitted redemption on each call. */
+        /** Resolves the request's admitted redemption record. */
         private Container $container,
 
-        /** Finds the session service of the guard. */
+        /** Finds the guard's session service. */
         private CurrentSession $sessions,
 
-        /** Runs each sign-in in one transaction on the storage connection. */
+        /** Runs each sign-in on the storage connection. */
         private CrossMemberTransaction $transaction,
 
-        /** Names the identity as SSO names a link's identity. */
+        /** Names the identity as SSO names a link's. */
         private IdentityReferences $identities,
 
-        /** Completes a sign-in left pending on a further factor. */
+        /** Completes a pending further factor. */
         private CallerCompletion $completion,
     ) {}
 
     /**
-     * Sign the identity in on the guard, as the principal given (or its
-     * default), in the tenant given (or the principal's default), as the
-     * session says, completing a sign-in left pending on a further factor with
-     * a proof of the level's evidence (AAL2's when none is given), and return
-     * the session.
+     * Sign the identity in on the guard, completing any pending further factor.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\Principal  $principal
@@ -152,10 +118,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * Refuse, before anything is signed in, what a person cannot act with:
-     * scopes, which limit only a machine; the unclassified level, which no
-     * proof supports; and a level for a session whose first factor MFA cannot
-     * judge, after which MFA accepts no further proof.
+     * Refuse scopes, an unclassified level, or a level MFA cannot judge.
      *
      * @param  \SineMacula\Laravel\Iam\Testing\CallerSession  $session
      * @param  ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $verified
@@ -182,8 +145,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * Refuse, before anything is acted on, what a machine cannot act with: a
-     * session or a level, since a machine signs in to no session.
+     * Refuse a session or level for a machine, which signs in to no session.
      *
      * @param  ?\SineMacula\Laravel\Iam\Testing\CallerSession  $session
      * @param  ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $verified
@@ -199,8 +161,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The client every caller signs in from, `VerifiedSignInRecorderAdapter`'s
-     * included.
+     * The client every test caller signs in from.
      *
      * @return \SineMacula\Laravel\Authentication\Http\ClientContext
      */
@@ -210,8 +171,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * Why the sign-in did not sign in: the reason it failed, or, left pending,
-     * what it still waits on.
+     * Why the sign-in failed, or what it still waits on.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @return string
@@ -224,8 +184,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The session the sign-in activated for the identity, refusing a sign-in
-     * that did not activate and one that signed in another identity.
+     * The activated session, refusing a failed sign-in or another identity.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
@@ -248,9 +207,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The sign-in, completed when it waits first on a further factor and the
-     * session holds a first factor MFA can judge, after which alone MFA accepts
-     * one.
+     * Complete a pending further factor when MFA can judge the first factor.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @param  string  $guard
@@ -271,9 +228,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * What to do instead when a session started with no first factor MFA can
-     * judge waits on a further factor, which MFA accepts after none; nothing
-     * otherwise.
+     * What to do instead when a started session waits on a further factor.
      *
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $result
      * @param  \SineMacula\Laravel\Iam\Testing\CallerSession  $session
@@ -315,8 +270,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * Sign the identity in on the guard as SSO's admitted redemption with the
-     * provenance would, and forget the redemption once the sign-in returns.
+     * Sign in through an admitted redemption, forgetting it afterwards.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $guard
@@ -344,8 +298,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The redemption SSO would admit for the identity through the provenance's
-     * connection and link, on the guard.
+     * The redemption SSO would admit for the identity and provenance.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $guard
@@ -386,8 +339,7 @@ final readonly class CallerSignIn
     }
 
     /**
-     * The link the provenance admitted, refusing provenance that names none:
-     * under this package an SSO session is always established through a link.
+     * The provenance's link; SSO sessions here are always made through a link.
      *
      * @param  \SineMacula\Laravel\Sso\Sessions\Provenance  $provenance
      * @return string

@@ -19,10 +19,7 @@ use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\TestCase;
 
 /**
- * Integration tests for the cross-member transaction: retried on a concurrency
- * failure at the outermost level only.
- *
- * The real serialisation failure and deadlock run on PostgreSQL and MySQL only.
+ * Integration tests for the cross-member transaction and its retries.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -84,8 +81,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * The work runs in one transaction on the storage connection, not the
-     * default one.
+     * The work runs in one transaction on the storage connection.
      *
      * @return void
      *
@@ -121,8 +117,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * After a concurrency failure the whole work runs again, and only the last
-     * attempt's writes are kept.
+     * The whole work reruns after a concurrency failure.
      *
      * @param  \Throwable  $failure
      * @return void
@@ -154,8 +149,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * After the given attempts, or 3 with none configured, the last failure is
-     * rethrown as one Laravel's detector recognises.
+     * The last failure is rethrown as one Laravel's detector recognises.
      *
      * @return void
      *
@@ -197,8 +191,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * A failure once the attempt has committed is rethrown without running the
-     * work again.
+     * A failure after the commit is not retried.
      *
      * @return void
      *
@@ -228,8 +221,8 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * Inside the caller's transaction the work runs once, and its failure is
-     * rethrown with the caller's still open.
+     * Inside a caller's transaction the work runs once; its failure is
+     * rethrown.
      *
      * @return void
      *
@@ -255,9 +248,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * A serialisation failure inside the caller's retrying transaction reaches
-     * the caller's retry, which Laravel's nesting alone would hide by dropping
-     * the SQLSTATE.
+     * A nested serialisation failure reaches the caller's retry.
      *
      * @return void
      *
@@ -299,8 +290,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * Fewer than one attempt, or attempts that are no whole number, are refused
-     * before the work runs.
+     * Fewer than one attempt, or a non-integer, is refused up front.
      *
      * @param  ?int  $given
      * @param  mixed  $configured
@@ -319,8 +309,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * Rows of `[nested]`: the work run by the outermost run itself, and in a
-     * member's own transaction inside it.
+     * Rows of `[nested]`: run outermost, or inside a member's own transaction.
      *
      * @return iterable<string, array{0: bool}>
      */
@@ -332,8 +321,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * A real serialisation failure on PostgreSQL at REPEATABLE READ is retried,
-     * and the retry sees the other write.
+     * A real PostgreSQL serialisation failure is retried.
      *
      * @param  bool  $nested
      * @return void
@@ -374,8 +362,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * A real deadlock on MySQL or PostgreSQL is retried, and both sides' writes
-     * are kept.
+     * A real deadlock is retried and both sides' writes are kept.
      *
      * @param  bool  $nested
      * @return void
@@ -439,8 +426,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * Run work that fails on every attempt, and answer how many times it ran
-     * and what was thrown.
+     * Run work that always fails; answer how often it ran and what was thrown.
      *
      * @param  \Throwable  $failure
      * @param  ?int  $attempts
@@ -475,10 +461,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * In the forked process: lock row 2 behind a heavier transaction, wait for
-     * the work to hold row 1, then want it.
-     *
-     * The process kills itself so no shutdown closes the parent's connections.
+     * Deadlock the work from a forked process that kills itself on exit.
      *
      * @param  string  $signal
      * @return never
@@ -604,8 +587,7 @@ final class CrossMemberTransactionTest extends TestCase
     }
 
     /**
-     * The failure a query meets, with SQLSTATE 40001 as PDO's string code, as
-     * Laravel throws it.
+     * A query failure with SQLSTATE 40001 as PDO's string code.
      *
      * @param  string  $message
      * @return \Illuminate\Database\QueryException

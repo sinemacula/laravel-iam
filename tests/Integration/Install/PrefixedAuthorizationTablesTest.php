@@ -15,8 +15,7 @@ use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
 /**
- * Integration tests for the `laravel-authorization` table prefix `iam:install`
- * writes (IAM-2.4).
+ * Integration tests for the authorization table prefix `iam:install` writes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,8 +41,7 @@ final class PrefixedAuthorizationTablesTest extends TestCase
     }
 
     /**
-     * With the longest prefix allowed, `laravel-authorization`'s published
-     * migrations create every table under its prefixed name, and drop them.
+     * The longest allowed prefix creates and drops every table.
      *
      * @return void
      */
@@ -100,8 +98,7 @@ final class PrefixedAuthorizationTablesTest extends TestCase
     }
 
     /**
-     * Point the application's configuration, database and language directories
-     * at the test's own before any provider registers.
+     * Point the config, database and language directories at the test's own.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

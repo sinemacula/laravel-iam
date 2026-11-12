@@ -7,28 +7,11 @@ namespace SineMacula\Laravel\Iam\Testing;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 
 /**
- * How `Concerns\InteractsWithIam::actingAsCaller()` signs a person in: the
- * session's sign-in method and the first factor it records.
+ * How `actingAsCaller()` signs a person in: `started()`, `signedIn()` with
+ * credentials, or `throughSso()`.
  *
- * Three ways, one of them per caller:
- *
- * - `started()` starts the session for the identity as
- *   `laravel-authentication`'s `start()` does for an identity the application
- *   verified itself, under the method named: the first proof names the method,
- *   on the `unknown` channel with no `amr` value, so MFA can judge no first
- *   factor, and no level can be verified after it. The default, for a test that
- *   needs a session and no MFA state.
- * - `signedIn()` signs in with the credentials given, through the method named,
- *   as a sign-in endpoint does, so the first proof is the one the method proves
- *   (the password's channel, say), which MFA judges, so a level can be verified
- *   after it.
- * - `throughSso()` signs in through SSO with SSO's provenance, as
- *   `Iam::signIns()` signs in a person whose redemption SSO admitted, under
- *   `external_provider`, so the session records the provenance's connection and
- *   link and its provider context, and its first proof is the provider's.
- *
- * The credentials are held wrapped, so a dump or a stack trace never shows
- * them.
+ * A started session's first factor is on the `unknown` channel, so MFA can
+ * verify no level after it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -37,10 +20,10 @@ use SineMacula\Laravel\Sso\Sessions\Provenance;
  */
 final readonly class CallerSession
 {
-    /** @var string The method a session is started or signed in under when none is named. */
+    /** @var string The default sign-in method. */
     public const string DEFAULT_METHOD = 'password';
 
-    /** @var string The method a session through SSO is signed in under. */
+    /** @var string The method an SSO sign-in records. */
     public const string EXTERNAL_METHOD = 'external_provider';
 
     /**
@@ -55,7 +38,7 @@ final readonly class CallerSession
         /** The sign-in method the session records. */
         public string $method,
 
-        /** The credentials the method verifies, wrapped; `null` unless signed in with them. */
+        /** The credentials, wrapped so dumps never show them; `null` unless signed in with them. */
         private ?\SensitiveParameterValue $credentials,
 
         /** SSO's provenance of the session; `null` unless signed in through SSO. */
@@ -63,8 +46,7 @@ final readonly class CallerSession
     ) {}
 
     /**
-     * A session started for the identity under the method, its first factor on
-     * the `unknown` channel.
+     * A session started under the method, with no first factor MFA can judge.
      *
      * @param  string  $method
      * @return self
@@ -75,8 +57,8 @@ final readonly class CallerSession
     }
 
     /**
-     * A session signed in with the credentials, through the method, which must
-     * sign in the very identity acted as.
+     * A session signed in with credentials that must sign in the acted
+     * identity.
      *
      * @param  array<array-key, mixed>  $credentials
      * @param  string  $method
@@ -88,8 +70,7 @@ final readonly class CallerSession
     }
 
     /**
-     * A session signed in through SSO, with SSO's provenance of it, which must
-     * name the link it was admitted through.
+     * A session signed in through SSO; the provenance must name its link.
      *
      * @param  \SineMacula\Laravel\Sso\Sessions\Provenance  $provenance
      * @return self
@@ -100,8 +81,7 @@ final readonly class CallerSession
     }
 
     /**
-     * The credentials the method verifies, or `null` unless the session is
-     * signed in with them.
+     * The credentials, or `null` unless signed in with them.
      *
      * @return ?array<array-key, mixed>
      */
@@ -112,8 +92,7 @@ final readonly class CallerSession
     }
 
     /**
-     * Whether the session's first proof is one MFA can judge: one a method
-     * proved from credentials, or the provider's, through SSO.
+     * Whether MFA can judge the session's first factor.
      *
      * @return bool
      */

@@ -62,8 +62,7 @@ final class MigrationLedgerTest extends TestCase
     }
 
     /**
-     * A migration's base name is its file name without its timestamp and its
-     * extension.
+     * The base name drops the timestamp and the extension.
      *
      * @param  string  $path
      * @param  string  $baseName
@@ -93,8 +92,7 @@ final class MigrationLedgerTest extends TestCase
     }
 
     /**
-     * An application's own migration of the same base name, which names no
-     * member namespace, is no copy.
+     * An application migration with the same base name is no copy.
      *
      * @return void
      *
@@ -131,8 +129,7 @@ final class MigrationLedgerTest extends TestCase
     }
 
     /**
-     * Only a directory's own `.php` files are migrations: a file of another
-     * extension, or one in a directory below, is not read.
+     * Only the directory's own `.php` files are read.
      *
      * @return void
      *
@@ -167,8 +164,7 @@ final class MigrationLedgerTest extends TestCase
     }
 
     /**
-     * A directory is read once, when it is first asked about: a file written
-     * there afterwards is not seen by the same ledger.
+     * A directory is read once, when first asked about.
      *
      * @return void
      *

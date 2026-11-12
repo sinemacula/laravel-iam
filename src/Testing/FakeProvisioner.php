@@ -11,9 +11,8 @@ use SineMacula\Laravel\Iam\Contracts\Provisioner;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
- * A provisioner for tests (IAM-7.1): each identity is made by the test's
- * closure, each membership is kept (and written by a second closure when
- * given), and either can be told to refuse. `fake()` binds a fresh instance.
+ * A provisioner for tests: identities come from the test's closure, memberships
+ * are kept, and either can be told to refuse.
  *
  * @api
  *
@@ -31,10 +30,10 @@ final class FakeProvisioner implements Provisioner
     /** @var list<array{identity: \SineMacula\Laravel\Authentication\Contracts\Identity, tenant: string}> Every membership made, in order. */
     private array $memberships = [];
 
-    /** @var ?\Throwable What asking for an identity throws, once the test has it refuse. */
+    /** @var ?\Throwable What asking for an identity throws once told to refuse. */
     private ?\Throwable $identityRefusal = null;
 
-    /** @var ?\Throwable What asking for a membership throws, once the test has it refuse. */
+    /** @var ?\Throwable What asking for a membership throws once told to refuse. */
     private ?\Throwable $membershipRefusal = null;
 
     /**
@@ -48,13 +47,12 @@ final class FakeProvisioner implements Provisioner
         /** Creates a new identity of the application's for a result. */
         private readonly \Closure $create,
 
-        /** Writes the identity's membership of a tenant, or `null` to keep it alone. */
+        /** Writes the identity's membership of a tenant, or `null` to only record it. */
         private readonly ?\Closure $member = null,
     ) {}
 
     /**
-     * Bind a fresh fake as the application's provisioner in the container
-     * given, or the application's own, and return it.
+     * Bind a fresh fake as the provisioner and return it.
      *
      * @param  \Closure(\SineMacula\Laravel\Sso\Results\VerifiedResult): \SineMacula\Laravel\Authentication\Contracts\Identity  $create
      * @param  ?\Closure(\SineMacula\Laravel\Authentication\Contracts\Identity, string): void  $member
@@ -71,8 +69,7 @@ final class FakeProvisioner implements Provisioner
     }
 
     /**
-     * Have every request for an identity throw from now on, as an application's
-     * provisioner that declines a result does.
+     * Throw on every identity request from now on.
      *
      * @param  ?\Throwable  $refusal
      * @return self
@@ -85,8 +82,7 @@ final class FakeProvisioner implements Provisioner
     }
 
     /**
-     * Have every request for a membership throw from now on, as an
-     * application's provisioner that declines a tenant does.
+     * Throw on every membership request from now on.
      *
      * @param  ?\Throwable  $refusal
      * @return self
@@ -99,8 +95,7 @@ final class FakeProvisioner implements Provisioner
     }
 
     /**
-     * Create a new identity for the result through the test's closure, or throw
-     * the refusal the test told it to.
+     * Create an identity through the test's closure, unless told to refuse.
      *
      * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
      * @return \SineMacula\Laravel\Authentication\Contracts\Identity
@@ -122,9 +117,7 @@ final class FakeProvisioner implements Provisioner
     }
 
     /**
-     * Create the identity's membership of the tenant, through the test's
-     * closure when it handed one, and keep it, or throw the refusal the test
-     * told it to.
+     * Record the membership, writing it through the test's closure if given.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $tenantId
@@ -158,7 +151,7 @@ final class FakeProvisioner implements Provisioner
     }
 
     /**
-     * Every membership made so far, in order: the identity and the tenant.
+     * Every membership made so far, in order.
      *
      * @return list<array{identity: \SineMacula\Laravel\Authentication\Contracts\Identity, tenant: string}>
      */

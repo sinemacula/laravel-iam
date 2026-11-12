@@ -5,14 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Exceptions;
 
 /**
- * Thrown when SSO admits a `sign_in` handoff code whose result is linked to no
- * identity (IAM-4.1, SSO-8.6).
- *
- * SSO issues such a code only to an application that allows unlinked handoffs,
- * which no application this package serves should; the redemption still treats
- * one as a refusal. It is thrown inside the redemption's transaction, so the
- * code's consumption rolls back with it, `laravel-authentication` is never
- * asked, and nothing is reported of a sign-in that did not happen.
+ * Thrown when SSO admits a sign-in handoff linked to no identity; the
+ * redemption rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -43,9 +37,7 @@ final class UnlinkedSignInException extends \RuntimeException
     }
 
     /**
-     * Build an exception for an admitted sign-in through the connection that
-     * names no linked identity, naming neither the code nor the result's
-     * subject.
+     * Build an exception naming neither the code nor the result's subject.
      *
      * @param  string  $application
      * @param  string  $connectionId

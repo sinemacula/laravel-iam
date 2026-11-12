@@ -19,9 +19,7 @@ use Tests\Fixtures\Workers\RequestReceivedStandIn;
 use Tests\TestCase;
 
 /**
- * Feature tests for flushing every member's request state before each Octane
- * request, leaving the request's scoped instances, with Octane absent and its
- * event dispatched by name.
+ * Feature tests for the reset before each Octane request, with Octane absent.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +32,7 @@ final class ResetBetweenRequestsTest extends TestCase
     use ReadsRawListeners;
 
     /**
-     * The listener is registered for Octane's event by its name, with Octane
-     * not installed.
+     * The listener is registered by the event's name without Octane installed.
      *
      * @return void
      */
@@ -46,9 +43,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * Each request resets the guards of the sandbox the event carries, not of
-     * the application it was cloned from, and keeps the sandbox's scoped
-     * instances.
+     * Each request resets the event's sandbox, keeping its scoped instances.
      *
      * @return void
      *
@@ -71,10 +66,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * Each request resets the guards against its own sandbox even when the auth
-     * manager still holds the last request's sandbox, which Octane has already
-     * flushed, as it does whenever this listener runs before Octane's own
-     * `FlushAuthenticationState` moves the manager on.
+     * The guards reset against the request's sandbox, not the manager's last.
      *
      * @return void
      *
@@ -100,9 +92,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * A scoped instance an earlier listener of the same event filled for the
-     * request, as an application's Octane listener fills its `Context`,
-     * outlives the reset.
+     * A scoped instance an earlier listener filled outlives the reset.
      *
      * @return void
      *
@@ -145,8 +135,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * A sandbox that is not a container is passed over for the current
-     * application.
+     * A sandbox that is not a container falls back to the current application.
      *
      * @return void
      */
@@ -158,8 +147,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * With the reset turned off, no listener is registered and a request leaves
-     * the guards alone.
+     * With the reset off, no listener is registered.
      *
      * @return void
      */
@@ -199,9 +187,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state forgotten exactly once, first pointed at the given application when
-     * one is given, and never pointed at any other.
+     * An auth manager expecting its guard state forgotten exactly once.
      *
      * @param  \Illuminate\Contracts\Foundation\Application|null  $app
      * @return \SineMacula\Laravel\Authentication\AuthManager
@@ -220,8 +206,7 @@ final class ResetBetweenRequestsTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state left alone.
+     * An auth manager expecting its guard state left alone.
      *
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */

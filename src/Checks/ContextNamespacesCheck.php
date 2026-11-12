@@ -14,8 +14,8 @@ use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContri
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
 
 /**
- * The authentication context has an `mfa` contributor, and an `sso` one while
- * SSO is in use (IAM-10.2).
+ * Checks the authentication context has an `mfa` contributor, and an `sso` one
+ * while SSO is in use.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -24,7 +24,7 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
  */
 final readonly class ContextNamespacesCheck implements Check
 {
-    /** @var string Why a namespace nobody registered is refused, and the switch that registers this package's contributor there. */
+    /** @var string The failure for a namespace without a contributor. */
     private const string UNREGISTERED = 'No contributor is registered under the `%s` namespace of the authentication context; '
         . 'turn `%s` on, or register your own.';
 
@@ -36,7 +36,7 @@ final readonly class ContextNamespacesCheck implements Check
      */
     public function __construct(
 
-        /** The container `laravel-authentication`'s contributors are resolved from. */
+        /** The container the context contributors are resolved from. */
         private Container $container,
 
         /** The configuration SSO's use is read from. */
@@ -55,7 +55,7 @@ final readonly class ContextNamespacesCheck implements Check
     }
 
     /**
-     * The check always applies: the `mfa` namespace is always required.
+     * The check always applies, since `mfa` is always required.
      *
      * @return bool
      */
@@ -66,8 +66,7 @@ final readonly class ContextNamespacesCheck implements Check
     }
 
     /**
-     * The `mfa` namespace is registered, and the `sso` namespace while SSO is
-     * in use.
+     * The `mfa` namespace is registered, and `sso` while SSO is in use.
      *
      * @return list<\Closure(): mixed>
      */
@@ -90,8 +89,8 @@ final readonly class ContextNamespacesCheck implements Check
     }
 
     /**
-     * Refuse a namespace no contributor is registered under, naming the switch
-     * that registers this package's contributor there.
+     * Refuse a namespace without a contributor, naming the switch that adds
+     * one.
      *
      * @param  string  $namespace
      * @param  string  $switch

@@ -42,8 +42,7 @@ final class ConnectionTransactionsTest extends TestCase
     }
 
     /**
-     * The transactions open on the connection are listed outermost first, with
-     * none of another connection's.
+     * The connection's open transactions are listed outermost first.
      *
      * @return void
      *
@@ -68,9 +67,7 @@ final class ConnectionTransactionsTest extends TestCase
     }
 
     /**
-     * A rollback callback on every open transaction fires when the outer one
-     * rolls back after a savepoint committed, and the transaction rolling back
-     * is no longer listed open.
+     * Every open transaction's rollback callback fires on the outer rollback.
      *
      * @return void
      *

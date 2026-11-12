@@ -20,11 +20,7 @@ use Tests\Concerns\RunsChecks;
 use Tests\TestCase;
 
 /**
- * Feature tests for this package's checks of SSO's side (IAM-2.5): they apply
- * only while SSO is in use, are reported under `sso`, and check each
- * application's sign-in method and unlinked handoffs and the mandatory seams of
- * SSO's flows, leaving the base URL to SSO's own check and the storage
- * connection to the storage alignment.
+ * Feature tests for the SSO bridge check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,10 +42,7 @@ final class SsoBridgeCheckTest extends TestCase
     private Repository $config;
 
     /**
-     * Start every test with the application holding a policy that allows
-     * `external_provider` for the `api` guard alone, every mandatory seam bound
-     * to an implementation of the application's, and SSO configured as this
-     * package needs it.
+     * Configure SSO and bind every mandatory seam as this package needs.
      *
      * @return void
      */
@@ -81,8 +74,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * Rows of `[features, in use]`: SSO is in use while a protocol is on, or
-     * its switch is malformed, as SSO's own `Features::isInUse()` reads it.
+     * Rows of `[features, in use]`, as SSO's `Features::isInUse()` reads them.
      *
      * @return iterable<string, array{array<string, mixed>, bool}>
      */
@@ -115,8 +107,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * SSO configured as this package needs it, every mandatory seam bound to
-     * the application's own, passes.
+     * SSO configured as this package needs passes.
      *
      * @return void
      */
@@ -126,9 +117,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * An application whose guard does not allow `external_provider`, or one
-     * handing off unlinked results, is refused, one listed rather than named
-     * included.
+     * Each application's sign-in method and handoffs are checked.
      *
      * @return void
      */
@@ -154,10 +143,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * The base URL and the storage connection are not this check's: SSO's own
-     * `EndpointsCheck` refuses a base URL unset, and the storage alignment a
-     * storage connection elsewhere, at boot and in `iam:check`, so each is
-     * reported once.
+     * The base URL and storage connection are left to their own checks.
      *
      * @return void
      */
@@ -172,8 +158,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * The mandatory seams of SSO's flows are checked: each one unbound is
-     * refused.
+     * Each unbound mandatory seam of SSO's flows is refused.
      *
      * @return void
      */
@@ -190,8 +175,7 @@ final class SsoBridgeCheckTest extends TestCase
     }
 
     /**
-     * With no container to read, a tenant's rule is on only by the
-     * configuration: SSO's enforcement.
+     * Without a container, a tenant rule is read from configuration alone.
      *
      * @return void
      */

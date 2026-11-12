@@ -13,7 +13,7 @@ use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
- * One member seam this package binds an adapter over (IAM-8.4).
+ * One member seam this package binds an adapter over.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -22,7 +22,7 @@ use SineMacula\Laravel\Sso\SsoServiceProvider;
  */
 final readonly class SeamBinding
 {
-    /** @var string Prefix of the keys scoped adapters are held under, so the seam itself never joins the scoped instances. */
+    /** @var string Prefix of the keys scoped adapters are held under, apart from the seam. */
     public const string SCOPED_PREFIX = 'iam.scoped:';
 
     /**
@@ -49,10 +49,10 @@ final readonly class SeamBinding
         /** How long the container keeps the adapter. */
         public Lifetime $lifetime = Lifetime::TRANSIENT,
 
-        /** Whether `iam:check` refuses the member's default here; a closure is asked only when the check reads it. */
+        /** Whether `iam:check` refuses the member's default; a closure is asked lazily. */
         public bool|\Closure $mandatory = false,
 
-        /** Declares the bound adapter to the member, given the closure bound over the seam. */
+        /** Declares the bound adapter to the member. */
         public ?\Closure $declare = null,
     ) {}
 
@@ -67,8 +67,7 @@ final readonly class SeamBinding
     }
 
     /**
-     * Whether the seam still holds its member's own default, as that member
-     * says.
+     * Whether the seam still holds its member's own default.
      *
      * @param  \Illuminate\Container\Container  $container
      * @return bool
@@ -90,8 +89,7 @@ final readonly class SeamBinding
     }
 
     /**
-     * Bind the adapter where the seam is unbound or holds its member's
-     * default; any other binding is the application's and stays.
+     * Bind the adapter unless the application bound the seam itself.
      *
      * @param  \Illuminate\Container\Container  $container
      * @return void

@@ -14,10 +14,7 @@ use Tests\Concerns\RunsChecks;
 use Tests\TestCase;
 
 /**
- * Feature tests for the audit trail's checks (IAM-9, IAM-2.5): the mappers
- * registered while they are on; every `jwt` and `api_key` guard excluded from
- * audit-log's own capture, its Gate capture off, its refusal of unregistered
- * codes on whatever they say (decision Q5 (a)).
+ * Feature tests for the audit check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,8 +39,7 @@ final class AuditCheckTest extends TestCase
         . 'so a code without a definition is refused rather than recorded unchecked; turn it on.';
 
     /**
-     * Audit-log as it ships, with the mappers on, records the guard's sign-ins
-     * twice and codes unchecked, and both are refused.
+     * Audit-log as it ships fails on duplicate sign-ins and unchecked codes.
      *
      * @return void
      */
@@ -81,8 +77,7 @@ final class AuditCheckTest extends TestCase
     }
 
     /**
-     * An exclusion list that is no list of guard names is refused, naming the
-     * key and never the value.
+     * A malformed exclusion list fails, naming the key but not the value.
      *
      * @return void
      */
@@ -126,9 +121,7 @@ final class AuditCheckTest extends TestCase
     }
 
     /**
-     * With the mappers off, audit-log is still held to IAM-2.5 (decision Q5
-     * (a)): every guard excluded, Gate capture off and unregistered codes
-     * refused; only the mappers' registration is no longer required.
+     * With the mappers off, audit-log's settings are still enforced.
      *
      * @param  mixed  $off
      * @return void

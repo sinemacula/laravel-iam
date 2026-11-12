@@ -7,10 +7,7 @@ namespace SineMacula\Laravel\Iam\Facades;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * IAM facade.
- *
- * Static interface to the `IamManager` singleton. It annotates exactly the
- * manager's surface; any method the manager does not declare is refused.
+ * Static interface to the `IamManager` singleton.
  *
  * @formatter:off
  *
