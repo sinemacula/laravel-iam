@@ -46,21 +46,8 @@ use Tests\Fixtures\Sso\ScriptedReauthenticationSessions;
 use Tests\TestCase;
 
 /**
- * Integration tests for redeeming a `reauthenticate` handoff code SSO issued
- * and renewing the session it names through `laravel-authentication`, with one
- * write, in one transaction (IAM-4.2), against SSO's acceptance scenarios: the
- * renewal SSO asks for is recorded and written once, by
- * `laravel-authentication`'s external re-authentication, for the recorded
- * session, issuing a token and keeping the session's refresh token and
- * provenance; SSO's refusal commits; a failed token result rolls back and
- * reports nothing; every way an adapter could break the one-renewal rule is a
- * `LogicException` that rolls back; a code admitted through SSO's own
- * admission, outside this redemption, renews nothing and stays unspent; and a
- * renewal has the request's decisions forgotten, while a refusal keeps them.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for redeeming a `reauthenticate` handoff code and renewing
+ * its session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -89,8 +76,8 @@ final class ReauthenticationRedemptionTest extends TestCase
     private EloquentSession&Model $session;
 
     /**
-     * Arrange SSO, link the person, sign them in through SSO, and listen for
-     * what each redemption reports.
+     * Arrange SSO, sign the person in through it, and record what each
+     * redemption reports.
      *
      * @return void
      *
@@ -126,12 +113,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * The renewal SSO asks for is written once, by `laravel-authentication`'s
-     * external re-authentication of the session the code names: a token is
-     * issued for that session, whose `auth_time` is the provider's, and the
-     * session's refresh token and provenance are kept; `HandoffRedeemed` and
-     * `ReauthenticationCompleted`, then one `Reauthenticated`, follow the
-     * commit, SSO's carrying the client handed over.
+     * The renewal is written once for the session the code names.
      *
      * @param  ?string  $level
      * @return void
@@ -166,9 +148,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * The session's `auth_time` becomes the later of its own and the
-     * provider's: a provider time older than one the session renewed since
-     * leaves the session's.
+     * An older provider time leaves the session's own `auth_time`.
      *
      * @param  ?string  $level
      * @return void
@@ -197,9 +177,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * A refusal by SSO commits: the code is spent, so the right verifier
-     * afterwards is `replayed`, each refusal reports one `FlowFailed`, and no
-     * token is issued.
+     * A refusal by SSO commits and spends the code.
      *
      * @param  ?string  $level
      * @return void
@@ -223,9 +201,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * A failed token result is thrown out of the transaction, which rolls the
-     * consumption back: nothing is reported, and once `laravel-authentication`
-     * finds the link again, the same code and verifier renew the session.
+     * A failed token result rolls back and leaves the code unspent.
      *
      * @param  ?string  $level
      * @return void
@@ -257,9 +233,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * A renewal has `laravel-authorization` forget the decisions of the request
-     * (IAM-6.11): the session's authentication they read has been renewed, so
-     * the next check reads the provider's time.
+     * A renewal forgets the request's authorisation decisions.
      *
      * @param  ?string  $level
      * @return void
@@ -316,12 +290,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * Every way an adapter could break the one-renewal rule is a
-     * `LogicException` thrown inside the transaction: SSO admitting with no
-     * renewal recorded, a renewal recorded for another session, or a renewal
-     * still recorded when SSO refused. Each rolls back, so the code stays
-     * unspent and nothing is reported, and `laravel-authentication` is never
-     * asked to renew.
+     * A broken renewal is a `LogicException` that rolls back.
      *
      * @param  string  $script
      * @param  string  $message
@@ -349,9 +318,8 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * An application that is no guard of `laravel-authentication`'s holding
-     * sessions throws before the code is touched, so the code still renews the
-     * session for the application it was issued to.
+     * An application that is no session guard throws before the code is
+     * touched.
      *
      * @return void
      *
@@ -369,9 +337,8 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * The records of an earlier call are forgotten as the redemption starts, so
-     * they never stand in the way, and its own are forgotten once it ends, so
-     * nothing later in the request answers from them.
+     * The admitted redemption and renewal are forgotten as the redemption
+     * starts and ends.
      *
      * @return void
      *
@@ -398,13 +365,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * A `reauthenticate` code admitted through SSO's own admission, inside the
-     * application's transaction but outside `Iam::reauthentications()`, is
-     * never committed as redeemed with nothing renewed: the renewal SSO asks
-     * for is one no redemption would write, so it throws from the admission,
-     * the transaction rolls back, nothing is reported, the session's time is
-     * unchanged and the code stays unspent, renewing the session once redeemed
-     * through the service.
+     * A code admitted outside the redemption renews nothing and stays unspent.
      *
      * @param  ?string  $level
      * @return void
@@ -443,8 +404,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * A job's redemption, with a client of which nothing is known, reports
-     * neither an IP address nor a user agent.
+     * A job's redemption reports no IP address or user agent.
      *
      * @return void
      *
@@ -476,8 +436,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * Redeem the handoff for the guard through the connection, as the
-     * application's `reauthenticate` endpoint does, for the tests' client.
+     * Redeem the `reauthenticate` handoff for the tests' client.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @return \SineMacula\Laravel\Authentication\Sessions\AccessTokenResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
@@ -490,8 +449,7 @@ final class ReauthenticationRedemptionTest extends TestCase
     }
 
     /**
-     * Bind the scripted stand-in for the reauthentication sessions, and answer
-     * it.
+     * Bind and answer the scripted reauthentication sessions.
      *
      * @param  string  $script
      * @return \Tests\Fixtures\Sso\ScriptedReauthenticationSessions

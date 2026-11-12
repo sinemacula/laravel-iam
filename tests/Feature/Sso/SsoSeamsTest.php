@@ -48,8 +48,7 @@ use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams `laravel-authentication`, SSO and MFA join
- * through for SSO.
+ * Feature tests for the SSO seam bindings.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -90,8 +89,7 @@ final class SsoSeamsTest extends TestCase
     private const array SCOPED = [LinkStore::class, ConnectionEvidencePolicy::class];
 
     /**
-     * Every adapter, and SSO's link store, is bound over its member's default,
-     * while SSO keeps its own evidence policy and handoff store.
+     * Every adapter and SSO's link store is bound over its member's default.
      *
      * @return void
      *
@@ -120,8 +118,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * The evidence switch binds SSO's per-connection evidence policy, scoped
-     * under this package's key and forgotten when the worker resets.
+     * The evidence switch binds SSO's per-connection evidence policy, scoped.
      *
      * @return void
      *
@@ -134,7 +131,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * With the capability off the evidence switch binds nothing either.
+     * With the capability off the evidence switch binds nothing.
      *
      * @return void
      *
@@ -148,8 +145,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * The link store is scoped under this package's key and forgotten when the
-     * worker resets.
+     * The link store is scoped and forgotten when the worker resets.
      *
      * @return void
      *
@@ -161,8 +157,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[value, on]`: the evidence switch's value, and whether it binds
-     * SSO's per-connection evidence policy.
+     * Evidence switch values, and whether each binds the evidence policy.
      *
      * @return iterable<string, array{0: mixed, 1: bool}>
      */
@@ -211,8 +206,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[value, on]`: the switch's value, and whether it leaves the
-     * bindings on.
+     * Switch values, and whether each leaves the bindings on.
      *
      * @return iterable<string, array{0: mixed, 1: bool}>
      */
@@ -242,8 +236,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * The switch is read leniently, and turns every binding but the evidence
-     * policy's on.
+     * The switch is read leniently.
      *
      * @param  mixed  $value
      * @param  bool  $on
@@ -272,8 +265,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * SSO's own classes are scoped, the adapters transient, and only session
-     * revocation is mandatory while SSO is out of use.
+     * Each binding's lifetime and mandate while SSO is out of use.
      *
      * @return void
      */
@@ -293,8 +285,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, mandatory]`: the configuration, and the seams it
-     * makes mandatory.
+     * Configurations, and the seams each makes mandatory.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: list<class-string>}>
      */
@@ -306,8 +297,8 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * The links and link store are mandatory while SSO is in use, and the
-     * re-authentication sessions while SSO enforces.
+     * The links are mandatory while SSO is in use, and the re-authentication
+     * sessions while it enforces.
      *
      * @param  array<string, mixed>  $configuration
      * @param  list<class-string>  $mandatory
@@ -346,8 +337,7 @@ final class SsoSeamsTest extends TestCase
     }
 
     /**
-     * Assert the seam resolves to one instance of the class until the worker
-     * resets, held under this package's scoped key rather than on the seam.
+     * Assert the seam resolves to one scoped instance until the worker resets.
      *
      * @param  class-string  $abstract
      * @param  class-string  $class

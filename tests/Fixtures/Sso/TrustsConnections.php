@@ -17,13 +17,8 @@ use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * A combination policy an application that trusts its providers might bind: it
- * answers as MFA's default does, except that a sign-in whose newest proof is a
- * first factor, or a reauthentication with it, through an external provider on
- * a connection it trusts is multifactor authentication at AAL2, never
- * phishing-resistant, each part judged within its maximum age of that proof. It
- * keeps the proofs it was asked to evaluate, so a test can tell what it was
- * handed.
+ * A combination policy that counts a trusted connection's first factor as AAL2
+ * multifactor.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,9 +55,8 @@ final class TrustsConnections implements CombinationPolicy
     }
 
     /**
-     * Multifactor authentication at AAL2 for a sign-in whose newest proof is a
-     * trusted provider's, each part met within its maximum age of that proof,
-     * and the default's answer otherwise.
+     * AAL2 multifactor for a trusted provider's newest proof, and the default's
+     * answer otherwise.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  ...$proofs
@@ -102,8 +96,8 @@ final class TrustsConnections implements CombinationPolicy
     }
 
     /**
-     * Whether the proof is a first factor, or a reauthentication with it,
-     * through an external provider on a trusted connection.
+     * Whether the proof is a trusted provider's first factor or
+     * reauthentication.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $proof
      * @return bool

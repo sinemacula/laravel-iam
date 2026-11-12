@@ -29,15 +29,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's reauthentication sessions through
- * `laravel-authentication` (IAM-4.2): a flow's start answered from the
- * session's external standing through the connection by any link, on the
- * application's guard, locking nothing; the redemption's locked standing
- * through exactly the link, on the application's guard, locking the session's
- * row last until the redemption's transaction ends; any reason
- * `laravel-authentication` gives answered `not_signed_in`, never thrown; what
- * cannot be resolved thrown (IAM-8.2); and the renewal recorded once and never
- * written.
+ * Integration tests for SSO's reauthentication sessions adapter.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,8 +51,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     private const string WRITES_OR_LOCKS = '/^\s*(insert|update|delete)|for update|for share|lock in share mode/i';
 
     /**
-     * A session established through the connection, by any link, stands as a
-     * flow starts.
+     * A session through the connection, by any link, stands as a flow starts.
      *
      * @return void
      *
@@ -75,8 +66,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * A session stands as a flow starts only for the application whose guard
-     * holds it.
+     * A session stands as a flow starts only for its own application.
      *
      * @return void
      *
@@ -92,8 +82,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[case]`: each session that has no standing for a flow through
-     * the connection.
+     * Rows of `[case]`: each session with no standing through the connection.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -111,8 +100,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Every session without standing is `not_signed_in` as a flow starts,
-     * answered and never thrown.
+     * A session without standing is `not_signed_in` as a flow starts.
      *
      * @param  string  $case
      * @return void
@@ -129,8 +117,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Asked as a flow starts, outside any transaction, nothing is locked and
-     * nothing is written.
+     * A flow's start locks nothing and writes nothing.
      *
      * @param  string  $level
      * @return void
@@ -159,9 +146,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Inside the redemption's transaction a session established through exactly
-     * the link, on the application's guard, stands, and its row is locked last,
-     * until the transaction ends.
+     * The locked standing locks the session's row until the transaction ends.
      *
      * @param  string  $level
      * @return void
@@ -188,8 +173,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[case]`: each session that has no standing for the redemption
-     * through exactly the link, on the application's guard.
+     * Rows of `[case]`: each session with no standing through exactly the link.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -211,9 +195,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Every session without standing through exactly the link, on the
-     * application's guard, is `not_signed_in` to the redemption, answered and
-     * never thrown, so SSO refuses it as ineligible.
+     * A session without locked standing is `not_signed_in`, never thrown.
      *
      * @param  string  $case
      * @return void
@@ -233,9 +215,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The locked standing is asked only inside a transaction on the storage
-     * connection, which holds the session's row: outside one it could lock
-     * nothing, so it throws rather than answer unprotected.
+     * The locked standing throws outside a transaction.
      *
      * @return void
      *
@@ -253,9 +233,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * An application that is no guard holding sessions cannot be resolved, so
-     * the standing throws as a flow starts and inside the redemption's
-     * transaction alike (IAM-8.2).
+     * An application that is no session guard throws.
      *
      * @return void
      *
@@ -285,9 +263,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * An identity reference that names no identity of
-     * `laravel-authentication`'s throws, as a flow starts and inside the
-     * redemption alike (IAM-8.2).
+     * An identity reference naming no identity throws.
      *
      * @return void
      *
@@ -317,10 +293,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The locked standing declares every exception the start's standing does:
-     * it resolves the identity and the application's sessions the same way, so
-     * an unresolved identity or application refuses it with the same exception
-     * (IAM-8.2).
+     * The locked standing declares every exception the standing does.
      *
      * @return void
      */
@@ -330,8 +303,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The renewal is recorded for the redemption's one write, and nothing is
-     * written: the session's authentication time stays as it was.
+     * The renewal is recorded and nothing is written.
      *
      * @return void
      *
@@ -363,8 +335,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * A second renewal in one redemption is a `LogicException`: a session's
-     * authentication is renewed once, never twice.
+     * A second renewal in one redemption is a `LogicException`.
      *
      * @return void
      *
@@ -386,10 +357,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * A renewal asked for while no redemption is open to write it, as when a
-     * `reauthenticate` code is admitted through SSO's own admission rather than
-     * through `Iam::reauthentications()`, is a `LogicException`, and nothing is
-     * recorded or written.
+     * A renewal no redemption would write is a `LogicException`.
      *
      * @return void
      *
@@ -414,8 +382,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The renewal is recorded in this request's recorder, which the worker
-     * reset forgets, never in one the adapter keeps (IAM-8.1).
+     * The renewal is recorded in this request's recorder alone.
      *
      * @return void
      *
@@ -441,8 +408,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * Declare a second guard holding sessions of the same people, which allows
-     * the `external_provider` method too.
+     * Declare a second session guard of the same people.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -486,8 +452,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The session's locked standing through the tests' connection and link, on
-     * the guard.
+     * The session's locked standing through the tests' connection and link.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -499,8 +464,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
-     * The id of a session of the case's kind, which has no standing for the
-     * person through the tests' connection.
+     * The id of a session of the case's kind, without standing.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $case

@@ -36,15 +36,9 @@ The current note set is:
   `laravel-authentication`'s ceremonies and its mandatory passkey factor gate, and the event context, active tenant,
   subject type and application MFA reads from the validated session; how MFA's SMS and email senders forward its codes
   to the application's `OneTimeCodeSender`; and the locks each path takes.
-- `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, SSO's own link
-  store as its linker, and the handoff issuer left on SSO's default; how a `sign_in`, a
-  `reauthenticate` and a `link` code are redeemed from plain values, the first two in one transaction on the storage
-  connection retried whole and the last through SSO's standalone redemption; which refusals commit and which roll back;
-  the records kept for one request and the one renewal a re-authentication writes; how each of SSO's revocation scopes
-  ends exactly its sessions; how identity and tenant references are resolved; the provider's evidence through SSO's
-  evidence policy and MFA's combination policy, freshness with SSO's maximum age, the application's external sign-in,
-  link e-mail matching on verified identifiers, link confirmation from how the caller's session signed in, and the
-  `sso` context namespace; SSO's lock order; and the gaps in the members the adapters work around.
+- `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, how SSO's handoff
+  codes are redeemed and its revocation scopes end sessions, and how SSO's evidence, freshness and link judgements are
+  answered.
 - `tenant-authentication-policy.md`: the application's implementation of laravel-mfa's `TenantRequirement`, read
   into `laravel-authentication`'s tenant authentication policy, which is answered from SSO's enforcement, SSO's
   exemption gate and that requirement together; the version that changes whenever any of them does;

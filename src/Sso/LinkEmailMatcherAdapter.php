@@ -16,41 +16,8 @@ use SineMacula\Laravel\Sso\Linking\LinkEmailMatch;
 use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
 
 /**
- * SSO's link email contract, answered from the identities' verified email
- * addresses through `laravel-authentication`'s email normaliser (IAM-4.7,
- * SSO-8.8, AUTH-3.1).
- *
- * The email SSO asserts is passed, exactly as asserted, through the normaliser
- * `laravel-authentication` registers for the `email` identifier type
- * (`IdentifierNormalizers::get('email')`), the one its identifier cast stores
- * an identity's email in, and nothing more is done to it: no subaddress or dot
- * removal, no Unicode folding and no confusable matching. An email the
- * normaliser refuses names nobody. Every identity model a session guard of
- * `laravel-authentication`'s signs in (the `model` of each `jwt` guard's
- * provider) that can report its identifiers' verification is searched for that
- * normal form, on the write connection with the model's own query, its global
- * scopes kept, so a hidden or deleted identity never matches; the identifier is
- * the attribute named after its type, as `ProvidesIdentifierVerification` keeps
- * it. A row counts only when the identity reports its email address verified
- * and that address is the normal form byte for byte, so neither a merely
- * present address nor one a case- or accent-insensitive collation matched
- * counts. One identity counting is `exactly one`; none is `none`; more than one
- * is `ambiguous`, which SSO refuses, never a guess between them.
- *
- * SSO asks it by a plain read before its completion's locks, again under them,
- * and again inside the redeemer's transaction, and the answer must stay true
- * until that commits. It takes no lock: locking the rows it found would not
- * stop another identity from verifying the same address later. It relies on the
- * application's guarantee that one verified email address belongs to one
- * identity (a unique index on the email column, which the identifier cast's one
- * normal form makes exact), or on a guard every writer of a verified email
- * takes after SSO's locks, in SSO's order. The tenant SSO names is not
- * consulted: which identities may link through a tenant's connection is link
- * eligibility's and tenant membership's to judge (IAM-7.4).
- *
- * The email is never logged, nor put in an exception's message; an error
- * propagates, since an answer it cannot vouch for is never `exactly one`. It
- * keeps nothing between calls (IAM-8.1).
+ * SSO's link email matcher, answered from the identities whose verified email
+ * is the asserted address in `laravel-authentication`'s normal form.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -59,7 +26,7 @@ use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
  */
 final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
 {
-    /** @var string The identifier type of an email address, which names its normaliser, its attribute and its verification. */
+    /** @var string The `email` identifier type, which also names its attribute. */
     private const string EMAIL = 'email';
 
     /**
@@ -82,8 +49,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     ) {}
 
     /**
-     * The identities whose verified email address is the query's, in its normal
-     * form.
+     * The identities whose verified email is the query's normal form.
      *
      * @param  \SineMacula\Laravel\Sso\Linking\LinkEmailQuery  $query
      * @return \SineMacula\Laravel\Sso\Linking\LinkEmailMatch
@@ -116,8 +82,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     }
 
     /**
-     * The identities of the model's whose email address is verified and is the
-     * normal form byte for byte, read on the write connection.
+     * The model's identities holding the verified email byte for byte.
      *
      * @formatter:off
      *
@@ -142,6 +107,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
 
             $found = [];
 
+            // laravel-authentication has no lookup by verified identifier.
             foreach (WriteConnection::query($model->newQuery())->where(self::EMAIL, $email)->get() as $candidate) {
 
                 if (!self::holdsVerified($candidate, $email)) {
@@ -156,8 +122,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     }
 
     /**
-     * Whether the identity's email address is the normal form byte for byte,
-     * and verified.
+     * Whether the identity holds the email, byte for byte and verified.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers  $identity
      * @param  string  $email
@@ -169,9 +134,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     }
 
     /**
-     * A blank instance of each identity model a session guard signs in, once
-     * each, that can report its identifiers' verification, in the order the
-     * guards are declared.
+     * A blank instance of each verifiable identity model a guard signs in.
      *
      * @return list<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers&\SineMacula\Laravel\Authentication\Contracts\Identity>
      */
@@ -195,8 +158,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     }
 
     /**
-     * Whether the class is an Eloquent identity model that can report its
-     * identifiers' verification.
+     * Whether the class is an Eloquent identity that reports verification.
      *
      * @formatter:off
      *

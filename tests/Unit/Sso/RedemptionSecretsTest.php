@@ -30,14 +30,8 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 
 /**
- * Unit tests for the secrets a redemption is handed: the handoff code and its
- * verifier never reach a thrown exception's trace in the clear, neither as the
- * redemption's own arguments, which PHP redacts, nor in the work it hands the
- * transaction, whose captured values a trace carries as they are.
- *
- * Each redemption is made to throw inside its transaction, before SSO is asked,
- * with the arguments of every frame kept, as PHP's own default and its
- * development settings keep them.
+ * Unit tests that a redemption's code and verifier never reach a trace in the
+ * clear.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,8 +54,7 @@ final class RedemptionSecretsTest extends TestCase
     private false|string $ignoredArgs = false;
 
     /**
-     * Keep every frame's arguments in a trace, as PHP's own default does, and
-     * declare no session guard.
+     * Keep every frame's arguments in a trace, and declare no session guard.
      *
      * @return void
      */
@@ -78,8 +71,7 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * Restore whether a trace keeps its frames' arguments, and the auth
-     * manager.
+     * Restore the trace setting and the auth manager.
      *
      * @return void
      */
@@ -94,7 +86,7 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * Rows of `[redemption]`: each redemption handed a code and a verifier.
+     * Each redemption handed a code and a verifier.
      *
      * @return iterable<string, array{0: \Closure(\SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction, \SineMacula\Laravel\Iam\Mfa\CurrentSession): mixed}>
      */
@@ -119,9 +111,8 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * An exception thrown inside the redemption's transaction carries neither
-     * the code nor the verifier in the clear in any frame: not in a closure's
-     * captured values, and not in what the trace prints.
+     * No frame of a trace thrown inside the transaction holds the secrets in
+     * the clear.
      *
      * @param  \Closure(\SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction, \SineMacula\Laravel\Iam\Mfa\CurrentSession): mixed  $redemption
      * @return void
@@ -165,8 +156,8 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * Assert none of the values, nor any value held in an array among them, is
-     * the code or the verifier.
+     * Assert no value, nor any array member among them, is the code or the
+     * verifier.
      *
      * @param  array<array-key, mixed>  $values
      * @return void
@@ -186,8 +177,8 @@ final class RedemptionSecretsTest extends TestCase
     }
 
     /**
-     * A cross-member transaction on a connection that runs the work once, and
-     * rethrows its failure, which is no concurrency failure.
+     * A cross-member transaction that runs the work once and rethrows its
+     * failure.
      *
      * @return \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction
      */

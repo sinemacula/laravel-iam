@@ -13,9 +13,8 @@ use SineMacula\Laravel\Sso\Handoffs\HandoffRedemption;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 
 /**
- * Redeems a `link` handoff code as the caller through SSO's own redemption,
- * which opens its own transaction, so a concurrency failure is the caller's to
- * retry (IAM-4.3, IAM-11.2).
+ * Redeems a `link` handoff code for the caller through SSO's `redeem()`, which
+ * retries in a transaction of its own, or runs as a savepoint of the caller's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,8 +39,7 @@ final readonly class LinkRedemption
     ) {}
 
     /**
-     * Redeem the `link` code for the caller's application through the
-     * connection, and answer SSO's result.
+     * Redeem the `link` code for the caller.
      *
      * @param  string  $connectionId
      * @param  string  $code

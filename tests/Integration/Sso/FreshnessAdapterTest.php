@@ -36,24 +36,7 @@ use Tests\Fixtures\Sso\Handoff;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's freshness contract over
- * `laravel-authentication`'s freshness policy: SSO's maximum age is the
- * caller's requirement, met by a proof of any kind made within it, and the
- * stricter of it and the application's own requirement for the operation
- * applies; only the caller SSO hands over is judged, on the session it names
- * while that session is live and its identity's own, and for no caller, or one
- * with no session, the answer is `stale`, however fresh the session the request
- * is served with; the application names its caller as SSO takes it
- * (`Iam::callers()->of()`), with the session its access credential holds while
- * it is its own and no transaction is open; the policy is asked plainly, inside
- * SSO's transactions too, so no session row is locked under SSO's locks; and a
- * `link` redeemed through this package is created for a caller signed in
- * recently enough, and refused as `freshness_required` otherwise, or inside the
- * caller's own transaction.
- *
- * The scenarios that judge a session inside SSO's transaction run at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
+ * Integration tests for SSO's freshness contract over the freshness policy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -71,8 +54,7 @@ final class FreshnessAdapterTest extends TestCase
     private const int MAX_AGE = 300;
 
     /**
-     * Arrange SSO, with this package's freshness adapter in place of the
-     * stand-in the flows bind.
+     * Arrange SSO with this package's freshness adapter bound.
      *
      * @return void
      */
@@ -97,8 +79,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A session signed in within SSO's maximum age is fresh for every one of
-     * SSO's operations, and stale once it is older.
+     * A session within SSO's maximum age is fresh, and stale once older.
      *
      * @return void
      *
@@ -127,8 +108,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * SSO's gate asks with the maximum age its configuration gives the
-     * operation, for the caller it is given.
+     * SSO's gate asks with the maximum age configured for the operation.
      *
      * @return void
      *
@@ -152,10 +132,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * The application's own requirement for the operation applies where it is
-     * stricter than SSO's: a shorter age makes the session stale sooner, and
-     * proof kinds the sign-in's first factor is not among make it stale at
-     * once.
+     * The application's stricter requirement for the operation applies.
      *
      * @return void
      *
@@ -182,8 +159,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * With no caller (as in a queued job or a console command) the answer is
-     * stale.
+     * No caller, as in a job or a command, is stale.
      *
      * @return void
      */
@@ -193,9 +169,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A caller with no session is stale however fresh the session the request
-     * is served with: neither the default guard nor whoever it serves is ever
-     * taken as the caller's, and the policy is not asked.
+     * A caller with no session is stale, and the policy is not asked.
      *
      * @return void
      *
@@ -214,9 +188,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * The caller is judged on the session it names only while that session is
-     * its identity's own and live: another person's session, a key that names
-     * no session, and a session since revoked are stale, however fresh.
+     * A caller is judged only on its identity's own live session.
      *
      * @return void
      *
@@ -239,8 +211,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A caller whose identity reference names no identity throws, rather than
-     * be answered as no caller.
+     * A caller whose identity reference names no identity throws.
      *
      * @return void
      */
@@ -252,11 +223,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A caller is named with the session its access credential holds while it
-     * is the caller's own: a caller read from a refresh credential, or holding
-     * another person's session, is named with none, and a caller holding its
-     * own session is named with it without the guard being asked whom it
-     * serves.
+     * Only the caller's own session on an access credential is named.
      *
      * @return void
      *
@@ -298,8 +265,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A caller whose identity SSO cannot name (one that is no model) cannot be
-     * named.
+     * A caller whose identity is no model cannot be named.
      *
      * @return void
      *
@@ -313,10 +279,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction on the storage connection opened after the caller
-     * was named, as SSO opens its own, the policy is still asked plainly, by
-     * this adapter, for the operation SSO named: no session row is locked under
-     * SSO's locks.
+     * Inside SSO's transaction the policy is asked plainly, locking nothing.
      *
      * @param  ?string  $level
      * @return void
@@ -342,10 +305,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A caller named while a transaction is open is named with no session, so
-     * it is stale without the policy being asked, since that transaction's
-     * snapshot may be older than the call; one named once no transaction is
-     * open is judged.
+     * A caller named inside a transaction carries no session, so is stale.
      *
      * @param  ?string  $level
      * @return void
@@ -370,9 +330,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` redeemed through this package for a caller signed in within
-     * SSO's maximum age is created, freshness asked plainly under SSO's locks
-     * for the caller.
+     * A `link` for a caller fresh enough is created.
      *
      * @param  ?string  $level
      * @return void
@@ -399,9 +357,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` whose caller signed in longer ago than SSO's maximum age when it
-     * is redeemed is refused as `freshness_required` under SSO's locks, and no
-     * link is made.
+     * A `link` for a stale caller is refused as `freshness_required`.
      *
      * @param  ?string  $level
      * @return void
@@ -431,9 +387,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` started for one person and redeemed by a caller holding another
-     * person's session is refused for freshness before anything else: only the
-     * caller's own session is judged, and the caller holds none.
+     * A caller holding another person's session cannot redeem a `link`.
      *
      * @return void
      *
@@ -456,11 +410,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` redeemed inside the caller's own transaction is refused as
-     * `freshness_required`, however recently the caller signed in: that
-     * transaction's snapshot may be older than the redemption, so the caller is
-     * handed to SSO with no session, and the policy is not asked. No link is
-     * made.
+     * A `link` redeemed inside the caller's own transaction is refused.
      *
      * @return void
      *
@@ -483,8 +433,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * A `link` flow started for a caller with no session is refused for
-     * freshness at its start, however recently the person signed in.
+     * A `link` flow started for a caller with no session is refused.
      *
      * @return void
      *
@@ -503,8 +452,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * Ask the adapter for the operation for the person, named as the caller of
-     * a request on the guard, holding the session the guard serves.
+     * Ask the adapter about the operation for the person as the caller.
      *
      * @param  \Tests\Fixtures\Models\Person  $caller
      * @param  \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation  $operation
@@ -519,8 +467,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * The person as SSO takes the caller of a request on the guard, holding the
-     * session the guard serves.
+     * The person as SSO takes a request's caller on the guard.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \SineMacula\Laravel\Sso\Identities\Caller
@@ -533,9 +480,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * Start and complete a `link` flow for the person, named as the caller of a
-     * request on the guard, as SSO's flow start asks freshness, and answer its
-     * handoff.
+     * Start and complete a `link` flow for the person, and answer its handoff.
      *
      * @param  \Tests\Fixtures\Models\Person  $caller
      * @return \Tests\Fixtures\Sso\Handoff

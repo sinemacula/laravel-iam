@@ -62,22 +62,7 @@ use Tests\Fixtures\Sso\Redemptions;
 use Tests\TestCase;
 
 /**
- * Integration tests for redeeming a `sign_in` handoff code SSO issued and
- * signing the person it links in through `laravel-authentication`, in one
- * transaction on the storage connection (IAM-4.1), against SSO's acceptance
- * scenarios: a linked sign-in writes one session whose provider context is the
- * captured provenance, naming the enforcement version judged at redemption and
- * capped by the provider's session deadline, and keeping a raw context class
- * outside the stored domain as none; SSO's refusal commits and spends the code;
- * a refusal by `laravel-authentication`, a session write that throws, an
- * unlinked result and an unresolved guard roll back, leave it unspent and
- * acknowledge no completed sign-in; a pending session commits, and keeps its
- * provenance as it becomes active, is refreshed and is switched; and the
- * records of one redemption never reach the next.
- *
- * Each scenario that commits or rolls back runs at the connection's own level
- * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for redeeming a `sign_in` handoff code.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -124,11 +109,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A linked sign-in writes one active session through the exact link SSO
-     * resolved, whose provenance names the connection, the tenant and the link,
-     * and whose provider context is exactly SSO's captured provenance in its
-     * stored form; one `HandoffRedeemed` follows the commit, carrying the
-     * client handed over.
+     * A linked sign-in writes one session with SSO's provenance.
      *
      * @param  ?string  $level
      * @return void
@@ -178,9 +159,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A refusal by SSO commits: the code is spent, so the right verifier
-     * afterwards is `replayed`, each refusal reports one `FlowFailed`, and no
-     * session is written.
+     * A refusal by SSO commits and spends the code.
      *
      * @param  ?string  $level
      * @return void
@@ -208,10 +187,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A refusal by `laravel-authentication` is thrown out of the transaction,
-     * which rolls the consumption back: nothing is reported, no session is
-     * written, and once `laravel-authentication` accepts, the same code and
-     * verifier sign the person in.
+     * A refusal by authentication rolls back and leaves the code unspent.
      *
      * @param  ?string  $level
      * @return void
@@ -249,11 +225,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A sign-in whose session write throws rolls the whole redemption back: the
-     * failure reaches the caller, no session is written, the connection's first
-     * completed sign-in SSO acknowledged in the transaction is undone, nothing
-     * is reported, and the same code and verifier sign the person in once the
-     * session can be written.
+     * A session write that throws rolls the whole redemption back.
      *
      * @param  ?string  $level
      * @return void
@@ -299,10 +271,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * The session's provenance names the version of the enforcement the
-     * redemption judged under its locks: a rule changed between the flow's
-     * completion and its redemption reaches the session as the version it
-     * changed to, never the one the completion checked.
+     * The provenance names the enforcement version judged at redemption.
      *
      * @param  ?string  $level
      * @return void
@@ -339,10 +308,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A sign-in through a SAML connection, whose provider states when its
-     * session ends and whose deadline SSO's default contract lets limit the
-     * session, writes that deadline as the provenance's provider session expiry
-     * and caps the session's own absolute deadline at it.
+     * The provider's session deadline caps the session.
      *
      * @param  ?string  $level
      * @return void
@@ -383,10 +349,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A raw context class the evidence contract accepted that is outside the
-     * stored form's domain (longer than it keeps) still signs the person in:
-     * the provenance keeps that class as none, with the accepted methods, where
-     * a class inside the domain, accepted the same way, is kept as it is.
+     * A raw context class outside the stored domain is kept as none.
      *
      * @param  ?string  $level
      * @return void
@@ -415,10 +378,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * An admitted sign-in linked to no identity, which only an application
-     * allowing unlinked handoffs is issued a code for, is refused and rolled
-     * back: `laravel-authentication` is never asked, nothing is reported, and
-     * the code stays unspent, so presenting it again is refused the same way.
+     * An unlinked sign-in rolls back and leaves the code unspent.
      *
      * @param  ?string  $level
      * @return void
@@ -448,11 +408,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * A sign-in `laravel-authentication` leaves pending is a success: it
-     * commits with the redemption, the provenance written with it, and the
-     * pending credential is handed back; the provenance is kept exactly as
-     * written when the session becomes active, and when it is refreshed and
-     * switched.
+     * A pending sign-in commits and keeps its provenance.
      *
      * @param  ?string  $level
      * @return void
@@ -512,9 +468,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * An application that is no guard of `laravel-authentication`'s holding
-     * sessions throws before the code is touched, so the code still signs the
-     * person in for the application it was issued to.
+     * An application that is no session guard leaves the code untouched.
      *
      * @return void
      *
@@ -535,8 +489,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * Inside a transaction the caller opened, the redemption runs as a
-     * savepoint of it, and commits with it.
+     * Inside the caller's transaction the redemption commits with it.
      *
      * @param  ?string  $level
      * @return void
@@ -559,9 +512,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * The admitted redemption is forgotten once the redemption ends, so nothing
-     * later in the request answers from it, and one left by an earlier call is
-     * forgotten as the redemption starts, so it never stands in the way.
+     * The admitted redemption is forgotten as the redemption starts and ends.
      *
      * @return void
      *
@@ -583,9 +534,8 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * Sign the person in through a flow whose provider states the raw context
-     * class given and the password as its method, failing unless the person is
-     * signed in, and answer the provider context written with the session.
+     * Sign in with the raw context class given, and answer the provider
+     * context.
      *
      * @param  string  $raw
      * @return array<array-key, mixed>
@@ -603,8 +553,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * Redeem the handoff for the guard through the connection, as the
-     * application's `sign_in` endpoint does, for the tests' client.
+     * Redeem the handoff for the guard through the connection.
      *
      * @param  \Tests\Fixtures\Sso\Handoff  $handoff
      * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult|\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
@@ -617,8 +566,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * Whether the tests' connection has acknowledged a completed sign-in, as
-     * stored now.
+     * Whether the connection has acknowledged a completed sign-in.
      *
      * @return bool
      */
@@ -677,8 +625,7 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * Allow, or stop allowing, sign-in through an external provider on the
-     * guard, as its configuration would, for the guards resolved from now on.
+     * Allow or stop allowing external sign-in on the guard.
      *
      * @param  bool  $allowed
      * @return void
