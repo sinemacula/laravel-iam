@@ -149,8 +149,8 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
   `sso:{connection_id}:{request_reference}`, on every SSO event of the flow and on `laravel-authentication`'s redemption
   events; a challenge, `mfa:{challenge}` for MFA's code and verification events and a refused factor code (which name
   the same challenge), `authentication:{challenge}` for `laravel-authentication`'s own; else `session:{session_id}`.
-  A missing part means no id, and an id over 191 bytes, or one audit-log's `correlatedWith()` would refuse, is none,
-  so correlation never loses a record. Every change of one `laravel-authorization` management call is
+  A missing part means no id, and an id audit-log's `CorrelationId::isValid()` refuses is none, so correlation never
+  loses a record. Every change of one `laravel-authorization` management call is
   `authorization:{operation_id}`, its operation's id (AUTHZ-15.2); a decision carries no operation, so none.
 - Decisions this note records, beyond the plan's: a sign-in refused for `rate_limited` is audit-log's own
   `authentication.locked_out` (IAM-9.2 lists it among the codes to reuse), about no one as audit-log's own capture of
@@ -461,7 +461,7 @@ worker reset that forgets a guard's caller between jobs in `long-running-process
 - `src/Audit/Enums/AuthenticationActivity.php`, `SessionActivity.php`, `MfaActivity.php`, `SsoActivity.php`:
   `definition()`, `properties()`; `src/Audit/Contracts/ListsProperties.php`.
 - `src/Audit/Correlation.php`: `ssoSignIn()`, `mfaChallenge()`, `authenticationChallenge()`, `session()`,
-  `authorizationOperation()`, `first()`, `MAX_BYTES`; `src/Audit/References.php`: `type()`.
+  `authorizationOperation()`, `first()`; `src/Audit/References.php`: `type()`.
 - `src/Audit/AuthenticationActorReader.php`: `read()`; `src/Audit/References.php`: `of()`, `tenant()`, `TENANT_TYPE`;
   `src/IamServiceProvider.php`: `register()`.
 - `src/Audit/CaptureExclusions.php`: `guards()`, `unexcludedGuards()`, `exceptGuards()`, `isGateCaptureOff()`,

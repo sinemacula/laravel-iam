@@ -28,8 +28,8 @@ behaviour for every transaction; the package adds nothing over them.
 
 ## After commit
 
-Laravel's `afterCommit()` waits on whichever connection opened a transaction last. `Transactions\ConnectionTransactions`
-waits on one connection's: `afterCommit()` queues the work on its innermost open transaction (at once when none is
-open, dropped on rollback), and `open()` lists the open transactions, so a caller can wait on each one's rollback, as
-Laravel 12 does not tell a committed savepoint of its parent's rollback. The tenant policy's second pass, the deferred
-audit refusals and the decision cache's rollback pass use it.
+Laravel's `afterCommit()` waits on whichever connection opened a transaction last. The tenant policy's second pass
+waits on the storage connection's own through laravel-mfa's `AfterStorageCommit::run()` (at once when none is open,
+dropped on rollback). `Transactions\ConnectionTransactions::open()` lists one connection's open transactions, so the
+decision cache's rollback pass can wait on each one's rollback, as Laravel 12 does not tell a committed savepoint of
+its parent's rollback.

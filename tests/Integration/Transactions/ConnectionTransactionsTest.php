@@ -12,8 +12,7 @@ use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 use Tests\TestCase;
 
 /**
- * Integration tests for waiting on one connection's transactions: after-commit
- * work and rollback callbacks.
+ * Integration tests for listing one connection's open transactions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,7 +22,7 @@ use Tests\TestCase;
 #[CoversClass(ConnectionTransactions::class)]
 final class ConnectionTransactionsTest extends TestCase
 {
-    /** @var string The second connection, whose transactions the work never waits on. */
+    /** @var string The second connection, whose transactions are never listed. */
     private const string OTHER = 'other';
 
     /** @var list<string> What ran, in order. */
@@ -40,70 +39,6 @@ final class ConnectionTransactionsTest extends TestCase
         parent::setUp();
 
         Config::set('database.connections.' . self::OTHER, ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
-    }
-
-    /**
-     * With no transaction open on the connection, the work runs at once.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testWithNoTransactionOpenTheWorkRunsAtOnce(): void
-    {
-        DB::connection(self::OTHER)->transaction(function (): void {
-
-            ConnectionTransactions::afterCommit(null, $this->recorder('work'));
-
-            self::assertSame(['work'], $this->ran);
-        });
-    }
-
-    /**
-     * The work waits for the outermost commit on its connection, not a
-     * savepoint's or another connection's.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheWorkRunsOnceTheConnectionsOutermostTransactionCommits(): void
-    {
-        DB::transaction(function (): void {
-
-            DB::connection(self::OTHER)->transaction(function (): void {
-
-                DB::transaction(fn () => ConnectionTransactions::afterCommit(null, $this->recorder('work')));
-            });
-
-            self::assertSame([], $this->ran);
-        });
-
-        self::assertSame(['work'], $this->ran);
-    }
-
-    /**
-     * A rollback of the transaction the work waits on, or of a savepoint it was
-     * queued in, drops it.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testARollbackDropsTheWork(): void
-    {
-        DB::beginTransaction();
-        ConnectionTransactions::afterCommit(null, $this->recorder('outer'));
-        DB::rollBack();
-
-        DB::transaction(function (): void {
-
-            DB::beginTransaction();
-            ConnectionTransactions::afterCommit(null, $this->recorder('savepoint'));
-            DB::rollBack();
-        });
-
-        self::assertSame([], $this->ran);
     }
 
     /**
@@ -161,39 +96,21 @@ final class ConnectionTransactionsTest extends TestCase
     }
 
     /**
-     * With no transactions manager bound, no transaction can be waited on and
-     * the work runs at once.
+     * With no transactions manager bound, no transaction is listed open.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testWithNoTransactionsManagerTheWorkRunsAtOnce(): void
+    public function testWithNoTransactionsManagerNoneIsOpen(): void
     {
         $app = $this->app ?? self::fail('The application has not booted.');
 
-        DB::transaction(function () use ($app): void {
+        DB::transaction(static function () use ($app): void {
 
             unset($app['db.transactions']);
 
             self::assertSame([], ConnectionTransactions::open(null));
-
-            ConnectionTransactions::afterCommit(null, $this->recorder('work'));
-
-            self::assertSame(['work'], $this->ran);
         });
-    }
-
-    /**
-     * Work that records its name as it runs.
-     *
-     * @param  string  $name
-     * @return \Closure(): void
-     */
-    private function recorder(string $name): \Closure
-    {
-        return function () use ($name): void {
-            $this->ran[] = $name;
-        };
     }
 }

@@ -4,10 +4,10 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
-use SineMacula\Laravel\Authentication\Database\StorageConnection;
+use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
-use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
+use SineMacula\Laravel\Mfa\Database\AfterStorageCommit;
 
 /**
  * Judges the sessions of a tenant and every tenant below it, and of every
@@ -28,6 +28,7 @@ final readonly class SubtreePolicyChanges
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenantReferences  $tenants
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $translator
      * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
+     * @param  \Illuminate\Contracts\Container\Container  $container
      */
     public function __construct(
 
@@ -42,17 +43,20 @@ final readonly class SubtreePolicyChanges
 
         /** Resolves the session service both passes go through. */
         private CurrentSession $sessions,
+
+        /** Holds the transactions manager the second pass waits on. */
+        private Container $container,
     ) {}
 
     /**
-     * Judge the sessions of the tenant and of every tenant below it, and of
-     * every tenant the subtree has gained once the storage connection's
-     * transaction commits; answer how many sessions the first pass revoked.
+     * Judge the subtree now and its gained tenants after the storage commit;
+     * answer how many sessions the first pass revoked.
      *
      * @param  string  $tenantId
      * @return int
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
@@ -61,7 +65,7 @@ final readonly class SubtreePolicyChanges
         $listed  = $this->subtree($tenantId);
         $revoked = $this->judge($listed);
 
-        ConnectionTransactions::afterCommit(StorageConnection::name(), function () use ($tenantId, $listed): void {
+        AfterStorageCommit::run($this->container, function () use ($tenantId, $listed): void {
 
             $this->judge(array_diff($this->subtree($tenantId), $listed));
         });

@@ -379,8 +379,8 @@ run through are in `storage-and-transactions.md`.
   first pass's gap lock holds its write until the change commits). So `laravel-authentication`'s
   `tenantPolicyChanged()` judges each tenant again once the change commits, and the adapter, through
   `Tenancy\SubtreePolicyChanges`, lists the subtree again then and judges every tenant that entered it meanwhile
-  (`Transactions\ConnectionTransactions::afterCommit()`, a callback of the storage connection's own innermost
-  transaction, never another connection's, dropped with it on rollback). That pass opens a transaction from a commit
+  (laravel-mfa's `AfterStorageCommit::run()`, a callback of the storage connection's own innermost transaction, never
+  another connection's, dropped with it on rollback). That pass opens a transaction from a commit
   callback, which laravel-sso allows: it keeps its own after-commit events, its report of the change
   (`EnforcementChanged`) among them, when a commit callback begins a transaction. A commit callback that fails before
   it stops Laravel running the rest, so the second pass is dropped: the change is durable, the callback's failure
@@ -477,8 +477,8 @@ run through are in `storage-and-transactions.md`.
 - `src/Sso/ReauthenticationSessionsAdapter.php`: `standing()`, `lockedStanding()`, `renewAuthentication()`;
   `src/Mfa/CurrentSession.php`: `sessions()`, `identitySessions()`, `isInTransaction()`.
 - `src/Sso/ExternalIdentityLinksAdapter.php`: `find()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`;
-  `src/Transactions/ConnectionTransactions.php`: `afterCommit()`, the second pass queued on the storage connection's
-  own transaction; `src/Tenancy/TenantPolicyChanges.php`: `changed()`.
+  `src/Tenancy/SubtreePolicyChanges.php`: `changed()`, the second pass queued on the storage connection's own
+  transaction.
 - `src/Sso/IdentityReferences.php`: `identity()`, `reference()`; `src/Tenancy/TenantReferences.php`: `tenant()`.
 - `src/Exceptions/UnlinkedSignInException.php`, `src/Exceptions/ExternalSignInRefusedException.php`,
   `src/Exceptions/ExternalReauthenticationRefusedException.php`; `src/Exceptions/UnresolvedReferenceException.php`:
@@ -594,9 +594,7 @@ run through are in `storage-and-transactions.md`.
   `testARevocationRollsBackWithTheCallersChange`
 - `tests/Integration/Tenancy/EnforcementSecondPassTest.php` (MySQL and PostgreSQL at READ COMMITTED and REPEATABLE
   READ, the session written on another connection once the change's first pass has read)
-  `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`;
-  `tests/Integration/Transactions/ConnectionTransactionsTest.php` `testWithNoTransactionOpenTheWorkRunsAtOnce`,
-  `testTheWorkRunsOnceTheConnectionsOutermostTransactionCommits`, `testARollbackDropsTheWork`
+  `testASessionThatEnteredTheTenantDuringTheChangeIsRevokedOnceItCommits`
 - `tests/Integration/Sso/RevocationThroughSsoTest.php` `testAConnectionsChangeEndsItsSessions`,
   `testAConnectionsChangeFollowsAuthenticationsSwitch`, `testRemovingALinkEndsExactlyItsSessions`,
   `testARevocationThatThrowsRollsSsosChangeBack`
