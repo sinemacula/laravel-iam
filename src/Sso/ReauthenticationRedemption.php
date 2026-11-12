@@ -53,11 +53,8 @@ use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
  *    asked for and the redemption never wrote, is a `LogicException`, and rolls
  *    back.
  *
- * `laravel-authentication` reports a refused re-authentication
- * (`AuthenticationFailed`) at once, inside the transaction; the audit trail
- * holds that report while the transaction is open and records it once the
- * transaction has rolled back (`Audit\DeferredRefusals`), so the refusal is
- * recorded once, and never in the transaction that rolls it back (IAM-9.5).
+ * The refusal `laravel-authentication` reports inside the transaction is
+ * recorded once it has rolled back (IAM-9.5).
  *
  * `laravel-authentication`'s external re-authentication is never called when
  * SSO refused, or when SSO recorded no renewal, and the session's time is

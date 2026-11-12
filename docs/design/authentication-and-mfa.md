@@ -409,7 +409,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `sign_in` verification, which `laravel-authentication`'s `stepUp()` refuses as `proof_invalid`, so with the adapter
   bound that verification fails where MFA's default would have recorded it. `laravel-authentication`'s own report of
   the refusal, dispatched inside MFA's transaction, which the adapter's throw rolls back, is recorded in the audit trail
-  under its own reason once that transaction has ended (`Audit\DeferredRefusals`, see `audit-mapping.md`).
+  under its own reason once that transaction has ended (see `audit-mapping.md`).
 - Every refusal `factorChange()` answers with, a session no longer live included, is MFA's `not_fresh`. A removal never
   counts a step-up made with the factor removed, even for the identity's only confirmed factor, and the first
   additional factor takes `laravel-authentication`'s reauthentication window (`first_additional_factor`, fifteen

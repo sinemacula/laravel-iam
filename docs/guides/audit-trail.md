@@ -146,9 +146,9 @@ queued jobs the request dispatches, so the records they leave to the caller name
 purpose once it has refused: a refused SSO redemption, so the code stays unspent; a refused step-up or pending
 completion inside MFA's transaction; a transaction of your own. `laravel-authorization` reports each decision the same
 way, as it is made. A refusal, or a decision recorded, reported while a transaction is open on audit-log's storage
-connection is held and recorded once the outermost transaction there has ended, whichever way it ended, so it is
-recorded once and never lost with the rollback. Every other record is written at once, and is durable
-only once any transaction around it commits.
+connection is written once the outermost transaction there has ended, whichever way it ended (audit-log's
+`afterTransaction()`), so it is recorded once and never lost with the rollback. Every other record is written at once,
+and is durable only once any transaction around it commits.
 
 ## No double records
 
