@@ -22,8 +22,8 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
  * Provisions a new identity for a `sign_in` result SSO found unlinked: the one
  * listener of SSO's `ResultUnlinked` (IAM-7.1).
  *
- * While a provisioner is configured it writes, in one transaction attempted
- * once (the grant allows one use): the new identity, which must be an Eloquent
+ * While a provisioner is configured it writes, in one transaction retried
+ * whole on a concurrency failure: the new identity, which must be an Eloquent
  * model the provisioner just inserted; SSO's scope widening for it; its
  * membership; the link, through SSO's provisioning helper; then the roles its
  * groups map to. A refused link rolls everything back and SSO ends the flow as
@@ -36,15 +36,11 @@ use SineMacula\Laravel\Sso\Results\VerifiedResult;
  */
 final readonly class ProvisionOnUnlinkedResult
 {
-    /** @var int How many times the provisioning transaction is attempted: once, since the grant allows one use. */
-    private const int ATTEMPTS = 1;
-
     /**
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings  $settings
      * @param  \SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction  $transaction
-     * @param  \SineMacula\Laravel\Iam\Provisioning\CommittedReads  $reads
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
      * @param  \SineMacula\Laravel\Sso\Provisioning\ProvisioningHelper  $helper
@@ -58,9 +54,6 @@ final readonly class ProvisionOnUnlinkedResult
 
         /** Runs the provisioning in one transaction on the storage connection. */
         private CrossMemberTransaction $transaction,
-
-        /** Has the one attempt read committed rows on PostgreSQL, MySQL and MariaDB. */
-        private CommittedReads $reads,
 
         /** Names the new identity as SSO names an identity. */
         private IdentityReferences $identities,
@@ -111,10 +104,8 @@ final readonly class ProvisionOnUnlinkedResult
             return;
         }
 
-        $this->reads->beforeBeginning();
-
         try {
-            $this->transaction->run(fn () => $this->provision($provisioner, $event), self::ATTEMPTS);
+            $this->transaction->run(fn () => $this->provision($provisioner, $event));
         } catch (RefusedLink) {
             // The helper wrote nothing, and the identity and membership are
             // rolled back
@@ -134,8 +125,6 @@ final readonly class ProvisionOnUnlinkedResult
      */
     private function provision(Provisioner $provisioner, ResultUnlinked $event): void
     {
-        $this->reads->onceBegun();
-
         $result   = $event->result;
         $context  = $event->context();
         $identity = $provisioner->createIdentity($result);
