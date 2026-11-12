@@ -26,17 +26,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for SSO's principal scope, composed of the application's
- * memberships and the grant half (IAM-6.8): `within_tenant` only when both
- * halves are, `outside_tenant` when either is, `unknown` otherwise; an
- * incomplete set of memberships is never `outside_tenant` on its own; with the
- * authorization switch off, `UnknownGrantScope` leaves nobody `within_tenant`;
- * the grant half is not asked once the memberships are `outside_tenant`; and an
- * identity that cannot be resolved, or either half failing, throws.
- *
- * The truth table runs at the connection's own level on every engine; the
- * switched-off default also at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL, inside a transaction, as SSO asks it.
+ * Integration tests for SSO's principal scope from memberships and grants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,8 +42,7 @@ final class PrincipalScopeAdapterTest extends TestCase
     private const string TENANT = 'tenant-1';
 
     /**
-     * Rows of `[memberships, grants, verdict]`: the identity's memberships, the
-     * grant half's answer, and the verdict.
+     * Rows of `[memberships, grants, verdict]`.
      *
      * @formatter:off
      *
@@ -93,9 +82,7 @@ final class PrincipalScopeAdapterTest extends TestCase
     }
 
     /**
-     * The verdict is `within_tenant` only when both halves are,
-     * `outside_tenant` when either is, and `unknown` otherwise; an incomplete
-     * set never places the identity outside on its own.
+     * The verdict composes both halves.
      *
      * @param  \SineMacula\Laravel\Iam\Tenancy\MembershipSet  $memberships
      * @param  \SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict  $grants
@@ -116,10 +103,7 @@ final class PrincipalScopeAdapterTest extends TestCase
     }
 
     /**
-     * With the authorization capability off, the grant half is
-     * `UnknownGrantScope`: a member of the tenant alone is `unknown`, never
-     * `within_tenant`, and one reaching beyond it is `outside_tenant`, inside
-     * SSO's transaction.
+     * With authorization off the grant half leaves nobody within.
      *
      * @param  ?string  $level
      * @return void
@@ -149,8 +133,7 @@ final class PrincipalScopeAdapterTest extends TestCase
     }
 
     /**
-     * Once the memberships place the identity outside the tenant, the grant
-     * half is not asked; otherwise it is asked for the identity and the tenant.
+     * The grant half is asked only when the memberships leave it open.
      *
      * @return void
      *
@@ -175,8 +158,7 @@ final class PrincipalScopeAdapterTest extends TestCase
     }
 
     /**
-     * A reference that names nobody throws, and either half failing propagates
-     * its failure.
+     * An unresolved identity or a failing half throws.
      *
      * @return void
      *

@@ -10,9 +10,7 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 
 /**
- * An open tenancy of organisations: every tenant id a session records resolves
- * to the organisation of that id, which both `laravel-authentication` and
- * `laravel-authorization` read, and every principal may act in any of them.
+ * An open tenancy of organisations.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

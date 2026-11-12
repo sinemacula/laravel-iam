@@ -18,11 +18,7 @@ use SineMacula\Laravel\Sso\Contracts\TenantMembership;
 
 /**
  * The seams SSO and `laravel-authentication` answer from the application's
- * tenancy, switched by `iam.adapters.sso`: the tenant authentication policy
- * (IAM-4.5), mandatory while SSO's enforcement is on or MFA's tenant
- * requirement is bound; SSO's membership seams (IAM-6.8, IAM-7.4), bound only
- * while the application has memberships; and SSO's enforcement inheritance
- * (IAM-7.5), mandatory while enforcing over a tenant tree.
+ * tenancy, switched by `iam.adapters.sso`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,8 +42,7 @@ final readonly class TenancySeams implements ProvidesSeams
     ) {}
 
     /**
-     * Return the tenant authentication policy's binding and SSO's seams
-     * answered from the application's tenancy.
+     * The tenant authentication policy and SSO's tenancy seams.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
@@ -70,8 +65,7 @@ final readonly class TenancySeams implements ProvidesSeams
     }
 
     /**
-     * Whether SSO's enforcement is on or MFA's tenant requirement is bound off
-     * MFA's default; with no container, only the former.
+     * Whether SSO's enforcement is on or MFA's tenant requirement is bound.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  ?\Illuminate\Contracts\Container\Container  $container
@@ -85,8 +79,7 @@ final readonly class TenancySeams implements ProvidesSeams
     }
 
     /**
-     * Whether SSO's enforcement is on, read as SSO would read its own switch to
-     * turn it on.
+     * Whether SSO's enforcement switch is on.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool

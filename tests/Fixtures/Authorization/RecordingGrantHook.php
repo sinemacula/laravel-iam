@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
 
 /**
- * A grant hook that lets every grant go on, recording each widening it is
- * handed, so a test can tell what `laravel-authorization` found the recipient
- * of a grant to be.
+ * A grant hook that allows every grant and records each widening.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

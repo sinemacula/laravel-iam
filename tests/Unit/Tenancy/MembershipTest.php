@@ -11,9 +11,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 
 /**
- * Unit tests for one membership (IAM-7.4): a membership of a tenant, or a
- * platform principal of none, accepted by the person at a time or not yet; it
- * is of exactly its tenant, byte for byte; and a blank tenant id is refused.
+ * Unit tests for one membership.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -24,8 +22,7 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 final class MembershipTest extends TestCase
 {
     /**
-     * A membership of a tenant the person accepted keeps its tenant and the
-     * time, is of that tenant alone, and is no platform principal.
+     * An accepted membership of a tenant.
      *
      * @return void
      */
@@ -85,8 +82,7 @@ final class MembershipTest extends TestCase
     }
 
     /**
-     * A blank tenant id is refused, so a platform principal is never named by
-     * one.
+     * A blank tenant id is refused.
      *
      * @param  string  $tenantId
      * @return void

@@ -53,8 +53,7 @@ final readonly class TenantMfaRequirements
     }
 
     /**
-     * What the tenant requires of the context's identity, refusing one MFA
-     * holds no factors for.
+     * What the tenant requires of the context's identity.
      *
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext  $context
      * @param  string  $tenantId

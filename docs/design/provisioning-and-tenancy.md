@@ -2,580 +2,97 @@
 
 ## Purpose
 
-This note describes how the package provisions a new identity for a `sign_in` SSO found unlinked (IAM-7.1), how it maps
-the provider's groups to grants at provisioning and, where the application opts in, at later sign-ins (IAM-7.2), how a
-change that gives a person a principal or a grant reports it to SSO first (IAM-7.3, IAM-6.7), and how the application's
-memberships and `laravel-authorization`'s tenant tree answer SSO's link judgements and enforcement inheritance, with
-`laravel-authorization`'s grant scope query as the grant half of the principal scope (IAM-7.4, IAM-7.5, IAM-6.8). It
-covers the application's contracts, the one listener of SSO's `ResultUnlinked` and the order of its writes inside its
-one transaction, the scope widening service and the transaction it must run in, the configuration that turns each on,
-the testing kits and fakes the package ships for the application's contracts, and the gaps in the members the adapters
-work around. The redemptions and SSO's revocation scopes are in `sso-redemption-and-revocation.md`, the tenant
-authentication policy in `tenant-authentication-policy.md`, the binding rule in `binding-precedence.md`, and the storage
-connection and the retry helper in `storage-and-transactions.md`.
+The package provisions a new identity for a `sign_in` SSO found unlinked, maps the provider's groups to grants, reports
+a change that gives a person a principal to SSO's scope widening, and answers SSO's tenancy seams from the application's
+memberships and `laravel-authorization`'s tenant tree. The grant hook is in `authorization.md`, the tenant
+authentication policy in `tenant-authentication-policy.md`, and the storage connection and retries in
+`storage-and-transactions.md`.
+
+## Application contracts
+
+The application binds these in the container; each is resolved on every call:
+
+- `Contracts\Provisioner`: `createIdentity()` and `createMembership()`. With none bound, provisioning is off.
+- `Contracts\Memberships`: `of(Identity): MembershipSet`, every current membership with the time the person accepted
+  it, or the set marked incomplete.
+- `Contracts\GroupMapping` and `Contracts\GroupResync`, both optional.
+- `laravel-authorization`'s `TenantTree`, tested with that member's kit. It counts as a tree while it is not
+  `FlatTenantTree`.
+
+`FakeProvisioner`, `FakeMemberships` and `FakeGroupMapping` in `Testing` stand in for them in tests.
+
+## SSO seams
+
+`Tenancy\TenancySeams` binds these while `iam.adapters.sso` is on, each transient:
+
+| SSO seam                 | Adapter                         | Default replaced          | Bound while          | Mandatory while           |
+| ------------------------ | ------------------------------- | ------------------------- | -------------------- | ------------------------- |
+| `TenantMembership`       | `TenantMembershipAdapter`       | `NoTenantMembership`      | memberships bound    | never                     |
+| `LinkEligibility`        | `LinkEligibilityAdapter`        | `RefusingLinkEligibility` | memberships bound    | never                     |
+| `PrincipalScope`         | `PrincipalScopeAdapter`         | `RefusingPrincipalScope`  | memberships bound    | never                     |
+| `EnforcementInheritance` | `EnforcementInheritanceAdapter` | `OwnTenantInheritance`    | always               | enforcement on and a tree |
+
+The membership rows are never mandatory because SSO's defaults fail closed. "Bound" means bound once every provider has
+registered, so memberships bound in an application provider's `register()` count.
+
+## Decisions
+
+- `ProvisionOnUnlinkedResult` is the one listener of SSO's `ResultUnlinked`, registered whatever any switch says and
+  doing nothing while no provisioner is bound. It runs synchronously, since SSO's event refuses to be serialised and its
+  grant is void once the dispatch returns, and answers from the event alone.
+- In one transaction on the storage connection, retried whole on a deadlock or serialisation failure, it writes in this
+  order: the identity; the widening of its scope in the connection's tenant, so SSO's identity guard is taken first;
+  the membership; SSO's `ProvisioningHelper::link()`; then the mapped groups' grants. Anything but `created` from the
+  helper rolls every write back.
+- The identity must be an Eloquent model with `wasRecentlyCreated` set, since SSO's grant proves the authority to
+  provision, not that the identity is new.
+- `ScopeWidenings::widen()` is the one call an application makes, first inside the transaction that gives people a
+  principal in a tenant (or the platform, `null`). It runs SSO's `widened()` in a savepoint; outside a transaction SSO
+  refuses it.
+- `Memberships::of()` must take the application's membership guard as it answers, and every writer that narrows a
+  membership must take it too, because SSO's `TenantMembership` asks for its answer to stay true until the redemption
+  commits and offers no other protection. The adapters take no lock of their own.
+- `TenantMembershipAdapter` and `LinkEligibilityAdapter` answer from the membership of exactly the tenant asked, and
+  only an accepted one counts, since a `link` is the person's own act.
+- `PrincipalScopeAdapter` is `outside_tenant` when the memberships or the grants are, `within_tenant` only when both
+  are, and `unknown` otherwise. An incomplete membership set is `unknown`, never `outside_tenant`, since SSO latches a
+  link suspended for good on `outside_tenant`.
+- The grant half is `laravel-authorization`'s `GrantScopeQuery`, read through `GrantScopeAdapter`. With the
+  authorization adapters off it is `UnknownGrantScope`, so nobody is `within_tenant`.
+- `EnforcementInheritanceAdapter` answers the nearest tenant up the tree with a stored rule, on or off, or the tenant
+  itself. A rule turned off therefore only loosens what applies below it, which matches SSO revoking nothing then. The
+  reads take no lock, since locking the path would invert SSO's order against an admission.
+- An enforcement change and a reported tree move judge the whole subtree through `SubtreePolicyChanges`, each tenant
+  with `laravel-authentication`'s `tenantPolicyChanged()`. After the commit it lists the subtree again and judges any
+  tenant it has gained, so a tenant moved in while the change was open is not missed. An enforcement change judges
+  every descendant, which is broader than needed and never narrower.
+- `TreeChanges::changed()` is called inside the move's transaction, after the write. With a tree it reports every
+  identity granted within the moved tenant to SSO's widening (while the authorization and SSO adapters are both on),
+  then calls `Authorization::treeChanged()`. It judges the subtree only while SSO's enforcement is on or MFA's tenant
+  requirement is bound. A removal is reported as the move of each child, after the restructure is written.
+- A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the identity in the connection's
+  tenant, so a connection's groups never grant beyond its tenant. `GroupSettings` finds the bound mapping, or
+  `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group.
+- The re-sync runs after the sign-in's transaction commits, in its own transaction, because its grants report to SSO's
+  widening, whose identity guard comes before the locks the redemption holds. A refused re-sync hands out no
+  credential. `MappedGroupResync` makes the identity's roles in the tenant exactly the mapping's, and refuses with no
+  mapping rather than revoke every role.
 
 ## Invariants
 
-- What a provisioned identity and its membership are is the application's own. The application implements
-  `Contracts\Provisioner` once: `createIdentity(VerifiedResult $result): Identity` and
-  `createMembership(Identity $identity, string $tenantId, VerifiedResult $result): void`, and binds it in the container.
-  The listener resolves it from the container at each dispatch, so one bound after this package registers, from a
-  provider's `boot()` or once the application has booted, counts too. With none bound, provisioning is off and an
-  unlinked `sign_in` ends as SSO's `unlinked`. `createMembership()` answers nothing: the group mapping grants to the new
-  identity itself, which holds across every principal of it, so nothing reads a principal from it.
-- `Provisioning\ProvisionOnUnlinkedResult` is the package's one listener of SSO's `Events\ResultUnlinked`, registered
-  in `boot()` whatever any switch says (`ProvisionOnUnlinkedResult::listen()`, called from
-  `IamServiceProvider::boot()`), and doing nothing at all, no read and no transaction, while no provisioner is
-  configured. It listens to SSO's event alone, never to `laravel-authentication`'s informational
-  `ExternalResultUnlinked`, which would provision twice (AUTH-3.9). It runs
-  synchronously, never queued: SSO's event refuses to be serialised, and its grant is void once the dispatch returns.
-  The listener and its collaborators are resolved from the application current at the dispatch, never from the events
-  dispatcher's container, so under Octane they are the request's sandbox's.
-- It answers only from the event: the result is `$event->result`, the grant `$event->grant`, and the client the
-  event's context's IP address and user agent, the completion's own. It reads no request, nor the current user.
-- In one transaction on the storage connection (`CrossMemberTransaction`), in this order:
-  1. `Provisioner::createIdentity($result)`, which must answer an Eloquent model whose `wasRecentlyCreated` is set;
-     anything else is a `LogicException` and rolls back. The grant proves the authority to provision for the result,
-     not that the identity is new, so the check is the package's;
-  2. `Tenancy\ScopeWidenings::widen()` for the new identity and the connection's tenant, first among the writes that
-     give a person a principal: SSO takes the new identity's guard, the first of its locks, and finds nothing to
-     suspend;
-  3. `Provisioner::createMembership($identity, $result->tenantId, $result)`;
-  4. SSO's `ProvisioningHelper::link($event->grant, $event->result, $reference, $client)`, with the identity named by
-     its morph class and key (`IdentityReferences::reference()`), which takes the enforcing tenant's rule, the
-     connection, the request and the links, in SSO's lock order, as a savepoint.
-- The transaction commits only when the helper answers `created`, and is committed or rolled back before the listener
-  returns, as SSO requires. A deadlock or serialisation failure retries it whole, up to `iam.transactions.attempts`:
-  SSO releases the grant's claim when the transaction it was claimed in rolls back. At REPEATABLE READ two first
-  sign-ins at once can deadlock on InnoDB's gap locks, or fail to serialise on PostgreSQL, and the retry carries them.
-- The membership is written between SSO's first lock and the rest, so a provisioner takes no lock on rows other writers
-  share before the helper runs: SSO's order puts the application's guards after the rule, the connections and the
-  links. A guard of the new identity's own rows is safe, since no other transaction can name the identity before this
-  one commits. Inserting a new row needs no guard.
-- `Tenancy\ScopeWidenings::widen(array $identities, ?string $tenantId, ClientContext $client): int` is the one core
-  method an application calls, as `Iam::scopeWidenings()->widen([...])`, first inside the transaction on the storage
-  connection that gives people a principal in one tenant: a membership created or accepted, or a platform principal
-  (`null` tenant). It names each identity to SSO by its morph class and key, translates `laravel-authentication`'s
-  client to SSO's (`ClientTranslator::toSso()`), resolves SSO's `Linking\ScopeWidening` on each call and answers how
-  many links it suspended. Inside the caller's transaction it runs once, in a savepoint of it
-  (`CrossMemberTransaction`); outside one it is SSO's `LogicException`. It reads no request, nor the current user, and
-  keeps nothing (IAM-8.1).
+- No write of a provisioning survives a refusal or a failure.
+- A change that gives a person a principal or a grant reports it to SSO in its own transaction, so a rollback undoes
+  the suspension too.
+- Every tenant crosses to and from `laravel-authorization` through `TenantTranslator`, and one that does not resolve
+  back throws `UnresolvedReferenceException`.
+- No adapter reads the current request, user or guard, and none keeps anything between calls.
 
-- What a membership and the tenant tree are is the application's own. It implements `Contracts\Memberships`
-  (`of(Identity): MembershipSet`, every current membership, a platform principal among them, each with the time the
-  person, never an administrator, accepted it, or the set marked incomplete), binds it in the container, and implements
-  `laravel-authorization`'s `TenantTree` (IAM-7.5, as amended), which `laravel-authorization`'s `TenantTreeContract` kit
-  tests. Both are resolved on every call (`Tenancy\TenancyContracts`): the tree counts as the application's while it is
-  not `laravel-authorization`'s `FlatTenantTree`, as `laravel-authorization` itself tells. Asked for unbound
-  memberships, `TenancyContracts::memberships()` throws a `LogicException`. A `Membership` names its tenant by a
-  non-blank opaque id, compared byte for byte, or none for a platform principal; a `MembershipSet` holds each tenant's
-  membership, and a platform principal, once.
-- SSO's `TenantMembership` requires its answer, read again inside the redeemer's transaction, to stay true until that
-  commits, by a guard the writers of memberships take, and offers no other protection. So `Memberships::of()` takes the
-  application's membership guard of the identity as it answers: a lock held until the asking transaction ends, by a
-  locking read on the write connection (a shared lock on the identity's membership rows, or a lock on a guard row of
-  its memberships). Every writer that revokes, expires or narrows a membership takes the same guard before it writes,
-  and before it ends the person's sessions, so it waits for a redemption that read the membership to commit, and its
-  clean-up finds the session that redemption wrote. SSO asks only once its own locks are held (the application's
-  guards are seventh in its lock order) and such a writer takes none of SSO's locks, so the guard inverts no order.
-  The adapters take no lock of their own: each asks `of()` inside SSO's transaction, so the guard is held there. A
-  change that creates or accepts a membership reports it to SSO's scope widening first (IAM-7.3), whose identity guard
-  is SSO's first lock; a provisioner guards only the new identity's own rows.
-- `Tenancy\TenancySeams` binds, while `iam.adapters.sso` is on, over SSO's own defaults only, each transient. The rows
-  answered from the memberships are never mandatory, since SSO's defaults fail closed; the inheritance's is mandatory
-  while the application has a tree and SSO's enforcement is on (IAM-10.2), since SSO's default would then keep a
-  tenant's enforcement from the tenants beneath it:
+## Member gaps
 
-  | SSO seam                 | Bound to                        | Default replaced          | While                                  |
-  | ------------------------ | ------------------------------- | ------------------------- | -------------------------------------- |
-  | `TenantMembership`       | `TenantMembershipAdapter`       | `NoTenantMembership`      | memberships are bound                  |
-  | `LinkEligibility`        | `LinkEligibilityAdapter`        | `RefusingLinkEligibility` | memberships are bound                  |
-  | `PrincipalScope`         | `PrincipalScopeAdapter`         | `RefusingPrincipalScope`  | memberships are bound                  |
-  | `EnforcementInheritance` | `EnforcementInheritanceAdapter` | `OwnTenantInheritance`    | always                                 |
-
-  "Bound" means bound by the time every provider has registered, when the seams are bound
-  (`IamServiceProvider::bindSeams()`), so memberships bound in an application provider's `register()` bind the
-  adapters. One bound from a provider's `boot()` binds none of these, though whatever it answers is asked by the
-  adapters that are bound and by
-  the revocations. Without memberships SSO keeps refusing: no membership, no `link`, a scope `unknown`.
-- `TenantMembershipAdapter` answers the identity's membership of exactly the tenant asked, accepted at the time the
-  person accepted it, and none for one not accepted, another tenant's, a platform principal or none.
-  `LinkEligibilityAdapter` makes an identity eligible to `link` through a connection only by an accepted membership of
-  exactly the connection's tenant: a `link` is the person's own act, so an invitation not taken up is not enough. An
-  incomplete set answers for the memberships it holds, which are held whether it is complete or not.
-- `PrincipalScopeAdapter` composes the membership half and the grant half (IAM-6.8): `within_tenant` only when both are,
-  `outside_tenant` when either is, `unknown` otherwise. A complete set reaching beyond the tenant (a platform principal
-  or any other tenant's membership) is `outside_tenant`; a complete set holding nothing else, none included, is
-  `within_tenant`; an incomplete set is `unknown`, never `outside_tenant` on its own, since `outside_tenant` latches a
-  verified domain link suspended for good. The grant half is this package's internal port
-  `Tenancy\Contracts\GrantScope`, bound only while unbound: while `iam.adapters.authorization` is on, with `bindIf()`
-  to `Authorization\GrantScopeAdapter`, which maps `laravel-authorization`'s grant scope query (AUTHZ-14.2,
-  `GrantScopeQuery::forIdentity()`) `within`, `outside` and `unknown` onto SSO's verdicts, the identity named by its
-  morph class and key and the tenant through `laravel-authentication`'s resolver
-  (`Authorization\Translation\TenantTranslator`); with the switch off, with `singletonIf()` to `UnknownGrantScope`,
-  which answers `unknown`, so nobody is `within_tenant` (Q9). It is asked only when the memberships leave the verdict
-  open.
-- The query answers `within` only for a complete list of the identity's principals, which `laravel-authorization`
-  learns from its identity directory. Its default is complete only under its own subject resolver, never under this
-  package's, so the package binds `Authorization\IdentityDirectoryAdapter` (a row of `AuthorizationSeams`, kept off
-  while the application names its own directory in `authorization.identity_directory`): the principals the identity's
-  `laravel-authentication` `principals()` relation lists, read on the write connection without the principal model's
-  global scopes, complete. A principal a global scope hides (one
-  soft-deleted, say) still holds its grants, and restoring it would widen the scope with no grant written and no grant
-  hook run, so it is listed too; a relation that is no Eloquent query, whose scopes cannot be set aside, is answered
-  incomplete. An identity that is itself a principal (`Principal`) and owns none acts as itself alone, complete and
-  empty; one that is neither has its principals from a principal resolver the application binds to
-  `laravel-authentication`, which no directory can list, and is answered incomplete, as is an identity it cannot
-  resolve, as the contract asks. The same list makes the grant hook classify a grant by the identity's real principals
-  rather than widen every one for want of it.
-- A grant that widens an identity's scope reports it to SSO first (IAM-6.7) through `laravel-authorization`'s grant
-  hook (`Authorization\GrantHookAdapter`, `AuthorizationSeams`, on while `iam.adapters.sso` is on too): inside the
-  grant call's transaction, before `laravel-authorization` takes any lock, `ScopeWidenings::widen()` once for each
-  distinct tenant the widening grants hold in (`null` for a platform-wide grant), with the client the widening carries
-  (its operation's, none for trusted, console and queued work), after the hooks `authorization.grant_hooks` lists,
-  which `laravel-authorization` runs first. The design of the hook, its lock order and its retries are in
-  `authorization.md`.
-- `EnforcementInheritanceAdapter` answers the nearest tenant, from the one asked up through the tree's ancestors, that
-  has a rule, on or off, as IAM-7.5 words it (a stored version, `EnforcementService::get()->version`, SSO's own reader
-  of what is stored, on the write connection, never `Enforcement::policy()`, which asks this contract), and the tenant
-  itself when none has. A rule turned off keeps the question at its tenant; only a tenant never configured, with no row
-  or only the unconfigured row SSO's `EnforcementLock` inserts, passes it up. So turning a rule off only ever loosens
-  what applies to its tenant and to every tenant inheriting from it, and SSO's revoking nothing then leaves no session
-  out of compliance; a tenant that stores its rule off opts out of its ancestors' rules, as a tenant that stores its own
-  rule on replaces them. Who may change a tenant's rule is the application's authorisation, as SSO's
-  `EnforcementService` says; an application that wants an ancestor's rule to bind every tenant below it refuses a
-  descendant's change, or binds an enforcement inheritance of its own. Each ancestor `laravel-authorization`'s tree
-  answers is named back by its id (`TenantTranslator::idOf()`), so tenants of mixed types inherit alike; with the flat
-  tree every tenant stands alone. The reads take no lock (see Failure / Edge Cases). The package never
-  inherits a tenant MFA requirement (Q6).
-- An enforcement change's revocation (`SessionRevocationAdapter`, scope `tenant`) and a reported tree change
-  (`Tenancy\TreeChanges`) judge a whole subtree through `Tenancy\SubtreePolicyChanges`: every tenant the tree's
-  `subtree()` rows select, each named back by its id and resolved through `laravel-authentication`'s tenant resolver
-  before any is judged, and each judged with the strict cut-off of
-  `laravel-authentication`'s `tenantPolicyChanged()`, as `TenantPolicyChanges` judges one tenant: once in place, and
-  once more after the storage connection's transaction commits. The pass after the commit is one callback for the
-  whole subtree, which lists and resolves the subtree again from the tree as it then stands, never the list the first
-  pass read, so a tenant moved into the subtree while the change is open is judged by it (see Failure / Edge Cases).
-  The enforcement change judges every descendant, a nearer tenant with a rule of its own among them: broader than the
-  tenants that inherit, never narrower. Without a tree the subtree is the tenant.
-- `Tenancy\TreeChanges::changed(string $tenantId): int` is the one core method an application calls when it moves a
-  tenant, as `Iam::treeChanges()->changed($tenantId)`, inside the move's transaction and after the write, so the first
-  pass judges the tree as moved before it commits. A removal is reported the same way: each child moved out from under
-  the removed tenant, listed before the removal, is reported as moved once the restructure is written. While SSO's
-  `enforcement` feature is on or MFA's tenant requirement is bound, it judges the tenant and its whole subtree
-  (Q7); with neither it reads and judges nothing. It takes a plain id, reads no request, and keeps nothing (IAM-8.1).
-  While the application has a tree, it first passes the change on to `laravel-authorization`, whatever enforcement
-  says. While the SSO adapters are on too
-  (`AuthorizationSeams::reportsWidenings()`), every identity holding a live grant rooted at the moved tenant or below
-  it (`laravel-authorization`'s `GrantScopeQuery::granteesWithin()`, a principal's grant answering its identity) is
-  reported to SSO's scope widening in the moved tenant
-  (`ScopeWidenings::widen()`), in the move's transaction, all of them in one widening, so SSO takes their guards in its
-  order before any connection: the grant half counts a grant below
-  a tenant within it, so a move out from under a linked tenant widens the person's scope with no grant written, and no
-  grant hook runs. The package cannot tell such a move from one within the tenant, so this is broader than needed, never
-  narrower: a link in a tenant the subtree still stands below is suspended too, latched, and is linked again. Then the
-  move is reported to `laravel-authorization` (`Authorization::treeChanged()`, AUTHZ-12.8), the moved tenant named
-  through the resolver (`TenantTranslator`): one report covers the subtree, since `laravel-authorization`'s entries pin
-  the tenant chain. Without a tree `laravel-authorization` keeps its own flat tree, which no move changes, and nothing
-  is reported.
-- `laravel-authorization`'s tree is the application's one tree (IAM-7.5): this package binds nothing over it.
-  `iam:check` refuses `ResolveNoTenant` while the application has a tree, as the tree changes and the inheritance name
-  every tenant through the resolver.
-- The provider's groups (IAM-7.2) map to grants through the application's `Contracts\GroupMapping`
-  (`grantsFor($connectionId, $tenantId, $groups)`, answering `Provisioning\GrantInstruction`s), found by
-  `Provisioning\GroupSettings`: the binding, else, while `iam.provisioning.groups.map` maps any group,
-  `Provisioning\ConfiguredGroupMapping`. A `GrantInstruction` is a role and whether it reaches the tenants below; it
-  names no tenant, application or expiry, so a connection's groups never grant beyond its tenant and its subtree. The
-  listener asks the mapping once the link is created, after every lock of SSO's, and `Provisioning\GroupGrants::grant()`
-  grants each role to the new identity in the connection's tenant through `laravel-authorization`'s `GrantService`, as
-  trusted system work, in a savepoint of the listener's transaction; the grant hook reports the widening again, finding
-  the identity's guard held and nothing to suspend.
-- The re-sync (IAM-7.2) is the application's opt-in, `Contracts\GroupResync`
-  (`resync($identity, $connectionId, $tenantId, $groups)`), found by `GroupSettings` from the binding.
-  `Sso\SignInRedemption` calls it for every redeemed `sign_in` that links an identity and signs it in, once the
-  redemption's transaction has committed, in a transaction of its own through the retry helper, and before the
-  credential is handed out: a re-synced grant that widens reports to SSO's scope widening, which takes the identity's
-  guard, and SSO's lock order puts the guard before the connection, the code and the link the redemption locked, so the
-  re-sync never runs under them. Grants are read on every check, so nothing in the session depends on their being
-  written first, and no request acts on the session before the re-sync commits. A refusal propagates once the sign-in
-  has committed: the code is spent and the session written is never handed out. `Provisioning\MappedGroupResync`,
-  shipped for the application to bind, makes the identity's own roles in the tenant exactly the mapping's
-  (`GroupGrants::sync()`: `syncRoles()` in the tenant, then each role's reach), and refuses with no mapping rather than
-  revoke every role.
-- Every action has one public core method taking plain values, and none takes a request: the listener answers from
-  SSO's event alone; `widen()` takes an identity, a tenant id or none, and `laravel-authentication`'s `ClientContext`,
-  which a controller builds with `ClientContext::fromRequest()` and a job as `new ClientContext(null, null)`;
-  `changed()` takes a tenant id. Both services are reached through the manager's accessors
-  (`Iam::scopeWidenings()`, `Iam::treeChanges()`), as `Iam::tenantPolicies()` is, never through a second, flattened
-  method of the manager's repeating them (the plan's `Iam::widenScope()` and `Iam::treeChanged()`). No adapter reads
-  the current request, the current user or a guard's current session: each resolves the identity SSO names through the
-  morph map (`IdentityReferences`) and the tenant through `laravel-authentication`'s tenant resolver.
-- The provisioner, the memberships, the group mapping and the re-sync are the application's container bindings alone.
-- Decisions this note records, beyond the plan's: an identity that is not an Eloquent model with `wasRecentlyCreated`
-  set is refused (the grant proves authority, not newness); `createMembership()` answers nothing, since the group
-  mapping grants to the identity itself; provisioning is checked at each dispatch, not at registration, and is
-  independent of `iam.adapters.sso`; an invitation not accepted is not eligible to `link`; an incomplete set is
-  `unknown`, never `outside_tenant`; the inheritance reads take no lock; the nearest tenant with a rule, on or off,
-  enforces, as IAM-7.5 words it, so a rule turned off only loosens and needs no revocation, rather than the nearest
-  whose rule is on, which would move the tenants below a rule turned off onto a stricter ancestor's rule with nothing
-  revoking the sessions that rule refuses (SSO revokes only for a rule turned on); the tenancy rows are applied once
-  more once every provider has registered, so an application provider's `register()` binds them; an enforcement change
-  judges every descendant, not only those that inherit; a removal is reported after it is written, as the move of each
-  child moved out from under the removed tenant; `GrantScope` lives in `Tenancy\Contracts`, as the house rule puts every
-  interface in a `Contracts` namespace; a subtree's pass after the commit lists the subtree again rather than judge the
-  tenants its first pass listed; and the end-to-end domain reservation test binds a grant scope answering
-  `within_tenant`, since nothing shipped can; the memberships take the application's membership guard as they answer,
-  and every writer that narrows a membership takes it too, since SSO's tenant membership offers no other protection (the
-  plan's memberships took no lock); and the seams answered from the memberships are bound, once every provider has
-  registered, only over the very binding of SSO's default reserved as the rule first ran, never over a binding the
-  application made of SSO's own default class.
-
-## Success Path
-
-1. A `sign_in` resolves to no identity and holds no reservation. SSO issues a grant, registers it to the dispatch and
-   dispatches `ResultUnlinked` synchronously, with no transaction of its own open.
-2. The listener resolves the bound provisioner, opens its transaction, and writes the identity, the
-   widening, the membership and the link in that order. The helper answers `created`; the transaction commits, and
-   SSO reports `LinkCreated` (`provisioning`) after that commit.
-3. SSO's final continuation takes its locks again, resolves the link anew, and issues the handoff bound to it
-   (`HandoffIssued`). The application redeems it through `Iam::signIns()->redeem(...)`, and the new person is signed
-   in through the link.
-4. A change of the application's own that gives a person a principal opens a transaction on the storage connection
-   (`Iam::transaction()`), calls `Iam::scopeWidenings()->widen([$identity], $tenantId, $client)` first, takes its own
-   guard of the person's principals, writes the principal and commits. SSO suspends the person's links by a verified
-   domain in every other tenant's connection, deletes their reservations there and revokes the sessions established
-   through each in that transaction (`linkScopeWidened()`, whatever any setting says); a second report suspends and
-   revokes nothing more.
-
-5. A member links through a connection of their tenant: SSO asks `LinkEligibilityAdapter` at the completion and again
-   inside the standalone redemption, and the person's accepted membership makes them eligible; anyone else is
-   `link_ineligible`.
-6. A member who accepted before the tenant's domain was verified, holding no membership and no grant beyond the
-   tenant (`laravel-authorization`'s grant scope query answers `within`), signs in for the first time by a verified
-   email of that domain: the completion reserves a link, and `Iam::signIns()->redeem(...)` activates it with verified
-   domain provenance and signs the person in through it.
-7. An administrator turns a tenant's rule on. SSO locks that tenant's row and asks the revocation for it; the adapter
-   judges the sessions of the tenant and of every tenant below it in the tree, in SSO's transaction and once more after
-   it commits, so a session in any of them the rule no longer allows ends. Turned off again, the rule stays its tenant's
-   and requires nothing, so the tenant and every tenant inheriting from it require nothing, whatever an ancestor's rule
-   requires, and nothing needs revoking.
-8. The application moves a tenant under an enforcing ancestor and reports it inside the move's transaction;
-   `laravel-authorization` drops the resolutions built in the moved tenant and below it, and the moved tenant's
-   sessions and its subtree's are judged against the rule they now inherit.
-9. A first sign-in reports groups the mapping maps: the listener grants their roles to the new identity in the
-   connection's tenant once the link is made, and commits them with it. With the re-sync bound, a later sign-in
-   reporting other groups grants the roles of a group added and revokes those of a group removed once the sign-in
-   commits, before its credential is handed out.
-
-## Failure / Edge Cases
-
-- **An identity that is not new.** An identity that is no Eloquent model, or whose `wasRecentlyCreated` is false, is
-  refused with a `LogicException` before the widening, the membership or the link; the transaction rolls back and the
-  completion ends as a server error. The existing identity is left as it was.
-- **The helper refuses** (`request_unavailable`, `expired`, `subject_already_linked`, `link_limit_reached`, a grant
-  refused). A refusal wrote nothing; the listener throws its internal `RefusedLink` inside the transaction so the
-  identity and the membership roll back with it, catches it once the transaction has rolled back, and returns. SSO's
-  final step finds the result still unlinked and ends the flow with its reason.
-- **Anything thrown** by the provisioner, the widening, the helper or the database rolls every write back and
-  propagates: SSO ends the completion as a server error, the request stays consumed, and the person starts a new flow.
-  A serialisation failure or a deadlock is retried first.
-- **The subject linked elsewhere meanwhile.** Another request that links the same subject through SSO, raising the
-  connection's `links_version`, and commits while the listener runs is found by the helper's locked read of the
-  subject's link, on every supported engine and level, after a retry on PostgreSQL at REPEATABLE READ:
-  `subject_already_linked`, so the listener's identity and membership roll back, and the completion resolves the subject
-  anew and hands off for the identity the other link names.
-- **Another subject linked meanwhile.** Another person's first sign-in through the same connection that commits its
-  link while the listener runs leaves the provisioning as it was, on every supported engine and level: the helper's
-  locked read of the connection waits for that commit and reads it, or on PostgreSQL at REPEATABLE READ fails to
-  serialise and the retry reads it.
-- **A later completion failure** (the connection disabled before the final step, a deadline passed) does not undo what
-  the listener committed: the identity, its membership and the link stay made, and the next sign-in through the
-  connection resolves through the link without being offered for provisioning again.
-- **A second provisioning listener**, the application's own, shares the one grant and is refused `grant_invalid`.
-  Register none beside the package's while a provisioner is bound; with none bound, the application's own
-  listener is the only one that provisions.
-- **A queued listener** fails loudly: the event refuses to be serialised, so queuing it throws, and nothing is
-  provisioned.
-- **A widening outside a transaction** is SSO's `LogicException`, with nothing suspended or revoked. A widening whose
-  revocation throws rolls back to its savepoint, so a caller that catches the failure and commits keeps no suspension;
-  the caller's own rollback undoes it too. SSO's `LinkCandidatesChanged` and a serialisation failure reach the caller
-  as its own retry recognises them, and are retried only as its whole transaction. An identity that is no Eloquent
-  model throws `UnresolvedReferenceException` before anything is locked (IAM-8.2).
-- **Provisioning with `iam.adapters.sso` off.** The listener still provisions once a provisioner is bound;
-  SSO's helper then needs the application's linker to be backed by `Contracts\LinkStorage`, or it is SSO's
-  `LogicException` with nothing written.
-
-- **A membership revoked during a redemption.** A writer revoking a membership that a redemption (a reservation's
-  activation, a `link`, a sign-in through a verified domain link) has read waits on the membership guard until the
-  redemption commits; its clean-up then finds the session the redemption wrote and ends it, and the next resolution of
-  the link finds no membership. A writer that takes no guard, or memberships that take none, let the revocation commit
-  first and its clean-up miss the session, leaving a non-member with a verified domain link and a live session in the
-  tenant. A revocation that commits before the redemption reads is seen by it: on MySQL, and at READ COMMITTED, the
-  locking read reads the revocation; on PostgreSQL at REPEATABLE READ it fails to serialise and the redemption's
-  transaction is retried whole.
-- **No accepted membership.** `TenantMembership` answers none and `LinkEligibility` ineligible for an invitation not
-  taken up, another tenant's membership, a platform principal or none; SSO then reserves nothing (the sign-in goes on
-  as `unlinked`) or refuses a `link` as `link_ineligible`. An identity reference that names nobody throws
-  `UnresolvedReferenceException`, memberships that cannot be read throw their failure, and an adapter asked with no
-  memberships bound throws a `LogicException`, each inside SSO's transaction (IAM-8.2).
-- **A person reaching beyond the tenant.** Once the adapters are bound over SSO's default, which answers `unknown`, a
-  verified domain link whose person holds another tenant's membership or a platform principal is judged
-  `outside_tenant` at its next resolution: SSO latches it suspended for good and revokes its sessions. A change that
-  gives the person that principal should have reported it first (`Iam::scopeWidenings()`), which suspends the link at
-  once; the resolution catches one that did not.
-- **A rule turned off under an enforcing ancestor.** The tenant keeps its own rule, now requiring nothing, and so does
-  every tenant inheriting from it: none moves onto the ancestor's rule. Every session there complies, as SSO's revoking
-  nothing for a rule turned off assumes, and a password sign-in there signs in. The ancestor's rule still applies to
-  the ancestor and to every tenant below it with no rule of its own. A tenant whose administrators should never opt out
-  of an ancestor's rule is the application's to protect, by refusing the change.
-- **An ancestor's rule turned on during a descendant's admission.** The inheritance reads take no lock: SSO locks only
-  the enforcing tenant's row, and a change of a rule judges its subtree's sessions while holding its own tenant's row,
-  so a locking read of the path would invert that order against an admission and deadlock. Inside a transaction that
-  has already read, at REPEATABLE READ, the rules are read as of its snapshot. So an admission in a descendant may judge
-  an ancestor's rule as it was; its session is revoked by the change, in place or by the second pass, when it commits
-  before that pass runs, and judged at its first refresh when it commits after. A password sign-in racing the change
-  is caught the same way, as in `tenant-authentication-policy.md`.
-- **A tenant moved while an ancestor's rule is turned on.** A change of a rule lists its tenant's subtree as its first
-  pass starts, and a move reported on another connection while the change is open reads the ancestor's rule without a
-  lock, as it was before the change: neither the move's passes nor the change's first pass judge the moved tenant
-  under the rule. So the change's pass after its commit lists the subtree again, finds the moved tenant, and judges
-  its sessions against the rule that has committed; when the move commits after the change, its own pass after its
-  commit reads the committed rule. Of the two, whichever commits last judges the moved tenant against both, and a
-  session the rule refuses is revoked as the later commits. A session already recorded at the version a pass answers
-  is skipped, so judging a tenant again costs a read. What that pass throws, a subtree tenant that can no longer be
-  resolved or a tree that cannot be read, propagates from the commit, the change already durable.
-- **An unreadable tree.** A tree that throws propagates; a tenant of the subtree the tenant resolver cannot resolve
-  throws `UnresolvedReferenceException` before any tenant is judged. Inside SSO's change or the application's move, each
-  rolls the change back with every session standing.
-- **A removed tenant.** Once it is removed it can no longer be resolved, nor its subtree listed, so the application
-  lists its children before removing it and, once the restructure is written, inside the same transaction, reports
-  each as moved. The children are judged against the structure that will commit, in place; a report made before the
-  write would judge the old tree and leave a child moved under a stricter ancestor to the pass after the commit. The
-  removed tenant's own sessions, and those of any tenant removed with it, are `laravel-authentication`'s
-  `tenantDeactivated()`'s.
-- **An inheritance of the application's own.** An application that binds an enforcement inheritance of its own with
-  `laravel-authorization`'s flat tree leaves the tenants that inherit unjudged by an enforcement change.
-- Gaps in the members that the adapters work around:
-  - `laravel-authorization`'s `Reference` names a tenant by a morph type and a key, while the tree, SSO and
-    `laravel-authentication` name it by an opaque id; the package takes the key for the id (`TenantTranslator`) only
-    once it resolves back to the same tenant, so a tenant whose key is not its identifier is refused wherever it is
-    named, a grant in it included. A tenant reference that carried its identifier would close it.
-  - `laravel-sso`'s `DatabaseEnforcement::lock()` locks only the enforcing tenant's rule, and a change of a rule only
-    its own tenant's row, so no lock spans the inheritance path and an inheritance answer may be read as of a snapshot.
-    Letting `EnforcementInheritance` answer the path, nearest first, and locking every row on it from the root down in
-    the admission and the change would close it.
-  - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, so the tenants that inherit come from
-    this package's tree; an inheritance of the application's own with no tree leaves them unjudged.
-  - `laravel-sso`'s guide for this package shows `ProvisioningHelper::link()` with three arguments; it takes a fourth,
-    the `ClientContext`, which the listener builds from the event's context.
-  - `laravel-sso` ships no contract kit for `TenantMembership`, `LinkEligibility`, `PrincipalScope` or
-    `EnforcementInheritance`, so IAM-8.3 has none to extend here; `laravel-authentication` has no identity-creation
-    contract, so the provisioner is the application's own.
-
-## Implementation Anchors
-
-- `src/Contracts/Provisioner.php`.
-- `src/Provisioning/ProvisionOnUnlinkedResult.php`: `listen()`, `handle()`;
-  `src/Provisioning/RefusedLink.php`;
-  `src/IamServiceProvider.php`: `boot()`.
-- `src/Tenancy/ScopeWidenings.php`: `widen()`; `src/IamManager.php`: `scopeWidenings()`; `src/Facades/Iam.php`;
-  `src/Sso/IdentityReferences.php`: `reference()`; `src/Sso/Translation/ClientTranslator.php`: `toSso()`;
-  `src/Transactions/CrossMemberTransaction.php`: `run()`.
-- `src/Testing/FakeProvisioner.php`: `fake()`, `refuseIdentities()`, `refuseMemberships()`, `identities()`,
-  `memberships()`.
-
-- `src/Contracts/Memberships.php`; `src/Tenancy/Membership.php`;
-  `src/Tenancy/MembershipSet.php`: `in()`, `reachesBeyond()`, `isComplete()`; `src/Tenancy/TenancyContracts.php`:
-  `memberships()`, `tree()`, `subtree()`, `hasTree()`.
-- `src/Tenancy/TenancySeams.php`: `seams()`; `src/Tenancy/IdentityMemberships.php`: `identity()`, `of()`;
-  `src/Tenancy/TenantMembershipAdapter.php`: `standing()`; `src/Tenancy/LinkEligibilityAdapter.php`: `judge()`;
-  `src/Tenancy/PrincipalScopeAdapter.php`: `judge()`; `src/Tenancy/Contracts/GrantScope.php`;
-  `src/Tenancy/UnknownGrantScope.php`; `src/IamServiceProvider.php`: `bindSeams()`.
-- `src/Tenancy/EnforcementInheritanceAdapter.php`: `enforcingTenant()`; `src/Tenancy/SubtreePolicyChanges.php`:
-  `changed()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`; `src/Tenancy/TreeChanges.php`: `changed()`;
-  `src/IamManager.php`: `treeChanges()`.
-- `src/Authorization/GrantScopeAdapter.php`: `judge()`; `src/Authorization/IdentityDirectoryAdapter.php`:
-  `principalsOf()`, `unscoped()`;
-  `src/Authorization/GrantHookAdapter.php`: `beforeWidening()`; `src/Authorization/Translation/TenantTranslator.php`:
-  `toReference()`, `idOf()`; `src/Authorization/AuthorizationSeams.php`: `seams()`, `DOMAIN_LINKING`.
-- `src/Contracts/GroupMapping.php`; `src/Contracts/GroupResync.php`; `src/Provisioning/GrantInstruction.php`:
-  `role()`, `roleWithSubtree()`, `MAX_ROLE_LENGTH`; `src/Provisioning/GroupSettings.php`: `mapping()`, `resync()`,
-  `MAP`; `src/Provisioning/ConfiguredGroupMapping.php`: `grantsFor()`;
-  `src/Provisioning/GroupGrants.php`: `grant()`, `sync()`, `groupsOf()`; `src/Provisioning/MappedGroupResync.php`:
-  `resync()`;
-  `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `config/iam.php`: `provisioning.groups`.
-- `src/Testing/FakeGroupMapping.php`: `fake()`, `map()`, `refuse()`, `asked()`.
-- `src/Testing/FakeMemberships.php`.
-
-## Authoritative Tests
-
-- `tests/Integration/Provisioning/ProvisionOnUnlinkedResultTest.php`: at the connection's own level on SQLite, MySQL and
-  PostgreSQL, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
-  `testAnUnlinkedSignInIsProvisionedAndSignsTheNewPersonIn`, `testEachWriteComesInOrderInsideOneTransaction`,
-  `testAnExistingIdentityIsNeverProvisioned`,
-  `testARefusedLinkRollsBackTheIdentityAndTheMembership`, `testAnExceptionRollsBackEveryWrite`,
-  `testTheGrantIsUsedOnce`, `testWhatTheListenerCommittedStandsAfterALaterFailure` (the membership row read back),
-  `testTheWideningIsReportedForTheCompletionsClient` (the suspension's IP address and user agent the completion's); at
-  READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL only, since SQLite's single writer cannot commit a second
-  connection's link while the listener's transaction is open,
-  `testASubjectLinkedElsewhereMeanwhileLeavesNoProvisionedPerson`, `testAnotherSubjectLinkedMeanwhileStillProvisions`
-  (the other link made through SSO's `LinkStorage::create()`, which raises `links_version`, committed on a second
-  database connection, through the same SSO connection, once the listener has inserted its person); and at the
-  connection's own level alone, where no level changes what is read, `testTheTransactionIsRetriedAfterADeadlock` (the
-  deadlock simulated once the helper has claimed the grant),
-  `testAQueuedListenerFailsLoudlyAndProvisionsNothing`, `testWithNoProvisionerNothingIsProvisioned`,
-  `testAuthenticationsUnlinkedResultProvisionsNothing`, `testWithTheSsoAdaptersOffTheHelpersRefusalWritesNothing`
-  (`iam.adapters.sso` off, a provisioner bound: SSO's `LogicException`, no row written);
-  `tests/Integration/Provisioning/ConcurrentProvisioningTest.php` `testTwoFirstSignInsAtOnceAreBothProvisioned` (MySQL
-  and PostgreSQL at READ COMMITTED and REPEATABLE READ: the first listener held open past the widening while a forked
-  worker provisions a second subject's person on a second database connection, from its start to its commit, and both
-  are provisioned; at REPEATABLE READ one side deadlocks on MySQL or fails to serialise on PostgreSQL and is retried)
-- `tests/Feature/Provisioning/ProvisioningListenerTest.php` `testTheListenerIsRegisteredOnSsosEvent`,
-  `testWithNoProvisionerTheListenerDoesNothing`, `testAProvisionerBoundOnceBootedIsAsked`,
-  `testAnIdentityThatIsNoModelIsRefused`, `testTheSandboxsProvisionerIsAsked`;
-  `tests/Unit/Provisioning/RefusedLinkTest.php` `testTheRefusalCarriesTheAnswerAndNamesItsStatus`
-- `tests/Integration/Tenancy/ScopeWideningsTest.php`, at the connection's own level on every engine, then at READ
-  COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
-  `testAPrincipalOfAnotherTenantSuspendsTheLinkAndRevokesItsSessions`, `testAPlatformPrincipalSuspendsTheLink` (each
-  suspension reported with the caller's client's IP address and user agent), `testAClientWithNothingKnownIsReportedSo`
-  (a job's or a command's client, its suspension reported with neither),
-  `testAPrincipalOfTheLinksOwnTenantLeavesItAlone`, `testItRollsBackWithTheCallersTransaction`,
-  `testARevocationThatThrowsLeavesNoSuspension`; and at the connection's own level alone, since each is refused before
-  anything is read or locked, `testOutsideATransactionItIsRefused` and `testAnIdentityThatCannotBeNamedThrows`;
-  `tests/Feature/IamManagerTest.php` `testTheScopeWideningsAreReachedThroughTheirOwnService`
-- `tests/Unit/Testing/FakeProvisionerTest.php`
-- `tests/Performance/Provisioning/ProvisioningQueryBudgetTest.php` `testAProvisionedSignIn`, `testNoProvisioner`
-
-- `tests/Unit/Tenancy/MembershipTest.php` `testAnAcceptedMembershipOfATenant`, `testAPlatformPrincipalIsOfNoTenant`,
-  `testABlankTenantIsRefused`; `tests/Unit/Tenancy/MembershipSetTest.php`
-  `testTheMembershipOfExactlyTheTenantIsFound`, `testASetReachesBeyondATenantThroughAnyOtherMembership`,
-  `testASetHoldsEachMembershipOnce`; `tests/Unit/Tenancy/UnknownGrantScopeTest.php`
-  `testEveryIdentitysGrantsAreUnknown`; `tests/Unit/Tenancy/TenancyContractsTest.php`
-  `testUnboundMembershipsThrow`, `testTheBoundMembershipsAreAsked`
-- `tests/Feature/Tenancy/TenancySeamsTest.php` `testWithoutMembershipsSsosMembershipDefaultsStay`,
-  `testTheInheritanceIsMandatoryWhileEnforcingOverATree`,
-  `testMembershipsBoundWhileRegisteringBindTheMembershipAdapters`, `testMembershipsBoundWhileBootingBindNothing`,
-  `testTheGrantScopeIsAuthorizationsQuery`;
-  `tests/Feature/IamServiceProviderTest.php` `testTheGrantScopeIsAuthorizationsQueryUntilSomethingElseIsBound`,
-  `testTheGrantScopeIsUnknownWithTheAuthorizationSwitchOff`
-- `tests/Feature/Authorization/GrantSeamsTest.php` `testTheGrantHookIsBoundWhateverHooksAreListed`,
-  `testADirectoryNamedInAuthorizationsConfigurationIsKept`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
-  `testWithTheSwitchOffNothingIsBound`, `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`,
-  `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
-- `tests/Integration/Authorization/GrantHookAdapterTest.php`, at the connection's own level on every engine, then at
-  READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
-  `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
-  `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testARefusalFromAListedHookRefusesTheGrant`,
-  `testTheHooksTheApplicationListsRunOnceBeforeTheAdapter`, `testTheAdaptersRefusalAfterTheListedHooksRefusesTheGrant`,
-  `testAGrantInsideTheApplicationsTransactionRollsBackWithIt`, `testASuspensionIsReportedForTheWideningsClient`; and
-  `testTheAdapterIsTheBoundGrantHook`,
-  `testAHookTheApplicationListsStillRunsBesideTheWidening`
-- `tests/Integration/Authorization/GrantScopeAdapterTest.php` `testAPersonIsPlacedByTheirGrants`,
-  `testTheJudgementReadsInsideTheCallersTransaction` (every level), `testAPersonIsPlacedByTheirPrincipalsGrants`,
-  `testTheTreePlacesAGrantBelowTheTenantWithinIt`, `testATenantThatCannotBeResolvedThrows`,
-  `testATenantAuthorizationCannotReadThrows`, `testATenantKeyedOtherwiseThanItsIdentifierThrows`,
-  `testAnIdentityTheDirectoryCannotResolveIsIncomplete`, `testTheAdapterIsTheBoundGrantHalf`,
-  `testAPrincipalAGlobalScopeHidesStillPlacesItsPerson`, `testAnIdentityWhosePrincipalsCannotBeListedIsUnknown`,
-  `testAGrantBelowTheTenantInATenantOfAnotherTypeIsWithinIt`
-- `tests/Integration/Authorization/AuthorizationTreeChangesTest.php` `testAReportedMoveReachesAuthorization` (every
-  level, with `laravel-authorization`'s resolutions kept in a store, the move read as cached until it is reported),
-  `testAGrantReachesATenantOfAnotherTypeBelowIt`, `testWithAFlatTreeNothingIsReported`,
-  `testATenantThatCannotBeNamedRefusesTheMove`; `tests/Integration/Tenancy/TreeTenancyContractsTest.php`
-  `testTheFlatDefaultIsNoTree`, `testTheApplicationsTreeIsRead`, `testAnEloquentSubtreeIsRead`,
-  `testASubtreeThatIsNoQueryIsRefused`; `tests/Integration/Tenancy/StoredTenantTreeTest.php` (the tests' tree,
-  through `laravel-authorization`'s `TenantTreeContract` with mixed types)
-- `tests/Integration/Authorization/TreeMoveWideningTest.php`
-  `testAMoveOutFromUnderTheLinkedTenantSuspendsTheLinkInTheMovesTransaction`, `testAMoveThatRollsBackSuspendsNothing`
-  (every level), `testWithTheSsoSwitchOffNobodyIsReported`, `testThePeopleGrantedAreReadFromEveryGrantTableEachOnce`,
-  `testTheGrantTablesAreReadUnderTheirConfiguredNames`, `testAGrantTableNamedByWhatIsNoNameIsRefused`,
-  `testAGranteeNamedByItsMorphAliasIsRead`,
-  `testAMoveReportsThePeopleGrantedInATenantOfAnotherTypeBelow` (every level)
-- `tests/Integration/EndToEnd/GroupGrantsThroughSsoTest.php`, at the connection's own level on every engine, then at
-  READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL, `testAFirstSignInIsGrantedWhatItsGroupsMapTo`,
-  `testARefusedMappingRollsTheProvisioningBack`, `testALaterSignInReSyncsTheGroups`,
-  `testARefusedReSyncHandsOutNoCredential`, `testTheReSyncTakesTheIdentityGuardOnlyOnceTheRedemptionHasCommitted`;
-  and `testASingleGroupIsMapped`, `testNoGroupsGrantNothing`,
-  `testAnUnknownRoleRollsTheProvisioningBack`, `testWithNoMappingNothingIsGranted`,
-  `testTheApplicationsOwnReSyncIsHandedPlainValues`, `testWithNoReSyncALaterSignInChangesNothing`
-- `tests/Unit/Provisioning/GrantInstructionTest.php` `testARoleHoldsInTheTenantAloneUnlessItReachesBelow`,
-  `testTheLongestNameIsAccepted`, `testAnInvalidNameIsRefused`; `tests/Unit/Provisioning/GroupSettingsTest.php`
-  `testWithNothingConfiguredNothingIsMapped`, `testTheMapIsTheMappingWhileNothingElseIs`,
-  `testABoundMappingWinsOverTheMap`, `testTheBoundReSyncIsAnswered`;
-  `tests/Unit/Provisioning/MappedGroupResyncTest.php` `testItRefusesWithNoMapping`;
-  `tests/Unit/Provisioning/ConfiguredGroupMappingTest.php` `testEachRoleIsGrantedOnceInOrder`,
-  `testAMisconfiguredMapThrows`, `testAnEmptyMapGrantsNothing`, `testUnmappedGroupsGrantNothing`;
-  `tests/Unit/Testing/FakeGroupMappingTest.php`
-- `tests/Integration/Tenancy/TenantMembershipAdapterTest.php` `testAnAcceptedMembershipIsTheStanding` (at the
-  connection's own level on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL); and at
-  the connection's own level alone, since each reads without a lock and commits nothing,
-  `testNoAcceptedMembershipOfTheTenantIsNoStanding`, `testTheMembershipsAreAskedOnTheWriteConnection`,
-  `testAnUnresolvedIdentityThrows`; `tests/Integration/Tenancy/MembershipRevocationRaceTest.php` (MySQL and
-  PostgreSQL, both levels, memberships guarded as the contract asks)
-  `testARevocationRacingAnActivationWaitsForItAndFindsItsSession`;
-  `tests/Integration/Tenancy/LinkEligibilityAdapterTest.php` `testAnAcceptedMemberOfTheConnectionsTenantIsEligible`,
-  `testNoAcceptedMembershipOfTheConnectionsTenantIsIneligible`;
-  `tests/Integration/Tenancy/PrincipalScopeAdapterTest.php` `testTheVerdictComposesBothHalves`,
-  `testWithTheAuthorizationSwitchOffTheGrantHalfLeavesNobodyWithin`,
-  `testTheGrantHalfIsAskedOnlyWhenTheMembershipsLeaveItOpen`
-- `tests/Integration/Tenancy/EnforcementInheritanceAdapterTest.php`, at the connection's own level on every engine, then
-  at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL, `testTheNearestTenantWithARuleEnforces`,
-  `testTurningAnInnerRuleOffUnderAnEnforcingAncestorLeavesNoSessionOutOfCompliance`,
-  `testAPasswordSignInBelowAnEnforcingAncestorIsRefused`, `testAnAncestorsRuleChangeRevokesThroughItsSubtree`; and at
-  the connection's own level alone, `testSsosPolicyNamesTheEnforcingAncestor`,
-  `testATenantHoldingOnlyTheLocksRowPassesTheQuestionUp`, `testATenantBelowOneOfAnotherTypeInherits`,
-  `testWithAFlatTreeEachTenantEnforcesItself`;
-  `tests/Integration/Tenancy/InheritedEnforcementRaceTest.php` (MySQL and PostgreSQL, both levels)
-  `testASessionThatEnteredAnInheritingTenantDuringTheChangeIsRevoked`;
-  `tests/Integration/Tenancy/TreeMoveRaceTest.php` (MySQL and PostgreSQL, both levels, the tree held in the database
-  and moved on another connection) `testATenantMovedUnderTheRootWhileItsRuleIsTurnedOnIsRevoked`;
-  `tests/Integration/Sso/SessionRevocationAdapterTest.php`
-  `testAnEnforcementChangeRevokesThroughTheEnforcingTenantsSubtree`, `testTheSecondPassJudgesTheSubtreeOnceItCommits`,
-  `testAnUnresolvableTenantBelowTheEnforcingOneRollsTheChangeBack`
-- `tests/Integration/Tenancy/TreeChangesTest.php` `testAMoveUnderAnEnforcingAncestorRevokesTheMovedSubtree`,
-  `testARemovalIsReportedAsTheMoveOfEachChildOnceWritten`,
-  `testASessionThatEntersTheSubtreeDuringTheMoveIsJudgedOnceItCommits`,
-  `testATenantMovedInWhileTheRuleIsTurnedOnIsJudgedOnceTheChangeCommits`, `testAMoveThatRollsBackRevokesNothing`,
-  `testWithNeitherEnforcementNorARequirementNothingIsJudged`, `testATenantRequirementAloneJudgesTheMovedSubtree`,
-  `testWithoutATreeOnlyTheTenantIsJudged`, `testAnUnresolvableTenantOfTheSubtreeThrowsWithNothingJudged`;
-  `tests/Integration/Tenancy/SubtreePolicyChangesTest.php` `testEverySessionInTheSubtreeIsJudged` (every level),
-  `testWithAFlatTreeOnlyTheTenantIsJudged`;
-  `tests/Feature/IamManagerTest.php` `testTheTreeChangesAreReachedThroughTheirOwnService`
-- `tests/Integration/EndToEnd/TenancyThroughSsoTest.php` `testAMemberOfTheConnectionsTenantIsLinked`,
-  `testAnyoneElseIsRefusedAsIneligible`, `testADomainReservationLinksAMemberEndToEnd`,
-  `testWithTheAuthorizationSwitchOffTheGrantHalfReservesNothing`, `testTheShippedGrantHalfLinksAMemberWithinTheTenant`,
-  `testTheShippedGrantHalfLinksNobodyGrantedBeyondTheTenant`,
-  `testAPersonNotWithinTheTenantSinceTheVerificationIsNotLinked`,
-  `testALinkWhosePersonReachesBeyondTheTenantIsSuspended`
-- `tests/Unit/Testing/FakeMembershipsTest.php`
-- `tests/Performance/Tenancy/TenancyQueryBudgetTest.php` `testAMembershipJudgement`, `testAnInheritanceAnswer`,
-  `testAReportedMoveOfASubtree`
-
-## Change Triggers
-
-Update this note when:
-
-- `laravel-sso` changes `ResultUnlinked`, `ProvisioningGrant` or `ProvisioningHelper::link()` (its parameters, its
-  order, its refusals, or whether the grant's claim survives a rollback, which decides whether the listener may retry);
-- `laravel-sso` changes `ScopeWidening::widened()`'s parameters, its lock or its refusal outside a transaction;
-- `laravel-authentication` gains an identity-creation contract of its own, or dispatches its unlinked result where a
-  provisioner is expected to act on it;
-- the application needs the provider's groups granted to the new membership's principal rather than to the identity
-  (`createMembership()` would then answer the principal, and `GrantInstruction` name its grantee);
-- `laravel-authentication` gains a signal of its own that an identity is new (the listener's check then follows it);
-- `laravel-authorization` changes `GrantScopeQuery::forIdentity()`, its identity directory, its tenant tree contract,
-  `treeChanged()`, its grant hook or `GrantWidening`, `GrantService::grantRole()` or `syncRoles()`, or names a tenant
-  by its identifier (the translation between its `Reference` and the tree's ids then goes);
-- `laravel-sso` changes `TenantMembership`, `LinkEligibility`, `PrincipalScope` or `EnforcementInheritance`, ships a
-  contract kit for one of them (IAM-8.3), names the tenants that inherit a rule in its revocation scope, or locks the
-  inheritance path in its admission and its changes (the inheritance reads may then lock too);
-- `laravel-sso` starts revoking when a rule is turned off, or tells a rule turned off from one never stored otherwise
-  than by its version (the inheritance adapter then reads the rule differently);
-- Laravel stops registering the application's providers after the packages', or this package's booting callback moves
-  (the tenancy rows are applied again there);
-- the application's memberships contract gains a method;
-- `laravel-authentication`'s `tenantPolicyChanged()` stops skipping the sessions already recorded at the version it
-  answers, or gains a way to judge the tenants a change reaches as one pass (a subtree's pass after the commit then
-  lists and judges it otherwise);
-- `laravel-sso` changes what protects `TenantMembership`'s answer (the membership guard may then go), or stops raising
-  `links_version` for every link it makes, or its provisioning helper retries a serialisation failure itself (the
-  listener's attempt may then keep the connection's level).
+- `laravel-authorization`'s `treeChanged()` runs no grant hook, so `TreeChanges` reports the grantees within a moved
+  subtree to SSO itself.
+- `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, so `SubtreePolicyChanges` finds the
+  inheriting tenants from the tree.
+- `laravel-sso` locks only the enforcing tenant's rule, never the inheritance path, so the inheritance reads take no
+  lock and may answer from a snapshot.
+- `laravel-authentication` has no identity-creation contract, so the provisioner is the application's own.

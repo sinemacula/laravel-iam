@@ -42,22 +42,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for the grant half of SSO's principal scope, answered by
- * `laravel-authorization`'s grant scope query (IAM-6.8, AUTHZ-14.2), with the
- * identity's principals listed from `laravel-authentication`'s
- * (`IdentityDirectoryAdapter`) and the tenant tree the application's: a person
- * who acts as themselves and holds no grant, or grants only in the tenant or
- * below it, of whatever type, is `within_tenant`; one granted in another
- * tenant, an ancestor of it or platform-wide is `outside_tenant`; a person who
- * owns principals is placed by their principals' grants too; a tenant that
- * cannot be resolved, or that `laravel-authorization` cannot read, throws; and
- * the identity directory answers an identity it cannot resolve as an incomplete
- * list.
- *
- * The query reads on the write connection, in a savepoint of the caller's
- * transaction, as SSO asks it inside its own, so each judgement runs inside one
- * at the connection's own level on every engine, then at READ COMMITTED and
- * REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for the grant half of SSO's principal scope.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -96,8 +81,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * The adapter is the grant half bound while the authorization capability is
-     * on.
+     * The adapter is bound while authorization is on.
      *
      * @return void
      *
@@ -110,9 +94,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[tenant of the grant, verdict]`: where a person who acts as
-     * themselves holds a grant, and where that places them against the
-     * tenant; `false` for no grant at all.
+     * Rows of `[tenant of the grant, verdict]`; `false` for no grant.
      *
      * @return iterable<string, array{0: false|string|null, 1: \SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict}>
      */
@@ -128,8 +110,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A person who acts as themselves is placed by their own grants alone,
-     * their list of principals complete and empty.
+     * A person who acts as themselves is placed by their own grants.
      *
      * @param  false|string|null  $granted
      * @param  \SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict  $verdict
@@ -150,8 +131,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * Inside SSO's transaction, at every isolation level, a person granted only
-     * in the tenant is within it, and one granted beyond it too is outside it.
+     * The judgement reads inside the caller's transaction.
      *
      * @param  ?string  $level
      * @return void
@@ -176,9 +156,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A person who owns principals is placed by their principals' grants too: a
-     * seat of another tenant holding a grant there places them outside the
-     * tenant, and seats granted only in the tenant leave them within it.
+     * A person is placed by their principals' grants too.
      *
      * @return void
      *
@@ -201,10 +179,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A principal the model's global scope hides, an archived seat, still holds
-     * its grants, and places its person outside the tenant: the directory lists
-     * it, so restoring it never widens the person's scope without a grant being
-     * written.
+     * A principal hidden by a global scope still places its person.
      *
      * @return void
      *
@@ -226,11 +201,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * An identity that is neither a principal itself nor owns principals has
-     * them from a principal resolver the application binds, which the directory
-     * cannot list, as has one whose principals are listed by no Eloquent query:
-     * each list is incomplete, and the person is `unknown`, never
-     * `within_tenant`, however their principals are granted.
+     * An identity whose principals cannot be listed is unknown.
      *
      * @return void
      *
@@ -250,8 +221,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * Below the tenant in the application's tree is within it, and at its
-     * parent is outside it.
+     * A grant below the tenant in the tree is within it.
      *
      * @return void
      *
@@ -271,8 +241,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A grant in an account below the organisation asked about is within it,
-     * though the account is of another type.
+     * A grant below the tenant in another tenant type is within it.
      *
      * @return void
      *
@@ -298,8 +267,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A tenant `laravel-authentication`'s resolver does not resolve throws,
-     * with nothing judged.
+     * A tenant that cannot be resolved throws.
      *
      * @return void
      *
@@ -319,8 +287,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A tenant `laravel-authorization` cannot read, one that is neither an
-     * Eloquent model nor its authorizable tenant, throws.
+     * A tenant authorization cannot read throws.
      *
      * @return void
      *
@@ -362,8 +329,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * A tenant whose key is not its identifier names another tenant to
-     * `laravel-authorization`, and throws.
+     * A tenant keyed otherwise than its identifier throws.
      *
      * @return void
      *
@@ -387,9 +353,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * An identity the directory cannot resolve, of a type no identity model is,
-     * or of no stored row, is answered as an incomplete list, never as a
-     * complete one.
+     * An identity the directory cannot resolve is an incomplete list.
      *
      * @return void
      */
@@ -458,8 +422,7 @@ final class GrantScopeAdapterTest extends TestCase
     }
 
     /**
-     * What the container resolves the abstract to, as anything that asks for it
-     * does.
+     * Resolve the abstract from the container.
      *
      * @param  string  $abstract
      * @return mixed

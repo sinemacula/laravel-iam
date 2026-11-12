@@ -16,46 +16,8 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
 
 /**
- * Checks one of the members' administrative operations before the application
- * makes it (IAM-6.9, AUTHZ-14.5): the members authorise nothing themselves, so
- * the application calls this, or its own check, before each.
- *
- * The operation is checked through `laravel-authorization` for the subject
- * given, with the member's object as the resource: its type, its id (none for
- * an operation on the type, such as creating a connection) and its tenant, so
- * the decision is made in the object's tenant and a policy can condition on it.
- * A denial throws `laravel-authorization`'s `AuthorizationException`, and a
- * denial for want of a stronger proof whatever this package maps it to
- * (`InsufficientAuthenticationMapping`), so the operation is never made; an
- * allow returns. The check is recorded as any check is: a denial as
- * `authorization.access_denied`, one for want of a stronger proof included,
- * denied with that reason; a subject built for a job or a command carries no
- * session, so such a denial can never be stepped up, and the record is the only
- * evidence of it.
- *
- * The subject is handed in as a resolved `Subject`, never read from the
- * request: the request's own (`Authorization::currentSubject()`, read by the
- * caller), which carries its session, so a requirement on the operation is
- * judged against that session's proofs, or one built for a job or a command. A
- * principal or a model is not taken: `laravel-authorization`'s `for()` would
- * complete it from the request's current subject, its session and its scope,
- * which is the ambient read this check exists to avoid. The `Subject` is
- * decided in the scope it names, its tenant, or the platform for none, and its
- * application, and the request's scope is restored afterwards:
- * `laravel-authorization`'s `for()` decides a `Subject` naming a tenant in that
- * tenant, and one naming none is handed to it marked as acting on the platform
- * (`Subject::$platform`), so a subject built for a job or a command is decided
- * where it acts, never in the tenant of the request it is checked in, and the
- * request's own is decided where the request is. A grant counts for an object
- * of the tenant the subject acts in, or of one below it, and an object of any
- * other tenant is denied (`tenant_scope`) unless a platform-wide grant admits
- * it. The tenant is named by its identifier and resolved through
- * `laravel-authentication`'s tenant resolver (`TenantReferences`); one that
- * names no tenant, or one `laravel-authorization` cannot scope to, is refused
- * (`UnresolvedReferenceException`) rather than checked as the platform's.
- *
- * Stateless (IAM-8.1): `laravel-authorization`'s manager is resolved from the
- * container on every call.
+ * Checks a member's administrative operation through `laravel-authorization`
+ * for a resolved subject, with the member's object as the resource.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -80,12 +42,7 @@ final readonly class AdministrativeCheck
     ) {}
 
     /**
-     * Check that the subject may make the operation on the member's object, and
-     * throw `laravel-authorization`'s denial when it may not: its
-     * `AuthorizationException`, or its `InsufficientAuthenticationException`
-     * for want of a stronger proof. A subject naming a tenant
-     * `laravel-authorization` cannot read is refused before anything is decided
-     * (`UnresolvedReferenceException`), never decided on the platform.
+     * Throw `laravel-authorization`'s denial unless the subject may operate.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  \SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation|string  $operation
@@ -108,11 +65,7 @@ final readonly class AdministrativeCheck
     }
 
     /**
-     * The subject as `laravel-authorization` decides it where it acts: as it is
-     * when it names a tenant, which `for()` decides it in, and otherwise marked
-     * as acting on the platform, with everything else it carries kept. A tenant
-     * `laravel-authorization` cannot read is refused here, before anything is
-     * decided.
+     * The subject, marked as acting on the platform when it names no tenant.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @return \SineMacula\Laravel\Authorization\Subject
@@ -121,6 +74,7 @@ final readonly class AdministrativeCheck
      */
     private static function decidedWhereItActs(Subject $subject): Subject
     {
+        // Unmarked, `for()` would decide it in the request's tenant.
         if ($subject->tenant === null) {
             return new Subject($subject->subject, $subject->identity, null, $subject->application, $subject->guard, $subject->session, $subject->scopes, platform: true);
         }

@@ -12,25 +12,8 @@ use SineMacula\Laravel\Mfa\Enums\RequirementPart;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
- * Translates an authentication requirement a `laravel-authorization` policy
- * statement states into MFA's, and MFA's evaluation of it back into
- * `laravel-authorization`'s result (IAM-6.3, IAM-6.4).
- *
- * The parts cross one for one, each with its maximum age: an additional
- * verification, multifactor authentication, phishing resistance
- * (`phishing_resistant`, MFA's `phishing_resistance`) and an assurance level of
- * at least the one named (`assurance_level`, MFA's `minimum_level`). The level
- * is one of MFA's (`aal1`, `aal2`, `aal3`), named exactly as MFA names it; any
- * other, `unclassified` among them, which meets no level, cannot be judged, and
- * is refused with an `InvalidArgumentException` rather than read as the nearest
- * level, so a statement naming it is undecidable. What each part means, and
- * what meets it, is MFA's.
- *
- * MFA's evaluation crosses back as met, with the instant it stops being met
- * when a maximum age bounds it, or as unmet, with the parts it leaves unmet,
- * named as `laravel-authorization` names them and in its order.
- *
- * It reads and keeps nothing.
+ * Translates `laravel-authorization`'s authentication requirement into MFA's,
+ * and MFA's evaluation back into `laravel-authorization`'s result.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -72,9 +55,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * MFA's evaluation as `laravel-authorization`'s result: met, until the
-     * instant a maximum age bounds it to, or unmet, with the parts it leaves
-     * unmet.
+     * MFA's evaluation as `laravel-authorization`'s result.
      *
      * @param  \SineMacula\Laravel\Mfa\Assurance\Evaluation  $evaluation
      * @return \SineMacula\Laravel\Authorization\Evaluation\RequirementResult
@@ -91,7 +72,7 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * MFA's level the requirement names, exactly as MFA names it.
+     * The MFA level named, refusing `unclassified` and unknown names.
      *
      * @param  ?string  $level
      * @return \SineMacula\Laravel\Mfa\Enums\AssuranceLevel

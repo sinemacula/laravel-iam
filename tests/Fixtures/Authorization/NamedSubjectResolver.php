@@ -8,9 +8,7 @@ use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Subject;
 
 /**
- * An application's own subject resolver, which it names in
- * `laravel-authorization`'s configuration (`authorization.subject_resolver`):
- * it resolves no subject, and makes the user handed in its own subject.
+ * An application's own subject resolver that resolves no subject.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

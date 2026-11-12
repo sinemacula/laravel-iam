@@ -15,13 +15,7 @@ use SineMacula\Laravel\Authorization\Contracts\SupportsPolicies;
 use SineMacula\Laravel\Authorization\Contracts\SupportsRoles;
 
 /**
- * A seat that holds grants of its own: `laravel-authentication`'s principal, a
- * model of its own, owned by a person who is an identity alone (`Staff`),
- * acting in the organisation it names, or in none, and a grantee of
- * `laravel-authorization`'s, so a grant made to the seat is decided for it.
- *
- * It is kept in the fixtures' memberships table, on the default connection, the
- * tests' shared storage connection.
+ * A seat that holds grants of its own.
  *
  * @property int $id
  * @property int $person_id

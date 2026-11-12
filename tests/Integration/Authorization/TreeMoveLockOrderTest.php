@@ -33,23 +33,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for the order a move of the application's tree takes SSO's
- * locks in while it reports the people granted in the moved subtree to SSO's
- * scope widening (IAM-6.7, IAM-7.5, IAM-11.1): two people granted in the moved
- * tenant, each linked by a verified domain through the same connection of the
- * tenant above it.
- *
- * SSO's lock order is the identity guard, then the connections, then the links,
- * and several guards in ascending order of SSO's digest. The move takes every
- * grantee's guard, in that order, before any statement touches a connection, on
- * every engine. A grant to the second grantee, made on another connection once
- * the move has locked the shared connection, waits for the move and goes on:
- * the move commits, and neither is aborted for a deadlock, which taking the
- * second guard after the connection would have caused. The race runs on MySQL
- * and PostgreSQL at READ COMMITTED and REPEATABLE READ, the grant in a forked
- * worker, the move outside any retry, so a deadlock fails it rather than being
- * run again; on PostgreSQL at REPEATABLE READ the grant may first fail to
- * serialise once the move commits, and is made again.
+ * Integration tests for the lock order a tree move takes SSO's locks in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -102,10 +86,7 @@ final class TreeMoveLockOrderTest extends TestCase
     private array $links = [];
 
     /**
-     * Arrange SSO, the tree (the granted tenant below the linked one, and a
-     * tenant apart), the role, and two people granted it in the granted tenant,
-     * each then linked by a verified domain through the linked tenant's
-     * connection.
+     * Arrange SSO, the tree, the role, and two linked grantees.
      *
      * @return void
      *
@@ -143,9 +124,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * A move takes the guard of every person granted in the moved subtree, in
-     * ascending order of SSO's digest, before any statement touches a
-     * connection, and suspends both links.
+     * Every grantee's guard is taken before any connection is touched.
      *
      * @param  ?string  $level
      * @return void
@@ -198,10 +177,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * A grant to the second person granted in the moved subtree, made on
-     * another connection once the move has locked the connection both links are
-     * in, waits for the move and is made: the move commits, and neither is
-     * aborted for a deadlock.
+     * A move racing a grant to a second grantee never deadlocks.
      *
      * @param  string  $level
      * @return void
@@ -270,8 +246,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * Link the person through the tests' connection to the provider's subject,
-     * or to the subject given, and answer the link's id.
+     * Link the person through the tests' connection and return the link id.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  ?string  $subject
@@ -291,8 +266,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * What the statement locks in SSO's order: the digest of the identity whose
-     * guard it takes, `connection` for one touching a connection, or `null`.
+     * What the statement locks in SSO's order, or `null`.
      *
      * @param  \Illuminate\Database\Events\QueryExecuted  $query
      * @return ?string
@@ -317,8 +291,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * Move the granted tenant out from under the linked one and report it, in
-     * one transaction run once, never again; answer `moved`, or what failed it.
+     * Move and report the tenant in one unretried transaction.
      *
      * @return string
      */
@@ -339,9 +312,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * Fork a worker that grants the role to the person whose guard the move did
-     * not take first, in another tenant, on the racer's connection, and wait
-     * until the database reports it waiting on a lock.
+     * Fork a worker that grants the role and wait until it blocks on a lock.
      *
      * @param  \ArrayObject<string, mixed>  $race
      * @param  string  $level
@@ -389,11 +360,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * In the forked worker, on the racer's connection made the default, grant
-     * the role to the person in a tenant apart, inside a transaction of its own
-     * run once, then once more should it fail; report the connection's id
-     * before it starts and how each try went after, then end the worker, so
-     * nothing the test set up is torn down twice.
+     * In the fork, grant the role, report and exit, avoiding a second teardown.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Closure(string): void  $send
@@ -437,8 +404,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * What the worker reported once it went on, after reaping it; `none` when
-     * no worker was forked.
+     * What the worker reported, after reaping it; `none` when none was forked.
      *
      * @param  \ArrayObject<string, mixed>  $race
      * @return string
@@ -462,8 +428,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * The exception's class and message, and those of every exception that
-     * caused it, on one line.
+     * The exception and its causes' classes and messages, on one line.
      *
      * @param  \Throwable  $exception
      * @return string
@@ -494,8 +459,7 @@ final class TreeMoveLockOrderTest extends TestCase
     }
 
     /**
-     * Wait until the database reports the worker's connection waiting for a row
-     * lock, failing when it never does.
+     * Wait until the worker's connection waits on a row lock, or fail.
      *
      * @param  string  $backend
      * @return void

@@ -31,8 +31,7 @@ use Tests\Fixtures\Authorization\NamedSubjectResolver;
 use Tests\TestCase;
 
 /**
- * Feature tests for the declaration of each adapter bound over one of
- * `laravel-authorization`'s contracts to its configuration report.
+ * Feature tests for declaring each authorization adapter to the config report.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -61,8 +60,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     private bool $bindsItsOwn = false;
 
     /**
-     * Each adapter is declared with the closure bound over its contract, and
-     * `authorization:check` shows it standing and passes.
+     * Each adapter is declared, and `authorization:check` passes.
      *
      * @return void
      *
@@ -179,8 +177,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * A class named in `laravel-authorization`'s configuration is reported as
-     * configured, and nothing is declared over it.
+     * A configured class is reported as configured and not declared over.
      *
      * @return void
      *
@@ -252,8 +249,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Seed the environment, then make the application's own bindings where the
-     * test says so, as its provider's `register()` would.
+     * Seed the environment, then make the test's application bindings.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -295,8 +291,7 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * Run `authorization:check` as JSON, and return its exit code and its
-     * seams, keyed by contract.
+     * Run `authorization:check` as JSON and return its exit code and seams.
      *
      * @return array{int, array<string, array<string, mixed>>}
      *

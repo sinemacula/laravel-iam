@@ -8,11 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 
 /**
- * A tenant kept apart from the storage connection, on a landlord connection
- * that reads from a replica and writes to its primary, identified by its key.
- *
- * The test that uses it configures the connection, so a replica that has not
- * yet seen a tenant the primary holds can be read.
+ * A tenant on a landlord connection with a read replica.
  *
  * @property string $id
  *

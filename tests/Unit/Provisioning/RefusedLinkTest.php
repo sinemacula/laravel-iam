@@ -10,9 +10,7 @@ use SineMacula\Laravel\Iam\Provisioning\RefusedLink;
 use SineMacula\Laravel\Sso\Provisioning\ProvisioningResult;
 
 /**
- * Unit tests for the refusal the provisioning listener rolls its transaction
- * back with (IAM-7.1): it carries the helper's answer, and names its status
- * alone.
+ * Unit tests for the refusal the provisioning listener rolls back with.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

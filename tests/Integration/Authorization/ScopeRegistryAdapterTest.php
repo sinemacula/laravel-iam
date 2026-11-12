@@ -18,18 +18,7 @@ use Tests\Fixtures\Authorization\ServiceAccount;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s scope registry answered from
- * `laravel-authorization`'s (IAM-6.5, AUTHZ-13.5): an API key is issued, and
- * rotated, only with scopes that name real permissions (a declared permission,
- * a pattern covering one, or a scope the scope map names), and one naming
- * anything else is refused, naming the scopes refused, before anything is
- * written; the application's own binding of `laravel-authorization`'s registry
- * is the one asked, whenever it binds it.
- *
- * The keys are issued through `laravel-authentication`'s own API key service,
- * so the registry is asked as `laravel-authentication` asks it, on every
- * engine. It reads only the permission catalogue, declared in code, and the
- * scope map, so no read mode applies to it.
+ * Integration tests for the scope registry answered from authorization's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -45,8 +34,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     private const string KEYS = 'keys';
 
     /**
-     * Bind the registry, as an application would, and declare the guard service
-     * accounts authenticate on.
+     * Bind the registry and declare the service account guard.
      *
      * @return void
      */
@@ -80,8 +68,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * A key is issued with scopes that name real permissions, as
-     * `laravel-authorization`'s catalogue and scope map declare them.
+     * A key is issued with scopes that name real permissions.
      *
      * @param  list<string>  $scopes
      * @return void
@@ -111,8 +98,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * A key asked with a scope naming no permission is refused, naming the
-     * scopes refused, and nothing is written.
+     * A key with a scope naming no permission is refused.
      *
      * @param  list<string>  $scopes
      * @param  list<string>  $refused
@@ -135,9 +121,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * The registry rejects, of the scopes it is handed, those
-     * `laravel-authorization`'s does not accept, in the order handed, whatever
-     * the guard and the principal.
+     * The registry rejects each scope authorization does not accept.
      *
      * @return void
      */
@@ -151,8 +135,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * The application's own binding of `laravel-authorization`'s registry is
-     * the one asked, though it is bound after the adapter was built.
+     * The application's own authorization registry is asked.
      *
      * @return void
      */
@@ -191,8 +174,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * A key's rotation holds its scopes to the registry again: a scope the
-     * scope map no longer names is refused, and the key is not rotated.
+     * A rotation holds the scopes to the registry again.
      *
      * @return void
      */
@@ -210,9 +192,7 @@ final class ScopeRegistryAdapterTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then declare the application's
-     * permissions and its scope map before any provider registers, the session
-     * block set as a whole, as a published file holds it.
+     * Declare the permissions and scope map.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

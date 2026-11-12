@@ -26,19 +26,7 @@ use Tests\Fixtures\Authorization\ServiceAccount;
 use Tests\TestCase;
 
 /**
- * Integration tests of a deny conditioned on the authentication context's
- * session (IAM-6.2), as the authorization guide describes it: the context
- * always describes the request's own caller, never the subject a check names,
- * so a deny that applies where `authentication.session_id` is absent refuses
- * the caller's own sessionless checks (a machine on its API key, and a check
- * made outside any request, as a queued job's is, whose context is empty), yet
- * never refuses a check about a principal the caller names
- * (`Authorization::for()`, `Gate::forUser()`) while the caller holds a session,
- * though that principal holds no session of its own.
- *
- * The member's session and the machine's key are real ones, issued by
- * `laravel-authentication`, so it runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for a deny on the context's session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -60,9 +48,7 @@ final class SessionlessDenyTest extends TestCase
     private const string KEYS = 'keys';
 
     /**
-     * The deny refuses a machine on its key and a check made outside any
-     * request, but not a check about a principal named by a caller holding a
-     * session, through the manager or the Gate.
+     * The deny refuses only the caller's own sessionless checks.
      *
      * @param  ?string  $level
      * @return void
@@ -92,9 +78,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * Define the routes the requests are made to: one a member signed in with a
-     * session asks on, about itself and about a member it names, and one a
-     * machine asks on with its API key.
+     * Define the member and machine routes.
      *
      * @param  mixed  $router
      * @return void
@@ -122,9 +106,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then sign members in on the guard
-     * people sign in on, authenticate service accounts on an API key guard, and
-     * declare the invoice permissions, set before any provider registers.
+     * Configure the guards and declare the invoice permissions.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -143,8 +125,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * The policy allowing both invoice actions and denying a refund wherever
-     * the authentication context names no session, as the guide suggests.
+     * A policy denying a refund where the context names no session.
      *
      * @return \SineMacula\Laravel\Authorization\Models\Policy
      */
@@ -185,8 +166,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * A service account attached to the policy, and an API key issued to it on
-     * the keys guard with scopes covering both invoice actions.
+     * A service account on the policy and an API key for it.
      *
      * @return string
      */
@@ -200,8 +180,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * Sign the member in with their password, and return the session's access
-     * token.
+     * Sign the member in and return the access token.
      *
      * @param  \Tests\Fixtures\Authorization\Member  $member
      * @return string
@@ -224,8 +203,7 @@ final class SessionlessDenyTest extends TestCase
     }
 
     /**
-     * Make a request as a new one, with the bearer credential and nothing the
-     * previous request bound.
+     * Make a fresh request with the bearer credential.
      *
      * @param  string  $uri
      * @param  string  $credential

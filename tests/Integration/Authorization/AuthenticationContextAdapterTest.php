@@ -20,16 +20,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization`'s authentication context,
- * answered by `laravel-authentication`'s (IAM-6.2): the namespaces are always
- * `authentication`, `mfa` and `sso`; the values are the request's context as
- * `laravel-authentication` holds it, with its own key names and the `mfa`
- * namespace MFA's contributor fills, so a step-up shows; a guest has none; and
- * a namespace an application's own contributor adds is not supplied. The values
- * depend on the request alone, so the context is scope invariant.
- *
- * Each scenario that signs in runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for the authentication context adapter.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,8 +33,7 @@ final class AuthenticationContextAdapterTest extends TestCase
     use InteractsWithIam, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /**
-     * The context supplies `authentication`, `mfa` and `sso`, whoever is signed
-     * in, and is scope invariant.
+     * The context supplies fixed namespaces and is scope invariant.
      *
      * @return void
      *
@@ -70,9 +60,7 @@ final class AuthenticationContextAdapterTest extends TestCase
     }
 
     /**
-     * The values are the request's context as `laravel-authentication` holds
-     * it, keyed as it keys them, with MFA's namespace beside its own, so the
-     * session's step-up shows.
+     * The values are the request's authentication context.
      *
      * @param  ?string  $level
      * @return void
@@ -159,8 +147,7 @@ final class AuthenticationContextAdapterTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application under test, as anything that
-     * asks for it does.
+     * Resolve the abstract from the application under test.
      *
      * @param  string  $abstract
      * @return mixed

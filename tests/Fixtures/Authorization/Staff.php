@@ -10,13 +10,7 @@ use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
 
 /**
- * A person as an identity alone, in an application whose principals are kept
- * apart from the people who act as them: `laravel-authentication`'s identity
- * and `laravel-authorization`'s, holding grants of its own (a platform staff
- * flag held by the person, say), but no principal itself.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection.
+ * A person who is an identity and grantee but no principal.
  *
  * @property int $id
  * @property string $name

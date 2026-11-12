@@ -7,9 +7,7 @@ namespace Tests\Fixtures\Provisioning;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A provisioned person's membership of a tenant, as the fixture provisioner
- * writes it, on the default connection, which the tests keep as the shared
- * storage connection.
+ * A provisioned person's membership of a tenant.
  *
  * @property int $id
  * @property int $person_id

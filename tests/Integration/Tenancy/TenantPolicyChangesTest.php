@@ -22,14 +22,7 @@ use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
- * Integration tests for a change of a tenant's authentication policy the
- * application reports itself (IAM-4.5), applied with the strict cut-off
- * `laravel-authentication`'s `tenantPolicyChanged()` asks for: inside the
- * transaction that publishes it, the tenant's sessions are judged at once and
- * once more when that transaction commits, so a session that entered the tenant
- * once the first pass had run is revoked then; a change rolled back runs no
- * second pass; with no transaction open the tenant is judged once; and the
- * service is the one the facade answers.
+ * Integration tests for an application-reported tenant policy change.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,10 +41,7 @@ final class TenantPolicyChangesTest extends TestCase
     private int $asked = 0;
 
     /**
-     * Inside the transaction that publishes the change, the tenant's sessions
-     * are judged at once, and once more when that transaction commits: a
-     * session that entered the tenant once the first pass had run still stands
-     * until then, and is revoked once the change commits.
+     * Inside a transaction the tenant is judged now and once it commits.
      *
      * @return void
      *
@@ -81,8 +71,7 @@ final class TenantPolicyChangesTest extends TestCase
     }
 
     /**
-     * A change rolled back runs no second pass, the first pass's revocation
-     * rolled back with it, however the unit of work ends.
+     * A rolled-back change runs no second pass.
      *
      * @return void
      *
@@ -112,8 +101,7 @@ final class TenantPolicyChangesTest extends TestCase
     }
 
     /**
-     * With no transaction open, the tenant is judged once, and a session that
-     * meets the policy is kept at the version answered.
+     * With no transaction open the tenant is judged once.
      *
      * @return void
      *
@@ -132,9 +120,7 @@ final class TenantPolicyChangesTest extends TestCase
     }
 
     /**
-     * Bind a tenancy in which every tenant resolves, and a tenant
-     * authentication policy that answers the requirement, counting each time it
-     * is asked.
+     * Bind an open tenancy and a counting policy that answers the requirement.
      *
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantRequirement  $requirement
      * @return void

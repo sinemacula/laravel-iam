@@ -7,10 +7,7 @@ namespace Tests\Fixtures\Tenancy;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A person's membership as the tests' application stores it: of a tenant, or a
- * platform principal (no tenant), with when the person accepted it, or none for
- * an invitation not taken up. It is kept on the default connection, the tests'
- * shared storage connection.
+ * A stored membership of a tenant, or a platform principal.
  *
  * @property int $id
  * @property int $person_id

@@ -14,9 +14,8 @@ use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Sso\Linking\ScopeWidening;
 
 /**
- * Reports to SSO's scope widening (`Linking\ScopeWidening::widened()`) that
- * people come to hold a principal in one tenant, or a platform principal
- * (`null`), first in the transaction that writes it (IAM-7.3).
+ * Reports to SSO's scope widening that identities come to hold a principal in a
+ * tenant, or on the platform.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -53,9 +52,7 @@ final readonly class ScopeWidenings
     ) {}
 
     /**
-     * Report that the identities come to hold a principal in the tenant, in a
-     * savepoint of the caller's transaction; answer how many links SSO
-     * suspended.
+     * Report the widening and answer how many links SSO suspended.
      *
      * @param  list<\SineMacula\Laravel\Authentication\Contracts\Identity>  $identities
      * @param  ?string  $tenantId

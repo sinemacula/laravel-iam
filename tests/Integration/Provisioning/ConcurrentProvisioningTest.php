@@ -23,16 +23,7 @@ use Tests\Fixtures\Provisioning\ProvisionsPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests for two first sign-ins through one connection provisioned
- * at the same moment (IAM-7.1, IAM-11.2), on MySQL and PostgreSQL at READ
- * COMMITTED and REPEATABLE READ.
- *
- * The first sign-in's listener holds its transaction open past SSO's scope
- * widening while a forked worker provisions the second sign-in on another
- * connection. At REPEATABLE READ one side can deadlock or fail to serialise,
- * and its listener retries the whole transaction; either way both people end
- * provisioned. Each side waits only briefly on a lock, so a regression fails
- * rather than hangs. It is skipped on SQLite, which has a single writer.
+ * Integration tests for two concurrent first sign-ins both provisioned.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -75,8 +66,7 @@ final class ConcurrentProvisioningTest extends TestCase
     private mixed $channel = null;
 
     /**
-     * Arrange SSO on a database with isolation levels, and the connections the
-     * worker provisions on and is watched from.
+     * Arrange SSO and the worker's and watcher's connections.
      *
      * @return void
      */
@@ -108,9 +98,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * Two people signing in through the connection for the first time at once
-     * are both provisioned, whichever side a deadlock or serialisation failure
-     * rolls back and retries.
+     * Two concurrent first sign-ins are both provisioned.
      *
      * @param  string  $level
      * @return void
@@ -168,8 +156,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * Have the connection given wait briefly on a lock before giving up, so a
-     * regression that waits on the other side fails rather than hangs.
+     * Give up on a lock quickly, so a regression fails rather than hangs.
      *
      * @param  string  $name
      * @return void
@@ -184,9 +171,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * Fork a worker that signs another subject in through the connection for
-     * the first time, provisioning its person on the racer's connection, and
-     * return once it has ended or waits on a lock.
+     * Fork a worker that provisions another first sign-in.
      *
      * @param  string  $level
      * @return void
@@ -219,10 +204,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * Sign the other subject in, in the forked worker, on the racer's
-     * connection, made the default and so the storage connection, at the level
-     * given: report the connection's id before it starts and the outcome after,
-     * then end the worker, so nothing the test set up is torn down twice.
+     * In the fork, provision, report and exit so nothing is torn down twice.
      *
      * @param  \Closure(string): void  $send
      * @param  string  $level
@@ -256,8 +238,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * Wait until the worker has reported its outcome, or the database reports
-     * its connection waiting for a lock, failing when neither comes.
+     * Wait until the worker reports or blocks on a lock, or fail.
      *
      * @param  string  $backend
      * @return void
@@ -330,8 +311,7 @@ final class ConcurrentProvisioningTest extends TestCase
     }
 
     /**
-     * End the worker, if one was forked, which has reported its outcome by now
-     * or is left by a failure, wait for it, and close the line to it.
+     * End and wait for the worker, if one was forked.
      *
      * @return void
      */

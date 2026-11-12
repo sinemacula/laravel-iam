@@ -20,18 +20,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\TestCase;
 
 /**
- * Integration tests of a deny statement guarded by an authentication
- * requirement (IAM-6.3), as the guides describe it: a subject with no session
- * is never handed to the requirement checker, so
- * `laravel-authorization` finds the requirement unmet and the deny does not
- * apply to it, even where asking the checker would have thrown; a subject whose
- * session the checker cannot judge, so that it throws, makes the deny
- * undecidable, and the deny applies; and a session the checker judges, not
- * stepped up, leaves the requirement unmet, so the deny does not apply.
- *
- * The session is a real one, signed in through `laravel-authentication`, whose
- * proofs the checker reads, so it runs at the connection's own level on every
- * engine, then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
+ * Integration tests for a deny guarded by an authentication requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -50,9 +39,7 @@ final class RequirementGuardedDenyTest extends TestCase
     private const string VOID = 'invoices:void';
 
     /**
-     * A subject with no session is not refused by either deny, a check whose
-     * requirement the checker throws for is, and one whose requirement the
-     * checker finds unmet is not.
+     * A deny applies only where its requirement is undecidable.
      *
      * @param  ?string  $level
      * @return void
@@ -76,8 +63,7 @@ final class RequirementGuardedDenyTest extends TestCase
     }
 
     /**
-     * Sign members in on the guard people sign in on, and declare the invoice
-     * permissions, set before any provider registers.
+     * Sign members in on the people guard and declare the permissions.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -94,9 +80,7 @@ final class RequirementGuardedDenyTest extends TestCase
     }
 
     /**
-     * A member allowed a refund and a void, with a deny of each guarded by a
-     * requirement: the refund's names a level MFA does not know, so the checker
-     * throws for it, and the void's is multifactor authentication.
+     * A member with requirement-guarded denies of a refund and a void.
      *
      * @return \Tests\Fixtures\Authorization\Member
      */
@@ -133,8 +117,7 @@ final class RequirementGuardedDenyTest extends TestCase
     }
 
     /**
-     * Sign the member in with their password, and return the session's key, as
-     * `laravel-authorization`'s subject names it.
+     * Sign the member in and return the session's key.
      *
      * @param  \Tests\Fixtures\Authorization\Member  $member
      * @return string

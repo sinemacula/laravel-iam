@@ -10,9 +10,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 
 /**
- * Unit tests for one grant a provider's groups give (IAM-7.2): a role named by
- * a non-blank name of at most `laravel-authorization`'s length, held in the
- * connection's tenant alone unless it reaches the tenant's subtree.
+ * Unit tests for one grant a provider's groups give.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +21,7 @@ use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 final class GrantInstructionTest extends TestCase
 {
     /**
-     * A role holds in the connection's tenant alone unless it is said to reach
-     * below it.
+     * A role holds in the tenant alone unless it reaches below.
      *
      * @return void
      */

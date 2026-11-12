@@ -8,9 +8,8 @@ use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\Iam\Contracts\GroupMapping;
 
 /**
- * The group mapping read from `iam.provisioning.groups.map` (IAM-7.2): each
- * group name to a role's name or a list of them, granted in the connection's
- * tenant alone.
+ * The group mapping read from config: each group to one or more roles, granted
+ * in the connection's tenant alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,7 +33,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
     ) {}
 
     /**
-     * The roles the map gives the groups, each in the connection's tenant.
+     * The roles the map gives the groups.
      *
      * @param  string  $connectionId
      * @param  string  $tenantId
@@ -57,8 +56,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
     }
 
     /**
-     * The map, each group to its list of roles, refused unless every group and
-     * every role is a non-empty string.
+     * The map, each group to its list of roles.
      *
      * @return array<array-key, list<string>>
      *
@@ -82,8 +80,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
     }
 
     /**
-     * The roles the map names for the group: a role's name, or a list of them,
-     * refused unless the group is named and every role is a non-empty string.
+     * The group's roles, from a role name or a list of them.
      *
      * @param  array-key  $group
      * @param  mixed  $named
@@ -101,8 +98,7 @@ final readonly class ConfiguredGroupMapping implements GroupMapping
     }
 
     /**
-     * Whether every value is a role's name: a string with something besides
-     * whitespace in it.
+     * Whether every value is a non-blank string.
      *
      * @param  list<mixed>  $listed
      * @return bool

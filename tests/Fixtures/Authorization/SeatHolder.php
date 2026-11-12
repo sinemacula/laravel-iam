@@ -11,13 +11,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 
 /**
- * A person who owns principals of their own, a seat for each tenant they belong
- * to (`Seat`), as an application that keeps its principals apart from its
- * people lists them: `laravel-authentication`'s identity owning principals,
- * whose `principals()` relation lists every seat it holds.
- *
- * It is kept in the fixtures' people table, on the default connection, the
- * tests' shared storage connection.
+ * A person who holds a seat (`Seat`) for each tenant they belong to.
  *
  * @property int $id
  * @property string $name

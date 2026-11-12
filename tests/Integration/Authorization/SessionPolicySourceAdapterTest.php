@@ -26,27 +26,7 @@ use Tests\Fixtures\Authorization\Staff;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authorization`'s session policy source
- * answered from the scopes of the caller's credential (IAM-6.5, AUTH-4.5),
- * which the subject resolver says on the subject and the source establishes
- * itself, failing closed, where a subject names a credential but says nothing
- * of its scopes. Through the facade, a check about a service account calling
- * with an API key is capped by the scopes the key was issued, an empty list
- * included, one about a person signed in to a session by nothing, and one about
- * a model the caller names carries none of the caller's scopes. Built by hand,
- * a subject naming a person's live session of its guard carries no cap, and one
- * naming a revoked session, another identity's, one of another guard or a key
- * that names none is allowed nothing; a subject naming the guard whose caller
- * it is, is capped by that caller's key, and one naming a guard whose caller is
- * someone else names no credential, so a person carries no cap and a
- * machine is allowed nothing; a guard that is not configured allows nothing;
- * and a job's person, naming neither, carries no cap.
- *
- * The credentials are real ones: an API key `laravel-authentication` issues and
- * authenticates, and sessions a person signs in to with a password, and each
- * check through the facade is asked of a source recording what it answered.
- * Each answer reads the session as stored, so no read mode is at stake; it is
- * run on every engine at the connection's own level.
+ * Integration tests for the session policy source from credential scopes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -72,9 +52,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     private RecordingSessionPolicySource $source;
 
     /**
-     * Declare the guard service accounts authenticate on, another guard people
-     * sign in on and the permission the accounts are granted, and bind the
-     * source, recording its answers, as an application would bind it.
+     * Declare the guards and permission, and bind a recording source.
      *
      * @return void
      */
@@ -109,10 +87,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A check about a service account calling with an API key reaches the
-     * source with the scopes the key was issued, carried on the request's
-     * subject, and is capped by them: an empty list allows nothing the account
-     * is granted.
+     * An API key's scopes reach the source.
      *
      * @param  list<string>  $scopes
      * @return void
@@ -137,8 +112,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A check about a person signed in to a session reaches the source saying
-     * its credential carries no cap, so it is capped by nothing.
+     * A person's session reaches the source with no cap.
      *
      * @return void
      */
@@ -157,9 +131,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject the caller names for another model says nothing of its scopes
-     * and names no session: a person named reaches the source with no cap, and
-     * a machine named is allowed nothing, whatever the caller's key carries.
+     * A subject named for another model carries no scopes.
      *
      * @return void
      */
@@ -180,9 +152,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject built by hand naming a person's live session of the guard it
-     * names, as the person's own, carries no cap: no session stands behind a
-     * credential carrying scopes.
+     * A person's live session carries no cap.
      *
      * @return void
      *
@@ -197,9 +167,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject built by hand naming a session that is not the person's live
-     * session of the guard it names is allowed nothing: a revoked session,
-     * another identity's, one of another guard, or a key that names none.
+     * A session that is not the person's live one allows nothing.
      *
      * @return void
      *
@@ -227,9 +195,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject built by hand naming the guard whose caller it is, by another
-     * copy of the very account, is capped by the caller's key, an empty list
-     * included.
+     * A subject naming its caller's guard is capped by the caller's key.
      *
      * @param  list<string>  $scopes
      * @return void
@@ -248,9 +214,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject built by hand naming a guard whose caller is someone else names
-     * no credential of its own: another account is allowed nothing, and a
-     * person carries no cap.
+     * A subject naming another caller's guard names no credential.
      *
      * @return void
      */
@@ -271,8 +235,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject naming a guard that is not configured allows nothing, and the
-     * source does not throw.
+     * A guard that is not configured allows nothing.
      *
      * @return void
      */
@@ -284,8 +247,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A job's or a console command's person, naming neither a session nor a
-     * guard, names no credential, and carries no cap.
+     * A job's person carries no cap.
      *
      * @return void
      */
@@ -297,8 +259,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Outside a request no credential is held, so a check about a service
-     * account reaches the source with no scopes and is allowed nothing.
+     * Outside a request a machine is allowed nothing.
      *
      * @return void
      */
@@ -313,9 +274,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then declare the report permissions
-     * before any provider registers, so the scope registry lets a key carry
-     * them.
+     * Declare the report permissions.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -329,9 +288,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Serve the route, authenticated on the guard given, that asks the checks
-     * the callback makes and answers what it returns, with what the source
-     * answered while it asked them.
+     * Serve the checks on the guard and return what the source answered.
      *
      * @param  string  $guard
      * @param  \Closure(): array<string, mixed>  $checks
@@ -374,8 +331,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Issue the account an API key on the keys guard with the scopes given, and
-     * answer the key it presents.
+     * Issue the account an API key and return it.
      *
      * @param  \Tests\Fixtures\Authorization\ServiceAccount  $account
      * @param  list<string>  $scopes

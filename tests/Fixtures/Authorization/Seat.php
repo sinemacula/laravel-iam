@@ -11,14 +11,7 @@ use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 
 /**
- * A principal kept apart from the person who acts as it, as a membership
- * principal an application keeps for each tenant a person belongs to:
- * `laravel-authentication`'s principal, a model of its own, owned by a person
- * who is an identity alone (`Staff`), and acting in the organisation it names,
- * or in none.
- *
- * It is kept in the fixtures' memberships table, on the default connection, the
- * tests' shared storage connection.
+ * A principal kept apart from the person (`Staff`) who acts as it.
  *
  * @property int $id
  * @property int $person_id

@@ -25,24 +25,7 @@ use Tests\Fixtures\Authorization\Staff;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s application access answered
- * from `laravel-authorization`'s grants (IAM-6.6, AUTHZ-13.4): an application
- * `authorization.application_access` maps to a permission admits to its
- * sessions only a principal whose grants on that application allow it, so a
- * sign-in without the grant is refused as `principal_ineligible`, one with it
- * is admitted, a grant made for another application does not count, and a grant
- * withdrawn refuses the session's next refresh; an application the map does not
- * name admits everyone, as `laravel-authentication`'s default does. A principal
- * kept apart from its identity is admitted on its identity's grants, whichever
- * guard is the default when the access is asked, and a machine on its own
- * grants, as a person is.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password, so the access is asked as `laravel-authentication` asks it: inside
- * `WriteConnection::during()` for the principal, so the grants are read from
- * the primary. The withdrawn grant is committed before the refresh asks about
- * it, and no snapshot is held across the two, so no read mode is at stake: it
- * runs on every engine at the connection's own level.
+ * Integration tests for application access answered from grants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,8 +41,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     private const string USE = 'api:use';
 
     /**
-     * Sign members in on the guard people sign in on, and declare the
-     * permission to use it.
+     * Sign members in on the people guard and declare the permission.
      *
      * @return void
      */
@@ -84,8 +66,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A member without the permission to use the application is refused at
-     * sign-in as `principal_ineligible`; with it, the member signs in.
+     * A member signs in only with the permission to use the application.
      *
      * @return void
      */
@@ -104,8 +85,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A grant made for another application does not let the member use this
-     * one; a grant made for this one does.
+     * A grant for another application does not count.
      *
      * @return void
      */
@@ -123,8 +103,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * An application the map does not name admits every member, granted or not,
-     * as `laravel-authentication`'s default does.
+     * An application the map does not name admits everyone.
      *
      * @return void
      */
@@ -136,8 +115,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A grant withdrawn once the member has signed in refuses the session's
-     * next refresh.
+     * A withdrawn grant refuses the next refresh.
      *
      * @return void
      *
@@ -162,10 +140,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A principal kept apart from the person who holds it is admitted on the
-     * permission granted to that person, whichever guard is the default when
-     * the access is asked: a Laravel session guard an admin panel signs in
-     * through answers the same as `laravel-authentication`'s.
+     * A principal is admitted on its identity's grant, whatever the guard.
      *
      * @return void
      */
@@ -193,11 +168,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * A machine principal is admitted on an application the map names while its
-     * grants allow the permission, and refused once they do not, as a person
-     * is: `laravel-authorization` decides the access without session caps, so
-     * the machine, which holds no credential yet whose scopes could cap it, is
-     * not refused for lacking them.
+     * A machine is admitted on its own grants.
      *
      * @return void
      */
@@ -223,9 +194,7 @@ final class ApplicationAccessAdapterTest extends TestCase
     }
 
     /**
-     * Load the application's configuration, then map the application people
-     * sign in on to the permission to use it, and declare the permission,
-     * before any provider registers.
+     * Map the application to its permission and declare it.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

@@ -8,10 +8,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableTenant;
 
 /**
- * A tenant both `laravel-authentication` and `laravel-authorization` read:
- * `laravel-authentication`'s tenant, naming itself by its id, and
- * `laravel-authorization`'s, named by its morph type and that same id, as an
- * application's tenant model is.
+ * A tenant read by both authentication and authorization.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,8 +32,7 @@ final readonly class Organisation implements AuthorizableTenant, Tenant
     ) {}
 
     /**
-     * The organisation's id, as `laravel-authentication` records it on a
-     * session.
+     * The organisation's id, as recorded on a session.
      *
      * @return string
      */

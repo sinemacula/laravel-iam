@@ -42,8 +42,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Feature tests for the seams SSO and `laravel-authentication` answer from the
- * application's tenancy.
+ * Feature tests for the seams answered from the application's tenancy.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,8 +67,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * With SSO's switch off nothing is bound, MFA's tenant requirement bound or
-     * not.
+     * With SSO's switch off nothing is bound.
      *
      * @return void
      *
@@ -87,8 +85,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, mandatory]`: SSO's enforcement as configured,
-     * and whether the binding is mandatory.
+     * Rows of `[configuration, mandatory]`.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: bool}>
      */
@@ -104,8 +101,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * With MFA's default tenant requirement, the policy is mandatory while SSO
-     * enforces.
+     * The policy is mandatory while SSO enforces.
      *
      * @param  array<string, mixed>  $values
      * @param  bool  $mandatory
@@ -125,8 +121,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * MFA's tenant requirement bound off its default makes the policy
-     * mandatory, read when the mandate is asked.
+     * A bound tenant requirement makes the policy mandatory.
      *
      * @return void
      */
@@ -143,8 +138,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Without memberships SSO's membership defaults stay, and the inheritance
-     * is the adapter.
+     * Without memberships SSO's membership defaults stay.
      *
      * @return void
      *
@@ -159,8 +153,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Memberships an application provider binds in its `register()` bind the
-     * membership adapters.
+     * Memberships bound in `register()` bind the membership adapters.
      *
      * @return void
      *
@@ -215,8 +208,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Rows of
-     * `[sso switch, memberships bound, memberships on, inheritance on]`.
+     * Rows of `[sso, memberships bound, memberships on, inheritance on]`.
      *
      * @return iterable<string, array{0: mixed, 1: bool, 2: bool, 3: bool}>
      */
@@ -230,8 +222,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * The membership rows are on while SSO is and memberships are bound; the
-     * policy and inheritance rows while SSO is.
+     * The tenancy rows follow SSO's switch and the application's tenancy.
      *
      * @param  mixed  $sso
      * @param  bool  $membershipsBound
@@ -260,8 +251,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * Every row is transient, and only the policy and inheritance carry a
-     * mandate.
+     * Every row is transient; only policy and inheritance carry a mandate.
      *
      * @return void
      */
@@ -282,8 +272,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * The grant half of SSO's principal scope is `laravel-authorization`'s
-     * grant scope query, built for each resolution.
+     * The grant scope is authorization's query, built per resolution.
      *
      * @return void
      *

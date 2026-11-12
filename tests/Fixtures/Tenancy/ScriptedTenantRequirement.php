@@ -30,8 +30,7 @@ final class ScriptedTenantRequirement implements TenantRequirement
     private array $asked = [];
 
     /**
-     * Bind a fresh one as MFA's tenant requirement in the container given, or
-     * the application's, and return it.
+     * Bind a fresh one as MFA's tenant requirement and return it.
      *
      * @param  ?\Illuminate\Contracts\Container\Container  $container
      * @return self

@@ -24,18 +24,7 @@ use Tests\Fixtures\Tenancy\ReadsStoredRequirements;
 use Tests\TestCase;
 
 /**
- * Integration tests for a change of the application's MFA tenant requirement
- * reported as IAM-4.5 asks, against the strict cut-off
- * `laravel-authentication`'s `tenantPolicyChanged()` asks for: the application
- * changes its own data so the tenant requires a further factor and reports the
- * change inside the same transaction; a password sign-in in the tenant, which
- * read the requirement as it was before the change, writes its session on
- * another connection to the same database once the report's first pass has read
- * the tenant's sessions, so the first pass never judges it, and the session is
- * revoked once the change commits.
- *
- * Which of the change's moments the sign-in commits at, by database and
- * isolation level, is as `SignsInDuringTheFirstPass` describes.
+ * Integration tests for a reported MFA requirement change's second pass.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,9 +37,7 @@ final class RequirementChangeSecondPassTest extends TestCase
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInDuringTheFirstPass, SignsInPeople;
 
     /**
-     * Arrange a tenancy in which everyone may act in every tenant, and the
-     * application's MFA tenant requirement, kept in its own table, under which
-     * the tenant requires no further factor yet.
+     * Arrange an open tenancy and a stored MFA tenant requirement.
      *
      * @return void
      */
@@ -71,9 +58,7 @@ final class RequirementChangeSecondPassTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on the other connection, so neither the
-     * requirements' table nor the migrations' rollback waits on it, and drop
-     * the table.
+     * Roll back the other connection and drop the requirements table.
      *
      * @return void
      */
@@ -90,10 +75,7 @@ final class RequirementChangeSecondPassTest extends TestCase
     }
 
     /**
-     * A password session that entered the tenant on another connection once the
-     * report's first pass had read the tenant's sessions, judged against the
-     * requirement as it was before the change, is revoked once the change
-     * commits.
+     * A session that entered during the change is revoked once it commits.
      *
      * @param  string  $level
      * @return void

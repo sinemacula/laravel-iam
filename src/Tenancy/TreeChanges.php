@@ -21,15 +21,8 @@ use SineMacula\Laravel\Sso\Config\Enums\Feature;
 use SineMacula\Laravel\Sso\Config\Features;
 
 /**
- * Applies a reported move of a tenant (IAM-7.5): passes it to
- * `laravel-authorization` while the application has a tree, and judges the
- * sessions of the moved tenant's subtree while anything a tenant requires can
- * follow the tree.
- *
- * Report a move inside the transaction that writes it, after the write, and a
- * removal as the move of each child moved out from under the removed tenant.
- * While grants are reported to SSO's scope widening, the identities granted in
- * the moved subtree are reported to it too, as no grant hook runs for a move.
+ * Applies a tenant move, reported after the write inside its transaction, to
+ * `laravel-authorization` and the moved subtree's sessions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -70,9 +63,7 @@ final readonly class TreeChanges
     ) {}
 
     /**
-     * Report the move to `laravel-authorization` while the application has a
-     * tree, then judge the moved tenant's subtree while SSO's enforcement or
-     * MFA's tenant requirement is on; answer how many sessions were revoked.
+     * Report the move and answer how many sessions were revoked.
      *
      * @param  string  $tenantId
      * @return int
@@ -95,8 +86,7 @@ final readonly class TreeChanges
     }
 
     /**
-     * Report the identities granted in the moved subtree to SSO's scope
-     * widening, together, then the move to `laravel-authorization`.
+     * Report the grantees to SSO, then the move to `laravel-authorization`.
      *
      * @param  string  $tenantId
      * @return void
@@ -109,6 +99,7 @@ final readonly class TreeChanges
     {
         $tenant = $this->tenants->toReference($tenantId);
 
+        // No grant hook runs for a move, so its grantees are reported here.
         if (AuthorizationSeams::reportsWidenings($this->config)) {
 
             $identities = [];
@@ -131,8 +122,7 @@ final readonly class TreeChanges
     }
 
     /**
-     * The identity behind the grantee, a principal's for a principal; `null`
-     * for a grantee that is no model, one of another kind, or one gone.
+     * The identity behind the grantee, or `null` when there is none.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $grantee
      * @return ?\SineMacula\Laravel\Authentication\Contracts\Identity

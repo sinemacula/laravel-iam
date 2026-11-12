@@ -5,18 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Provisioning;
 
 /**
- * One grant an identity provider's groups give a person (IAM-7.2): a role,
- * named as `laravel-authorization` names it, granted to the identity itself in
- * the tenant of the connection the groups came through, and, when
- * `$includeSubtree` says so, in every tenant below it in the tenant tree.
- *
- * It names no tenant of its own: a connection's groups never grant beyond the
- * connection's tenant and its subtree, whatever the mapping answers, and never
- * platform-wide. It names no application either, so the grant holds in every
- * application, nor an expiry, so it holds until a re-sync, or the application,
- * revokes it. The role is looked up as `laravel-authorization` looks up a name,
- * among the roles visible in the tenant; a name it does not find refuses the
- * grant.
+ * A role an identity provider's groups grant in the connection's tenant, and
+ * optionally its subtree.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -7,9 +7,7 @@ namespace Tests\Fixtures\Authorization;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 
 /**
- * A tenant of `laravel-authentication`'s that `laravel-authorization` cannot
- * scope to: it names itself by its identifier, and is neither a model nor one
- * of `laravel-authorization`'s tenants.
+ * A tenant authorization cannot scope to.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -32,20 +32,7 @@ use Tests\Fixtures\Authorization\UnscopedTenancy;
 use Tests\TestCase;
 
 /**
- * Integration tests of the check before a member's administrative operation
- * (IAM-6.9, AUTHZ-14.5): the operation is checked through
- * `laravel-authorization`'s grants for the subject handed in, with the member's
- * object as the resource in its own tenant, so a grant in the object's tenant
- * allows it and a grant in another tenant does not; a subject naming no tenant
- * is decided on the platform and one naming a tenant in that tenant, whatever
- * tenant the request is in, which is in place again afterwards; a denial throws
- * before the operation and is recorded once as `authorization.access_denied`, a
- * refusal for want of a stronger proof on no session among them; and a tenant
- * that resolves to nothing is refused rather than checked as the platform's.
- *
- * Each check reads the grants on the storage connection, so it runs at the
- * connection's own level on every engine, then at READ COMMITTED and REPEATABLE
- * READ on MySQL and PostgreSQL.
+ * Integration tests for the check before an administrative operation.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -64,8 +51,7 @@ final class AdministrativeCheckTest extends TestCase
     private const string OTHER = 'org-2';
 
     /**
-     * Store the catalogue's permissions, so they can be granted; record grant
-     * hooks rather than widen anyone's scope; and resolve the organisations.
+     * Store the permissions, record grant hooks and resolve organisations.
      *
      * @return void
      */
@@ -83,8 +69,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A grant in the object's tenant allows the operation there, and only
-     * there.
+     * A grant in the object's tenant allows the operation only there.
      *
      * @param  ?string  $level
      * @return void
@@ -106,8 +91,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A denial throws before the operation and is recorded once, as an access
-     * denied, with the operation and the object.
+     * A denial throws before the operation and is recorded once.
      *
      * @return void
      *
@@ -134,10 +118,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A subject built for a job or a command carries no session, so an
-     * operation its policy allows only after a stronger proof is refused for
-     * want of one, which nobody can step up: the refusal is recorded once, as
-     * an access denied with its reason, so the trail keeps it.
+     * A refusal for want of a proof on no session is recorded once.
      *
      * @return void
      *
@@ -172,8 +153,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * An operation on the type alone, named as its name, is checked on the
-     * type: a platform-wide grant allows it in any tenant.
+     * An operation on the type is checked on the type.
      *
      * @return void
      *
@@ -190,11 +170,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A subject that names no tenant, one built for a job or a command, is
-     * decided on the platform, never in the tenant of the request it is checked
-     * in: a platform-wide grant allows, a grant held in the request's tenant
-     * does not, and the request's scope is in place again afterwards, after the
-     * denial too.
+     * A subject with no tenant is decided on the platform.
      *
      * @return void
      *
@@ -228,8 +204,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A subject that names a tenant is decided in that tenant, whatever tenant
-     * the request is in, and the request's scope is in place again afterwards.
+     * A subject in a tenant is decided there, whatever the request's tenant.
      *
      * @return void
      *
@@ -251,8 +226,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A subject acting in a tenant `laravel-authorization` cannot read is
-     * refused, never decided on the platform.
+     * A subject in a tenant authorization cannot read is refused.
      *
      * @return void
      *
@@ -268,8 +242,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A tenant that resolves to nothing is refused, never checked as the
-     * platform's.
+     * A tenant that resolves to nothing is refused.
      *
      * @return void
      *
@@ -317,8 +290,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * Name the catalogue among `laravel-authorization`'s permission providers,
-     * set before any provider registers.
+     * Register the catalogue as a permission provider.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void

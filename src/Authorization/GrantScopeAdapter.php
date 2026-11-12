@@ -16,7 +16,7 @@ use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
 
 /**
  * Answers the grant half of SSO's principal scope from
- * `laravel-authorization`'s grant scope query (IAM-6.8, AUTHZ-14.2).
+ * `laravel-authorization`'s grant scope query.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

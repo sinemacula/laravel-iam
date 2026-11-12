@@ -17,11 +17,7 @@ use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 
 /**
- * Unit tests for the version of the tenant authentication policy's answer
- * (IAM-4.5): the same inputs always give the same version, of exactly the
- * length a session records; a change to any one input (the enforcement's
- * requirement, its connections, its enforcing tenant or its rule's version, the
- * exemption's outcome or any part of the requirement) gives another.
+ * Unit tests for the tenant authentication policy's version.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,8 +31,7 @@ final class TenantPolicyVersionTest extends TestCase
     private const string TENANT = 'tenant-1';
 
     /**
-     * The same inputs give the same version, 64 hexadecimal characters, the
-     * longest a session records, whatever object holds them.
+     * The same inputs give the same 64-character version.
      *
      * @return void
      */
@@ -50,8 +45,7 @@ final class TenantPolicyVersionTest extends TestCase
     }
 
     /**
-     * Rows of the version of an answer whose inputs differ from the base's in
-     * exactly one.
+     * Rows of versions whose inputs differ from the base's in one.
      *
      * @return iterable<string, array{0: \Closure(): string}>
      */
@@ -134,9 +128,7 @@ final class TenantPolicyVersionTest extends TestCase
     }
 
     /**
-     * The version of the answer made of the inputs given, each the base's
-     * unless another is given: the required policy, no exemption asked, and the
-     * requirement.
+     * The version of the given inputs, each defaulting to the base's.
      *
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome  $exemption
@@ -151,8 +143,7 @@ final class TenantPolicyVersionTest extends TestCase
     }
 
     /**
-     * A policy that requires a connection through the connections given, of the
-     * rule's version given.
+     * A policy requiring the given connections at the given version.
      *
      * @param  list<string>  $connections
      * @param  string  $version

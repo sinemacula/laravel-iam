@@ -33,8 +33,8 @@ use SineMacula\Laravel\Iam\Tenancy\IdentityMemberships;
 use SineMacula\Laravel\Iam\Tenancy\TenantReferences;
 
 /**
- * Audit-log's access policy, answered from the viewer's `audit-log.*` grants
- * (IAM-6.10), each tenant decided as a check there would decide it.
+ * Answers audit-log's access policy from the viewer's `audit-log.*` grants,
+ * each tenant decided as a check there would decide it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -100,8 +100,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     }
 
     /**
-     * The tenants, keyed by id, to decide the actions in: the subject's own and
-     * its memberships, and each tenant a grant route giving one is made in.
+     * The tenants to decide the actions in, keyed by id.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  list<string>  $actions
@@ -119,8 +118,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
         $translator = $container->make(TenantTranslator::class);
         $tenants    = self::memberships($subject, $translator, $container);
 
-        // A subtree grant is decided at its root, and below it only in the
-        // viewer's tenants, whose own decision says whether it reaches them.
+        // A subtree grant is decided at its root and in the viewer's tenants.
         foreach ($actions as $action) {
             foreach ($reviews->trustedStream(ReviewQuery::holdings($subject, ReviewScope::everywhere())->forAction($action)) as $row) {
                 $root = $row->evidence?->reach->tenant();
@@ -137,8 +135,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     }
 
     /**
-     * The subject's own tenant and the tenants its identity is a member of,
-     * keyed by id.
+     * The subject's own tenant and its identity's memberships, keyed by id.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $translator
@@ -183,14 +180,12 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     {
         $principal = $subject->subject;
 
-        // No check lets a principal use a grant where it cannot act, so there
-        // only its identity's grants count.
+        // Where the principal cannot act, only its identity's grants count.
         if ($principal instanceof Principal && !$container->make(TenantAccess::class)->mayActIn($principal, $container->make(TenantReferences::class)->tenant($tenant->id))) {
             $subject = new Subject($principal->getIdentity(), $principal->getIdentity());
         }
 
-        // The policy is never told the reader's session, so a permission whose
-        // decision read an authentication requirement is not held.
+        // With no session, a permission needing authentication is not held.
         $held = $container->make(AuthorizationManager::class)->heldPermissionsFor($subject, AuthorizationScope::tenant($tenant));
         $held = array_filter($held, static fn (HeldPermission $permission): bool => $permission->isUnconditional());
 
@@ -198,8 +193,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     }
 
     /**
-     * The subject the viewer is decided as: a principal for its identity, in
-     * its tenant; any other model as itself.
+     * The viewer as a subject, a principal in its own tenant.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $viewer
      * @return \SineMacula\Laravel\Authorization\Subject
@@ -210,8 +204,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     }
 
     /**
-     * The references the subject's own activity is recorded by: its identity
-     * and its principal, each a model.
+     * The references the subject's own activity is recorded by.
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @return array<int, \SineMacula\Laravel\AuditLog\Records\Reference>

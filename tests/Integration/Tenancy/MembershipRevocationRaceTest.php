@@ -29,27 +29,7 @@ use Tests\Fixtures\Tenancy\StoredMembership;
 use Tests\TestCase;
 
 /**
- * Integration tests for a membership revoked while a reservation's activation
- * is being redeemed (IAM-7.4, SSO-8.8), against SSO's tenant membership
- * contract: the answer, read again inside the redeemer's transaction, stays
- * true until that commits, by the guard the application's memberships take when
- * asked and every writer that revokes a membership takes too.
- *
- * A member who accepted before the tenant's domain was verified signs in for
- * the first time by a verified email of the domain, and the completion reserves
- * a link. While the sign-in's redemption is open, once it has read the
- * membership under SSO's locks, an administrator's revocation on another
- * connection to the same database cannot delete the membership: it waits on the
- * guard until its lock timeout. Once the redemption has committed the verified
- * domain link and the session acting through it, the revocation goes through,
- * and its clean-up finds that session. Without the guard the revocation would
- * commit during the redemption, its clean-up would find no session, and the
- * redemption would then commit a link and a session for a person who is no
- * longer a member.
- *
- * It runs on MySQL and PostgreSQL at READ COMMITTED and REPEATABLE READ, the
- * grant half of the principal scope answering `within_tenant` through a test
- * binding, since nothing shipped can.
+ * Integration tests for a membership revoked during an activation's redemption.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -72,8 +52,7 @@ final class MembershipRevocationRaceTest extends TestCase
     private const string REVOKED = 'revoked';
 
     /**
-     * Arrange SSO, and a second connection to the same database that never
-     * waits long on a lock.
+     * Arrange SSO and a second connection that never waits long on a lock.
      *
      * @return void
      */
@@ -94,8 +73,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * Roll back what is left open on the other connection, so the migrations'
-     * rollback never waits on it.
+     * Roll back what is left open, so the migrations' rollback never waits.
      *
      * @return void
      */
@@ -112,10 +90,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * A revocation of the membership, made on another connection while the
-     * redemption that read it is open, waits on the membership guard; once the
-     * redemption has committed the activated link and its session, the
-     * revocation goes through and its clean-up finds the session.
+     * A revocation racing an activation waits for it and finds its session.
      *
      * @param  string  $level
      * @return void
@@ -171,8 +146,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * Once the redemption has read the membership under its guard, inside its
-     * transaction on the test's connection, run the callback, once.
+     * Run the callback once, after the redemption's guarded membership read.
      *
      * @param  \Closure(): void  $then
      * @return void
@@ -194,8 +168,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * Whether the query is a locking read of the memberships, made on the
-     * test's connection inside a transaction.
+     * Whether the query is a locking memberships read in a transaction.
      *
      * @param  \Illuminate\Database\Events\QueryExecuted  $query
      * @return bool
@@ -211,9 +184,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * Try to revoke the person's membership on the other connection, as an
-     * administrator would while the redemption is open, and answer whether it
-     * deleted the membership or waited on the guard until its lock timeout.
+     * Revoke on the other connection and report whether it deleted or waited.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return string
@@ -242,9 +213,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * Revoke the person's membership on the other connection, then, in the same
-     * transaction, find the person's live sessions, as the application's
-     * clean-up that ends them would; answer their keys.
+     * Revoke the membership, then find the person's live sessions.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return list<string>
@@ -267,10 +236,7 @@ final class MembershipRevocationRaceTest extends TestCase
     }
 
     /**
-     * What a revocation that failed did: it waited on the guard when the
-     * failure is a wait on a lock that ran out of time (MySQL's lock wait
-     * timeout, `1205`, or PostgreSQL's lock timeout, `55P03`); any other
-     * failure is thrown on.
+     * Whether the failure was a lock wait timeout; rethrows otherwise.
      *
      * @param  \Illuminate\Database\QueryException  $exception
      * @return string

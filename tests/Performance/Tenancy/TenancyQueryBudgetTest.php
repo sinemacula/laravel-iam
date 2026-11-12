@@ -38,19 +38,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\Performance\PerformanceContractTestCase;
 
 /**
- * The statements SSO's judgements answered from the application's memberships
- * and tenant tree make (IAM-6.8, IAM-7.4, IAM-7.5), and what an enforcement
- * change and a reported move cost across a subtree, so a read an adapter adds
- * is seen here. The tests' tree is stored, so its own reads are counted too:
- * one per ancestor walked, and one per tenant whose children a subtree lists.
- *
- * A membership judgement reads the identity once, by its key on the write
- * connection; the application's memberships cost whatever its own reads cost,
- * and the fake's none. The enforcement inheritance reads one stored rule per
- * tenant on the path, nearest first, and stops at the first that is on. A
- * change across a subtree judges each tenant's sessions twice, with
- * `laravel-authentication`'s strict cut-off: its cost grows with the tenants in
- * the subtree and the sessions in them, never with any other tenant's.
+ * Query budgets for SSO's judgements from memberships and the tenant tree.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -77,9 +65,7 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
     private const string BRANCH = 'branch';
 
     /**
-     * Arrange SSO, the tree (a root, its region, the region's branch and the
-     * tests' tenant below it), a tenancy in which everyone may act in every
-     * tenant, and memberships holding nothing until a test grants them.
+     * Arrange SSO, the tree, an open tenancy and empty memberships.
      *
      * @return void
      */
@@ -116,25 +102,20 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         $membership = $app->make(TenantMembership::class);
         $scope      = $app->make(PrincipalScope::class);
 
-        // Reads (1): the person, by key, on the write connection; the fake
-        // memberships read nothing. Writes: none.
+        // One read: the person by key; the fake memberships read nothing.
         $standing = $this->assertQueryBudget(1, 0, static fn (): MembershipStanding => $membership->standing(self::reference($person), self::TENANT));
 
         self::assertNotNull($standing->acceptedAt);
 
-        // Reads (4): the person; the grant half, `laravel-authorization`'s
-        // grant scope query, reads the person again through the identity
-        // directory, the stored tree's children of the tenant, and every grant
-        // of the person and its principals in one query, in a savepoint of its
-        // own. Writes: none.
+        // Reads: the person, then the grant scope query's person, the tenant's
+        // children and the grants, in a savepoint.
         $judged = $this->assertQueryBudget(4, 0, static fn (): ScopeVerdict => $scope->judge(self::reference($person), self::TENANT), begins: 1, commits: 1);
 
         self::assertSame(ScopeVerdict::WITHIN_TENANT, $judged);
     }
 
     /**
-     * An inheritance answer up a four-tenant path with no rule on, and with the
-     * nearest ancestor's on.
+     * An inheritance answer up a four-tenant path.
      *
      * @return void
      *
@@ -144,20 +125,17 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
     {
         $inheritance = $this->app?->make(EnforcementInheritance::class) ?? self::fail('The application has not booted.');
 
-        // Reads (8): the tenant's stored rule; the stored tree's four reads up
-        // to the root; then the branch's, region's and root's rules, none on.
+        // The tenant's rule, four tree reads, then three ancestors' rules.
         self::assertSame(self::TENANT, $this->assertQueryBudget(8, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
 
         $this->ruleOn(self::BRANCH);
 
-        // Reads (6): the tenant's rule, the stored tree's four reads, then its
-        // branch's rule, which is on: the walk stops there.
+        // The tenant's rule, four tree reads, then the branch's, which is on.
         self::assertSame(self::BRANCH, $this->assertQueryBudget(6, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
     }
 
     /**
-     * A reported move of a three-tenant subtree, with one session in each
-     * tenant, to below an enforcing root.
+     * A reported move of a three-tenant subtree under an enforcing root.
      *
      * @return void
      *
@@ -181,25 +159,11 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         $move = static fn (): int => DB::transaction(static fn (): int => Iam::treeChanges()->changed('moved'));
 
-        // The stored tree lists a subtree in four reads: each tenant's
-        // children, then the typed rows. The report to laravel-authorization
-        // first. Reads (4): the moved tenant's children, then the grantees of
-        // the live grants within it, in one query in a savepoint of its own;
-        // there are none, so SSO's scope widening is handed no identity, in a
-        // savepoint of its own. The subtree again (4). First passes, one
-        // savepoint per tenant, nearest the moved tenant first. Reads (11, 13,
-        // 15): the tenant's live sessions' keys, locked, and the sessions; the
-        // person, twice; the policy's reads of the rule up the path (the
-        // tenant's own, the stored tree's walk to the root, each ancestor's up
-        // to the enforcing root's, then the root's rule again with its
-        // connections); and the session's provenance connection, once, shared
-        // by the policy and laravel-authentication's judgement. Writes (1
-        // each): the session revoked. laravel-authentication's second passes,
-        // once the move commits, one transaction per tenant: each reads the
-        // tenant's live sessions' keys and finds none left (3); the subtree
-        // listed again (4) gains no tenant, so nothing more is judged.
-        // Transactions: the move's, the grant query's and the widening's
-        // savepoints, and six of laravel-authentication's.
+        // Reads: the grant report (4), the subtree (4), first passes of 11, 13
+        // and 15 (sessions, person, rule up the path, provenance), second
+        // passes (3) and the subtree again (4). Writes: one revocation per
+        // tenant.
+        // Transactions: three savepoints and six of laravel-authentication's.
         $revoked = $this->assertQueryBudget(54, 3, $move, begins: 9, commits: 9);
 
         self::assertSame(3, $revoked);
@@ -220,8 +184,7 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
     }
 
     /**
-     * Turn the tenant's rule on, satisfied by a connection of its own marked as
-     * having completed a sign-in.
+     * Turn the tenant's rule on through a connection of its own.
      *
      * @param  string  $tenantId
      * @return void

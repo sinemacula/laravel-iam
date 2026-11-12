@@ -21,16 +21,7 @@ use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Models\Machine;
 
 /**
- * Unit tests for the order the source answers in: the scopes a subject says its
- * credential carries are answered as they are, no cap and a list alike, with
- * nothing read for them; a subject naming a session the source cannot establish
- * (no guard, no identity of its own, no session service, or a lookup that
- * throws) is allowed nothing; a subject naming a guard is answered from that
- * guard's caller only while the caller is the subject's own model, by object or
- * by model, and only once the guard has resolved its request, and is allowed
- * nothing when the guard cannot be read; and a subject naming no credential is
- * answered no cap for a person and a cap allowing nothing for a machine,
- * however it is one of `laravel-authentication`'s machines.
+ * Unit tests for the order the session policy source answers in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -61,9 +52,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * The scopes a subject says its credential carries are answered as they
-     * are, for a person and a machine alike, and nothing is read for them, the
-     * session and guard it names included.
+     * The scopes a subject says are answered as they are.
      *
      * @param  \Closure(): \SineMacula\Laravel\Authorization\Support\CredentialScopes  $said
      * @param  ?list<string>  $answer
@@ -79,8 +68,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A person naming no credential, neither a session nor a guard, carries no
-     * cap, and nothing is read for it.
+     * A person naming no credential carries no cap.
      *
      * @return void
      */
@@ -91,9 +79,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[the subject, its identity]`: each a machine of
-     * `laravel-authentication`'s by one sign alone, carrying no marker of
-     * `laravel-authorization`'s (`AuthorizableMachine`).
+     * Rows of `[subject, identity]`: machines without `AuthorizableMachine`.
      *
      * @return iterable<string, array{0: \Closure(self): object, 1: \Closure(self): ?object}>
      */
@@ -113,8 +99,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A machine naming no credential is allowed nothing, never no cap, however
-     * it is a machine, and that is what is said of it without a credential.
+     * A machine naming no credential is allowed nothing.
      *
      * @param  \Closure(self): object  $subject
      * @param  \Closure(self): ?object  $identity
@@ -131,8 +116,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[the subject naming a session, the authentication factory]`:
-     * each a session the source cannot establish.
+     * Rows of `[subject naming a session, auth factory]`, all unestablished.
      *
      * @return iterable<string, array{0: \Closure(self): \SineMacula\Laravel\Authorization\Subject, 1: \Closure(self): \Illuminate\Contracts\Auth\Factory}>
      */
@@ -165,9 +149,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A session the source cannot establish allows nothing, and the source
-     * never throws for it; one it can tell it cannot establish is never looked
-     * up.
+     * A session that cannot be established allows nothing.
      *
      * @param  \Closure(self): \SineMacula\Laravel\Authorization\Subject  $subject
      * @param  \Closure(self): \Illuminate\Contracts\Auth\Factory  $auth
@@ -180,9 +162,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * The session a principal names is looked up on the guard it names, for the
-     * identity it acts for, the one it names among them, whose session service
-     * is asked.
+     * A session is looked up on the guard the subject names.
      *
      * @return void
      */
@@ -199,8 +179,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[the guard's principal, its identity, the subject's model]`: the
-     * guard's caller is the subject's own model.
+     * Rows of `[guard's principal, identity, subject's model]`.
      *
      * @return iterable<string, array{0: \Closure(self): object, 1: \Closure(): ?object, 2: \Closure(object): object}>
      */
@@ -226,8 +205,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject naming a guard whose caller is its own model is answered from
-     * the caller's credential.
+     * A guard's own caller is answered from its credential.
      *
      * @param  \Closure(self): object  $principal
      * @param  \Closure(): ?object  $identity
@@ -244,9 +222,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A subject naming a guard whose caller is someone else, or that holds no
-     * caller, names no credential of its own: no cap for a person, nothing for
-     * a machine.
+     * A guard whose caller is someone else names no credential.
      *
      * @return void
      */
@@ -262,9 +238,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A guard that has not resolved its request names no credential yet, and
-     * its resolution is never started: neither its principal, identity nor
-     * scopes are read.
+     * A guard that has not resolved its request is never entered.
      *
      * @return void
      */
@@ -283,8 +257,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A guard that is not `laravel-authentication`'s names no credential the
-     * source can read: no cap for a person.
+     * A guard that is not authentication's names no credential.
      *
      * @return void
      */
@@ -297,8 +270,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * A guard that cannot be read, one that is not configured or whose caller
-     * cannot be resolved, allows nothing, and the source does not throw.
+     * A guard that cannot be read allows nothing.
      *
      * @return void
      */
@@ -359,8 +331,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * An authentication factory whose session service is never asked, since
-     * nothing it could answer would establish the session.
+     * An auth factory whose session service is never asked.
      *
      * @return \Illuminate\Contracts\Auth\Factory
      */
@@ -373,8 +344,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * An authentication factory that is asked for neither a guard nor a session
-     * service.
+     * An auth factory asked for neither a guard nor a session service.
      *
      * @return \Illuminate\Contracts\Auth\Factory
      */
@@ -388,8 +358,7 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
-     * An authentication factory whose guard has resolved its request to the
-     * principal and identity given, its credential carrying the scopes.
+     * An auth factory whose guard holds the principal and identity.
      *
      * @param  ?object  $principal
      * @param  ?object  $identity

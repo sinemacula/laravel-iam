@@ -17,10 +17,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Integration tests for reading `laravel-authorization`'s tenant tree
- * (IAM-7.5): its flat default is no tree, the application's is, and a subtree's
- * typed rows are read from a query or an Eloquent builder, anything else
- * refused.
+ * Integration tests for reading authorization's tenant tree.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -44,8 +41,7 @@ final class TreeTenancyContractsTest extends TestCase
     }
 
     /**
-     * The application's tree is read, and its subtree lists the tenant and
-     * every tenant below it, of whatever type.
+     * The application's tree is read with its subtree.
      *
      * @return void
      */

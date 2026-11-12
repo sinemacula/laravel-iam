@@ -21,15 +21,8 @@ use SineMacula\Laravel\Sso\Enforcement\ExemptionGate;
 use SineMacula\Laravel\Sso\Http\ClientContext as SsoClient;
 
 /**
- * `laravel-authentication`'s tenant authentication policy, answered from SSO's
- * enforcement, SSO's exemption gate and the application's MFA tenant
- * requirement (IAM-4.5).
- *
- * The rule's connections are required unless the identity is exempt, and the
- * MFA tenant requirement is the further factor; the version is a digest of all
- * three (`TenantPolicyVersion`). The gate is asked only for a session the rule
- * would refuse, with the client of the redemption admitted for that very
- * sign-in, or one of which nothing is known.
+ * Answers `laravel-authentication`'s tenant policy from SSO's enforcement and
+ * exemption gate and the application's MFA tenant requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,8 +51,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     ) {}
 
     /**
-     * What the tenant requires of the session, or of the sign-in about to write
-     * one.
+     * What the tenant requires of the session or sign-in.
      *
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext  $context
      * @return \SineMacula\Laravel\Authentication\Tenancy\TenantRequirement
@@ -83,8 +75,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
-     * The exemption gate's answer for a session the rule would refuse, or
-     * `null` when it need not be asked.
+     * The exemption gate's answer, or `null` when the rule would not refuse.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext  $context
@@ -115,7 +106,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
-     * The tenant's identifier as a string, as SSO and MFA name it.
+     * The tenant's identifier as SSO and MFA name it.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
      * @return string
@@ -130,8 +121,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
-     * The id of the session judged, or `null` for a sign-in whose session is
-     * not written yet.
+     * The session's id, or `null` for a sign-in not yet written.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @return ?string

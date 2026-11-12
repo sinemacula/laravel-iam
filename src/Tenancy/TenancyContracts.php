@@ -14,8 +14,7 @@ use SineMacula\Laravel\Authorization\Support\TenantChain;
 use SineMacula\Laravel\Iam\Contracts\Memberships;
 
 /**
- * Finds the application's memberships (IAM-7.4) and its tenant tree (IAM-7.5)
- * on every call.
+ * Finds the application's memberships and tenant tree on every call.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,8 +35,7 @@ final readonly class TenancyContracts
     ) {}
 
     /**
-     * The application's memberships, which an adapter answering from them is
-     * never asked without.
+     * The application's memberships.
      *
      * @return \SineMacula\Laravel\Iam\Contracts\Memberships
      *
@@ -52,8 +50,7 @@ final readonly class TenancyContracts
     }
 
     /**
-     * `laravel-authorization`'s tenant tree, or `null` while it is its flat
-     * default.
+     * `laravel-authorization`'s tenant tree, or `null` while flat.
      *
      * @return ?\SineMacula\Laravel\Authorization\Contracts\TenantTree
      */
@@ -65,8 +62,7 @@ final readonly class TenancyContracts
     }
 
     /**
-     * The tenant and every tenant below it, as `laravel-authorization`'s tenant
-     * tree's subtree selects them.
+     * The tenant and every tenant below it.
      *
      * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
      * @return list<\SineMacula\Laravel\Authorization\Support\Reference>
@@ -92,8 +88,7 @@ final readonly class TenancyContracts
     }
 
     /**
-     * Whether `laravel-authorization`'s tenant tree is the application's, not
-     * its flat default.
+     * Whether the application binds a tenant tree other than the flat default.
      *
      * @return bool
      */

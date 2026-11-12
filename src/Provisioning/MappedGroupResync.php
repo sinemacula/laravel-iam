@@ -9,11 +9,8 @@ use SineMacula\Laravel\Iam\Contracts\GroupMapping;
 use SineMacula\Laravel\Iam\Contracts\GroupResync;
 
 /**
- * The re-sync this package ships for the application to bind (IAM-7.2): the
- * identity's own roles in the connection's tenant become exactly those the
- * group mapping answers for the groups the provider now reports. A role an
- * administrator granted the identity there is revoked unless the mapping
- * answers it.
+ * Makes an identity's roles in the connection's tenant exactly those the group
+ * mapping answers, revoking any other.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -38,8 +35,7 @@ final readonly class MappedGroupResync implements GroupResync
     ) {}
 
     /**
-     * Make the identity's own roles in the connection's tenant those the
-     * mapping answers for the groups.
+     * Sync the identity's roles in the tenant to the mapping's.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $connectionId

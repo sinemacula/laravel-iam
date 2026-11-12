@@ -13,52 +13,8 @@ use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContri
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext as SsoContext;
 
 /**
- * `laravel-authorization`'s authentication context, answered by
- * `laravel-authentication`'s (IAM-6.2, AUTHZ-13.2, AUTH-11.8): the
- * `authentication` namespace with `laravel-authentication`'s own key names
- * (`identity_id`, `principal_id`, `tenant_id`, `application`, `amr`,
- * `auth_time`, `mfa`, `multifactor`, `seconds_since_step_up`, `credential`,
- * `scopes`, `ip` and the rest), and the `mfa` and `sso` namespaces its
- * contributors add, each keyed as `laravel-authentication` holds it. Nothing is
- * renamed or worked out here: what a key means is its member's.
- *
- * The namespaces are a fixed list, `authentication`, `mfa` and `sso`, never the
- * contributors registered when it is asked: `laravel-authorization` asks as it
- * boots, and builds its key catalogue once, both before this package registers
- * its `mfa` and `sso` contributors, once every provider has booted, and a
- * namespace missing then would leave its assurance keys testable for good.
- * Naming one that holds no keys, its capability switched off, costs nothing:
- * its keys are absent. A namespace an application's own contributor adds is not
- * supplied here; a source of its own supplies it
- * (`authorization.context.sources`).
- *
- * The keys of those namespaces that say how strongly or how recently the
- * session was authenticated are its assurance keys (`ASSURANCE_KEYS`), beside
- * the names `laravel-authorization` treats as assurance keys itself (`amr`,
- * `auth_time`, `multifactor`, `seconds_since_step_up`):
- * `laravel-authentication`'s `mfa` and `recovery_code`, MFA's verdicts on the
- * session's evidence and SSO's record of the provider's authentication. No
- * condition may test or reference one, so a policy states an authentication
- * requirement instead, which the requirement checker judges on the newest proof
- * meeting each part (`RequirementCheckerAdapter`). Each is an exact name, since
- * every family is closed: SSO's `provider_session_deadline`, which a policy may
- * test, shares the `provider_` prefix with the provider's authentication. Like
- * the namespaces, they are fixed for the life of the process.
- *
- * The contract takes nothing, so the values are the request's: the context
- * `laravel-authentication` holds for the default guard, the one the route's
- * `auth` middleware authenticated with (`AuthenticationContexts::current()`),
- * built at most once per authentication state; none for a guest or a guard that
- * is not `laravel-authentication`'s, so every key is missing. The keys and
- * their types are declared to `laravel-authorization`'s key catalogue apart
- * (`AuthenticationContextKeys`). Since the values depend on the request alone,
- * never on the record a check is about, it is scope invariant, so
- * `whereAuthorized()` reads it once for a query.
- *
- * `laravel-authentication`'s authentication contexts are resolved as the values
- * are asked for, never as it is built: `laravel-authorization` builds it as it
- * boots, before a `laravel-authentication` registered from another provider's
- * `boot()` has bound them. It holds nothing between calls (IAM-8.1).
+ * Answers `laravel-authorization`'s authentication context from
+ * `laravel-authentication`'s `authentication`, `mfa` and `sso` namespaces.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -67,10 +23,10 @@ use SineMacula\Laravel\Sso\Sessions\AuthenticationContext as SsoContext;
  */
 final readonly class AuthenticationContextAdapter implements AuthenticationContext, ScopeInvariant
 {
-    /** @var list<string> The namespaces supplied: `laravel-authentication`'s own, then those MFA's and SSO's contributors add. */
+    /** @var list<string> The namespaces supplied, fixed since `laravel-authorization` reads them before the contributors register. */
     public const array NAMESPACES = [Context::NAMESPACE, MfaContributor::NAMESPACE, SsoContext::NAMESPACE];
 
-    /** @var list<string> The names that make a key of the namespaces an assurance key, beside `laravel-authorization`'s own: `laravel-authentication`'s, MFA's, then SSO's. */
+    /** @var list<string> The assurance keys beside `laravel-authorization`'s own: `laravel-authentication`'s, MFA's, then SSO's. */
     public const array ASSURANCE_KEYS = [
         'mfa',
         'recovery_code',
@@ -93,7 +49,7 @@ final readonly class AuthenticationContextAdapter implements AuthenticationConte
      */
     public function __construct(
 
-        /** The container `laravel-authentication`'s authentication contexts are resolved from, as the values are asked for. */
+        /** Resolves `laravel-authentication`'s contexts lazily, since they may be bound after this is built. */
         private Container $container,
     ) {}
 
@@ -109,8 +65,7 @@ final readonly class AuthenticationContextAdapter implements AuthenticationConte
     }
 
     /**
-     * The names that make a key of the namespaces an assurance key, beside
-     * `laravel-authorization`'s own.
+     * The assurance keys beside `laravel-authorization`'s own.
      *
      * @return list<string>
      */
@@ -121,8 +76,7 @@ final readonly class AuthenticationContextAdapter implements AuthenticationConte
     }
 
     /**
-     * The request's authentication context, by namespace, then by key: only the
-     * namespaces supplied, and none for a guest.
+     * The request's authentication context by namespace, empty for a guest.
      *
      * @return array<string, array<string, mixed>>
      *
