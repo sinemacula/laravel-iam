@@ -240,7 +240,7 @@ are in `sso-redemption-and-revocation.md`, and the binding rule that applies eve
   `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefault`
 - `tests/Unit/Tenancy/TenantPolicyVersionTest.php` `testTheSameInputsGiveTheSameVersion`,
   `testAChangeToAnyInputGivesAnotherVersion`, `testAMinimumLevelsLevelAndAgeAreEachPartOfTheVersion`;
-  `tests/Unit/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,
+  `tests/Feature/Tenancy/TenantMfaRequirementsTest.php` `testARequirementIsConfiguredOnceBoundOffMfasDefault`,
   `testTheBindingIsAskedAndItsAnswerTranslated`, `testWithMfasDefaultNothingIsRequired`,
   `testAnIdentityMfaHoldsNoFactorsForIsRefused`; `tests/Unit/Sso/AdmittedRedemptionsTest.php`
   `testASignInsClientIsAnsweredForItsIdentityAndNoSessionAlone`,

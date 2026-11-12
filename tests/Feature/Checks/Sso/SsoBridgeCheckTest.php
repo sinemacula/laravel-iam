@@ -2,32 +2,29 @@
 
 declare(strict_types = 1);
 
-namespace Tests\Unit\Checks\Sso;
+namespace Tests\Feature\Checks\Sso;
 
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Container\Container as ContainerContract;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\ExternalIdentityLinks;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
-use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
-use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use Tests\Concerns\RunsChecks;
+use Tests\TestCase;
 
 /**
- * Unit tests for this package's checks of SSO's side (IAM-2.5): they apply only
- * while SSO is in use, are reported under `sso`, and check each application's
- * sign-in method and unlinked handoffs and the mandatory seams of SSO's flows,
- * leaving the base URL to SSO's own check and the storage connection to the
- * storage alignment.
+ * Feature tests for this package's checks of SSO's side (IAM-2.5): they apply
+ * only while SSO is in use, are reported under `sso`, and check each
+ * application's sign-in method and unlinked handoffs and the mandatory seams of
+ * SSO's flows, leaving the base URL to SSO's own check and the storage
+ * connection to the storage alignment.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,14 +39,14 @@ final class SsoBridgeCheckTest extends TestCase
 {
     use RunsChecks;
 
-    /** @var \Illuminate\Container\Container The container the policy and the seams are bound in. */
+    /** @var \Illuminate\Container\Container The application's container, the policy and the seams bound in it. */
     private Container $container;
 
     /** @var \Illuminate\Config\Repository The configuration the checks read. */
     private Repository $config;
 
     /**
-     * Start every test with a container holding a policy that allows
+     * Start every test with the application holding a policy that allows
      * `external_provider` for the `api` guard alone, every mandatory seam bound
      * to an implementation of the application's, and SSO configured as this
      * package needs it.
@@ -61,7 +58,7 @@ final class SsoBridgeCheckTest extends TestCase
     {
         parent::setUp();
 
-        $this->container = new Container;
+        $this->container = $this->app ?? self::fail('The application has not booted.');
         $this->config    = new Repository([
             'database' => ['default' => 'main'],
             'iam'      => ['storage' => ['connection' => null]],
@@ -76,27 +73,11 @@ final class SsoBridgeCheckTest extends TestCase
         $policy = \Mockery::mock(ApplicationPolicy::class);
         $policy->shouldReceive('allowsMethod')->andReturnUsing(static fn (string $guard): bool => in_array($guard, ['api', 'admin'], true));
 
-        $this->container->instance(ContainerContract::class, $this->container);
-        $this->container->instance(Container::class, $this->container);
         $this->container->instance(ApplicationPolicy::class, $policy);
-        $this->container->bind(TenantRequirement::class, NoTenantRequirement::class);
 
         foreach ([SessionRevocation::class, ExternalIdentityLinks::class, Linker::class] as $seam) {
             $this->container->instance($seam, \Mockery::mock($seam));
         }
-    }
-
-    /**
-     * Close Mockery's expectations.
-     *
-     * @return void
-     */
-    #[\Override]
-    protected function tearDown(): void
-    {
-        \Mockery::close();
-
-        parent::tearDown();
     }
 
     /**

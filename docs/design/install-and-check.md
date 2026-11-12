@@ -260,7 +260,7 @@ and the gaps in the members it works around.
   `testTheDrainIsScheduledEveryMinuteWhileDeliveryIsThroughTheOutbox`,
   `testAnyOtherDeliveryModeSchedulesNoDrain`, `testAuditLogsOwnSchedulesAreNeverRegisteredAgain`
 - `tests/Feature/Console/CheckCommandTest.php` `testAConfiguredApplicationPasses`,
-  `testAProblemOfThePackagesOwnFailsTheRun`, `testAMembersFailureFailsTheRun`,
+  `testMfasDefaultLeftOnAMandatorySeamFailsTheRun`, `testAMembersFailureFailsTheRun`,
   `testAStorageMismatchIsReportedRatherThanRefusedAtBoot`,
   `testABrokenAuthorizationSettingIsReportedRatherThanRefusedAtBoot`, `testAMemberThatNeverRegisteredFailsTheRun`,
   `testSsosSideIsChecked`
@@ -268,7 +268,7 @@ and the gaps in the members it works around.
   `testAMemberCommandThrowingStopsTheRun`, `testAMissingMemberCommandFailsTheRun`,
   `testEachCheckIsReported`
 - `tests/Feature/Checks/MandatorySeamsCheckTest.php` `testTheMembersDefaultsFail`, `testAResolvedMembersDefaultFails`,
-  `testTheApplicationsOwnBindingPasses`, `testMfasDefaultBoundByNameFails`, `testAnUnboundMandatorySeamFails`,
+  `testTheApplicationsOwnBindingPasses`, `testMfasRegisteredDefaultFails`, `testAnUnboundMandatorySeamFails`,
   `testTheSeamsSsosCheckHoldsAreLeftToIt`, `testTheLinksAreMandatoryWhileSsoIsInUse`,
   `testTheTenantSeamsAreMandatoryWhileATenantsRuleIsOn`, `testTheInheritanceIsMandatoryWhileEnforcingOverATree`
 - `tests/Feature/IamServiceProviderTest.php` `testTheCommandsAreRegisteredInTheConsole`,
@@ -290,7 +290,7 @@ and the gaps in the members it works around.
   `testAResourceTenantResolverTheApplicationNamesIsNotNoted`
 - `tests/Feature/Checks/SchedulesCheckTest.php` `testThePrunesAreNotedUntilThePackageSchedulesThem`,
   `testTheDrainIsNotedWhileTheOutboxIsOn`, `testAScheduleThatCannotBeBuiltIsAProblem`
-- `tests/Unit/Checks/Sso/SsoBridgeCheckTest.php` `testItAppliesOnlyWhileSsoIsInUse`, `testEachApplicationIsChecked`,
+- `tests/Feature/Checks/Sso/SsoBridgeCheckTest.php` `testItAppliesOnlyWhileSsoIsInUse`, `testEachApplicationIsChecked`,
   `testTheBaseUrlAndTheStorageConnectionAreLeftToTheirOwners`, `testTheMandatorySeamsAreChecked`
 
 ## Change Triggers

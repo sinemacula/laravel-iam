@@ -5,8 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Feature\Tenancy;
 
 use Illuminate\Config\Repository;
-use Illuminate\Container\Container;
-use Illuminate\Contracts\Container\Container as ContainerContract;
+use Illuminate\Contracts\Foundation\Application;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -28,8 +27,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
-use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
-use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
@@ -118,7 +115,7 @@ final class TenancySeamsTest extends TestCase
     public function testTheBindingIsMandatoryWhileEnforcementIsOn(array $values, bool $mandatory): void
     {
         $config    = new Repository;
-        $container = self::container();
+        $container = $this->container();
 
         foreach ($values as $key => $value) {
             $config->set($key, $value);
@@ -135,7 +132,7 @@ final class TenancySeamsTest extends TestCase
      */
     public function testARequirementBoundMakesTheBindingMandatory(): void
     {
-        $container = self::container();
+        $container = $this->container();
         $binding   = (new TenancySeams($container))->seams(new Repository)[0];
 
         self::assertFalse($binding->isMandatory());
@@ -215,7 +212,7 @@ final class TenancySeamsTest extends TestCase
     public function testTheInheritanceIsMandatoryWhileEnforcingOverATree(): void
     {
         $config  = new Repository;
-        $binding = (new TenancySeams(self::container()))->seams($config)[4];
+        $binding = (new TenancySeams($this->container()))->seams($config)[4];
 
         self::assertFalse($binding->isMandatory());
 
@@ -272,7 +269,7 @@ final class TenancySeamsTest extends TestCase
         bool $membershipsOn,
         bool $inheritanceOn,
     ): void {
-        $container = self::container();
+        $container = $this->container();
         $config    = new Repository(['iam' => ['adapters' => ['sso' => $sso], 'tenancy' => ['memberships' => $memberships]]]);
 
         if ($membershipsBound) {
@@ -299,7 +296,7 @@ final class TenancySeamsTest extends TestCase
     {
         $rows = array_map(
             static fn (SeamBinding $binding): array => [$binding->abstract, $binding->adapter, $binding->lifetime, $binding->isMandatory()],
-            (new TenancySeams(self::container()))->seams(new Repository),
+            (new TenancySeams($this->container()))->seams(new Repository),
         );
 
         self::assertSame([
@@ -341,19 +338,12 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * A container that resolves itself and binds MFA's default tenant
-     * requirement, as the application's does.
+     * The application's container, MFA's tenant requirement as MFA bound it.
      *
-     * @return \Illuminate\Container\Container
+     * @return \Illuminate\Contracts\Foundation\Application
      */
-    private static function container(): Container
+    private function container(): Application
     {
-        $container = new Container;
-
-        $container->instance(Container::class, $container);
-        $container->instance(ContainerContract::class, $container);
-        $container->bind(TenantRequirement::class, NoTenantRequirement::class);
-
-        return $container;
+        return $this->app ?? self::fail('The application has not booted.');
     }
 }

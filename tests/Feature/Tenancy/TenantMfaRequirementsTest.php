@@ -2,11 +2,9 @@
 
 declare(strict_types = 1);
 
-namespace Tests\Unit\Tenancy;
+namespace Tests\Feature\Tenancy;
 
-use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
@@ -17,14 +15,14 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
-use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
-use SineMacula\Laravel\Mfa\Requirements\NoTenantRequirement;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
+use Tests\TestCase;
 
 /**
- * Unit tests for asking the application's binding of MFA's tenant requirement.
+ * Feature tests for asking the application's binding of MFA's tenant
+ * requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,24 +32,6 @@ use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 #[CoversClass(TenantMfaRequirements::class)]
 final class TenantMfaRequirementsTest extends TestCase
 {
-    /** @var \Illuminate\Container\Container The container MFA's tenant requirement is bound in. */
-    private Container $container;
-
-    /**
-     * Start each test with MFA's default bound.
-     *
-     * @return void
-     */
-    #[\Override]
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->container = new Container;
-
-        $this->container->bind(TenantRequirement::class, NoTenantRequirement::class);
-    }
-
     /**
      * MFA's default is no requirement; any other binding is one.
      *
@@ -61,7 +41,7 @@ final class TenantMfaRequirementsTest extends TestCase
     {
         self::assertFalse($this->requirements()->isConfigured());
 
-        ScriptedTenantRequirement::bind($this->container);
+        ScriptedTenantRequirement::bind($this->app);
 
         self::assertTrue($this->requirements()->isConfigured());
     }
@@ -74,7 +54,7 @@ final class TenantMfaRequirementsTest extends TestCase
      */
     public function testTheBindingIsAskedAndItsAnswerTranslated(): void
     {
-        $scripted = ScriptedTenantRequirement::bind($this->container)->require('tenant-1', MfaRequirement::none()->withMultifactor(300));
+        $scripted = ScriptedTenantRequirement::bind($this->app)->require('tenant-1', MfaRequirement::none()->withMultifactor(300));
 
         $requirement = $this->requirements()->requirementFor(self::context(\Mockery::mock(Identity::class, MultiFactorAuthenticatable::class)), 'tenant-1');
 
@@ -103,7 +83,7 @@ final class TenantMfaRequirementsTest extends TestCase
      */
     public function testAnIdentityMfaHoldsNoFactorsForIsRefused(): void
     {
-        $scripted = ScriptedTenantRequirement::bind($this->container);
+        $scripted = ScriptedTenantRequirement::bind($this->app);
 
         try {
             $this->requirements()->requirementFor(self::context(\Mockery::mock(Identity::class)), 'tenant-1');
@@ -117,13 +97,13 @@ final class TenantMfaRequirementsTest extends TestCase
     }
 
     /**
-     * The requirements over the test's container.
+     * The requirements over the application's container.
      *
      * @return \SineMacula\Laravel\Iam\Tenancy\TenantMfaRequirements
      */
     private function requirements(): TenantMfaRequirements
     {
-        return new TenantMfaRequirements($this->container, new RequirementTranslator);
+        return new TenantMfaRequirements($this->app ?? self::fail('The application has not booted.'), new RequirementTranslator);
     }
 
     /**

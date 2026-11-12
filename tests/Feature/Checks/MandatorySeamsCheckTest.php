@@ -25,7 +25,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
-use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
@@ -122,15 +121,14 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * MFA's own default bound back by the application is still MFA's default,
-     * as MFA says.
+     * The default MFA's provider registers fails while only MFA's adapters are
+     * off.
      *
      * @return void
      */
-    public function testMfasDefaultBoundByNameFails(): void
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    public function testMfasRegisteredDefaultFails(): void
     {
-        $this->app?->bind(SessionRevoker::class, GenerationSessionRevoker::class);
-
         self::assertStringStartsWith(SessionRevoker::class . ' is still bound', self::problems($this->check()->checks())[0]);
     }
 
