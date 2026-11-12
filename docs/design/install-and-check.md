@@ -23,11 +23,12 @@ and the gaps in the members it works around.
 - A tag no provider registered is reported and the run exits 1; the rest is still published.
 - The prefix for `laravel-authorization`'s tables comes from `--prefix`, or is asked for interactively, and is written
   only while neither its configuration nor any of its migrations has been published, into the configuration published
-  in the run, as the default of each `AUTHORIZATION_TABLE_*` variable (`Install\AuthorizationTablePrefix::apply()`).
-  A prefix is at most 16 characters, so every name the migrations derive stays within PostgreSQL's 63 and MySQL's 64.
-  An invalid prefix refuses the run with Symfony's `INVALID` exit code before anything is published. A prefix that can
-  no longer be written is reported as carried (`AuthorizationTablePrefix::carries()`) or as not written. The rewrite
-  goes once `laravel-authorization` takes a `tables.prefix` setting.
+  in the run, as the default of `AUTHORIZATION_TABLE_PREFIX`, the member's `tables.prefix` setting. Tables already
+  migrated would otherwise lose their names. A prefix is checked against the member's own rule, at most 16 characters
+  so every name the migrations derive stays within PostgreSQL's 63, and an invalid one refuses the run with Symfony's
+  `INVALID` exit code before anything is published, rather than leaving a file the member refuses at boot. A prefix
+  that can no longer be written is reported as carried when `TableNames::prefix()` already reads it, or as not
+  written.
 - The install writes no other member configuration: audit-log's `capture.laravel.except_guards` and
   `definitions.require_registered` are owed, and `Checks\AuditCheck` enforces them.
 - Every run ends with a short list of what the application still owes, each item linking to the installation guide's
@@ -243,6 +244,8 @@ and the gaps in the members it works around.
   - `laravel-authentication`'s mapping of each code sign-in method to its identifier type is private
     (`SignInMethodManager`), so `SendersCheck` names `email_code` with `email` and `phone_code` with `phone` itself; a
     public constant would let it read them.
+  - `laravel-authorization`'s prefix rule lives in its `@internal` `TableConfigValidator`, so `InstallCommand` repeats
+    it; a public check of a prefix would let it ask the member.
   - No member publishes its migrations through `publishesMigrations()`, and `vendor:publish` compares only a whole file
     name, so recognising a migration by its base name lives in `MigrationLedger`. That is no member's defect: a member
     that moves to `publishesMigrations()`, which renames each file with the time it is published, is still recognised.
@@ -251,7 +254,6 @@ and the gaps in the members it works around.
 
 - `src/Console/InstallCommand.php`: `handle()`, `tablePrefix()`, `prefixTables()`, `prefixableConfiguration()`.
 - `src/Install/MigrationLedger.php`: `baseName()`, `copyOf()`.
-- `src/Install/AuthorizationTablePrefix.php`: `assertValid()`, `apply()`, `carries()`, `MAX_LENGTH`.
 - `src/Scheduling/IamSchedule.php`: `register()`; `src/IamManager.php`: `schedule()`.
 - `src/Console/CheckCommand.php`: `handle()`; `src/Checks/Checker.php`: `run()`, `MEMBER_COMMANDS`, `CHECKS`;
   `src/Checks/Contracts/Check.php`.
@@ -271,14 +273,13 @@ and the gaps in the members it works around.
   `testRunningTwiceChangesNothing`, `testAMigrationPublishedUnderAnotherTimestampIsRecognised`,
   `testAnApplicationsMigrationSharingABaseNameIsNotTakenForTheMembers`, `testAFileAtAMigrationsPathIsNeverOverwritten`,
   `testTheRunEndsWithWhatTheApplicationStillOwes`, `testATagNoProviderRegisteredFailsTheRun`,
-  `testThePrefixOptionPrefixesTheAuthorizationTables`, `testRunningAgainWithAPrefixWritesNothing`,
-  `testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished`, `testAnInvalidPrefixRefusesTheRunWithNothingPublished`,
+  `testThePrefixOptionPrefixesTheAuthorizationTables`, `testAValidPrefixIsWritten`,
+  `testRunningAgainWithAPrefixWritesNothing`, `testAPrefixIsNotWrittenOnceAnAuthorizationMigrationIsPublished`,
+  `testAReshapedAuthorizationConfigurationIsOwedThePrefix`, `testAnInvalidPrefixRefusesTheRunWithNothingPublished`,
   `testInteractiveTheRunAsksForThePrefix`
 - `tests/Unit/Install/MigrationLedgerTest.php` `testTheBaseNameDropsTheTimestampAndTheExtension`,
   `testACopyUnderAnotherTimestampIsRecognised`, `testAnApplicationsMigrationOfTheSameBaseNameIsNoCopy`,
   `testOnlyTheDirectorysOwnPhpFilesAreRead`
-- `tests/Unit/Install/AuthorizationTablePrefixTest.php` `testEveryTableNameIsPrefixed`, `testAnInvalidPrefixIsRefused`,
-  `testWhetherAConfigurationCarriesThePrefix`
 - `tests/Integration/Install/PrefixedAuthorizationTablesTest.php` `testTheLongestPrefixMigratesEveryTable` (MySQL and
   PostgreSQL)
 - `tests/Feature/Scheduling/IamScheduleTest.php` `testOnlyThePrunesAreScheduledWhileSsoIsNotInUseAndDeliveryIsSync`,
@@ -336,8 +337,8 @@ and the gaps in the members it works around.
 ## Change Triggers
 
 - A member adding, renaming or removing a publishing tag or its namespace: `InstallCommand`'s tags follow.
-- `laravel-authorization` reshaping the defaults `AuthorizationTablePrefix` writes over, adding a table or a longer
-  derived name (`MAX_LENGTH` follows), or taking a `tables.prefix` setting (the rewrite goes).
+- `laravel-authorization` renaming `AUTHORIZATION_TABLE_PREFIX` or changing its prefix rule: `InstallCommand`'s check
+  and the default it writes follow.
 - A member scheduling work of its own, or leaving more to the application: `IamSchedule` and `SchedulesCheck`
   follow.
 - A member adding a PHP extension or a Composer plugin: `composer.json` follows.

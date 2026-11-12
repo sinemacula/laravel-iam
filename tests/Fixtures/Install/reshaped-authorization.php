@@ -3,8 +3,8 @@
 declare(strict_types = 1);
 
 /*
- * A `laravel-authorization` configuration file reshaped so it no longer holds
- * the table name defaults `iam:install` prefixes.
+ * A `laravel-authorization` configuration file that does not declare the
+ * `tables.prefix` default `iam:install` writes.
  */
 
 return [

@@ -7,7 +7,7 @@ namespace SineMacula\Laravel\Iam\Console;
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\ServiceProvider;
-use SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix;
+use SineMacula\Laravel\Authorization\Config\TableNames;
 use SineMacula\Laravel\Iam\Install\MigrationLedger;
 use Symfony\Component\Console\Attribute\AsCommand;
 
@@ -76,23 +76,21 @@ final class InstallCommand extends Command
      * Execute the console command.
      *
      * @param  \Illuminate\Filesystem\Filesystem  $files
-     * @param  \SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix  $tables
      * @return int
      *
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     * @throws \SineMacula\Laravel\Authorization\Exceptions\InvalidAuthorizationConfigException
      */
-    public function handle(Filesystem $files, AuthorizationTablePrefix $tables): int
+    public function handle(Filesystem $files): int
     {
         $ledger        = new MigrationLedger($files);
         $configuration = $this->prefixableConfiguration($files, $ledger);
         $prefix        = $this->tablePrefix($configuration !== null);
 
-        try {
-            if ($prefix !== null) {
-                AuthorizationTablePrefix::assertValid($prefix);
-            }
-        } catch (\InvalidArgumentException $exception) {
-            $this->error($exception->getMessage());
+        // laravel-authorization's rule: 16 characters keep every name its
+        // migrations derive within PostgreSQL's 63.
+        if ($prefix !== null && preg_match('/^[a-z][a-z0-9_]{0,15}$/D', $prefix) !== 1) {
+            $this->error('The table prefix must be lower-case letters, digits and underscores, start with a letter and be at most 16 characters long.');
 
             return self::INVALID;
         }
@@ -106,7 +104,7 @@ final class InstallCommand extends Command
         $this->call('vendor:publish', ['--tag' => self::TAGS]);
 
         if ($prefix !== null) {
-            $this->prefixTables($tables, $configuration, $prefix);
+            $this->prefixTables($files, $configuration, $prefix);
         }
 
         $this->publishMigrations($files, $ledger);
@@ -172,7 +170,7 @@ final class InstallCommand extends Command
             return null;
         }
 
-        $prefix = $this->ask('Table prefix', AuthorizationTablePrefix::SUGGESTED);
+        $prefix = $this->ask('Table prefix', 'authorization_');
 
         return is_string($prefix) ? $prefix : null;
     }
@@ -181,26 +179,39 @@ final class InstallCommand extends Command
      * Write the prefix into `laravel-authorization`'s configuration published
      * in this run, or say why it was not.
      *
-     * @param  \SineMacula\Laravel\Iam\Install\AuthorizationTablePrefix  $tables
+     * @param  \Illuminate\Filesystem\Filesystem  $files
      * @param  ?string  $configuration
      * @param  string  $prefix
      * @return void
      *
      * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     * @throws \SineMacula\Laravel\Authorization\Exceptions\InvalidAuthorizationConfigException
      */
-    private function prefixTables(AuthorizationTablePrefix $tables, ?string $configuration, string $prefix): void
+    private function prefixTables(Filesystem $files, ?string $configuration, string $prefix): void
     {
-        $published = self::pathsOf('authorization-config')[0] ?? null;
-
-        if ($configuration !== null && $tables->apply($configuration, $prefix) !== []) {
-            $this->info("Prefixed laravel-authorization's tables with `{$prefix}`.");
-        } elseif ($configuration !== null) {
-            $this->warn('Prefix laravel-authorization\'s tables yourself (`authorization.tables`): its configuration no longer holds their defaults.');
-        } elseif ($published !== null && $tables->carries($published, $prefix)) {
+        if ($configuration === null && TableNames::prefix() === $prefix) {
             $this->info("laravel-authorization's tables already carry the prefix `{$prefix}`.");
-        } else {
-            $this->warn('laravel-authorization\'s tables keep their names: its configuration or its migrations were published before.');
+
+            return;
         }
+
+        if ($configuration === null) {
+            $this->warn('laravel-authorization\'s tables keep their names: its configuration or its migrations were published before.');
+
+            return;
+        }
+
+        $contents = str_replace('env(\'AUTHORIZATION_TABLE_PREFIX\', \'\')', "env('AUTHORIZATION_TABLE_PREFIX', '{$prefix}')", $files->get($configuration), $count);
+
+        if ($count === 0) {
+            $this->warn('Set `authorization.tables.prefix` yourself: laravel-authorization\'s configuration does not declare it.');
+
+            return;
+        }
+
+        $files->put($configuration, $contents);
+
+        $this->info("Prefixed laravel-authorization's tables with `{$prefix}`.");
     }
 
     /**

@@ -82,7 +82,7 @@ The current note set is:
 
 - `install-and-check.md`: how `iam:install` publishes every member's configuration, language files and migrations, and
   this package's configuration, through `vendor:publish`; how it recognises a migration already published by its base
-  name whatever its timestamp, so it is safe to run twice; the prefixed `laravel-authorization` table names it writes
+  name whatever its timestamp, so it is safe to run twice; the `laravel-authorization` table prefix it writes
   only into a configuration file it has just published, and what it reports as still owed; the
   members' scheduled work `Iam::schedule()` registers, and audit-log's own it never registers again; the PHP extensions
   the package declares; and how `iam:check` runs every member's check and this package's own: the storage connection and

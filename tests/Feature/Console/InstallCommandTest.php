@@ -6,16 +6,17 @@ namespace Tests\Feature\Console;
 
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Testing\PendingCommand;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Iam\Console\InstallCommand;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
-use Tests\Concerns\NamesAuthorizationTables;
 use Tests\Concerns\UsesScratchDirectory;
 use Tests\TestCase;
 
@@ -30,7 +31,7 @@ use Tests\TestCase;
 #[CoversClass(InstallCommand::class)]
 final class InstallCommandTest extends TestCase
 {
-    use NamesAuthorizationTables, UsesScratchDirectory;
+    use UsesScratchDirectory;
 
     /** @var array<string, class-string<\Illuminate\Support\ServiceProvider>> Each member's configuration key and the provider that ships its files. */
     private const array MEMBERS = [
@@ -238,8 +239,9 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * `--prefix` prefixes every `laravel-authorization` table in its
-     * configuration published in the run.
+     * `--prefix` becomes the default of `AUTHORIZATION_TABLE_PREFIX` in
+     * `laravel-authorization`'s configuration published in the run, and nothing
+     * else in the file changes.
      *
      * @return void
      */
@@ -247,9 +249,42 @@ final class InstallCommandTest extends TestCase
     {
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
+        $shipped = (string) file_get_contents(self::packagePath(AuthorizationServiceProvider::class) . '/config/authorization.php');
+
         self::assertSame(0, $code);
-        self::assertSame(self::prefixedAuthorizationTables('authz_'), $this->authorizationTables());
+        self::assertStringEqualsFile(
+            $this->scratch('config/authorization.php'),
+            str_replace('env(\'AUTHORIZATION_TABLE_PREFIX\', \'\')', 'env(\'AUTHORIZATION_TABLE_PREFIX\', \'authz_\')', $shipped),
+        );
+        self::assertSame('authz_', $this->authorizationTables()['prefix']);
         self::assertStringContainsString('Prefixed laravel-authorization\'s tables with `authz_`.', $output);
+    }
+
+    /**
+     * Provide prefixes `iam:install` writes.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function validPrefixes(): iterable
+    {
+        yield 'one letter' => ['a'];
+        yield 'letters, digits and underscores' => ['iam2_authz_'];
+        yield 'the longest' => [str_repeat('a', 16)];
+    }
+
+    /**
+     * A valid prefix is written.
+     *
+     * @param  string  $prefix
+     * @return void
+     */
+    #[DataProvider('validPrefixes')]
+    public function testAValidPrefixIsWritten(string $prefix): void
+    {
+        [$code] = $this->install(['--prefix' => $prefix]);
+
+        self::assertSame(0, $code);
+        self::assertSame($prefix, $this->authorizationTables()['prefix']);
     }
 
     /**
@@ -262,6 +297,8 @@ final class InstallCommandTest extends TestCase
     {
         $this->install(['--prefix' => 'authz_']);
 
+        Config::set('authorization.tables', $this->authorizationTables());
+
         $before = $this->snapshot();
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
@@ -269,6 +306,7 @@ final class InstallCommandTest extends TestCase
         self::assertSame(0, $code);
         self::assertSame($before, $this->snapshot());
         self::assertStringContainsString('laravel-authorization\'s tables already carry the prefix `authz_`.', $output);
+        self::assertStringNotContainsString('keep their names', $output);
 
         [$code, $output] = $this->install(['--prefix' => 'other_']);
 
@@ -308,7 +346,7 @@ final class InstallCommandTest extends TestCase
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(0, $code);
-        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertSame('', $this->authorizationTables()['prefix']);
         self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
     }
 
@@ -325,7 +363,7 @@ final class InstallCommandTest extends TestCase
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(1, $code);
-        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertSame('', $this->authorizationTables()['prefix']);
         self::assertStringContainsString('laravel-authorization\'s tables keep their names', $output);
 
         $this->deleteScratch();
@@ -339,35 +377,54 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * A configuration published in the run that no longer holds the table name
-     * defaults is owed the prefix.
+     * A configuration published in the run that does not declare the prefix is
+     * owed it, and is left as published.
      *
      * @return void
      */
     public function testAReshapedAuthorizationConfigurationIsOwedThePrefix(): void
     {
-        $this->replacePublication('authorization-config', [dirname(__DIR__, 2) . '/Fixtures/Install/reshaped-authorization.php' => $this->scratch('config/authorization.php')]);
+        $fixture = dirname(__DIR__, 2) . '/Fixtures/Install/reshaped-authorization.php';
+
+        $this->replacePublication('authorization-config', [$fixture => $this->scratch('config/authorization.php')]);
 
         [$code, $output] = $this->install(['--prefix' => 'authz_']);
 
         self::assertSame(0, $code);
-        self::assertStringContainsString(
-            'Prefix laravel-authorization\'s tables yourself (`authorization.tables`): its configuration no longer holds their defaults.',
-            $output,
-        );
+        self::assertFileEquals($fixture, $this->scratch('config/authorization.php'));
+        self::assertStringContainsString('Set `authorization.tables.prefix` yourself: laravel-authorization\'s configuration does not declare it.', $output);
+        self::assertStringNotContainsString('Prefixed', $output);
+    }
+
+    /**
+     * Provide prefixes that are not one.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidPrefixes(): iterable
+    {
+        yield 'a digit first' => ['2fa_'];
+        yield 'an underscore first' => ['_authz'];
+        yield 'upper case' => ['Authz_'];
+        yield 'a hyphen' => ['authz-'];
+        yield 'a quote' => ['authz\''];
+        yield 'a newline after' => ["authz\n"];
+        yield 'too long' => [str_repeat('a', 17)];
     }
 
     /**
      * An invalid prefix refuses the run before anything is published.
      *
+     * @param  string  $prefix
      * @return void
      */
-    public function testAnInvalidPrefixRefusesTheRunWithNothingPublished(): void
+    #[DataProvider('invalidPrefixes')]
+    public function testAnInvalidPrefixRefusesTheRunWithNothingPublished(string $prefix): void
     {
-        [$code, $output] = $this->install(['--prefix' => 'Authz-']);
+        [$code, $output] = $this->install(['--prefix' => $prefix]);
 
         self::assertSame(2, $code);
-        self::assertStringContainsString('The table prefix must be lower-case letters', $output);
+        self::assertStringContainsString('The table prefix must be lower-case letters, digits and underscores, start with a letter and be at most 16 characters long.', $output);
         self::assertSame([], $this->snapshot());
     }
 
@@ -385,7 +442,7 @@ final class InstallCommandTest extends TestCase
             ->assertExitCode(0)
             ->run();
 
-        self::assertSame('iam_roles', $this->authorizationTables()['roles']);
+        self::assertSame('iam_', $this->authorizationTables()['prefix']);
     }
 
     /**
@@ -400,7 +457,7 @@ final class InstallCommandTest extends TestCase
             ->assertExitCode(0)
             ->run();
 
-        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertSame('', $this->authorizationTables()['prefix']);
     }
 
     /**
@@ -413,7 +470,7 @@ final class InstallCommandTest extends TestCase
     {
         $this->interactively(['--prefix' => ''])->assertExitCode(0)->run();
 
-        self::assertSame('roles', $this->authorizationTables()['roles']);
+        self::assertSame('', $this->authorizationTables()['prefix']);
 
         $this->interactively()->assertExitCode(0)->run();
     }
@@ -466,7 +523,7 @@ final class InstallCommandTest extends TestCase
     }
 
     /**
-     * The table names `laravel-authorization`'s published configuration holds.
+     * The `tables` block of `laravel-authorization`'s published configuration.
      *
      * @return array<string, string>
      */
