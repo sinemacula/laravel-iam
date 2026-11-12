@@ -48,35 +48,10 @@ connection and the retry helper in `storage-and-transactions.md`.
   4. SSO's `ProvisioningHelper::link($event->grant, $event->result, $reference, $client)`, with the identity named by
      its morph class and key (`IdentityReferences::reference()`), which takes the enforcing tenant's rule, the
      connection, the request and the links, in SSO's lock order, as a savepoint.
-- The transaction commits only when the helper answers `created`. It is attempted once, never retried: the helper
-  claims the grant in memory before anything else, and a rollback does not unclaim it, so a second attempt could only be
-  refused `grant_invalid`. It is committed or rolled back before the listener returns, as SSO requires.
-- On PostgreSQL, MySQL and MariaDB the one attempt reads committed rows, whatever level the storage connection runs at
-  (`Provisioning\CommittedReads`). The listener cannot retry, since the grant is spent, so no first sign-in running
-  beside it may fail it:
-  - On PostgreSQL, every link SSO makes raises its connection's `links_version`, so at REPEATABLE READ any link
-    committed in the connection while the listener runs, another person's first sign-in included, would fail the
-    helper's locking read of the connection to serialise (`40001`).
-  - On MySQL and MariaDB, at InnoDB's REPEATABLE READ, the widening's locking read of the new identity's links
-    (`rowsOf($identity)->lockForUpdate()`) finds none and gap-locks the links' identity index; the helper then takes
-    the enforcing tenant's rule and the connection and inserts the link into that index, so the listener would hold
-    the links (lock 6) before the rule and the connection (locks 2 and 3), out of SSO's order. Gap locks never conflict
-    with each other, but each blocks the other transaction's insert: two first sign-ins whose identities fall in the
-    same gap, or a first sign-in and a `link` redemption or a reservation for an existing identity there (any
-    connection, since the gap is the identity index's), deadlock (`1213`), and the victim's completion ends as a
-    server error. Locking reads read the latest committed rows at either level, but only READ COMMITTED takes no gap
-    lock for them.
-
-  At READ COMMITTED the locking reads wait for the other transaction's commit and see it, InnoDB takes no gap locks
-  for them, and the helper re-reads the connection, the request and the links under its own locks, so nothing is
-  lost. The engines take the level at different moments: MySQL and MariaDB refuse to change it inside an open
-  transaction and apply `set transaction isolation level read committed` to the next one the session begins, so it is
-  issued before `CrossMemberTransaction::run()` begins the listener's transaction, with none open
-  (`beforeBeginning()`); PostgreSQL takes it only inside a transaction, before its first statement, so it is the
-  listener's first statement there (`onceBegun()`). SQLite's level is kept, and so is the level of a caller's
-  transaction the listener runs inside, in a savepoint, already past its first statement. On MySQL, READ COMMITTED
-  needs row-based binary logging where the binary log is on, as MySQL 8's default `binlog_format` gives; MariaDB's
-  default mixed format switches to rows for it.
+- The transaction commits only when the helper answers `created`, and is committed or rolled back before the listener
+  returns, as SSO requires. A deadlock or serialisation failure retries it whole, up to `iam.transactions.attempts`:
+  SSO releases the grant's claim when the transaction it was claimed in rolls back. At REPEATABLE READ two first
+  sign-ins at once can deadlock on InnoDB's gap locks, or fail to serialise on PostgreSQL, and the retry carries them.
 - The membership is written between SSO's first lock and the rest, so a provisioner takes no lock on rows other writers
   share before the helper runs: SSO's order puts the application's guards after the rule, the connections and the
   links. A guard of the new identity's own rows is safe, since no other transaction can name the identity before this
@@ -255,28 +230,24 @@ connection and the retry helper in `storage-and-transactions.md`.
 - The provisioner and the memberships are each found the same way
   (`Bindings\ConfiguredImplementations`): the application's binding first, then the class named, each failure throwing
   the contract's own exception (`Bindings\Contracts\ReportsMisconfiguration`).
-- Decisions this note records, beyond the plan's: the transaction is attempted once (the grant's claim survives a
-  rollback); an identity that is not an Eloquent model with `wasRecentlyCreated` set is refused (the grant proves
-  authority, not newness); `createMembership()` answers nothing, since the group mapping grants to the identity itself;
-  provisioning is checked at each dispatch, not at registration, and is independent of `iam.adapters.sso`; an invitation
-  not accepted is not eligible to `link`; an incomplete set is `unknown`, never `outside_tenant`; the inheritance reads
-  take no lock; the nearest tenant with a rule, on or off, enforces, as IAM-7.5 words it, so a rule turned off only
-  loosens and needs no revocation, rather than the nearest whose rule is on, which would move the tenants below a rule
-  turned off onto a stricter ancestor's rule with nothing revoking the sessions that rule refuses (SSO revokes only for
-  a rule turned on); the tenancy rows are applied once more once every provider has registered, so an application
-  provider's `register()` binds them; an enforcement change judges every descendant, not only those that inherit; a
-  removal is reported after it is written, as the move of each child moved out from under the removed tenant;
-  `GrantScope` lives in `Tenancy\Contracts`, as the house rule puts every interface in a `Contracts` namespace; a
-  subtree's pass after the commit lists the subtree again rather than judge the tenants its first pass listed; and the
-  end-to-end domain reservation test binds a grant scope answering
+- Decisions this note records, beyond the plan's: an identity that is not an Eloquent model with `wasRecentlyCreated`
+  set is refused (the grant proves authority, not newness); `createMembership()` answers nothing, since the group
+  mapping grants to the identity itself; provisioning is checked at each dispatch, not at registration, and is
+  independent of `iam.adapters.sso`; an invitation not accepted is not eligible to `link`; an incomplete set is
+  `unknown`, never `outside_tenant`; the inheritance reads take no lock; the nearest tenant with a rule, on or off,
+  enforces, as IAM-7.5 words it, so a rule turned off only loosens and needs no revocation, rather than the nearest
+  whose rule is on, which would move the tenants below a rule turned off onto a stricter ancestor's rule with nothing
+  revoking the sessions that rule refuses (SSO revokes only for a rule turned on); the tenancy rows are applied once
+  more once every provider has registered, so an application provider's `register()` binds them; an enforcement change
+  judges every descendant, not only those that inherit; a removal is reported after it is written, as the move of each
+  child moved out from under the removed tenant; `GrantScope` lives in `Tenancy\Contracts`, as the house rule puts every
+  interface in a `Contracts` namespace; a subtree's pass after the commit lists the subtree again rather than judge the
+  tenants its first pass listed; and the end-to-end domain reservation test binds a grant scope answering
   `within_tenant`, since nothing shipped can; the memberships take the application's membership guard as they answer,
   and every writer that narrows a membership takes it too, since SSO's tenant membership offers no other protection (the
-  plan's memberships took no lock); the listener's one attempt reads committed rows on PostgreSQL, MySQL and MariaDB,
-  rather than keep the connection's level and end a sign-in as a server error whenever another link commits in the
-  connection meanwhile (PostgreSQL) or another first sign-in, `link` or reservation inserts a link into the same gap of
-  the links' identity index (MySQL and MariaDB); and the seams answered from the memberships are bound, once every
-  provider has registered, only over the very binding of SSO's default reserved as the rule first ran, never over a
-  binding the application made of SSO's own default class.
+  plan's memberships took no lock); and the seams answered from the memberships are bound, once every provider has
+  registered, only over the very binding of SSO's default reserved as the rule first ran, never over a binding the
+  application made of SSO's own default class.
 
 ## Success Path
 
@@ -326,17 +297,16 @@ connection and the retry helper in `storage-and-transactions.md`.
   final step finds the result still unlinked and ends the flow with its reason.
 - **Anything thrown** by the provisioner, the widening, the helper or the database rolls every write back and
   propagates: SSO ends the completion as a server error, the request stays consumed, and the person starts a new flow.
-  A serialisation failure or a deadlock is not retried (the grant is spent); the attempt reads committed rows on
-  PostgreSQL so that a link committed meanwhile is not one.
+  A serialisation failure or a deadlock is retried first.
 - **The subject linked elsewhere meanwhile.** Another request that links the same subject through SSO, raising the
   connection's `links_version`, and commits while the listener runs is found by the helper's locked read of the
-  subject's link, on every supported engine and level, PostgreSQL's REPEATABLE READ included, since the attempt reads
-  committed rows there: `subject_already_linked`, so the listener's identity and membership roll back, and the
-  completion resolves the subject anew and hands off for the identity the other link names.
+  subject's link, on every supported engine and level, after a retry on PostgreSQL at REPEATABLE READ:
+  `subject_already_linked`, so the listener's identity and membership roll back, and the completion resolves the subject
+  anew and hands off for the identity the other link names.
 - **Another subject linked meanwhile.** Another person's first sign-in through the same connection that commits its
   link while the listener runs leaves the provisioning as it was, on every supported engine and level: the helper's
-  locked read of the connection waits for that commit and reads it, rather than fail to serialise on PostgreSQL at
-  REPEATABLE READ.
+  locked read of the connection waits for that commit and reads it, or on PostgreSQL at REPEATABLE READ fails to
+  serialise and the retry reads it.
 - **A later completion failure** (the connection disabled before the final step, a deadline passed) does not undo what
   the listener committed: the identity, its membership and the link stay made, and the next sign-in through the
   connection resolves through the link without being offered for provisioning again.
@@ -415,16 +385,8 @@ connection and the retry helper in `storage-and-transactions.md`.
     the admission and the change would close it.
   - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, so the tenants that inherit come from
     this package's tree; an inheritance of the application's own with no tree leaves them unjudged.
-  - `laravel-sso`'s `ProvisioningGrant::claim()` marks the grant used in memory, which a rollback does not undo, so the
-    listener's transaction cannot be retried after a concurrency failure and the person starts a new flow.
   - `laravel-sso`'s guide for this package shows `ProvisioningHelper::link()` with three arguments; it takes a fourth,
     the `ClientContext`, which the listener builds from the event's context.
-  - `laravel-sso`'s `ProvisioningHelper` does not say that, on PostgreSQL at REPEATABLE READ, any link committed in the
-    connection after the listener's snapshot (another person's or the same subject's: each raises `links_version`)
-    fails its locking read of the connection to serialise, nor that, at InnoDB's REPEATABLE READ, the scope widening
-    its guide puts first gap-locks the new identity's empty range of the links' identity index before the helper
-    takes the rule and the connection, which deadlocks two first sign-ins at once; the spent grant can retry neither,
-    so the listener reads committed rows on PostgreSQL, MySQL and MariaDB for it.
   - `laravel-sso` ships no contract kit for `TenantMembership`, `LinkEligibility`, `PrincipalScope` or
     `EnforcementInheritance`, so IAM-8.3 has none to extend here; `laravel-authentication` has no identity-creation
     contract, so the provisioner is the application's own.
@@ -434,8 +396,7 @@ connection and the retry helper in `storage-and-transactions.md`.
 - `src/Contracts/Provisioner.php`; `src/Provisioning/ProvisioningSettings.php`: `provisioner()`, `KEY`;
   `src/Exceptions/ProvisionerMisconfiguredException.php`: `forClass()`, `forValue()`, `forBinding()`;
   `config/iam.php`: `provisioning.provisioner`.
-- `src/Provisioning/ProvisionOnUnlinkedResult.php`: `listen()`, `handle()`, `ATTEMPTS`;
-  `src/Provisioning/CommittedReads.php`: `beforeBeginning()`, `onceBegun()`, `STATEMENT`;
+- `src/Provisioning/ProvisionOnUnlinkedResult.php`: `listen()`, `handle()`;
   `src/Provisioning/RefusedLink.php`;
   `src/IamServiceProvider.php`: `boot()`.
 - `src/Tenancy/ScopeWidenings.php`: `widen()`; `src/IamManager.php`: `scopeWidenings()`; `src/Facades/Iam.php`;
@@ -485,27 +446,20 @@ connection and the retry helper in `storage-and-transactions.md`.
   connection's link while the listener's transaction is open,
   `testASubjectLinkedElsewhereMeanwhileLeavesNoProvisionedPerson`, `testAnotherSubjectLinkedMeanwhileStillProvisions`
   (the other link made through SSO's `LinkStorage::create()`, which raises `links_version`, committed on a second
-  database connection, through the same SSO connection, once the listener has inserted its person),
-  `testTheAttemptReadsCommittedRows` (the level the transaction itself reports, and the connection's own level left as
-  it was); and at the connection's own level alone, where no level changes what is
-  read, `testTheTransactionIsNeverRetried` (the serialisation failure simulated),
+  database connection, through the same SSO connection, once the listener has inserted its person); and at the
+  connection's own level alone, where no level changes what is read, `testTheTransactionIsRetriedAfterADeadlock` (the
+  deadlock simulated once the helper has claimed the grant),
   `testAQueuedListenerFailsLoudlyAndProvisionsNothing`, `testWithNoProvisionerNothingIsProvisioned`,
   `testAuthenticationsUnlinkedResultProvisionsNothing`, `testWithTheSsoAdaptersOffTheHelpersRefusalWritesNothing`
-  (`iam.adapters.sso` off, a provisioner configured: SSO's `LogicException`, no row written), and on every engine
-  `testTheAttemptIsSetBeforeAnythingIsWritten` (the setting recorded with the transaction level it is made at: inside
-  the listener's transaction on PostgreSQL, with none open on MySQL and MariaDB);
+  (`iam.adapters.sso` off, a provisioner configured: SSO's `LogicException`, no row written);
   `tests/Integration/Provisioning/ConcurrentProvisioningTest.php` `testTwoFirstSignInsAtOnceAreBothProvisioned` (MySQL
   and PostgreSQL at READ COMMITTED and REPEATABLE READ: the first listener held open past the widening while a forked
   worker provisions a second subject's person on a second database connection, from its start to its commit, and both
-  are provisioned; at MySQL's REPEATABLE READ without the committed reads, the worker's link insert waits on the first
-  listener's gap lock and the first listener's lock of the connection then deadlocks)
+  are provisioned; at REPEATABLE READ one side deadlocks on MySQL or fails to serialise on PostgreSQL and is retried)
 - `tests/Feature/Provisioning/ProvisioningListenerTest.php` `testTheListenerIsRegisteredOnSsosEvent`,
   `testWithNoProvisionerTheListenerDoesNothing`, `testAProvisionerBoundOnceBootedIsAsked`,
   `testAnIdentityThatIsNoModelIsRefused`, `testTheSandboxsProvisionerIsAsked`;
-  `tests/Unit/Provisioning/RefusedLinkTest.php` `testTheRefusalCarriesTheAnswerAndNamesItsStatus`;
-  `tests/Unit/Provisioning/CommittedReadsTest.php` `testTheListenersNextTransactionOnMysqlReadsCommittedRows`,
-  `testTheListenersOwnTransactionOnPostgresReadsCommittedRows`, `testNothingElseIsSetBeforeBeginning`,
-  `testNothingElseIsSetOnceBegun`
+  `tests/Unit/Provisioning/RefusedLinkTest.php` `testTheRefusalCarriesTheAnswerAndNamesItsStatus`
 - `tests/Unit/Provisioning/ProvisioningSettingsTest.php` `testWithNoProvisionerProvisioningIsOff`,
   `testTheClassNamedIsBuilt`, `testTheApplicationsBindingWinsOverTheClassNamed`,
   `testTheProvisionerIsTheOneBoundWhenAsked`, `testAClassNamedThatIsNoProvisionerFailsClosed`,

@@ -5,8 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Provisioning;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Connection as DatabaseConnection;
-use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -21,13 +19,11 @@ use SineMacula\Laravel\Authentication\Events\ExternalResultUnlinked;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Iam\Provisioning\CommittedReads;
 use SineMacula\Laravel\Iam\Provisioning\ProvisioningSettings;
 use SineMacula\Laravel\Iam\Provisioning\ProvisionOnUnlinkedResult;
 use SineMacula\Laravel\Iam\Provisioning\RefusedLink;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
-use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Tenancy\ScopeWidenings;
 use SineMacula\Laravel\Iam\Testing\FakeProvisioner;
 use SineMacula\Laravel\Sso\Completion\CompletionService;
@@ -74,13 +70,13 @@ use Tests\TestCase;
  * connection's tenant and the link, in one transaction, in that order, after
  * SSO's scope widening, and the sign-in then redeems as the new person; an
  * identity that is not new (an existing person), a helper's refusal and
- * anything thrown roll all three back; the grant is used once and the
- * transaction never retried; a
- * subject another request links meanwhile leaves no provisioned person behind;
- * what the listener committed stands after the completion fails, and the next
- * sign-in resolves through the link; a queued listener fails loudly and
- * provisions nothing; `laravel-authentication`'s informational unlinked result
- * provisions nothing; and with no provisioner nothing is provisioned.
+ * anything thrown roll all three back; the grant is used once, and the
+ * transaction is retried whole after a concurrency failure; a subject another
+ * request links meanwhile leaves no provisioned person behind; what the
+ * listener committed stands after the completion fails, and the next sign-in
+ * resolves through the link; a queued listener fails loudly and provisions
+ * nothing; `laravel-authentication`'s informational unlinked result provisions
+ * nothing; and with no provisioner nothing is provisioned.
  *
  * Each scenario that commits or rolls back runs at the connection's own level
  * on every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
@@ -97,7 +93,6 @@ use Tests\TestCase;
  * @internal
  */
 #[CoversClass(ProvisionOnUnlinkedResult::class)]
-#[CoversClass(CommittedReads::class)]
 #[CoversClass(ProvisioningSettings::class)]
 #[CoversClass(RefusedLink::class)]
 #[CoversClass(ScopeWidenings::class)]
@@ -215,100 +210,6 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
         self::assertGreaterThan(0, $this->observed[1]['level']);
         self::assertSame(0, DB::connection()->transactionLevel());
         self::assertTrue(Link::query()->where('identity_id', (string) $this->onlyProvisioned()->id)->exists());
-    }
-
-    /**
-     * The listener's one attempt reads committed rows on PostgreSQL and MySQL,
-     * whatever level the connection runs at, as the transaction itself reports
-     * it (MySQL's `@@transaction_isolation` reports the session's), and the
-     * connection's own level is left as it was for every later transaction.
-     *
-     * @param  string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideIsolationLevels')]
-    public function testTheAttemptReadsCommittedRows(string $level): void
-    {
-        self::runAtIsolationLevel($level);
-
-        $read = [];
-
-        $this->provisionPeople(static function (string $step) use (&$read): void {
-
-            $read[$step] = DB::connection()->getDriverName() === 'pgsql'
-                ? DB::connection()->scalar('select current_setting(\'transaction_isolation\')')
-                : DB::connection()->scalar('select isolation_level from performance_schema.events_transactions_current where thread_id = ps_current_thread_id()');
-        });
-
-        $this->handoff();
-
-        $postgres = DB::connection()->getDriverName() === 'pgsql';
-        $expected = $postgres ? 'read committed' : 'READ COMMITTED';
-        $own      = $postgres ? 'select current_setting(\'transaction_isolation\')' : 'select @@transaction_isolation';
-
-        self::assertSame(['identity' => $expected, 'membership' => $expected], $read);
-        self::assertSame($postgres ? $level : str_replace(' ', '-', strtoupper($level)), DB::connection()->scalar($own));
-    }
-
-    /**
-     * Rows of `[driver, the transaction level the setting is made at]`: on
-     * PostgreSQL inside the transaction the listener opened, before anything is
-     * written in it; on MySQL and MariaDB with none open, before it begins.
-     *
-     * @return iterable<string, array{0: string, 1: int}>
-     */
-    public static function provideSettingMoments(): iterable
-    {
-        yield 'PostgreSQL' => ['pgsql', 1];
-
-        yield 'MySQL' => ['mysql', 0];
-
-        yield 'MariaDB' => ['mariadb', 0];
-    }
-
-    /**
-     * The listener's attempt is set to read committed rows before anything is
-     * written in it, at the moment the engine takes it: here with the storage
-     * connection reporting the driver given to the setting alone, so the
-     * setting is made on every engine the suite runs on, and recorded, with the
-     * transaction level it was made at, rather than run.
-     *
-     * @param  string  $driver
-     * @param  int  $at
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideSettingMoments')]
-    public function testTheAttemptIsSetBeforeAnythingIsWritten(string $driver, int $at): void
-    {
-        /** @var list<array{0: string, 1: int}> $set */
-        $set        = [];
-        $seen       = [];
-        $connection = \Mockery::mock(DatabaseConnection::class);
-        $database   = \Mockery::mock(DatabaseManager::class);
-        $app        = $this->app ?? self::fail('The application has not booted.');
-
-        $connection->allows('getDriverName')->andReturn($driver);
-        $connection->allows('transactionLevel')->andReturnUsing(static fn (): int => DB::connection()->transactionLevel());
-        $connection->allows('statement')->andReturnUsing(static function (string $sql) use (&$set): bool {
-            $set[] = [$sql, DB::connection()->transactionLevel()];
-
-            return true;
-        });
-        $database->allows('connection')->andReturn($connection);
-
-        $app->instance(CommittedReads::class, new CommittedReads($database, $app->make(StorageConnection::class)));
-
-        $this->provisionPeople(static function (string $step) use (&$set, &$seen): void {
-            $seen[$step] = $set;
-        });
-
-        $this->handoff();
-
-        self::assertSame(['identity' => [[CommittedReads::STATEMENT, $at]], 'membership' => [[CommittedReads::STATEMENT, $at]]], $seen);
     }
 
     /**
@@ -459,8 +360,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
      * `subject_already_linked`, the listener rolls its person and membership
      * back and returns, and the completion resolves the subject anew, handing
      * off for the person the other link names. On PostgreSQL at REPEATABLE READ
-     * too, where the listener's one attempt reads committed rows rather than
-     * fail to serialise on the connection's row the other link wrote.
+     * the first attempt fails to serialise and the retry is refused.
      *
      * @param  string  $level
      * @return void
@@ -472,13 +372,16 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        $other = $this->createPerson('other@people.test');
+        $other  = $this->createPerson('other@people.test');
+        $linked = false;
 
-        $this->provisionPeople(function (string $step, Person $person, VerifiedResult $result) use ($other): void {
+        $this->provisionPeople(function (string $step, Person $person, VerifiedResult $result) use ($other, &$linked): void {
 
-            if ($step !== 'identity') {
+            if ($step !== 'identity' || $linked) {
                 return;
             }
+
+            $linked = true;
 
             $this->linkElsewhere($result, $other);
         });
@@ -498,8 +401,8 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
      * Another person's first sign-in through the same connection links them,
      * through SSO's link storage, committing on another connection once the
      * listener has inserted its person: the listener still provisions its own
-     * person and links them, on PostgreSQL at REPEATABLE READ as at every other
-     * level, and the sign-in signs the new person in.
+     * person and links them, on PostgreSQL at REPEATABLE READ after a retry,
+     * and the sign-in signs the new person in.
      *
      * @param  string  $level
      * @return void
@@ -511,13 +414,16 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        $other = $this->createPerson('other@people.test');
+        $other  = $this->createPerson('other@people.test');
+        $linked = false;
 
-        $this->provisionPeople(function (string $step, Person $person, VerifiedResult $result) use ($other): void {
+        $this->provisionPeople(function (string $step, Person $person, VerifiedResult $result) use ($other, &$linked): void {
 
-            if ($step !== 'identity') {
+            if ($step !== 'identity' || $linked) {
                 return;
             }
+
+            $linked = true;
 
             $this->linkElsewhere($result, $other, 'another-subject');
         });
@@ -567,30 +473,76 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
-     * The provisioning transaction is attempted once, never retried after a
-     * concurrency failure, since the grant allows one use: the failure
-     * propagates, as a concurrency failure, the provisioner having been asked
-     * once.
+     * A deadlock once the helper has claimed the grant rolls the whole
+     * transaction back and retries it: the grant is claimed again and the
+     * sign-in is provisioned once.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testTheTransactionIsNeverRetried(): void
+    public function testTheTransactionIsRetriedAfterADeadlock(): void
     {
         $asked   = 0;
-        $failure = new QueryException(self::CONNECTION, 'insert into iam_people', [], new \PDOException('Serialization failure', 40001));
+        $failed  = false;
+        $failure = new QueryException(self::CONNECTION, 'insert into sso_links', [], new \PDOException('Serialization failure', 40001));
 
         $failure->errorInfo = ['40001', 1213, 'Deadlock found when trying to get lock'];
 
-        FakeProvisioner::fake(static function () use (&$asked, $failure): Identity {
+        $this->provisionPeople(static function (string $step) use (&$asked): void {
+
+            if ($step !== 'identity') {
+                return;
+            }
+
             $asked++;
+        });
+
+        Link::created(static function () use (&$failed, $failure): void {
+
+            if ($failed) {
+                return;
+            }
+
+            $failed = true;
 
             throw $failure;
         });
 
-        self::assertSame($failure, self::thrownBy(fn (): HandoffRedirect => $this->complete())->getPrevious());
-        self::assertSame(1, $asked);
+        $this->handoff();
+
+        self::assertSame(2, $asked);
+        self::assertSame(1, Link::query()->count());
+        self::assertSame((string) $this->onlyProvisioned()->id, Link::query()->sole()->identity_id);
+    }
+
+    /**
+     * An event handled after its dispatch has ended holds a closed grant: the
+     * helper refuses it and the person and membership roll back.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnEventHandledAfterItsDispatchProvisionsNothing(): void
+    {
+        $events = [];
+        $steps  = [];
+
+        Event::listen(ResultUnlinked::class, static function (ResultUnlinked $event) use (&$events): void {
+            $events[] = $event;
+        });
+
+        $this->complete();
+        $this->provisionPeople(static function (string $step) use (&$steps): void {
+            $steps[] = $step;
+        });
+
+        $this->app?->make(ProvisionOnUnlinkedResult::class)->handle($events[0]);
+
+        self::assertSame(['identity', 'membership'], $steps);
+        self::assertSame(0, Person::query()->count());
+        self::assertSame(0, ProvisionedMembership::query()->count());
         self::assertSame(0, Link::query()->count());
     }
 

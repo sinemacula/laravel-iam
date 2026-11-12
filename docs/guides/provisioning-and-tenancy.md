@@ -93,10 +93,11 @@ final class ProvisionPeople implements Provisioner
 ```
 
 The package's one listener of SSO's `ResultUnlinked` asks it, only for a `sign_in` that resolved to no identity and
-holds no reservation. In one transaction on the storage connection, attempted once, it creates the identity, reports
-the new principal through SSO's scope widening, creates the membership, and links the result to the identity through
-SSO's provisioning helper. Anything thrown, or a refusal from the helper, rolls all of it back; once it commits, the
-identity, its membership and its link stay made, and the person's next sign-in resolves through the link.
+holds no reservation. In one transaction on the storage connection, it creates the identity, reports the new principal
+through SSO's scope widening, creates the membership, and links the result to the identity through SSO's provisioning
+helper. Anything thrown, or a refusal from the helper, rolls all of it back; once it commits, the identity, its
+membership and its link stay made, and the person's next sign-in resolves through the link. A deadlock retries the
+whole transaction, so your provisioner can be asked more than once for one sign-in: keep its side effects inside it.
 
 - **Always a new identity.** Never look one up by the result's email address, subject or any other attribute: whoever
   controls the connection's attributes could take over an existing account. An existing person joins a connection
