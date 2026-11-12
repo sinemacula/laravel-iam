@@ -15,6 +15,8 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
@@ -58,7 +60,8 @@ final class RedemptionSecretsTest extends TestCase
     private false|string $ignoredArgs = false;
 
     /**
-     * Keep every frame's arguments in a trace, as PHP's own default does.
+     * Keep every frame's arguments in a trace, as PHP's own default does, and
+     * declare no session guard.
      *
      * @return void
      */
@@ -70,10 +73,13 @@ final class RedemptionSecretsTest extends TestCase
         $this->ignoredArgs = ini_get('zend.exception_ignore_args');
 
         ini_set('zend.exception_ignore_args', '0');
+
+        Auth::swap(\Mockery::mock(AuthManager::class, ['sessionGuards' => []]));
     }
 
     /**
-     * Restore whether a trace keeps its frames' arguments.
+     * Restore whether a trace keeps its frames' arguments, and the auth
+     * manager.
      *
      * @return void
      */
@@ -81,6 +87,8 @@ final class RedemptionSecretsTest extends TestCase
     protected function tearDown(): void
     {
         ini_set('zend.exception_ignore_args', $this->ignoredArgs === false ? '0' : $this->ignoredArgs);
+
+        Auth::clearResolvedInstances();
 
         parent::tearDown();
     }
@@ -126,7 +134,7 @@ final class RedemptionSecretsTest extends TestCase
         $thrown = null;
 
         try {
-            $redemption($this->transaction(), new CurrentSession(\Mockery::mock(AuthFactory::class), new Repository, \Mockery::mock(ConnectionResolverInterface::class)));
+            $redemption($this->transaction(), new CurrentSession(\Mockery::mock(AuthFactory::class), \Mockery::mock(ConnectionResolverInterface::class)));
         } catch (UnresolvedReferenceException $exception) {
             $thrown = $exception;
         }

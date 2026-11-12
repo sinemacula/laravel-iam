@@ -23,7 +23,7 @@ use SineMacula\Laravel\Iam\Authorization\RequirementCheckerAdapter;
 use SineMacula\Laravel\Iam\Authorization\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Mfa\SignInProofs;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
@@ -518,7 +518,7 @@ final class RequirementCheckerAdapterTest extends TestCase
 
         $result = $this->askedAfter(
             $level,
-            fn () => $this->removeElsewhere($person, $session, SignInProofs::factorReference($factor)),
+            fn () => $this->removeElsewhere($person, $session, CodeTranslator::reference($factor)),
             fn (): RequirementResult => $this->check(['multifactor' => []], self::subjectOf($person, $session)),
         );
 

@@ -20,6 +20,7 @@ use SineMacula\Laravel\Authentication\Events\Enums\RevocationReason;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Mfa\MfaContextContributor;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
 use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContributor;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
@@ -510,7 +511,7 @@ final class MfaContextContributorTest extends TestCase
 
         self::assertInstanceOf(Factor::class, $factor);
 
-        return SignInProofs::factorReference($factor);
+        return CodeTranslator::reference($factor);
     }
 
     /**
