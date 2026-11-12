@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Http\Request;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
@@ -26,57 +27,7 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
  * MFA's pending session resolver, read from `laravel-authentication`'s pending
- * session a pending credential names (IAM-3.3).
- *
- * `fromRequest()` is the edge, the one place a request is read: the credential
- * is taken by `laravel-authentication`'s own extractor
- * (`PendingCredential::extract()`), from the body field it reads one from (the
- * JSON body, or the form body of a request that may have one), never the query
- * string or a header. It is checked by `Auth::sessions()->pending()` on the
- * default guard, the guard MFA names its application after, which reads without
- * a lock and writes nothing. A request with no such field has no pending
- * session; one whose credential names no live pending session of the guard, or
- * that is not a credential at all, is refused by throwing, as is a default
- * guard that holds no sessions or a session whose identity is none of MFA's
- * (IAM-8.2), so the request is never served as the guard's user instead.
- *
- * `revalidate()`, which MFA asks under the identity's lock, reads no request:
- * it reads the session again from the credential the context it is handed keeps
- * (`PendingContext::credential()`), on the guard that context's application
- * names, never the default guard's. As MFA's contract has it, a session that no
- * longer stands is answered `null`, which MFA turns into a refusal of the
- * action: a context that kept no credential, a credential that names no live
- * pending session of the guard any more (expired, discarded or activated
- * meanwhile), and a session that is not the one the context names (another key,
- * or another identity). A guard that holds no sessions still throws, as a
- * misconfiguration (IAM-8.2).
- *
- * `fromCredential()` reads no request either: it reads the pending session a
- * credential handed in as a plain value names, on the guard the application
- * given names, and answers `null` when it names no live pending session there.
- * It serves this package's own adapters that are handed a pending credential
- * rather than a request (`PasskeyFactorGateAdapter`, for a passkey registered
- * on a pending sign-in).
- *
- * The pending session crosses as MFA's pending context: its identity, the guard
- * as the application, its key as the sign-in id, its first factor and further
- * proofs bound to that sign-in under the identity's current verification
- * generation, the requirement it still falls short of, MFA's pending actions
- * among those its first outstanding requirement allows, when its credential
- * expires, and the credential itself, hidden, so the context can be read again
- * and the pending completion can satisfy the session it names. The further
- * proofs are read newest first, up to the bound `laravel-authentication` sets
- * on one read, and handed over oldest first, as MFA keeps them; a proof that
- * would not survive translation is refused with the translator's exception
- * rather than left out.
- *
- * Stateless: the guard and the session are read on every call, so nothing
- * outlives the request (IAM-8.1).
- *
- * The pending session's first factor and further proofs reach MFA as the proof
- * store's do: an SSO sign-in's first factor names its connection only when it
- * carries evidence SSO's evidence contract accepted and the session's tenant,
- * if any, trusts the connection (`ProviderTrust::accepted()`).
+ * session a pending credential names on the default guard (IAM-3.3).
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -95,7 +46,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
      */
     public function __construct(
 
-        /** Resolves the default guard and its session service. */
+        /** Resolves the guard's session service. */
         private CurrentSession $sessions,
 
         /** Translates the session's proofs. */
@@ -123,7 +74,7 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     #[\Override]
     public function fromRequest(Request $request): ?PendingContext
     {
-        $guard      = $this->sessions->defaultGuard();
+        $guard      = Auth::getDefaultDriver();
         $credential = PendingCredential::extract($request);
 
         if ($credential === null) {

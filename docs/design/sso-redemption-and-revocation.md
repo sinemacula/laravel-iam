@@ -475,7 +475,7 @@ run through are in `storage-and-transactions.md`.
   `src/Sso/SsoContextContributor.php`: `contribute()`.
 - `src/Sso/ExternalResults.php`: `from()`, `renewing()`; `src/Sso/Translation/ClientTranslator.php`: `toSso()`.
 - `src/Sso/ReauthenticationSessionsAdapter.php`: `standing()`, `lockedStanding()`, `renewAuthentication()`;
-  `src/Mfa/CurrentSession.php`: `sessions()`, `sessionGuards()`, `identitySessions()`, `isInTransaction()`.
+  `src/Mfa/CurrentSession.php`: `sessions()`, `identitySessions()`, `isInTransaction()`.
 - `src/Sso/ExternalIdentityLinksAdapter.php`: `find()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`;
   `src/Transactions/ConnectionTransactions.php`: `afterCommit()`, the second pass queued on the storage connection's
   own transaction; `src/Tenancy/TenantPolicyChanges.php`: `changed()`.

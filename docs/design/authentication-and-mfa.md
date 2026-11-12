@@ -69,7 +69,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
     (`VerificationGeneration::current()`, one read), since MFA trusts a proof only under the current generation.
 - `Mfa\CurrentSession` resolves the guard and the sign-in for every adapter, so every adapter refuses the same
   misconfiguration the same way:
-  - `defaultGuard()`, `guard()`, `sessions()` (the guard's session service) and `identitySessions()` (the session
+  - `guard()`, `sessions()` (the guard's session service) and `identitySessions()` (the session
     service a change to the identity as a whole goes through: the default guard's when it is a `jwt` guard, otherwise
     the first `jwt` guard declared); `caller()` (the identity the guard serves) is asked only by the testing helper
     that verifies the acting session (`Testing\VerifiedSession`), never by an adapter, which MFA hands its caller;
@@ -81,11 +81,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
     store answers as the caller's sign-in. Where MFA does name the sign-in (a factor change's request, a session
     transition, a revocation), the adapters resolve it by that key through `named()`, whatever the guard holds now, so
     a change made off the request that holds it (a queued job's, a console command's, a request another guard serves)
-    acts on the sign-in MFA named. `named()` reads the session through the identity's own `sessions()` relation on the
-    write connection (`laravel-authentication`'s `WriteConnection`, with `SessionKeyShape` keeping a key that cannot be
-    the session model's from the query), so another identity's session is never found; one of another guard's, or
-    none, throws `UnresolvedReferenceException` of kind `session` (`forSignIn()`) inside the transaction. Whether it is
-    still live and active is `laravel-authentication`'s to judge under its row lock, in the call it is handed to. The
+    acts on the sign-in MFA named. `named()` reads the session through `laravel-authentication`'s `sessionRecord()`,
+    so another identity's session is never found; one of another guard's, or none, throws
+    `UnresolvedReferenceException` of kind `session` (`forSignIn()`) inside the transaction. Whether it is still live
+    and active is `laravel-authentication`'s to judge under its row lock, in the call it is handed to. The
     step-up needs no session at all: `stepUp()` steps up the session the proof's binding names. `of()` (the guard's
     current session, when it is also the sign-in named) is left to the proof store's `record()`, whose contract is
     the identity's current sign-in;
@@ -469,8 +468,8 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 
 - `src/Mfa/MfaSeams.php`: `seams()`, `SWITCH`; `src/IamServiceProvider.php`: `seamProviders()`; `config/iam.php`:
   `adapters.mfa`.
-- `src/Mfa/CurrentSession.php`: `named()`, `of()`, `current()`, `held()`, `identity()`, `caller()`, `defaultGuard()`,
-  `guard()`, `sessions()`, `identitySessions()`, `isInTransaction()`.
+- `src/Mfa/CurrentSession.php`: `named()`, `of()`, `current()`, `held()`, `identity()`, `caller()`, `guard()`,
+  `sessions()`, `identitySessions()`, `isInTransaction()`.
 - `src/Mfa/Translation/SignIn.php` (`UNNAMED`, `reference()`, `binding()`), `ChannelTranslator.php`,
   `ProofTranslator.php` (`toMfa()`, `toResult()`), `RequirementTranslator.php` (`toMfa()`,
   `toAuthentication()`, `evaluation()`, `toFreshnessParts()`, `toFreshness()`, `fromFreshness()`),
@@ -479,7 +478,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   (`fromRequest()`, `revalidate()`, `fromCredential()`), `PendingCompletionAdapter.php`, `StepUpAdapter.php`, `ReauthenticatorAdapter.php`,
   `FreshnessGateAdapter.php` (`heldUntil()`), `FactorChangeGateAdapter.php` (`allowedUntil()`),
   `SessionRevokerAdapter.php`, `SessionTransitionAdapter.php`, `ProofStoreAdapter.php` (`firstFactor()`),
-  `FirstFactorResolverAdapter.php`, `SignInProofs.php` (`of()`, `holdsAFirstFactor()`, `factorReference()`).
+  `FirstFactorResolverAdapter.php`, `SignInProofs.php` (`of()`, `holdsAFirstFactor()`).
 - `src/Mfa/MfaContextContributor.php` (`contribute()`); `src/IamServiceProvider.php`: `registerContextContributors()`,
   `registerContributor()`; `src/Checks/ContextNamespacesCheck.php`.
 - `src/Testing/Concerns/InteractsWithIam.php` (`actingOnVerifiedSession()`), `src/Testing/VerifiedSession.php`
@@ -588,8 +587,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `testNoSessionAndAnIdentityThatCannotHoldFactorsAreNeutral`, `testAFirstFactorOlderThanEveryProofReadStillCounts`,
   `testASessionWhoseFirstFactorNoLongerCountsReportsNoEvidence`, `testTheAgeIsTheNewestVerifications`,
   `testProofsMadeAtOneInstantKeepTheirOrder`, `testInsideATransactionTheProofsAreReadCurrent`;
-  `tests/Integration/Mfa/SignInProofsTest.php` `testProofsAreKeptInTheOrderHandedIn`,
-  `testAFactorIsNamedByItsIdentifierAsText`
+  `tests/Integration/Mfa/SignInProofsTest.php` `testProofsAreKeptInTheOrderHandedIn`
 - `tests/Feature/Sso/ContextContributorRegistrationTest.php` `testTheContributorsAreRegisteredInEveryProviderOrder`,
   `testTheMfaSwitchOffRegistersNothingUnderMfa`, `testTheMfaSwitchTurnedOffLaterLeavesTheBindingsAndTheContributorOn`,
   `testAnApplicationsEarlierMfaContributorIsKept`, `testAnApplicationsLaterMfaContributorIsKept`;

@@ -12,7 +12,6 @@ use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
-use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\ProofStore;
 use SineMacula\Laravel\Mfa\Enums\ProofKind;
@@ -81,7 +80,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     #[\Override]
     public function currentSession(MultiFactorAuthenticatable $identity, string $application): ?string
     {
-        $session = $this->session($identity, $application);
+        $session = $this->sessions->held($identity, $application);
 
         return $session === null ? null : SignIn::reference($session, $application);
     }
@@ -130,7 +129,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     #[\Override]
     public function proofs(MultiFactorAuthenticatable $identity, string $application, string $sessionId): array
     {
-        $session = $this->session($identity, $application);
+        $session = $this->sessions->held($identity, $application);
 
         if ($session === null || SignIn::reference($session, $application) !== $sessionId) {
             return [];
@@ -154,7 +153,7 @@ final readonly class ProofStoreAdapter implements ProofStore
      */
     public function firstFactor(MultiFactorAuthenticatable $identity, string $application): ?Proof
     {
-        $session = $this->session($identity, $application);
+        $session = $this->sessions->held($identity, $application);
 
         if ($session === null) {
             return null;
@@ -192,17 +191,6 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The factor's identifier as text, as a proof made with it names it.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
-     * @return string
-     */
-    public static function factorReference(Factor $factor): string
-    {
-        return SignInProofs::factorReference($factor);
-    }
-
-    /**
      * Whether the proof is a first factor made with the method and kind of
      * channel the session recorded.
      *
@@ -218,20 +206,6 @@ final readonly class ProofStoreAdapter implements ProofStore
             && $proof->method === $firstFactor->method
             && $channel !== null
             && $channel->kind->value === $firstFactor->channel->kind->value;
-    }
-
-    /**
-     * The guard's current session, or `null` if it is not the identity's.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-     * @param  string  $application
-     * @return ?\SineMacula\Laravel\Authentication\Contracts\Session
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     */
-    private function session(MultiFactorAuthenticatable $identity, string $application): ?Session
-    {
-        return $this->sessions->held($identity, $application);
     }
 
     /**

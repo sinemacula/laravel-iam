@@ -10,8 +10,8 @@ use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
-use SineMacula\Laravel\Mfa\Contracts\Factor as FactorContract;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use Tests\Concerns\MigratesMembers;
@@ -48,24 +48,6 @@ final class SignInProofsTest extends TestCase
         $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$this->furtherOf($session), $this->firstOf($session)]);
 
         self::assertSame([$this->factorOf($person), null], array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs));
-    }
-
-    /**
-     * A factor is named by its identifier as text, and by nothing when it is no
-     * scalar.
-     *
-     * @return void
-     */
-    public function testAFactorIsNamedByItsIdentifierAsText(): void
-    {
-        $numbered = self::createStub(FactorContract::class);
-        $unnamed  = self::createStub(FactorContract::class);
-
-        $numbered->method('getFactorIdentifier')->willReturn(42);
-        $unnamed->method('getFactorIdentifier')->willReturn(['42']);
-
-        self::assertSame('42', SignInProofs::factorReference($numbered));
-        self::assertSame('', SignInProofs::factorReference($unnamed));
     }
 
     /**
@@ -141,6 +123,6 @@ final class SignInProofsTest extends TestCase
 
         self::assertInstanceOf(Factor::class, $factor);
 
-        return SignInProofs::factorReference($factor);
+        return CodeTranslator::reference($factor);
     }
 }

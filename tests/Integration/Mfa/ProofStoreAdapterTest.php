@@ -32,6 +32,7 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
+use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
@@ -793,7 +794,7 @@ final class ProofStoreAdapterTest extends TestCase
     {
         self::assertInstanceOf(Person::class, $identity);
 
-        return ProofStoreAdapter::factorReference($this->factorOf($identity));
+        return CodeTranslator::reference($this->factorOf($identity));
     }
 
     /**
