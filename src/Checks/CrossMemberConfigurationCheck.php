@@ -4,9 +4,8 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Checks;
 
-use Illuminate\Container\Container as IlluminateContainer;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
@@ -14,7 +13,6 @@ use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
 use SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver;
 use SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
-use SineMacula\Laravel\Iam\Bindings\MemberDefaults;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
@@ -52,8 +50,8 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   principal's own tenant without one, so an application that never needed a
  *   resolver would otherwise refuse every grant to an identity, or a
  *   principal's first, in a tenant, and every move of a tenant, at runtime. A
- *   resolver still on `laravel-authentication`'s default, as it says, or bound
- *   to its `ResolveNoTenant` by name, is refused.
+ *   resolver still on `laravel-authentication`'s default, as it says, is
+ *   refused.
  * - While the application has memberships, so its people act in tenants,
  *   `laravel-authorization`'s resource tenant resolver still on its default is
  *   noted, never failed: the shipped `NoResourceTenant` knows no model's
@@ -63,10 +61,7 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *   models. Which tenant owns a record is the application's answer, never this
  *   package's (IAM-1.2), so nothing here binds one. Whether it is still the
  *   default is `laravel-authorization`'s own answer
- *   (`AuthorizationServiceProvider::isPackageDefault()`, asked through
- *   `MemberDefaults::holdsDefault()`): a class the application names in
- *   `authorization.resource_tenant_resolver` it binds as no default, so this
- *   package reads no key to tell.
+ *   (`AuthorizationServiceProvider::isPackageDefault()`).
  *
  * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
  * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`;
@@ -128,9 +123,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
-     * @param  \Illuminate\Contracts\Container\Container  $container
-     * @param  \SineMacula\Laravel\Iam\Checks\SeamHolders  $holders
-     * @param  \SineMacula\Laravel\Iam\Bindings\MemberDefaults  $defaults
+     * @param  \Illuminate\Container\Container  $container
      */
     public function __construct(
 
@@ -139,12 +132,6 @@ final readonly class CrossMemberConfigurationCheck implements Check
 
         /** The container the tenant resolver and MFA's tenant requirement are bound in. */
         private Container $container,
-
-        /** Names the class the tenant resolver's live binding answers with. */
-        private SeamHolders $holders,
-
-        /** Tells whether the resource tenant resolver still holds `laravel-authorization`'s own binding. */
-        private MemberDefaults $defaults,
     ) {}
 
     /**
@@ -218,19 +205,16 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Refuse a tenant resolver still on `laravel-authentication`'s default, or
-     * bound to its `ResolveNoTenant`, which resolves no tenant.
+     * Refuse a tenant resolver still on `laravel-authentication`'s default,
+     * `ResolveNoTenant`, which resolves no tenant.
      *
      * @return void
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \LogicException
      */
     private function assertTenantsResolve(): void
     {
-        $isDefault = $this->container instanceof IlluminateContainer && AuthenticationServiceProvider::isPackageDefault($this->container, TenantResolver::class);
-
-        if (!$isDefault && $this->holders->of($this->container, TenantResolver::class) !== ResolveNoTenant::class) {
+        if (!AuthenticationServiceProvider::isPackageDefault($this->container, TenantResolver::class)) {
             return;
         }
 
@@ -246,7 +230,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
      */
     private function resourceTenantsNote(): ?string
     {
-        if (!$this->defaults->holdsDefault($this->container, ResourceTenantResolver::class, AuthorizationServiceProvider::isPackageDefault(...))) {
+        if (!AuthorizationServiceProvider::isPackageDefault($this->container, ResourceTenantResolver::class)) {
             return null;
         }
 

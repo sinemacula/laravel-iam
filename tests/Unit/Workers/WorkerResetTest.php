@@ -44,7 +44,7 @@ use SineMacula\Laravel\Authorization\Query\SchemaInspector;
 use SineMacula\Laravel\Authorization\Support\DeclaredAbilities;
 use SineMacula\Laravel\Authorization\Support\ResolvedTenant;
 use SineMacula\Laravel\Authorization\Support\SessionScopes;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Workers\WorkerReset;
 use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
 use SineMacula\Laravel\Sso\Contracts\DnsResolver;
@@ -205,7 +205,7 @@ final class WorkerResetTest extends TestCase
     public function testResetForgetsThePackagesScopedAdapters(string $seam): void
     {
         $container = new Container;
-        $abstract  = BindingRule::SCOPED_PREFIX . $seam;
+        $abstract  = SeamBinding::SCOPED_PREFIX . $seam;
 
         $container->scoped($abstract, static fn (): \stdClass => new \stdClass);
 

@@ -62,29 +62,23 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   every check would read its grants again. The adapter still reads `Auth::caller()` afresh on each call.
 - `laravel-authorization` binds each default only where nothing is bound yet (`bindIf()`, since
   laravel-authorization#129), and says itself whether a contract still holds its default
-  (`AuthorizationServiceProvider::isPackageDefault()`). So each of its rows names the default class and asks it
-  (`AuthorizationSeams::authorizationRow()`, `SeamBinding::$holdsDefault`), and the seam is replaced only while it is
-  unbound or holds that default. A class the application names in `authorization.subject_resolver`,
-  `authorization.requirement_checker`, `authorization.session.source` or `authorization.identity_directory` is no
-  default: `laravel-authorization` binds it over any earlier binding, the adapter
-  included, through a closure `isPackageDefault()` answers `false` for, so this package reads none of those keys.
-  Registered before this package, `laravel-authorization` has bound the class, and the rule keeps it; registered after,
-  it binds the class over the adapter, though the outcome lists the seam as bound. No key names the grant hook's class:
-  its default is the composite holding no hook (`GrantHooks`), and the hooks `authorization.grant_hooks` lists wrap
-  whatever grant hook is bound (`ListedGrantHooks`, N108), so they run before the adapter. Anything the application
-  binds over the contract is kept too, made before this package registers or after, and a `laravel-authorization` that
-  registers after this package, with the other providers or from another provider's `boot()`, leaves the adapters
-  bound.
+  (`AuthorizationServiceProvider::isPackageDefault()`). So each of its rows asks it (`SeamBinding::holdsDefault()`), and
+  the seam is replaced only while it is unbound or holds that default. A class the application names in
+  `authorization.subject_resolver`, `authorization.requirement_checker`, `authorization.session.source` or
+  `authorization.identity_directory` is no default: `laravel-authorization` binds it over any earlier binding, the
+  adapter included, through a closure `isPackageDefault()` answers `false` for, so this package reads none of those
+  keys. Whichever order they register in, the class is bound by the time the seams are bound, and is kept. No key names
+  the grant hook's class: its default is the composite holding no hook (`GrantHooks`), and the hooks
+  `authorization.grant_hooks` lists wrap whatever grant hook is bound (`ListedGrantHooks`, N108), so they run before the
+  adapter. Anything the application binds over the contract in a `register()` is kept too.
 - Each adapter bound over one of `laravel-authorization`'s six contracts is declared to its configuration report
   (`Diagnostics\Declarations`, laravel-authorization#143), so `authorization:check` names it rather than custom code
   whose class is decided at first use. The row says how (`SeamBinding::$declare`, made by
-  `AuthorizationSeams::authorizationRow()`), and the binding rule declares it in one place, `BindingRule::bind()`, at once
-  after binding, handing it the closure the container now holds for the contract (`MemberDefaults::bindingOf()`): the
-  closure Laravel wrapped the adapter's class in, or, for a scoped adapter, the transient closure forwarding to its
-  `iam.scoped:` key, never another made to stand for it, since the report compares the binding with it by identity.
-  The owner is `laravel-iam` (`AuthorizationSeams::OWNER`), and the lifetime the row's, in the report's terms
-  (`Lifetime::reported()`, a shared adapter a singleton): the subject resolver scoped, the rest transient, each
-  declared with `adapter()`. So the report shows each `declared by laravel-iam`, its declaration `standing`, while that closure
+  `AuthorizationSeams::authorizationRow()`), and `SeamBinding::apply()` declares it at once after binding, handing it
+  the very closure it bound over the contract, since the report compares the binding with it by identity. The owner is
+  `laravel-iam` (`AuthorizationSeams::OWNER`), and the lifetime the row's, in the report's terms
+  (`Lifetime::reported()`, a shared adapter a singleton): the subject resolver scoped, the rest transient, each declared
+  with `adapter()`. So the report shows each `declared by laravel-iam`, its declaration `standing`, while that closure
   still supplies the contract; `but overridden later` once anything is bound over it, the class an application names in
   `laravel-authorization`'s configuration included where `laravel-authorization` registers after this package; and
   `but an instance is bound over it` once an instance is. Only a row the rule binds is declared: one it keeps (the
@@ -271,14 +265,11 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   alike, so nothing is owed. The session policy source shares the scope registry's mandate: `NoSessionPolicy` allows
   nothing only to a principal carrying `AuthorizableMachine` and caps any other machine by nothing, so a machine whose
   credential was issued `orders.read` could do whatever its grants allow. `iam:check` refuses it whatever the switch
-  says, the application's binding of it by class name included. The check asks `isPackageDefault()` as the binding rule
-  does, and names a seam it says holds `laravel-authorization`'s default by the row's default class
-  (`MandatorySeamsCheck::holderOf()`): `NoSessionPolicy` is refused. A class the application names in
-  `authorization.session.source` is bound through a closure of `laravel-authorization`'s own that `isPackageDefault()`
-  answers `false` for, so the check refuses only the row's default class for these rows, never any other class of the
-  member's, and that class passes without this package reading the key.
+  says. The check asks `isPackageDefault()`, so `NoSessionPolicy` as `laravel-authorization` binds it is refused, and a
+  class the application names in `authorization.session.source`, or binds itself, passes without this package reading
+  the key.
 - Request state. None of the adapters keeps anything between calls. The subject resolver and application access are
-  scoped all the same, under `iam.scoped:` (`BindingRule::bindScoped()`), so the seams themselves are never scoped, and
+  scoped all the same, under `iam.scoped:` (`SeamBinding::apply()`), so the seams themselves are never scoped, and
   the worker reset and Laravel's `forgetScopedInstances()` forget them between units of work. The caller
   `laravel-authentication` keeps on the request is dropped by the worker reset (above).
   `laravel-authorization`'s own request state, what its previews know and the console subject resolver its explanations
@@ -439,13 +430,13 @@ codes in `audit-mapping.md`. The rule itself is in `binding-precedence.md`, and 
   application's own rule (IAM-1.2), on its own models, which this package cannot read, so nothing here binds a resolver
   and `iam:install` names none. While the application has memberships (`TenancyContracts::hasMemberships()`), so its
   people act in tenants, `CrossMemberConfigurationCheck` notes, never fails, a resolver left on the default, as
-  `laravel-authorization` says (`isPackageDefault()`, through `MemberDefaults::holdsDefault()`): a class the
+  `laravel-authorization` says (`isPackageDefault()`): a class the
   application names in `authorization.resource_tenant_resolver` is no default, so no key is read. A note, since models
   declaring their tenancy need no resolver, which no check can see.
 
 ## Success Path
 
-1. The provider registers. The binding rule binds the ten rows over the members' defaults where the switch is on; the
+1. Every provider registers. The ten rows are bound over the members' defaults where the switch is on; the
    requirement checker only while `iam.adapters.mfa` is on too, and the grant hook only while `iam.adapters.sso` is.
    The grant half of SSO's principal scope is bound to `GrantScopeAdapter`. The context's keys are queued for the key
    catalogue.
@@ -562,9 +553,8 @@ The M11 File Change Manifest is followed for part (a), with these departures:
   and which no adapter could do as it answers. `Authorization\Translation\RequirementTranslator` crosses a requirement
   from `laravel-authorization`'s terms to MFA's and back, shared by the requirement checker and the step-up mapping,
   each of which would otherwise translate alone; its unit test sits beside it.
-- The binding rule's own units change (`Bindings\BindingRule`, `Bindings\SeamBinding`, `Bindings\MemberDefaults`),
-  since a row over `laravel-authorization` asks it whether the seam holds its default, so a class the application names
-  in its configuration is kept, which the manifest, expecting its resolvers to be named in configuration, did not
+- A row over `laravel-authorization` asks it whether the seam holds its default, so a class the application names in
+  its configuration is kept, which the manifest, expecting its resolvers to be named in configuration, did not
   foresee. For the same reason `iam:install` writes none of
   `laravel-authorization`'s resolver keys and `CrossMemberConfigurationCheck` requires none (`install-and-check.md`).
 
@@ -577,10 +567,10 @@ Part (b) follows the manifest's remaining rows, with these departures:
   principals are the subjects under the suite, so their list is the complete answer, with no change to the
   application's memberships (`Membership` names no principal) or provisioner (`createMembership()` still answers
   nothing). Its tests are in `GrantScopeAdapterTest`.
-- `Tenancy\Contracts\GrantScope` is bound by `IamServiceProvider::registerSeams()`, `bindIf()` to the adapter while the
+- `Tenancy\Contracts\GrantScope` is bound by `IamServiceProvider::bindSeams()`, `bindIf()` to the adapter while the
   switch is on and `singletonIf()` to `UnknownGrantScope` while it is off, not by a `TenancySeams` row: it is this
-  package's own port, not a member's seam, so a row would bring it into `iam:check`'s mandatory seams and the
-  apply-again machinery for nothing. No method is added to the provider.
+  package's own port, not a member's seam, so a row would bring it into `iam:check`'s mandatory seams for nothing. No
+  method is added to the provider.
 - `Authorization\Translation\TenantTranslator`, which the manifest does not list, crosses a tenant between the two
   naming schemes for the grant hook, the grant scope, the tree changes, the administrative check and the audit access
   policy, as `RequirementCheckerAdapter` already equates them; no new application contract is needed.
@@ -650,10 +640,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
 - `src/Authorization/AuthorizationSeams.php`: `seams()`, `isOn()`, `reportsWidenings()`, `authorizationRow()`,
   `SWITCH`, `DOMAIN_LINKING`, `OWNER`; `src/IamServiceProvider.php`: `seamProviders()`;
   `config/iam.php`: `adapters.authorization`.
-- `src/Bindings/SeamBinding.php`: `$holdsDefault`, `$declare`, `isMandatory()`;
-  `src/Bindings/MemberDefaults.php`: `isReplaceable()`, `holdsDefault()`, `bindingOf()`;
-  `src/Bindings/BindingRule.php`: `apply()`, `bind()`, `bindScoped()`; `src/Bindings/Enums/Lifetime.php`:
-  `reported()`; `src/Checks/MandatorySeamsCheck.php`: `holderOf()`, `isMemberDefault()`.
+- `src/Bindings/SeamBinding.php`: `holdsDefault()`, `apply()`, `$declare`, `isMandatory()`;
+  `src/Bindings/Enums/Lifetime.php`: `reported()`; `src/Checks/MandatorySeamsCheck.php`: `assertBound()`.
 - `src/Authorization/SubjectResolverAdapter.php`: `resolve()`, `forUser()`.
 - `src/Authorization/AuthenticationContextAdapter.php`: `namespaces()`, `assuranceKeys()`, `values()`, `NAMESPACES`,
   `ASSURANCE_KEYS`;
@@ -674,7 +662,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `src/Authorization/GrantScopeAdapter.php`: `judge()`;
   `src/Tenancy/TreeChanges.php`: `changed()`, `reportToAuthorization()`;
   `src/Sso/SignInRedemption.php`: `redeem()`, `resync()`; `src/IamServiceProvider.php`:
-  `registerSeams()`; `src/Tenancy/ScopeWidenings.php`: `widen()`.
+  `bindSeams()`; `src/Tenancy/ScopeWidenings.php`: `widen()`.
 - `src/Authorization/AuditAccessPolicyAdapter.php`: `scope()`; `src/Authorization/PermissionCatalogue.php`:
   `permissions()`; `src/Authorization/AdministrativeCheck.php`: `authorize()`, `decidedWhereItActs()`;
   `src/Audit/Mappers/AuthorizationEventMapper.php`: `map()`.
@@ -692,37 +680,30 @@ Part (b) follows the manifest's remaining rows, with these departures:
 ## Authoritative Tests
 
 - `tests/Feature/Authorization/AuthorizationSeamsTest.php`
-  `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
-  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testTheSwitchOffBindsNothing`,
+  `testEveryAdapterIsBoundOverItsMembersDefault`,
+  `testClassesNamedInAuthorizationsConfigurationAreKept`,
+  `testTheSwitchOffBindsNothing`,
   `testTheRequirementCheckerFollowsTheMfaSwitch`,
-  `testEachRowAsksLaravelAuthorizationForItsDefaultAndOnlyTheResolverIsScoped`,
+  `testEachRowsAdapterLifetimeAndDeclaration`,
   `testTheSubjectResolverIsOneForAUnitOfWork`,
-  `testRebindingTheResolverOrTheTreeForgetsResolutionsInEveryProviderOrder`,
+  `testRebindingTheResolverOrTheTreeForgetsResolutions`,
   `testTheSwitchIsReadLeniently`, `testTheContextsKeysAreDeclared`, `testAKeyTheApplicationDeclaresKeepsItsDeclaration`,
   `testNoKeyIsDeclaredForAnApplicationsOwnContext`, `testTheContextsAssuranceKeysAreUntestableUnderEveryNamespace`,
-  `testAnAuthorizationRegisteredWhileBootingLeavesEveryAdapterBound`,
+  `testAnAuthorizationRegisteredWhileBootingGetsEveryAdapter`,
   `testWhatIsResolvedWhileBootingIsBuiltWithTheAdapters`,
-  `testAnApplicationBindingMadeBeforeAuthorizationRegistersAfterThisPackageIsKept`,
   `testAnAuthorizationRegisteredAgainLeavesEveryAdapterBound`
-- `tests/Feature/Authorization/DeclaredAuthorizationSeamsTest.php` `testEveryAdapterIsDeclaredAndStandsInEveryProviderOrder`,
-  `testTheTextReportNamesLaravelIam`, `testABindingMadeOverAnAdapterShowsItOverriddenInEveryProviderOrder`,
-  `testAnInstanceBoundOverAnAdapterIsShown`, `testNothingIsDeclaredOverAnApplicationBindingInEveryProviderOrder`,
-  `testAConfiguredClassIsReportedAsConfiguredInEveryProviderOrder`, `testWithTheSwitchOffNothingIsDeclared`,
-  `testARowWhoseSwitchIsOffIsNotDeclared`; `tests/Feature/Bindings/BindingRuleTest.php`
-  `testABindingIsDeclaredWithTheClosureItWasBoundWith`; `tests/Unit/Bindings/Enums/LifetimeTest.php`
-  `testEachLifetimeIsReportedByItsOwn`; `tests/Unit/Bindings/SeamBindingTest.php`
-  `testABindingIsTransientAlwaysOnAndOptionalByDefault`, `testABindingKeepsWhatItIsDeclaredWith`
-- `tests/Feature/Authorization/AccessSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testASourceTheApplicationNamesInAuthorizationsConfigurationIsKept`,
-  `testTheAccessSeamsAreMandatoryWhileTheConfigurationSaysSo`, `testIamCheckRefusesTheDefaultSourceWithTheSwitchOff`,
-  `testIamCheckRefusesTheDefaultSourceTheApplicationBindsByName`,
-  `testIamCheckPassesASourceTheApplicationNamesInAuthorizationsConfiguration`,
-  `testIamCheckAsksTheBoundApplicationPolicyWhichMachineCredentialsAGuardAccepts`,
-  `testTheApplicationPolicyIsAskedOnlyWhenTheMandateIsRead`
-- `tests/Unit/Bindings/MemberDefaultsTest.php` `testAMemberThatAnswersIsAskedWhetherTheSeamHoldsItsDefault`,
-  `testAMemberThatAnswersIsNotAskedWithNoBindingToRead`
-- `tests/Feature/Bindings/BindingRuleTest.php` `testARowWhoseMemberAnswersIsBoundOnlyOverWhatItSaysIsItsDefault`
+- `tests/Feature/Authorization/DeclaredAuthorizationSeamsTest.php` `testEveryAdapterIsDeclaredAndStands`,
+  `testTheTextReportNamesLaravelIam`, `testABindingMadeOverAnAdapterShowsItOverridden`,
+  `testAnInstanceBoundOverAnAdapterIsShown`, `testNothingIsDeclaredOverAnApplicationBinding`,
+  `testAConfiguredClassIsReportedAsConfigured`, `testWithTheSwitchOffNothingIsDeclared`,
+  `testARowWhoseSwitchIsOffIsNotDeclared`; `tests/Feature/Bindings/SeamBindingTest.php`
+  `testTheBoundAdapterIsDeclaredAndAKeptBindingIsNot`; `tests/Unit/Bindings/Enums/LifetimeTest.php`
+  `testEachLifetimeIsReportedByItsOwn`
+- `tests/Feature/Authorization/AccessSeamsTest.php` `testASourceNamedInAuthorizationsConfigurationIsKept`,
+  `testIamCheckRefusesTheDefaultsWhileMandatory`, `testIamCheckPassesASourceNamedInAuthorizationsConfiguration`,
+  `testIamCheckAsksTheBoundApplicationPolicy`
+- `tests/Feature/Bindings/SeamBindingTest.php` `testTheAdapterReplacesAMembersDefault`,
+  `testTheApplicationsBindingIsKept`
 - `tests/Integration/Authorization/SubjectResolverAdapterTest.php` (every isolation level where it signs in)
   `testTheRequestsCallerIsTheSubject`, `testACallerWithoutASessionIsTheSubjectWithNone`,
   `testTheGuardsOwnPrincipalIsTheCallerWithItsSession`, `testACopyOfTheCallerLoadedAgainIsTheCaller`,
@@ -763,7 +744,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testARefusalAboutANamedSubjectStaysLaravels403`, `testARefusalWithNoSubjectStaysLaravels403`,
   `testARefusalIsRenderedAsMfasStepUp`, `testWhatIsNotMappedIsRenderedAsLaravelRendersIt`,
   `testTheMappingIsRegisteredOnLaravelsHandlerWheneverItIsResolved`,
-  `testTheMappingFollowsTheSwitchesAsTheBindingRuleReadThem`
+  `testTheMappingFollowsTheSwitchesAsTheSeamsWereBound`
 - `tests/Integration/EndToEnd/StepUpAuthorizationTest.php` (every isolation level)
   `testARequirementDeniesUntilTheSessionStepsUpThroughMfa`, `testARefusalAboutANamedMemberIsNoStepUp`,
   `testAMemberWithNoConfirmedFactorIsToldItHoldsNone`, `testARequirementMfaCannotJudgeIsUndecidable`,
@@ -772,9 +753,8 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAKeysScopesBoundWhatItsAccountMayDo`, `testAMappedScopeCoversWhatItStandsForAndGrantsNothing`,
   `testAMachineWithoutAuthorizationsMarkerIsAllowedNothingWhereNoCredentialCapsIt`,
   `testAKeyIsNeverIssuedAScopeNamingNoPermission`
-- `tests/Feature/Authorization/AccessSeamsTest.php` `testAnApplicationBindingOfAuthenticationsContractsMadeFirstIsKept`,
-  `testTheSourceAndTheRegistryAreTransientAndApplicationAccessScoped`, `testApplicationAccessIsForgottenBetweenUnitsOfWork`,
-  `testIamCheckRefusesTheDefaultsWhileTheyAreMandatory`
+- `tests/Feature/Authorization/AccessSeamsTest.php` `testApplicationAccessIsForgottenBetweenUnitsOfWork`,
+  `testIamCheckRefusesTheDefaultsWhileMandatory`
 - `tests/Unit/Authorization/AccessMandatesTest.php`
   `testTheScopeRegistryIsMandatoryWhileAGuardAcceptsAMachineCredential`,
   `testApplicationAccessIsMandatoryWhileAnApplicationIsMapped`,
@@ -803,13 +783,10 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testAMachineIsAdmittedOnAnApplicationTheMapNamesOnItsGrants`
 - `tests/Unit/Workers/WorkerResetTest.php` `testResetForgetsTheMembersScopedState`,
   `testResetForgetsThePackagesScopedAdapters`, `testForgettingTheMemberStateDropsTheRequestsCallers`
-- `tests/Feature/Authorization/GrantSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testTheGrantHookIsBoundWhateverHooksAreListed`, `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
-  `testAnApplicationBindingWins`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
-  `testWithTheSwitchOffNothingIsBound`, `testTheGrantHookIsMandatoryWhileDomainLinkingIsOn`,
-  `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`, `testTheTreeIsLeftToTheApplication`,
-  `testGrantsAreReportedToSsoOnlyWhileBothSwitchesAreOn`,
-  `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
+- `tests/Feature/Authorization/GrantSeamsTest.php` `testTheGrantHookIsBoundWhateverHooksAreListed`,
+  `testADirectoryNamedInAuthorizationsConfigurationIsKept`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
+  `testWithTheSwitchOffNothingIsBound`, `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`,
+  `testTheTreeIsLeftToTheApplication`, `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
 - `tests/Integration/Authorization/GrantHookAdapterTest.php` (every isolation level)
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
   `testAGrantInTheLinksOwnTenantLeavesItAlone`, `testEveryTenantTheWideningGrantsHoldInIsReported`,
@@ -840,7 +817,7 @@ Part (b) follows the manifest's remaining rows, with these departures:
   `testARefusedReSyncHandsOutNoCredential`
 - `tests/Integration/EndToEnd/TenancyThroughSsoTest.php` (every isolation level)
   `testTheShippedGrantHalfLinksAMemberWithinTheTenant`, `testTheShippedGrantHalfLinksNobodyGrantedBeyondTheTenant`
-- `tests/Feature/Authorization/AuditAccessSeamTest.php` `testThePolicyIsBoundOverAuditLogsDefaultInEveryProviderOrder`,
+- `tests/Feature/Authorization/AuditAccessSeamTest.php` `testThePolicyIsBoundOverAuditLogsDefault`,
   `testTheRowIsSharedAndNeverMandatory`; `tests/Integration/Authorization/AdministrativeCheckTest.php`
   `testAGrantInTheObjectsTenantAllowsTheOperationThere`, `testASubjectWithNoTenantIsDecidedOnThePlatform`,
   `testASubjectInATenantIsDecidedThereWhateverTheRequestsTenant`;

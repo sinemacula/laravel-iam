@@ -6,7 +6,7 @@ namespace Tests\Feature\Sso;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\IamServiceProvider;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
@@ -56,7 +56,7 @@ final class RedemptionRecordsTest extends TestCase
 
         self::assertInstanceOf($record, $instance);
         self::assertSame($instance, $app->make($record));
-        self::assertSame($instance, $app->make(BindingRule::SCOPED_PREFIX . $record));
+        self::assertSame($instance, $app->make(SeamBinding::SCOPED_PREFIX . $record));
     }
 
     /**

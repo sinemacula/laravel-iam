@@ -53,8 +53,8 @@ process calls it.
     against every scoped binding the installed members make, so a member's next scoped binding cannot be missed.
     Without it a long-running command that resets between tenants would keep the first tenant's `ResolvedTenant`,
     decision and resolutions, and an Octane worker would clone what its boot resolved into its first request. This
-    package's scoped adapters are never listed there: the binding rule scopes each under its own key,
-    `BindingRule::SCOPED_PREFIX` (`iam.scoped:`) followed by the seam, never under the seam itself (see
+    package's scoped adapters are never listed there: each is scoped under its own key,
+    `SeamBinding::SCOPED_PREFIX` (`iam.scoped:`) followed by the seam, never under the seam itself (see
     `binding-precedence.md`), so `WorkerReset::isSuiteState()` finds them by that prefix; listing the seam in
     `SCOPED_STATE` would do nothing. Each is forgotten with `forgetInstance()`, so the next unit of work builds its own,
     but only while the container still keeps it as scoped, as Laravel's own `forgetScopedInstances()` does. An instance
@@ -62,7 +62,7 @@ process calls it.
     `scopedIf()` then left alone (IAM-8.4), is the application's: forgetting an instance would leave the seam
     unresolvable in every sandbox cloned from the worker, and forgetting a singleton would rebuild it. The container
     lists its scoped abstracts only in its protected `scopedInstances`, which the reset reads through a closure bound to
-    the container's class, as `MemberDefaults` reads the binding table. That list also holds the closure itself for a
+    the container's class. That list also holds the closure itself for a
     binding scoped by its closure's return type (`scoped(fn (): Foo => ...)`), which any provider can make; every
     abstract the suite keeps request state under is a string, so such an entry is passed over and kept, never handed to
     `isSuiteState()`, which would refuse it.
@@ -84,7 +84,7 @@ process calls it.
     starts and ends. A reset called by hand between the units of work of a command would otherwise drop the deferred
     callbacks before they ran, the command's `Context` and the audit trail's command frame. Laravel's own workers
     forget every scoped instance only at their own boundaries, once a job's deferred callbacks have run.
-  - `Mfa\FactorCodeCallers`, which this package binds outside the binding rule (it is no member's seam), is scoped
+  - `Mfa\FactorCodeCallers`, which is no member's seam, is scoped
     under the same `iam.scoped:` prefix and resolved through it, so the reset forgets it with this package's scoped
     adapters. It keeps the caller MFA handed the challenge gateway only under the factor code binding the gateway made,
     a weak key, so nothing in it outlives the code's send or check; forgetting it on the explicit reset as well means a
@@ -167,8 +167,8 @@ process calls it.
 - `src/Workers/WorkerReset.php`: `reset()`, `forgetMemberState()`, `forgetGuardState()`, `forgetCallers()`,
   `flushSession()`, `resolve()`, `forgetScopedState()`, `isSuiteState()`, `scopedAbstracts()`, `SCOPED_STATE`,
   `CALLER_MEMO`.
-- `src/Bindings/BindingRule.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
-  scoped adapters by, and `bindScoped()`.
+- `src/Bindings/SeamBinding.php`: `SCOPED_PREFIX`, the prefix `WorkerReset::isSuiteState()` finds this package's
+  scoped adapters by, and `apply()`.
 - `src/Workers/ResetWhenWorkerStarts.php`: `EVENT`, `__invoke()`; `src/Workers/ResetBetweenRequests.php`: `EVENT`,
   `__invoke()`; `src/Workers/ResetBeforeJob.php`: `__invoke()`.
 - `src/IamServiceProvider.php`: `registerListeners()`, `registerFactorCodeCallers()`; `src/Mfa/FactorCodeCallers.php`;
@@ -225,8 +225,8 @@ process calls it.
   `WorkerReset::SCOPED_STATE` follows, as `tests/Feature/Workers/WorkerResetTest.php` reports. `laravel-sso` or
   `laravel-authorization` changing its `RequestState::forget()`'s signature: `WorkerReset::forgetScopedState()`
   follows.
-- A change to `BindingRule::SCOPED_PREFIX` or `bindScoped()`: `WorkerReset::isSuiteState()` follows. This package
-  binding a new scoped adapter changes neither.
+- A change to `SeamBinding::SCOPED_PREFIX` or how `SeamBinding::apply()` scopes: `WorkerReset::isSuiteState()`
+  follows. This package binding a new scoped adapter changes neither.
 - Laravel changing what its container lists among its scoped instances (the closure it lists for a binding scoped by
   its closure's return type, among them): `WorkerReset::forgetScopedState()` follows.
 - Octane changing when it registers its listeners, or `FlushAuthenticationState` ceasing to point the auth manager at

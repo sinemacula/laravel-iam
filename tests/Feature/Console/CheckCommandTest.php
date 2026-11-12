@@ -8,6 +8,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
+use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
@@ -17,11 +18,11 @@ use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Checks\Checker;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
 use SineMacula\Laravel\Iam\IamServiceProvider;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
+use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Mfa\MfaServiceProvider;
-use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
-use SineMacula\Laravel\Sso\Revocation\NoSessionRevocation;
 use SineMacula\Laravel\Sso\SsoServiceProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Concerns\MigratesAuditLog;
@@ -71,21 +72,20 @@ final class CheckCommandTest extends TestCase
     }
 
     /**
-     * A problem of this package's own fails the run, with the problem reported
-     * under its subject.
+     * MFA's default left on a mandatory seam fails the run, reported under
+     * `seams`.
      *
      * @return void
      */
-    public function testAProblemOfThePackagesOwnFailsTheRun(): void
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    public function testMfasDefaultLeftOnAMandatorySeamFailsTheRun(): void
     {
         $this->configure();
-
-        $this->app?->bind(SessionRevocation::class, NoSessionRevocation::class);
 
         [$code, $output] = $this->check();
 
         self::assertSame(1, $code);
-        self::assertStringContainsString('[seams] ' . SessionRevocation::class . ' is still bound to ' . NoSessionRevocation::class, $output);
+        self::assertStringContainsString('[seams] ' . SessionRevoker::class . ' is still bound to its member\'s', $output);
         self::assertStringEndsWith('A check failed.' . PHP_EOL, $output);
     }
 

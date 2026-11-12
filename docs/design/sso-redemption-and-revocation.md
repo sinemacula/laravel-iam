@@ -18,8 +18,8 @@ run through are in `storage-and-transactions.md`.
 
 ## Invariants
 
-- `Sso\SsoSeams` declares every binding, and the binding rule applies them in `register()`. Each row replaces only its
-  member's own default, and a binding the application made before or after the members register is kept (IAM-8.4).
+- `Sso\SsoSeams` declares every binding (`binding-precedence.md`). Each row replaces only its member's own default,
+  and a binding the application made in any `register()` is kept (IAM-8.4).
 
   | Member seam                         | Bound to                          | Member default replaced       | Lifetime  |
   | ----------------------------------- | --------------------------------- | ----------------------------- | --------- |
@@ -36,9 +36,9 @@ run through are in `storage-and-transactions.md`.
 
   The `sso` namespace of the authentication context is no seam: `SsoContextContributor` is registered with
   `laravel-authentication`'s `ContextContributors` under `sso` from a `booted()` callback `IamServiceProvider::boot()`
-  queues, once every provider has booted, under the same switch, as it read when the binding rule ran in
-  `register()`: a later provider that turns the switch over comes too late for the bindings and for the contributor
-  alike, so the two never disagree.
+  queues, once every provider has booted, under the same switch, as it read when the seams were bound: a provider that
+  turns the switch over in a `boot()` comes too late for the bindings and for the contributor alike, so the two never
+  disagree.
 
 - Session revocation is mandatory always (IAM-4.4): left on SSO's default, an enforcement change, a disabled or
   deleted connection, a removed link or a widened scope would leave every session it concerns standing. The external
@@ -171,8 +171,8 @@ run through are in `storage-and-transactions.md`.
   projects it through SSO's `AuthenticationContext::fromStored()` and answers each key without its `sso.` prefix. No
   stored form contributes no key; a stored form contributes all twelve, `null` where the sign-in stated nothing. A
   stored form SSO cannot restore (`UnexpectedValueException`), a provenance `laravel-authentication` cannot read and a
-  database error propagate. It is registered once, while the capability's switch is on as the binding rule read it in
-  `register()` (a value a later provider writes changes neither), from a `booted()` callback,
+  database error propagate. It is registered once, while the capability's switch is on as it read when the seams were
+  bound (a value a provider writes in a `boot()` changes neither), from a `booted()` callback,
   so once every provider has booted (at once when the application already has): a member may be registered from
   another provider's `boot()`, after this package's has run, and `laravel-authentication` binds its contributors only
   as its provider registers, so a registration from this package's own `boot()` would go to an instance the container
@@ -233,7 +233,7 @@ run through are in `storage-and-transactions.md`.
   the link SSO resolved and the client SSO was handed for it (which the tenant authentication policy hands SSO's
   exemption gate while that sign-in or re-authentication is judged, `tenant-authentication-policy.md`),
   and `RenewalRecorder` at most one renewal. Both are bound scoped under
-  `BindingRule::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
+  `SeamBinding::SCOPED_PREFIX` and resolved through that key (`IamServiceProvider::registerRedemptionRecords()`), so
   the worker reset forgets them, and every adapter, listener and redemption resolves them from the container on each
   call. Each commit listener, and the `iam` manager (`IamManager`), resolves what it calls from the application
   current when it runs (`Container::getInstance()`), never from a container kept since: under Octane the events
@@ -486,9 +486,7 @@ run through are in `storage-and-transactions.md`.
 
 ## Authoritative Tests
 
-- `tests/Feature/Sso/SsoSeamsTest.php` `testTheEvidenceSwitchBindsSsosConnectionEvidencePolicyInEveryProviderOrder`,
-  `testTheApplicationsEvidencePolicyIsKeptWithTheSwitchOn`,
-  `testTheEvidencePolicyIsScopedAndForgottenWhenTheWorkerResets`,
+- `tests/Feature/Sso/SsoSeamsTest.php` `testTheEvidenceSwitchBindsAScopedConnectionEvidencePolicy`,
   `testTheEvidenceSwitchBindsNothingWithTheCapabilityOff`, `testTheEvidenceSwitchIsReadStrictly`
 - `tests/Feature/Sso/ContextContributorRegistrationTest.php`
   `testTheContributorsAreRegisteredInEveryProviderOrder`, `testTheSwitchOffRegistersNothing`,
@@ -538,13 +536,10 @@ run through are in `storage-and-transactions.md`.
 - `tests/Performance/Sso/SsoJudgementsQueryBudgetTest.php` `testALinkEmailMatch`, `testAFreshnessCheck`,
   `testAnApplicationsExternalSignIn`, `testEvidenceMfasDefaultFindsMeetsNothing`
 - `tests/Unit/Sso/AdmittedRedemptionsTest.php` `testTheAcceptedEvidenceIsAnsweredForItsConnectionAndIdentityAlone`
-- `tests/Feature/Sso/SsoSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testTheHandoffIssuerKeepsSsosOwnStoreInEveryProviderOrder`,
-  `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
-  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`,
+- `tests/Feature/Sso/SsoSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefault`,
   `testTheLinkStoreIsScopedAndForgottenWhenTheWorkerResets`,
   `testTheSwitchOffBindsNothing`,
-  `testTheSwitchIsReadLeniently`, `testEachBindingsLifetimeDefaultsAndMandate`
+  `testTheSwitchIsReadLeniently`, `testEachBindingsLifetimeAndMandate`
 - `tests/Feature/Sso/RedemptionRecordsTest.php` `testTheRecordIsOneInstanceForTheUnitOfWork`,
   `testTheWorkerResetForgetsTheRecord`; `tests/Feature/IamServiceProviderTest.php`
   `testHeldWorkRunsOnceTheConnectionCommits`, `testWorkACommitLeftHeldRunsAsTheApplicationTerminates`,

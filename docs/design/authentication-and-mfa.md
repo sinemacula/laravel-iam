@@ -11,11 +11,10 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 
 ## Invariants
 
-- `Mfa\MfaSeams` declares every binding, and the binding rule applies them in `register()` (see
-  `binding-precedence.md`). An adapter replaces only the member's own default; a binding the application made, before or
-  after the members register, is kept (IAM-8.4). Every adapter is transient and reads the guard's state on every call,
-  so none holds request state between calls (IAM-8.1). Only the session revoker is mandatory (IAM-3.7): left on MFA's
-  default, a removed factor would leave the identity's other sessions standing.
+- `Mfa\MfaSeams` declares every binding (see `binding-precedence.md`). An adapter replaces only the member's own
+  default; a binding the application made in any `register()` is kept (IAM-8.4). Every adapter is transient and reads
+  the guard's state on every call, so none holds request state between calls (IAM-8.1). Only the session revoker is
+  mandatory (IAM-3.7): left on MFA's default, a removed factor would leave the identity's other sessions standing.
 
   | Member seam                      | Adapter                         | Member default replaced                     |
   | -------------------------------- | ------------------------------- | ------------------------------------------- |
@@ -239,7 +238,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   readers answer nothing for (pending, revoked, ended, of another guard, or no Eloquent session). MFA itself gives a
   machine and an inactive identity the neutral context. It is registered under `mfa` from the service provider's
   `booted()` callback, beside the `sso` contributor and on the same terms: only while `iam.adapters.mfa` was on when the
-  binding rule read it, and only while nothing holds `mfa`, so an application's own contributor is kept (IAM-8.4).
+  seams were bound, and only while nothing holds `mfa`, so an application's own contributor is kept (IAM-8.4).
   `ContextNamespacesCheck` requires the namespace in every application (IAM-10.2), naming `iam.adapters.mfa` when
   nothing holds it.
   - Read mode: the subject's readers choose it, as `Auth::sessions()->proofs()` does, and only while the context is
@@ -492,10 +491,9 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
 
 ## Authoritative Tests
 
-- `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testAnApplicationBindingMadeBeforeAnyProviderRegistersIsKept`,
-  `testAnApplicationBindingMadeOnceEveryProviderHasRegisteredWins`, `testTheSwitchOffBindsNothing`,
-  `testTheSwitchIsReadLeniently`, `testEveryBindingIsTransientOverItsMembersDefault`
+- `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefault`,
+  `testTheSwitchOffBindsNothing`,
+  `testTheSwitchIsReadLeniently`, `testEveryBindingIsTransientAndOnlyRevocationIsMandatory`
 - `tests/Integration/Mfa/CurrentSessionTest.php`
 - `tests/Unit/Mfa/Translation/*Test.php`, notably `ProofTranslatorTest`
   `testAnExternalReauthenticationIsAFirstFactorReauthenticationOnTheProvidersChannel` and `RequirementTranslatorTest`
@@ -569,7 +567,7 @@ code delivery (M3) are in `codes-delivery-and-passkeys.md`.
   `testAWrappedRemovalIsNeverAllowedOnAStepUpVoidedWhileItWaited`,
   `testEachChangeTakesTheIdentityStateAndFactorsBeforeTheSessionRow`,
   `testARemovalTakesTheCurrentSessionAndItsProofsBeforeTheIdentitysOtherSessions` (the identity's other sessions'
-  rows taken after the current session's row and its proofs), every adapter bound by the binding rule (the
+  rows taken after the current session's row and its proofs), every adapter bound over its member's default (the
   wrapped removal refused by `laravel-authentication`'s own gate, `step_up_required`, on MySQL and PostgreSQL at READ
   COMMITTED and REPEATABLE READ); `testANeighbouringProofDeadlockedWithARemovalFailsAsAConcurrencyFailure` (on MySQL
   at REPEATABLE READ, a neighbouring session's step-up or reauthentication fails with nothing of it written, as a

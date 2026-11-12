@@ -249,13 +249,13 @@ that applies every row is in `binding-precedence.md`.
   `testAPasskeyFactorLeftByAWithdrawnTypeIsRemovedWithItsPasskey`,
   `testAPasskeyFactorLeftByAWithdrawnTypeIsRemovedWithItsPasskeyAtEachLevel`,
   `testARefusedRemovalKeepsThePasskeyAndItsFactor`, `testARefusedRemovalKeepsThePasskeyAndItsFactorAtEachLevel`
-- `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`;
-  `tests/Feature/Mfa/PasskeySeamsTest.php` `testBothAdaptersAreBoundWhilePasskeysAreOfferedInEveryProviderOrder`,
+- `tests/Feature/Mfa/MfaSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefault`;
+  `tests/Feature/Mfa/PasskeySeamsTest.php` `testBothAdaptersAreBoundWhilePasskeysAreOffered`,
   `testOnlyTheGateIsBoundWhileNoApplicationOffersPasskeys`,
   `testTheGatewayIsOnWhilePasskeysAreOfferedAndTheGateWhileMfaIs`,
   `testAnApplicationOffersPasskeysWhileItsOwnTypesListThem`,
   `testBothBindingsAreTransientAndTheGateIsMandatory`;
-  `tests/Feature/Mfa/ContextSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
+  `tests/Feature/Mfa/ContextSeamsTest.php` `testEveryAdapterIsBound`,
   `testTheSwitchOffBindsNothing`; `tests/Feature/Mfa/MfaSeamsTest.php`
   `testOfferingSmsWithNoOneTimeCodeSenderRefusesToBoot`
 - Code challenges: `tests/Integration/Mfa/ChallengeGatewayAdapterTest.php` (over MFA's `ChallengeGatewayTests`)

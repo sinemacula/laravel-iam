@@ -16,7 +16,7 @@ use SineMacula\Laravel\Authentication\Sessions\KeptSessions;
 use SineMacula\Laravel\Authentication\Sessions\Methods\Rehashing;
 use SineMacula\Laravel\Authentication\Sessions\WatchedSessions;
 use SineMacula\Laravel\Authorization\Support\RequestState as AuthorizationRequestState;
-use SineMacula\Laravel\Iam\Bindings\BindingRule;
+use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Sso\Support\RequestState as SsoRequestState;
 
 /**
@@ -155,10 +155,10 @@ final readonly class WorkerReset
      * member registered, which the member's `scopedIf()` then left alone, is
      * the application's, and forgetting it would drop it for good, or rebuild
      * it. The container lists its scoped abstracts only in a protected
-     * property, read here as `MemberDefaults` reads the binding table. That
-     * list also holds the closure itself for a binding scoped by its closure's
-     * return type, which is never the suite's: every abstract the suite keeps
-     * request state under is a string, so such an entry is passed over.
+     * property, read here through a bound closure. That list also holds the
+     * closure itself for a binding scoped by its closure's return type, which
+     * is never the suite's: every abstract the suite keeps request state under
+     * is a string, so such an entry is passed over.
      *
      * A facade keeps the root it first resolved in a static cache of its own,
      * outside the container, which forgetting the instance leaves holding it:
@@ -319,7 +319,7 @@ final readonly class WorkerReset
      */
     private static function isSuiteState(string $abstract): bool
     {
-        return in_array($abstract, self::SCOPED_STATE, true) || str_starts_with($abstract, BindingRule::SCOPED_PREFIX);
+        return in_array($abstract, self::SCOPED_STATE, true) || str_starts_with($abstract, SeamBinding::SCOPED_PREFIX);
     }
 
     /**

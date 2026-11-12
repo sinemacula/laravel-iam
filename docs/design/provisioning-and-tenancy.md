@@ -99,21 +99,10 @@ connection and the retry helper in `storage-and-transactions.md`.
   | `PrincipalScope`         | `PrincipalScopeAdapter`         | `RefusingPrincipalScope`  | memberships are named or bound         |
   | `EnforcementInheritance` | `EnforcementInheritanceAdapter` | `OwnTenantInheritance`    | always                                 |
 
-  "Bound" means bound by the time every provider has registered. The binding rule runs as this package registers, and
-  Laravel registers the application's own providers after the packages', so the three membership rows are applied once
-  more from this package's booting callback, once every provider has registered and before any boots
-  (`BindingRule::applyAgain()`, `IamServiceProvider::settle()`): memberships bound in an application
-  provider's `register()` bind the adapters there, and the outcome kept for the checks gains them. So that only SSO's
-  default is bound over then, each row the rule leaves off as it first runs is reserved (`BindingRule::reserve()`,
-  from `IamServiceProvider::registerSeams()`): the exact binding of SSO's default the seam holds is recorded in the
-  outcome, and where SSO has not registered yet, SSO's default is bound there first, shared, as SSO's `singletonIf()`
-  would bind it, which SSO's own binding then leaves. Applied again, a row is bound only where the seam still holds
-  exactly that binding. Anything bound over it meanwhile is the application's and is kept, even a binding of SSO's own
-  default class, which by its class alone reads as SSO's. This runs only while `iam.adapters.sso` was
-  on when the rule first read it, and the rows applied again follow the switch as it read then (`TenancySeams`'
-  `ssoOn`), not as it reads by the booting phase, so the SSO seams and these rows are bound together or not at all: a
-  provider registering after this package that turns the switch on or off comes too late for both. One bound from a
-  provider's `boot()` binds none of these, though whatever it answers is asked by the adapters that are bound and by
+  "Bound" means bound by the time every provider has registered, when the seams are bound
+  (`IamServiceProvider::bindSeams()`), so memberships bound in an application provider's `register()` bind the
+  adapters. One bound from a provider's `boot()` binds none of these, though whatever it answers is asked by the
+  adapters that are bound and by
   the revocations. Without memberships SSO keeps refusing: no membership, no `link`, a scope `unknown`.
 - `TenantMembershipAdapter` answers the identity's membership of exactly the tenant asked, accepted at the time the
   person accepted it, and none for one not accepted, another tenant's, a platform principal or none.
@@ -414,9 +403,7 @@ connection and the retry helper in `storage-and-transactions.md`.
 - `src/Tenancy/TenancySeams.php`: `seams()`; `src/Tenancy/IdentityMemberships.php`: `identity()`, `of()`;
   `src/Tenancy/TenantMembershipAdapter.php`: `standing()`; `src/Tenancy/LinkEligibilityAdapter.php`: `judge()`;
   `src/Tenancy/PrincipalScopeAdapter.php`: `judge()`; `src/Tenancy/Contracts/GrantScope.php`;
-  `src/Tenancy/UnknownGrantScope.php`; `src/IamServiceProvider.php`: `registerSeams()`, `settle()`;
-  `src/Bindings/BindingRule.php`: `reserve()`, `applyAgain()`; `src/Bindings/BindingOutcome.php`;
-  `src/Bindings/MemberDefaults.php`: `bindingOf()`.
+  `src/Tenancy/UnknownGrantScope.php`; `src/IamServiceProvider.php`: `bindSeams()`.
 - `src/Tenancy/EnforcementInheritanceAdapter.php`: `enforcingTenant()`; `src/Tenancy/SubtreePolicyChanges.php`:
   `changed()`; `src/Sso/SessionRevocationAdapter.php`: `revoke()`; `src/Tenancy/TreeChanges.php`: `changed()`;
   `src/IamManager.php`: `treeChanges()`.
@@ -473,8 +460,6 @@ connection and the retry helper in `storage-and-transactions.md`.
   `testARevocationThatThrowsLeavesNoSuspension`; and at the connection's own level alone, since each is refused before
   anything is read or locked, `testOutsideATransactionItIsRefused` and `testAnIdentityThatCannotBeNamedThrows`;
   `tests/Feature/IamManagerTest.php` `testTheScopeWideningsAreReachedThroughTheirOwnService`
-- `tests/Feature/Bindings/BindingRuleTest.php` `testApplyingAgainDecidesOnlyWhatTheOutcomeLeftOpen`,
-  `testReservingRecordsTheMembersDefaultEachSeamHolds`, `testABindingMadeOverAReservedSeamIsKept`
 - `tests/Unit/Testing/FakeProvisionerTest.php`
 - `tests/Performance/Provisioning/ProvisioningQueryBudgetTest.php` `testAProvisionedSignIn`, `testNoProvisioner`
 
@@ -487,24 +472,14 @@ connection and the retry helper in `storage-and-transactions.md`.
   `testAClassThatIsNoImplementationFailsClosed`, `testABindingThatResolvesToNoImplementationFailsClosed`
 - `tests/Feature/Tenancy/TenancySeamsTest.php` `testWithoutMembershipsSsosMembershipDefaultsStay`,
   `testMembershipsNamedBindTheMembershipAdapters`, `testTheInheritanceIsMandatoryWhileEnforcingOverATree`,
-  `testMembershipsBoundBeforeRegisteringBindTheAdaptersInEveryProviderOrder`,
-  `testMembershipsBoundAfterRegisteringBindTheAdapters`,
-  `testAnApplicationProviderBindingTenancyWhileRegisteringBindsTheAdapters` (an application provider registered after
-  every package provider, in every order of theirs), `testAnApplicationsOwnBindingMadeAfterRegisteringIsKept`,
-  `testAnApplicationsBindingOfSsosDefaultClassMadeWithItsTenancyIsKept` (SSO's own default classes bound in the
-  application's `register()` beside its memberships, in every provider order),
-  `testMembershipsBoundWhileBootingBindNothing`, `testWithTheSsoSwitchOffTenancyBoundLaterBindsNothing`,
-  `testTheSsoSwitchTurnedOnAfterRegisteringBindsNoTenancy`,
-  `testTheSsoSwitchTurnedOffAfterRegisteringStillBindsTheTenancy`,
-  `testTheTenancyRowsFollowTheSwitchAsItReadWhenGivenIt`, `testTheApplicationsOwnBindingsAreKept`,
-  `testTheTenancyRowsAreTransientOverSsosDefaults`, `testTheGrantScopeIsAuthorizationsQueryUntilTheApplicationBindsOne`;
+  `testMembershipsBoundWhileRegisteringBindTheMembershipAdapters`, `testMembershipsBoundWhileBootingBindNothing`,
+  `testTheGrantScopeIsAuthorizationsQuery`;
   `tests/Feature/IamServiceProviderTest.php` `testTheGrantScopeIsAuthorizationsQueryUntilSomethingElseIsBound`,
   `testTheGrantScopeIsUnknownWithTheAuthorizationSwitchOff`
-- `tests/Feature/Authorization/GrantSeamsTest.php` `testEveryAdapterIsBoundOverItsMembersDefaultInEveryProviderOrder`,
-  `testTheGrantHookIsBoundWhateverHooksAreListed`, `testAClassTheApplicationNamesInAuthorizationsConfigurationIsKept`,
-  `testAnApplicationBindingWins`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
-  `testWithTheSwitchOffNothingIsBound`, `testTheGrantHookIsMandatoryWhileDomainLinkingIsOn`,
-  `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`, `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
+- `tests/Feature/Authorization/GrantSeamsTest.php` `testTheGrantHookIsBoundWhateverHooksAreListed`,
+  `testADirectoryNamedInAuthorizationsConfigurationIsKept`, `testWithTheSsoSwitchOffTheGrantHookIsLeftAlone`,
+  `testWithTheSwitchOffNothingIsBound`, `testIamCheckRefusesTheCompositeWhileDomainLinkingIsOn`,
+  `testAnIdentityOfAnotherKindIsPassedOverAndTheListedHooksRun`
 - `tests/Integration/Authorization/GrantHookAdapterTest.php`, at the connection's own level on every engine, then at
   READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL,
   `testAGrantInATenantSuspendsTheLinkInAnotherTenantAndRevokesItsSessions`, `testAPlatformGrantSuspendsTheLink`,
