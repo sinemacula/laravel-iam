@@ -87,9 +87,7 @@ final class InstallCommand extends Command
         $configuration = $this->prefixableConfiguration($files, $ledger);
         $prefix        = $this->tablePrefix($configuration !== null);
 
-        // laravel-authorization's rule: 16 characters keep every name its
-        // migrations derive within PostgreSQL's 63.
-        if ($prefix !== null && preg_match('/^[a-z][a-z0-9_]{0,15}$/D', $prefix) !== 1) {
+        if ($prefix !== null && !TableNames::isValidPrefix($prefix)) {
             $this->error('The table prefix must be lower-case letters, digits and underscores, start with a letter and be at most 16 characters long.');
 
             return self::INVALID;

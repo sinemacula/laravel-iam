@@ -24,11 +24,10 @@ and the gaps in the members it works around.
 - The prefix for `laravel-authorization`'s tables comes from `--prefix`, or is asked for interactively, and is written
   only while neither its configuration nor any of its migrations has been published, into the configuration published
   in the run, as the default of `AUTHORIZATION_TABLE_PREFIX`, the member's `tables.prefix` setting. Tables already
-  migrated would otherwise lose their names. A prefix is checked against the member's own rule, at most 16 characters
-  so every name the migrations derive stays within PostgreSQL's 63, and an invalid one refuses the run with Symfony's
-  `INVALID` exit code before anything is published, rather than leaving a file the member refuses at boot. A prefix
-  that can no longer be written is reported as carried when `TableNames::prefix()` already reads it, or as not
-  written.
+  migrated would otherwise lose their names. A prefix is checked with the member's `TableNames::isValidPrefix()`, and
+  an invalid one refuses the run with Symfony's `INVALID` exit code before anything is published, rather than leaving a
+  file the member refuses at boot. A prefix that can no longer be written is reported as carried when
+  `TableNames::prefix()` already reads it, or as not written.
 - The install writes no other member configuration: audit-log's `capture.laravel.except_guards` and
   `definitions.require_registered` are owed, and `Checks\AuditCheck` enforces them.
 - Every run ends with a short list of what the application still owes, each item linking to the installation guide's
