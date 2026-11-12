@@ -11,9 +11,8 @@ use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 
 /**
- * Audit-log is configured as IAM-2.5 states (every `jwt` and `api_key` guard
- * excluded from its capture, Gate capture off, `require_registered` on), and
- * the mappers are registered while they are on.
+ * Checks audit-log excludes `jwt` and `api_key` guards, has Gate capture off
+ * and `require_registered` on, and holds the mappers while they are on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -22,18 +21,18 @@ use SineMacula\Laravel\Iam\Checks\Contracts\Check;
  */
 final readonly class AuditCheck implements Check
 {
-    /** @var string Why mappers never registered with audit-log are refused. */
+    /** @var string The failure for mappers never registered with audit-log. */
     private const string UNREGISTERED = 'The audit mappers are not registered with laravel-audit-log; '
         . 'register laravel-iam\'s provider before the application boots, or turn `%s` off.';
 
-    /** @var string Why a guard audit-log's own capture still records is refused. */
+    /** @var string The failure for guards audit-log's own capture still records. */
     private const string UNEXCLUDED = 'Guards [%s] are missing from `%s`, so each of their sign-ins is recorded twice: add them.';
 
-    /** @var string Why audit-log's Gate capture on is refused. */
+    /** @var string The failure for audit-log's Gate capture on. */
     private const string GATE_CAPTURE_ON = '`%s` must be false, so no authorization decision is recorded twice:'
         . ' this package maps laravel-authorization\'s decision events, the Gate checks laravel-authorization answers among them.';
 
-    /** @var string Why audit-log recording unregistered codes is refused. */
+    /** @var string The failure for audit-log recording unregistered codes. */
     private const string UNCHECKED_CODES = '`%s` must be true, so a code without a definition is refused rather than recorded unchecked; '
         . 'turn it on.';
 
@@ -46,10 +45,10 @@ final readonly class AuditCheck implements Check
      */
     public function __construct(
 
-        /** The application this package's registration with audit-log is recorded in. */
+        /** The application the audit registration is recorded in. */
         private Application $app,
 
-        /** Reads the mappers' switch and audit-log's refusal of unregistered codes. */
+        /** Reads the mappers' switch and the refusal of unregistered codes. */
         private AuditSettings $settings,
 
         /** Reads audit-log's capture exclusions and Gate capture. */
@@ -68,7 +67,7 @@ final readonly class AuditCheck implements Check
     }
 
     /**
-     * The check always applies: only the mappers' registration follows their
+     * The check always applies; only the registration follows the mappers'
      * switch.
      *
      * @return bool
@@ -80,8 +79,8 @@ final readonly class AuditCheck implements Check
     }
 
     /**
-     * The mappers' registration while they are on, then the guards' exclusion,
-     * Gate capture and the refusal of unregistered codes.
+     * The mappers' registration while on, then exclusions, Gate capture and
+     * codes.
      *
      * @return list<\Closure(): mixed>
      */

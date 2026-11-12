@@ -20,10 +20,7 @@ use Tests\Fixtures\Workers\WorkerStartingStandIn;
 use Tests\TestCase;
 
 /**
- * Feature tests for flushing every member's request state, the members' scoped
- * instances included, from the application an Octane worker clones its
- * requests' sandboxes from, as the worker starts, with Octane absent and its
- * event dispatched by name.
+ * Feature tests for the reset as an Octane worker starts, with Octane absent.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,8 +33,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     use PermutesProviderOrder, ReadsRawListeners;
 
     /**
-     * The listener is registered for Octane's event by its name, with Octane
-     * not installed.
+     * The listener is registered by the event's name without Octane installed.
      *
      * @return void
      */
@@ -48,8 +44,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * The worker's start resets the guards and forgets the members' scoped
-     * instances of the application the event carries, not of the current one.
+     * The worker's start resets the application the event carries.
      *
      * @return void
      *
@@ -88,8 +83,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * An application that is not a container is passed over for the current
-     * one.
+     * An application that is not a container falls back to the current one.
      *
      * @return void
      *
@@ -105,10 +99,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * An instance the application binds over a member's scoped seam before the
-     * member registers, which the member's `scopedIf()` then leaves alone,
-     * outlives the worker's start, so every sandbox cloned from the worker can
-     * still resolve it.
+     * An instance the application bound over a scoped seam outlives the reset.
      *
      * @return void
      *
@@ -154,8 +145,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * Resolve the abstract from the application, as whatever the application
-     * holds for it, not as the member binds it.
+     * Resolve the abstract as the application holds it.
      *
      * @param  string  $abstract
      * @return mixed
@@ -168,9 +158,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * Bind a `laravel-authentication` auth manager expecting its guard state
-     * forgotten once, and return the application's instance of a member's
-     * scoped seam.
+     * The application's instance of a member's scoped seam.
      *
      * @return object
      *
@@ -187,9 +175,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state forgotten exactly once, first pointed at the given application when
-     * one is given, and never pointed at any other.
+     * An auth manager expecting its guard state forgotten exactly once.
      *
      * @param  \Illuminate\Contracts\Foundation\Application|null  $app
      * @return \SineMacula\Laravel\Authentication\AuthManager
@@ -208,8 +194,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state left alone.
+     * An auth manager expecting its guard state left alone.
      *
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */

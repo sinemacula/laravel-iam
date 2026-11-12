@@ -17,28 +17,8 @@ use Tests\Concerns\SignsInPeople;
 use Tests\TestCase;
 
 /**
- * Integration tests proving that nothing the suite reports on a `jwt` guard is
- * recorded twice (IAM-9.6): `laravel-authentication`'s guard dispatches
- * Laravel's `Login`, `Failed` and `Logout` beside its own events, which this
- * package maps to audit-log's own codes, so once the guard is excluded from
- * audit-log's Laravel capture, as `CaptureExclusions` computes it for the
- * application to set, a sign-in, a refused sign-in and a sign-out are each
- * recorded once, in audit-log's own tables; without the exclusion each is
- * recorded twice, which is what the exclusion is for.
- *
- * A sign-in through the guard's own `attempt()` is the exception the exclusion
- * leaves: `laravel-authentication` reports it with Laravel's `Login` alone and
- * no `SignedIn`, so it is recorded once, by audit-log's own capture, while the
- * guard is not excluded, and by nothing once it is, until the member reports it
- * with an event of its own. A refused `attempt()` dispatches
- * `AuthenticationFailed` beside `Failed`, so it is recorded once while the
- * guard is excluded and twice while it is not, as any refused sign-in is.
- *
- * An `api_key` guard's `logout()` dispatches Laravel's `Logout` alone: an API
- * key has no session, so no `SessionRevoked` is reported beside it and no
- * mapper records it. Excluding the guard, as IAM-9.6 asks, prevents no double
- * record there; it removes audit-log's only record of the sign-out, another gap
- * of the member's that the design note lists.
+ * Integration tests that nothing reported on a `jwt` or `api_key` guard is
+ * recorded twice.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -57,8 +37,7 @@ final class NoDoubleRecordsTest extends TestCase
     private const string API_KEY_GUARD = 'keys';
 
     /**
-     * Rows of `[isolation level, excluded, records]`: each isolation level with
-     * the guard excluded, recorded once, and not excluded, recorded twice.
+     * Rows of `[isolation level, excluded, records]`: once excluded, twice not.
      *
      * @return iterable<string, array{0: ?string, 1: bool, 2: int}>
      */
@@ -73,8 +52,7 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * A sign-in on the `jwt` guard is recorded once as
-     * `authentication.signed_in` while the guard is excluded, and twice while
+     * A sign-in is recorded once while the guard is excluded, and twice while
      * it is not.
      *
      * @param  ?string  $level
@@ -102,8 +80,7 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * A refused sign-in on the `jwt` guard is recorded once as
-     * `authentication.sign_in_failed` while the guard is excluded, and twice
+     * A refused sign-in is recorded once while the guard is excluded, and twice
      * while it is not.
      *
      * @param  ?string  $level
@@ -132,9 +109,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * Rows of `[isolation level, excluded, records]`: each isolation level with
-     * the guard excluded, recorded by nothing, and not excluded, recorded once
-     * by audit-log's own capture of Laravel's `Login`.
+     * Rows of `[isolation level, excluded, records]`: none excluded, once by
+     * audit-log's capture not.
      *
      * @return iterable<string, array{0: ?string, 1: bool, 2: int}>
      */
@@ -149,11 +125,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * A sign-in through the `jwt` guard's own `attempt()` dispatches no event
-     * of `laravel-authentication`'s that the mapper records, only Laravel's
-     * `Login`: it is recorded once by audit-log's own capture while the guard
-     * is not excluded, and goes unrecorded once it is, a gap of the member's
-     * that the design note lists.
+     * An `attempt()` sign-in is recorded only by audit-log's capture, so not at
+     * all once excluded.
      *
      * @param  ?string  $level
      * @param  bool  $excluded
@@ -179,9 +152,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * A refused `attempt()` on the `jwt` guard is recorded once as
-     * `authentication.sign_in_failed` while the guard is excluded, and twice
-     * while it is not.
+     * A refused `attempt()` is recorded once while the guard is excluded, and
+     * twice while it is not.
      *
      * @param  ?string  $level
      * @param  bool  $excluded
@@ -207,8 +179,7 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * A sign-out of the session the `jwt` guard acts on is recorded once as
-     * `authentication.signed_out` while the guard is excluded, and twice while
+     * A sign-out is recorded once while the guard is excluded, and twice while
      * it is not.
      *
      * @param  ?string  $level
@@ -235,11 +206,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * An `api_key` guard's `logout()` dispatches only Laravel's `Logout`, which
-     * no mapped event accompanies: it is recorded once, as
-     * `authentication.signed_out`, by audit-log's own capture while the guard
-     * is not excluded, and goes unrecorded once it is, a gap of the member's
-     * that the design note lists.
+     * An `api_key` guard's sign-out is recorded only by audit-log's capture, so
+     * not at all once excluded.
      *
      * @param  ?string  $level
      * @param  bool  $excluded
@@ -273,8 +241,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * Write the exclusions `CaptureExclusions` computes, as the application
-     * would, or leave audit-log's capture of every guard on.
+     * Write the exclusions `CaptureExclusions` computes, or leave every guard
+     * captured.
      *
      * @param  bool  $excluded
      * @param  list<string>  $guards
@@ -308,8 +276,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * Fail the test while the guard is excluded and any code was recorded more
-     * than once.
+     * Fail while the guard is excluded and any code was recorded more than
+     * once.
      *
      * @param  bool  $excluded
      * @return void

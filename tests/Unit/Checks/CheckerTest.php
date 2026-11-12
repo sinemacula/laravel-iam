@@ -14,9 +14,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Fixtures\Checks\ScriptedCheck;
 
 /**
- * Unit tests for running every member's check and this package's own
- * (IAM-10.1): each reported, and the run passing only when every member's
- * command exits successfully and no check of this package's finds a problem.
+ * Unit tests for the checker.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,8 +34,7 @@ final class CheckerTest extends TestCase
     private array $commands = [];
 
     /**
-     * Start every test with every member's command registered and exiting
-     * successfully, and every check of this package's passing.
+     * Register passing member commands and passing checks.
      *
      * @return void
      */
@@ -82,8 +79,7 @@ final class CheckerTest extends TestCase
     }
 
     /**
-     * Every member's command runs in order, then every check of this package's,
-     * and the run passes.
+     * Every member command, then every check, runs in order and passes.
      *
      * @return void
      */
@@ -111,8 +107,7 @@ final class CheckerTest extends TestCase
     }
 
     /**
-     * A member's command exiting non-zero fails the run, and the rest still
-     * run.
+     * A failing member command fails the run; the rest still run.
      *
      * @return void
      */
@@ -155,8 +150,7 @@ final class CheckerTest extends TestCase
     }
 
     /**
-     * A member's command that is not registered fails the run, every member's,
-     * `laravel-authorization`'s included, and the rest still run.
+     * A missing member command fails the run; the rest still run.
      *
      * @param  string  $command
      * @return void
@@ -184,8 +178,7 @@ final class CheckerTest extends TestCase
     }
 
     /**
-     * A check's problems fail the run and its notes do not; one that does not
-     * apply is reported so; one that cannot be built fails.
+     * Problems fail, notes do not, and unbuildable checks fail.
      *
      * @return void
      */

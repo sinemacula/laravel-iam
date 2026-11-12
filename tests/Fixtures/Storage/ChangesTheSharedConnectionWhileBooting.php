@@ -9,8 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * An application's provider that names another shared storage connection in its
- * `boot()`, once every member key has been aligned in the booting phase.
+ * Names another shared storage connection in `boot()`, after alignment.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

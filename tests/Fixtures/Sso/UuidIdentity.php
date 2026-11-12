@@ -9,12 +9,7 @@ use Illuminate\Foundation\Auth\User;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An Eloquent identity keyed by a UUID it generates, written in lower case.
- *
- * Its table is created by the test that needs it, with the key a `uuid` column:
- * PostgreSQL's `uuid` type and a MySQL `_ci` collation both match the same UUID
- * written in upper case, and on SQLite the key is compared case-insensitively,
- * so a reference naming it in upper case finds it on every engine.
+ * An Eloquent identity keyed by a lower-case UUID it generates.
  *
  * @property string $id
  *

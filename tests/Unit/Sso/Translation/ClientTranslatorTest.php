@@ -10,9 +10,7 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 
 /**
- * Unit tests for handing SSO the client `laravel-authentication` was handed:
- * its IP address and user agent cross as `laravel-authentication` keeps them,
- * and a client of which nothing is known stays one.
+ * Unit tests for translating `laravel-authentication`'s client into SSO's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +21,7 @@ use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 final class ClientTranslatorTest extends TestCase
 {
     /**
-     * The IP address and user agent cross as given; the facts only a same-site
-     * check judges stay behind.
+     * The IP address and user agent cross as given.
      *
      * @return void
      */
@@ -37,8 +34,7 @@ final class ClientTranslatorTest extends TestCase
     }
 
     /**
-     * A client of which nothing is known, as a job or a command hands over, is
-     * one to SSO too.
+     * A client of which nothing is known stays one.
      *
      * @return void
      */

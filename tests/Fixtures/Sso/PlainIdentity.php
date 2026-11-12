@@ -8,8 +8,7 @@ use Illuminate\Auth\GenericUser;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An identity `laravel-authentication` could sign in that is no Eloquent model,
- * so it records no session's owner and SSO cannot name it by reference.
+ * An identity that is no Eloquent model, so SSO cannot name it by reference.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

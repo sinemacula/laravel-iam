@@ -78,14 +78,7 @@ use Tests\Fixtures\Storage\RecordsMemberConnections;
 use Tests\TestCase;
 
 /**
- * Feature tests for the package service provider: the configuration and the
- * `iam` manager it registers, the storage connection it aligns as it registers,
- * as the application boots and once it has booted, a member registered while it
- * boots or only after, the binding rule it applies as it registers and the
- * outcome it keeps, a late registration settling at once, a registration while
- * the application boots settling from the provider's own `boot()`, the
- * configuration commands a mismatch does not refuse, the worker reset listeners
- * and the publishing tag.
+ * Feature tests for the package service provider.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -104,8 +97,7 @@ final class IamServiceProviderTest extends TestCase
     private array $environment = [];
 
     /**
-     * Destroy the application, then clear the environment variables the test
-     * set.
+     * Destroy the application and clear the test's environment variables.
      *
      * @return void
      */
@@ -120,8 +112,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package's configuration is merged under `iam`, as the packaged file
-     * declares it.
+     * The package's configuration is merged under `iam`.
      *
      * @return void
      */
@@ -131,8 +122,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * `iam:check` is declared to `laravel-authorization` as composing its
-     * check, so `laravel-authorization` boots for diagnosis under it.
+     * `iam:check` is declared as composing `authorization:check`.
      *
      * @return void
      */
@@ -144,8 +134,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The callers MFA's challenge gateway keeps for its factor codes are one
-     * instance for each request or job, forgotten between them.
+     * MFA's factor code callers are one instance per request or job.
      *
      * @return void
      *
@@ -164,8 +153,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The redemption records are one instance for each request or job, held
-     * under this package's scoped key.
+     * The redemption records are scoped under this package's key.
      *
      * @return void
      *
@@ -188,9 +176,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The worker reset forgets the callers MFA's challenge gateway keeps, so a
-     * caller kept for a binding something still references is not read back
-     * after the reset.
+     * The worker reset forgets MFA's factor code callers.
      *
      * @return void
      *
@@ -213,10 +199,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The grant half of SSO's principal scope is `laravel-authorization`'s
-     * grant scope query (`GrantScopeAdapter`), built afresh on each call, while
-     * the authorization capability's switch is on and nothing else is bound to
-     * it, and an instance bound once the package has registered is kept.
+     * The grant scope is authorization's query until something else is bound.
      *
      * @return void
      *
@@ -238,8 +221,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * With the authorization capability's switch off, the grant half is this
-     * package's `UnknownGrantScope`, one shared instance.
+     * With authorization off, the grant scope is a shared `UnknownGrantScope`.
      *
      * @return void
      *
@@ -273,8 +255,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Audit-log reads `laravel-authentication`'s guards through this package's
-     * reader.
+     * Audit-log reads the guards through this package's reader.
      *
      * @return void
      *
@@ -286,8 +267,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The shared connection is written into the member keys as this package
-     * registers, so a provider registering straight after it already reads it.
+     * The shared connection is written into the member keys at registration.
      *
      * @return void
      */
@@ -301,9 +281,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member that registers after this package, and so merges its own
-     * configuration only then, is aligned as the application boots, in every
-     * provider order.
+     * A member registered after this package is aligned as the app boots.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -324,8 +302,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member key naming another connection refuses boot, in every provider
-     * order.
+     * A member key naming another connection refuses boot.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -344,9 +321,8 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member key this package wrote as it registered follows the shared
-     * connection when the application names another one in a later
-     * `register()`, rather than being refused as the application's own.
+     * A key this package wrote follows a connection changed in a later
+     * `register()`.
      *
      * @return void
      */
@@ -366,9 +342,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Every member key this package wrote, as it registered or in the booting
-     * phase, follows a shared connection the application names in a `boot()`,
-     * once the application has booted, in every provider order.
+     * A key this package wrote follows a connection changed in a `boot()`.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -389,9 +363,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member key the application points at another connection in a `boot()`,
-     * once the booting phase has checked the keys, is refused once the
-     * application has booted.
+     * A member key pointed elsewhere in a `boot()` is refused once booted.
      *
      * @return void
      */
@@ -409,10 +381,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Rows of `[arguments]`: the process's arguments for each console command
-     * that lists, describes, discovers, caches or clears configuration, after
-     * an option, and as the console finds the command when none is named
-     * (`list`) or the environment is given after a space.
+     * Rows of `[arguments]` naming a configuration command.
      *
      * @return iterable<string, array{0: list<string>}>
      */
@@ -438,10 +407,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * While a console command that lists, describes, discovers, caches or
-     * clears configuration runs, a mismatch is not refused, so it can still be
-     * inspected and cleared; the unset keys are still aligned and the seams
-     * still bound.
+     * A configuration command does not refuse a mismatch.
      *
      * @param  list<string>  $arguments
      * @return void
@@ -460,8 +426,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Rows of `[variable, key]`: an environment variable that fills a
-     * connection key this package reads, and that key.
+     * Rows of `[variable, key]`.
      *
      * @return iterable<string, array{0: string, 1: string}>
      */
@@ -473,10 +438,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * While a console command that clears or caches configuration runs, a
-     * connection key that is not a name, a cached one included, does not stop
-     * the application booting, so the command can still clear or replace it;
-     * the key is left as it is.
+     * A configuration command leaves a connection key that is not a name alone.
      *
      * @param  string  $variable
      * @param  string  $key
@@ -496,8 +458,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Any other console command, as the application's requests and jobs,
-     * refuses a connection key that is not a name.
+     * Any other command refuses a connection key that is not a name.
      *
      * @param  string  $variable
      * @param  string  $key
@@ -528,9 +489,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A connection key that is not a name is refused as the package registers,
-     * not only once every provider has: an application provider that sets the
-     * key later does not let it pass.
+     * A connection key that is not a name is refused at registration.
      *
      * @param  string  $key
      * @return void
@@ -551,13 +510,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Rows of `[arguments]`: the process's arguments for another console
-     * command, alone, after an option, after the environment given after a
-     * space, and after an environment that names a configuration command; and
-     * for a process that is not Artisan and names no command, which runs no
-     * console command, `list` among them: a test runner, alone or given only
-     * options, and a long-lived worker script, with no arguments at all or none
-     * but its own name.
+     * Rows of `[arguments]` naming no configuration command.
      *
      * @return iterable<string, array{0: list<string>}>
      */
@@ -589,9 +542,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Any other console command refuses a mismatch, the value of an environment
-     * given after a space never being taken for the command, and so does any
-     * process other than Artisan that names no command.
+     * Any other command, or a non-Artisan process, refuses a mismatch.
      *
      * @param  list<string>  $arguments
      * @return void
@@ -608,8 +559,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Outside the console a mismatch is refused, whatever the process's
-     * arguments name.
+     * A mismatch is refused outside the console.
      *
      * @return void
      */
@@ -624,9 +574,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Every adapter is bound over its member's default in every provider order,
-     * except the passkey gateway, SSO's evidence policy and SSO's membership
-     * seams, which stay off by default.
+     * Every adapter on by default is bound over its member's default.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -656,9 +604,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The application's own binding of every seam wins over the adapter in
-     * every provider order, whether it is made before any provider registers or
-     * in an application provider's `register()`.
+     * The application's own binding wins over the adapter.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -690,9 +636,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Registered once the application has booted, the package settles at once,
-     * since a booting callback registered then would never run: a member key
-     * naming another connection is refused there and then.
+     * A registration after boot refuses a mismatch at once.
      *
      * @return void
      */
@@ -712,8 +656,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A late registration binds the seams at once, and leaves no booting
-     * callback behind.
+     * A registration after boot binds the seams at once.
      *
      * @return void
      *
@@ -733,10 +676,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package settles the storage connections in the booting phase, before
-     * the first provider boots, in every provider order, so every member key, a
-     * key of a member registered after this package included, is aligned before
-     * any provider boots.
+     * Storage is settled before any provider boots.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -754,8 +694,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The seams are bound before the first provider boots, in every provider
-     * order.
+     * The seams are bound before any provider boots.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -771,8 +710,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Registered from another provider's `boot()`, once the booting callbacks
-     * have run, the package still binds the seams.
+     * A registration from another provider's `boot()` still binds the seams.
      *
      * @return void
      *
@@ -789,8 +727,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Registered while the application boots, the package still refuses a
-     * member key naming another connection.
+     * A registration from another provider's `boot()` refuses a mismatch.
      *
      * @return void
      */
@@ -807,9 +744,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The package settles once: booting its provider again, after a member key
-     * has been pointed at another connection, neither binds the seams nor
-     * checks or aligns the storage connections again.
+     * The package settles only once.
      *
      * @return void
      *
@@ -836,9 +771,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member registered from another provider's `boot()`, once the booting
-     * callbacks have run, merges its configuration only then, and is still
-     * given the shared connection once the application has booted.
+     * A member registered from a `boot()` is aligned once booted.
      *
      * @return void
      */
@@ -854,8 +787,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member registered while the application boots still has a key naming
-     * another connection refused.
+     * A member registered from a `boot()` has a mismatch refused.
      *
      * @return void
      */
@@ -872,11 +804,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member registered while the application boots, whose configuration the
-     * application has published without the `storage` block, keeps its own
-     * connection from its environment, which is then refused: nothing is
-     * written into the published configuration before the member has merged its
-     * own over it.
+     * A member registered from a `boot()` keeps its connection until it merges.
      *
      * @return void
      */
@@ -893,9 +821,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * A member registered only once the application has booted could not be
-     * given the shared connection in time, so the application refuses to finish
-     * booting without it, naming the member.
+     * A member registered only after boot refuses boot.
      *
      * @return void
      */
@@ -910,8 +836,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Registered once the application has booted without a member, the package
-     * refuses the missing member at once.
+     * A registration after boot refuses a missing member at once.
      *
      * @return void
      */
@@ -928,9 +853,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * While a console command that lists, describes, discovers, caches or
-     * clears configuration runs, a missing member is not refused either, and
-     * the members present are still aligned.
+     * A configuration command does not refuse a missing member.
      *
      * @return void
      */
@@ -947,9 +870,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Once the application has booted, this package's contributors are
-     * registered under the `mfa` and `sso` namespaces of the authentication
-     * context, each once, while both capabilities' switches are on.
+     * The `mfa` and `sso` contributors are registered once booted.
      *
      * @return void
      *
@@ -963,8 +884,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The worker reset listeners are registered for Octane's workers and
-     * requests, by the events' names, and for the queue's jobs.
+     * The worker reset listeners are registered for Octane and the queue.
      *
      * @return void
      */
@@ -1003,9 +923,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Rows of `[IAM_WORKERS_RESET, whether the reset is on]`: the values that
-     * turn it off, and those that leave it on, an empty, a null or an
-     * unrecognised one among them.
+     * Rows of `[IAM_WORKERS_RESET, whether the reset is on]`.
      *
      * @return iterable<string, array{0: string, 1: bool}>
      */
@@ -1033,9 +951,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * The switch is read as the environment fills it, so turning the reset off
-     * with `0`, or leaving any value it does not recognise, boots and turns it
-     * off or leaves it on rather than refusing the value.
+     * The worker reset switch is read leniently, as the environment fills it.
      *
      * @param  string  $value
      * @param  bool  $on
@@ -1053,8 +969,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * In the console, the configuration file is offered for publishing under
-     * the `iam-config` tag.
+     * The configuration is published under the `iam-config` tag.
      *
      * @return void
      */
@@ -1067,8 +982,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * In the console, `iam:install` and `iam:check` are registered, each by its
-     * own command class.
+     * `iam:install` and `iam:check` are registered in the console.
      *
      * @return void
      */
@@ -1094,8 +1008,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Outside the console, nothing is offered for publishing, and no command is
-     * registered.
+     * Nothing is published or registered outside the console.
      *
      * @return void
      */
@@ -1126,8 +1039,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Remove the worker reset's switch from the configuration, as the package
-     * has merged it.
+     * Remove the worker reset switch from the configuration.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -1140,8 +1052,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Configure a second connection beside the default one, as an application
-     * names for its shared storage connection.
+     * Configure a second connection beside the default one.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -1177,8 +1088,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Return every member's provider but `laravel-sso`'s, in the order the test
-     * case registers them.
+     * Every member's provider but `laravel-sso`'s.
      *
      * @return list<class-string<\Illuminate\Support\ServiceProvider>>
      */
@@ -1200,8 +1110,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Set environment variables for the next application, to be cleared once
-     * the test ends.
+     * Set environment variables, cleared once the test ends.
      *
      * @param  array<string, string>  $variables
      * @return void
@@ -1244,8 +1153,7 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
-     * Every capability's rows, as the application's configuration declares
-     * them.
+     * Every capability's rows.
      *
      * @return list<\SineMacula\Laravel\Iam\Bindings\SeamBinding>
      *

@@ -14,10 +14,7 @@ use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
 use Tests\TestCase;
 
 /**
- * Feature tests for the records SSO's redemptions keep for one request: each is
- * one instance for the whole of a request or a job, resolved through this
- * package's own key for scoped adapters, and the worker reset forgets it, so
- * the next unit of work starts with none (IAM-8.1).
+ * Feature tests for the request-scoped records SSO's redemptions keep.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -40,8 +37,8 @@ final class RedemptionRecordsTest extends TestCase
     }
 
     /**
-     * The record is one instance for the whole unit of work, the one held under
-     * the package's key for scoped adapters.
+     * The record is one instance for the unit of work, held under the scoped
+     * key.
      *
      * @param  class-string  $record
      * @return void
@@ -60,8 +57,7 @@ final class RedemptionRecordsTest extends TestCase
     }
 
     /**
-     * The worker reset forgets the record, so the next unit of work is given a
-     * new one.
+     * The worker reset forgets the record.
      *
      * @param  class-string  $record
      * @return void

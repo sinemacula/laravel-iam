@@ -7,8 +7,7 @@ namespace SineMacula\Laravel\Iam\Bindings\Enums;
 use SineMacula\Laravel\Authorization\Diagnostics\Enums\Lifetime as ReportedLifetime;
 
 /**
- * How long the container keeps an adapter the binding rule binds over a
- * member's seam.
+ * How long the container keeps an adapter bound over a member's seam.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -27,9 +26,7 @@ enum Lifetime: string
     case SCOPED = 'scoped';
 
     /**
-     * The lifetime `laravel-authorization`'s configuration report names this
-     * one by, as an adapter bound with it is declared to that report: a shared
-     * adapter is a singleton there.
+     * The lifetime laravel-authorization's configuration report names this by.
      *
      * @return \SineMacula\Laravel\Authorization\Diagnostics\Enums\Lifetime
      */

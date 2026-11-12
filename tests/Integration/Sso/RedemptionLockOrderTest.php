@@ -39,35 +39,8 @@ use Tests\Fixtures\Sso\Handoff;
 use Tests\TestCase;
 
 /**
- * Integration tests for the order the redemptions take their locks in, and for
- * redemptions racing the changes SSO revokes sessions for, on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ (IAM-4.1, IAM-4.2, IAM-11.1,
- * IAM-11.2).
- *
- * Every lock a redemption takes follows SSO's order: SSO's own (for a `link`,
- * the identity's guard first; the connection, the handoff code, the link), then
- * `laravel-authentication`'s connection guard, then the session's row, always
- * last. A change committed while a redemption runs, after it read but before it
- * locked (a connection disabled, a link removed, the same session renewed), is
- * either seen through the redemption's locks, or, on PostgreSQL at REPEATABLE
- * READ, fails it to serialise, and the retry helper runs the whole redemption
- * again, which sees it: a sign-in never signs anyone in through a connection or
- * link that is gone, and a renewal renews from what the other committed. A
- * `link` racing another holder of the identity's guard waits for it, and on
- * PostgreSQL at REPEATABLE READ fails to serialise and is redeemed again,
- * standalone, from its start.
- *
- * The other change is made on a second connection to the test's database, for
- * another client, so it never waits on the redemption's rows. Each race stages
- * that one interleaving, the other change committed between the redemption's
- * first plain read of its code and its first lock, which is the one a single
- * process can stage without waiting on itself; it is not a general test of
- * concurrency.
- *
- * The lock order is read from the statements on the storage connection alone:
- * the first lock of each table, in order, and every later locking statement,
- * none of which may go back to a table earlier in the order except on a row it
- * names by its id that is already locked.
+ * Integration tests for the redemptions' lock order, and for redemptions racing
+ * SSO's revoking changes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -148,9 +121,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A sign-in takes SSO's locks, the connection, the code and the link, then
-     * `laravel-authentication`'s connection guard, then writes the session,
-     * never going back to an earlier lock.
+     * A sign-in locks SSO's rows, the connection guard, then the session.
      *
      * @param  string  $level
      * @return void
@@ -175,9 +146,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A re-authentication takes SSO's locks, then the session's row, last, and
-     * `laravel-authentication`'s one write renews it under that lock, never
-     * going back to an earlier lock.
+     * A re-authentication locks the session's row last.
      *
      * @param  string  $level
      * @return void
@@ -209,8 +178,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A `link` takes the identity's guard before every other lock, then SSO's
-     * own in their order, never going back to an earlier lock.
+     * A `link` takes the identity's guard before every other lock.
      *
      * @param  string  $level
      * @return void
@@ -239,10 +207,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A `link` redeemed while another transaction holds the identity's guard
-     * waits for it and links the person in one call: on PostgreSQL at
-     * REPEATABLE READ it fails to serialise once the other commits, and SSO
-     * runs its standalone transaction again.
+     * A `link` racing a holder of the identity's guard waits, then links.
      *
      * @param  string  $level
      * @return void
@@ -273,10 +238,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A connection disabled while a sign-in through it runs, after the sign-in
-     * read and before it locked, is seen: the sign-in is refused, no session is
-     * written, and on PostgreSQL at REPEATABLE READ it is first run again from
-     * its start, once.
+     * A sign-in racing a connection disable never signs in.
      *
      * @param  string  $level
      * @return void
@@ -303,9 +265,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A link removed while a sign-in through it runs, after the sign-in read
-     * and before it locked, is seen: nobody is signed in, and on PostgreSQL at
-     * REPEATABLE READ the sign-in is first run again from its start, once.
+     * A sign-in racing a link removal never signs in.
      *
      * @param  string  $level
      * @return void
@@ -339,10 +299,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Two re-authentications racing for one session both renew it: the later,
-     * after the other committed, waits for nothing it holds, and on PostgreSQL
-     * at REPEATABLE READ fails to serialise at the session's row and is run
-     * again from its start, once, renewing from what the other committed.
+     * Two re-authentications racing for one session both renew it.
      *
      * @param  string  $level
      * @return void
@@ -378,11 +335,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A sign-in racing a connection disable whose last attempt fails to
-     * serialise, on PostgreSQL at REPEATABLE READ with one attempt configured,
-     * throws a failure Laravel's detector recognises, so the caller retries the
-     * request; no session is written. At every other level it waits, and is
-     * refused.
+     * A sign-in whose last attempt fails to serialise throws.
      *
      * @param  string  $level
      * @return void
@@ -420,11 +373,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * A re-authentication racing another for the same session whose last
-     * attempt fails to serialise, on PostgreSQL at REPEATABLE READ with one
-     * attempt configured, throws a failure Laravel's detector recognises, and
-     * leaves its code unspent, so the request retried renews the session. At
-     * every other level it waits, and renews.
+     * A re-authentication whose last attempt fails to serialise throws.
      *
      * @param  string  $level
      * @return void
@@ -473,8 +422,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Assert that what the redemption answered is a failure to serialise that
-     * Laravel's concurrency detector recognises, the database's own behind it.
+     * Assert the answer is a serialisation failure Laravel's detector knows.
      *
      * @param  mixed  $answer
      * @return void
@@ -578,10 +526,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Hold what the first side locks in a transaction left open on the storage
-     * connection, run the second side in a forked worker, commit once the
-     * database reports the worker waiting on a lock, and return what the worker
-     * reported once it went on.
+     * Race the second side, in a forked worker, against the first side's locks.
      *
      * @param  \Closure(): mixed  $hold
      * @param  \Closure(): string  $second
@@ -651,10 +596,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Run the second side in the forked worker, on the racer's connection, as
-     * the default and so the storage connection, at the level given: report the
-     * connection's id before it starts and the outcome after, then end the
-     * worker, so nothing the test set up is torn down twice.
+     * Run the second side in the forked worker, then end the worker.
      *
      * @param  \Closure(): string  $second
      * @param  \Closure(string): void  $send
@@ -686,8 +628,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Wait until the database reports the worker's connection waiting for a row
-     * lock, failing when it never does.
+     * Wait until the database reports the worker waiting for a row lock.
      *
      * @param  string  $backend
      * @return void
@@ -714,11 +655,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Run the change on the second connection, made the default (and so the
-     * storage connection) while it runs, once the redemption first reads its
-     * code on the storage connection inside its transaction, after it has read
-     * and before it locks; and answer each time the redemption read its code
-     * there, one for every time it ran.
+     * Run the change elsewhere once the redemption first reads its code.
      *
      * @param  \Closure(): void  $change
      * @return \ArrayObject<int, true>
@@ -776,8 +713,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Whether the isolation level and driver retry a redemption that locks a
-     * row another committed after it read: PostgreSQL's REPEATABLE READ.
+     * Whether the level and driver retry a redemption on a stale snapshot.
      *
      * @param  string  $level
      * @return bool
@@ -788,9 +724,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Start recording the statements run on the storage connection, and on it
-     * alone, inside a transaction, each with its bindings as strings, in the
-     * order they are bound.
+     * Record the statements run on the storage connection in a transaction.
      *
      * @return void
      */
@@ -818,10 +752,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * The rank in SSO's lock order of each table first locked since recording
-     * began, in the order first locked: by a locking read or by a write of a
-     * table the order names. A later write of a table already locked is not
-     * counted again here; `assertNoLockGoesBack()` checks every one of them.
+     * The lock-order rank of each table, in the order first locked.
      *
      * @return list<int>
      */
@@ -844,11 +775,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * Assert that every locking statement since recording began, not only the
-     * first of each table, follows the order: one on a table earlier in the
-     * order than a lock already taken is allowed only as a write or a locking
-     * read of a row it names by its id that an earlier locking statement on
-     * that table already locked, which takes no new lock.
+     * Assert no locking statement goes back in the lock order.
      *
      * @return void
      */
@@ -880,8 +807,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * The rank in SSO's lock order of the table the statement locks, or `null`
-     * when it locks none the order names: a plain read locks nothing.
+     * The table's rank in SSO's lock order, or `null` when it locks none.
      *
      * @param  string  $sql
      * @return ?int
@@ -896,8 +822,7 @@ final class RedemptionLockOrderTest extends TestCase
     }
 
     /**
-     * The id the statement names its row by (`where id = ?`, qualified or not),
-     * as bound, or `null` when it names none.
+     * The id the statement names its row by, or `null` when it names none.
      *
      * @param  string  $sql
      * @param  list<string>  $bindings

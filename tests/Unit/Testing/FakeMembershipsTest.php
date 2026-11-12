@@ -15,7 +15,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Sso\PlainIdentity;
 
 /**
- * Unit tests for the fake memberships (IAM-7.4).
+ * Unit tests for the fake memberships.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -32,8 +32,7 @@ final class FakeMembershipsTest extends TestCase
     private ?FakeMemberships $fake = null;
 
     /**
-     * An identity never granted anything holds no membership, in a complete
-     * set, and the question is kept.
+     * An identity never granted anything holds a complete, empty set.
      *
      * @return void
      */
@@ -47,8 +46,7 @@ final class FakeMembershipsTest extends TestCase
     }
 
     /**
-     * The same person read again is the same identity, another person is
-     * another, and a grant of a tenant already held replaces its membership.
+     * A grant of a tenant already held replaces its membership.
      *
      * @return void
      */
@@ -72,8 +70,7 @@ final class FakeMembershipsTest extends TestCase
     }
 
     /**
-     * Identities of two kinds with the same identifier are two identities, and
-     * marking one's set incomplete leaves the other's complete.
+     * Identities of two kinds with the same identifier are two identities.
      *
      * @return void
      */
@@ -89,8 +86,7 @@ final class FakeMembershipsTest extends TestCase
     }
 
     /**
-     * An identity the fake was told to fail for throws the failure given, or
-     * one of its own.
+     * An identity the fake fails for throws the failure given, or its own.
      *
      * @return void
      *
@@ -114,8 +110,7 @@ final class FakeMembershipsTest extends TestCase
     }
 
     /**
-     * An identity with no identifier the fake can key its answers by is
-     * refused.
+     * An identity with no usable identifier is refused.
      *
      * @return void
      */
@@ -127,8 +122,7 @@ final class FakeMembershipsTest extends TestCase
     }
 
     /**
-     * `fake()` binds a fresh fake as the application's memberships, in the
-     * container given or the global one.
+     * `fake()` binds a fresh fake as the memberships.
      *
      * @return void
      */

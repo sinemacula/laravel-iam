@@ -25,11 +25,8 @@ use SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy;
 use SineMacula\Laravel\Sso\Links\LinkStore;
 
 /**
- * The seams `laravel-authentication`, SSO and MFA join through for SSO (IAM-4.2
- * to IAM-4.4, IAM-4.6, IAM-4.7, IAM-4.9, IAM-4.10, IAM-5.1), switched by
- * `iam.adapters.sso`. SSO's `Linker` and, while `iam.sso.evidence` is on, its
- * `EvidencePolicy` are bound to SSO's own `LinkStore` and
- * `ConnectionEvidencePolicy`, scoped.
+ * The seams joining `laravel-authentication`, SSO and MFA for SSO, switched by
+ * `iam.adapters.sso`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -83,8 +80,7 @@ final readonly class SsoSeams implements ProvidesSeams
     }
 
     /**
-     * Whether the switch is on: `false`, `0`, `off` and `no` turn it off, and
-     * anything else, a missing value included, leaves it on.
+     * Whether the switch is on: only `false`, `0`, `off` or `no` turns it off.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -97,7 +93,7 @@ final readonly class SsoSeams implements ProvidesSeams
     }
 
     /**
-     * Whether SSO is in use, as SSO itself reads the configuration given.
+     * Whether SSO is in use, as SSO reads the configuration.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -108,8 +104,7 @@ final readonly class SsoSeams implements ProvidesSeams
     }
 
     /**
-     * Whether the evidence switch is on, read strictly since it widens what a
-     * provider's assertion counts for.
+     * Whether the evidence switch is on, read strictly as it widens trust.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool

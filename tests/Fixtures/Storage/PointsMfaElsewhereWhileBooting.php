@@ -8,9 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * An application's provider that points `laravel-mfa`'s storage connection at
- * another connection in its `boot()`, once the storage connections have been
- * checked in the booting phase.
+ * Points laravel-mfa's storage connection elsewhere in `boot()`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

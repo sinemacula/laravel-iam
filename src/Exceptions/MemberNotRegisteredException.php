@@ -5,12 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Exceptions;
 
 /**
- * Thrown when the application finishes booting before a member whose storage
- * connection this package aligns has registered, so the member's key could
- * never be put on the shared connection, nor checked against it; or before
- * `laravel-audit-log` has registered, so this package's part of the audit trail
- * (its mappers, codes and caller context contributor) could never be registered
- * with it, and no member event would be recorded.
+ * Thrown when a member, or laravel-audit-log, has not registered by the time
+ * the application finishes booting.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,19 +27,17 @@ final class MemberNotRegisteredException extends \RuntimeException
         // What is missing, naming the member's provider and key.
         string $message,
 
-        /** The member key that could not be aligned, or the key recording the registration that could not be made. */
+        /** The member key that could not be aligned, or the audit trail's registration key. */
         public readonly string $key,
 
-        /** The member's service provider, which had not registered. */
+        /** The member's service provider. */
         public readonly string $provider,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for a member whose provider had not registered when
-     * the application finished booting, naming the provider and its storage
-     * key.
+     * Build an exception for a member whose storage key could not be aligned.
      *
      * @param  string  $key
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider
@@ -59,10 +53,7 @@ final class MemberNotRegisteredException extends \RuntimeException
     }
 
     /**
-     * Build an exception for `laravel-audit-log`, whose provider had not
-     * registered when the application finished booting, so this package's part
-     * of the audit trail, recorded under the given key once registered, could
-     * not be registered with it.
+     * Build an exception for an audit-log that never took the audit trail.
      *
      * @param  string  $key
      * @param  class-string<\Illuminate\Support\ServiceProvider>  $provider

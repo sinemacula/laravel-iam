@@ -9,8 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * An application's provider that names another shared storage connection in its
- * `register()`, after this package's provider has registered.
+ * Names another shared storage connection in `register()`, after this package.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

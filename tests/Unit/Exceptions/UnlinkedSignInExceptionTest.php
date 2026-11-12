@@ -20,8 +20,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnlinkedSignInException;
 final class UnlinkedSignInExceptionTest extends TestCase
 {
     /**
-     * The exception names the application and the connection, and says the
-     * redemption is rolled back.
+     * The message names the application and the connection.
      *
      * @return void
      */

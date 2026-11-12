@@ -24,13 +24,8 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s external identity links,
- * answered from the redemption SSO admitted in this request alone (IAM-4.3):
- * exactly the admitted link, with the identity it maps to, for exactly the
- * admitted result's connection, issuer and subject, and `null` for anything
- * else, with nothing looked up again; an admitted identity that cannot be
- * resolved thrown (IAM-8.2); and `laravel-authentication`'s external sign-in
- * signing in through exactly that link, refusing a result that names another.
+ * Integration tests for the external identity links answered from the
+ * redemption SSO admitted in this request.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -43,9 +38,8 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     use MigratesMembers, SignsInPeople, SignsInThroughLinks;
 
     /**
-     * The admitted link answers for exactly the admitted result's connection,
-     * issuer and subject, with the identity SSO linked and the link's own id,
-     * read with no lookup but the identity's own.
+     * The admitted link answers for exactly the admitted connection, issuer and
+     * subject.
      *
      * @return void
      */
@@ -68,8 +62,8 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[connection, issuer, subject]`: each differing from the admitted
-     * result's in one part, by case or by a byte alone.
+     * Rows of `[connection, issuer, subject]`, each differing from the admitted
+     * result in one part.
      *
      * @return iterable<string, array{0: string, 1: string, 2: ?string}>
      */
@@ -85,8 +79,8 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * A result differing from the admitted one in its connection, its issuer or
-     * its subject, compared byte for byte, is linked to nothing.
+     * A result differing from the admitted one by a single byte is linked to
+     * nothing.
      *
      * @param  string  $connectionId
      * @param  string  $issuer
@@ -104,9 +98,8 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * With no redemption admitted in this request, or once the one admitted is
-     * forgotten, or in the next request or job, nothing is linked: no link is
-     * ever looked up.
+     * Without an admitted redemption nothing is linked, and no link is looked
+     * up.
      *
      * @return void
      */
@@ -131,8 +124,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * An admission that names no link, which the record never holds, is linked
-     * to nothing rather than to a link of no id.
+     * An admission that names no link is linked to nothing.
      *
      * @return void
      */
@@ -153,8 +145,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * An admitted identity that cannot be resolved throws, so
-     * `laravel-authentication`'s sign-in rolls back (IAM-8.2).
+     * An admitted identity that cannot be resolved throws.
      *
      * @return void
      */
@@ -182,8 +173,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s external sign-in, asking the contract for the
-     * result it is handed, signs the admitted identity in through exactly the
+     * An external sign-in signs the admitted identity in through exactly the
      * admitted link.
      *
      * @return void
@@ -204,8 +194,8 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[link, subject, reason]`: a result naming another link than the
-     * one admitted, and one for another subject, with the refusal each meets.
+     * Rows of `[link, subject, reason]` for results naming another link or
+     * subject.
      *
      * @return iterable<string, array{0: string, 1: ?string, 2: \SineMacula\Laravel\Authentication\Events\Enums\FailureReason}>
      */
@@ -217,9 +207,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * A result naming another link than the one admitted is a link mismatch,
-     * and one for a subject no redemption admitted is unlinked: neither signs
-     * anyone in.
+     * A result naming another link or an unadmitted subject signs nobody in.
      *
      * @param  string  $linkId
      * @param  ?string  $subject

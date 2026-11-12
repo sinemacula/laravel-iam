@@ -44,64 +44,8 @@ use SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution;
 use SineMacula\Laravel\Iam\Audit\References;
 
 /**
- * Records `laravel-authentication`'s events (`AuthenticationEvent`) in
- * audit-log, from each event alone (IAM-9.1, IAM-9.4).
- *
- * Each event is recorded under a code chosen by what happened, never by its
- * class: audit-log's own codes for an event that means the same
- * (`authentication.signed_in`, `sign_in_failed`, `locked_out`, `signed_out`,
- * `account.email_verified`, `account.password_reset`), and otherwise this
- * package's `AuthenticationActivity` and `SessionActivity` codes. A refusal
- * (`AuthenticationFailed`) is recorded by its flow: a sign-in's as
- * `authentication.sign_in_failed`, as `authentication.locked_out` when the
- * identifier, the session or the IP address has used up its attempts
- * (`rate_limited`), denied and about no one, as audit-log records Laravel's
- * `Lockout`, or as `sign_in_failed_concealed` when its reason is concealed from
- * the client (an account's own limit among them), a bearer token's as
- * `authentication.request_rejected`, a refresh's as `session.refresh_failed`,
- * and so on; its reason is the record's, marked `concealed` when
- * `laravel-authentication` hides it from the client, so it is never rendered,
- * and the identifier it names is hashed by audit-log, never kept. A session
- * event is a `session.*` code; a user's own sign-out is
- * `authentication.signed_out`. Laravel's `Login`, `Failed` and `Logout`, which
- * the guards dispatch beside these, are left to audit-log's own capture, from
- * which every `jwt` and `api_key` guard is excluded (IAM-9.6). A sign-in
- * through a guard's own `attempt()` or `login()` dispatches only Laravel's
- * `Login` and a bind's noise, never `SignedIn`, so on an excluded guard nothing
- * records it until `laravel-authentication` reports it with an event of its
- * own; its refusal is recorded as any other.
- *
- * The noise of a bind (`PrincipalAssigned`, `SessionAuthenticated`) is skipped,
- * and so is a refresh's `SignedIn`, which repeats the `Refreshed` recorded
- * beside it; a sign-in's `SessionCreated` and `SignedIn` are two facts and are
- * recorded once each, as are SSO's and this member's halves of one external
- * sign-in, which `ExternalResultRedeemed` correlates.
- *
- * The record's actor is the identity for its own action (a return to pending
- * its own switch or refresh made among them), explicitly no one for a refusal
- * (its author was never proven) and a detected replay, and the caller otherwise
- * (a revocation, a return to pending after a factor change, an API key's
- * management), which the contributors fill. Its subject is the identity, none
- * for a lockout, and its tenant, guard, session and client the event's, and its
- * principal too unless its actor is left to the caller. That principal is the
- * caller's, so the principal the event names, what the activity was done to, is
- * kept as properties (`scope_principal_*` for a bulk sign-out,
- * `key_principal_*` for an API key's management, `session_principal_*` for a
- * revocation or a return to pending), while its tenant stays the record's, the
- * boundary the activity happened in. The credential is the one the activity
- * used: a passkey added or removed, and an API key issued, revoked or rotated,
- * name the credential they manage instead, which is kept as a property
- * (`passkey_id`, `key_id`) and never as the record's credential. It is
- * correlated as one SSO sign-in when the event names its connection and
- * request, as a challenge when a refusal names one (`mfa:` for a further
- * factor's code, which MFA's events name too, `authentication:` for the
- * others), and otherwise by its session.
- *
- * A refusal is written once the transaction around it ends, so a rollback
- * cannot take it (IAM-9.5).
- *
- * Beyond that, it reads nothing but the event and the morph map, and keeps
- * nothing itself.
+ * Records `laravel-authentication`'s events from each event alone, under
+ * audit-log's own code where it means the same and a package code otherwise.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -224,9 +168,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The code the event is recorded under, or `null` to skip it: by its flow,
-     * its reason or its type where those decide, and otherwise by the event
-     * alone.
+     * The code the event is recorded under, or `null` to skip it.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @return ?\BackedEnum
@@ -244,8 +186,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The code a revocation is recorded under: a user's own sign-out is
-     * audit-log's own.
+     * The code of a revocation: a user's own sign-out is audit-log's.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\SessionRevoked  $event
      * @return \BackedEnum
@@ -256,8 +197,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The code an identifier's verification is recorded under: an email
-     * address's is audit-log's own.
+     * The code of a verification: an email address's is audit-log's.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\IdentifierVerified  $event
      * @return \BackedEnum
@@ -268,9 +208,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The code a refusal is recorded under, by its flow: a sign-in's is
-     * audit-log's own, its lockout's when its attempts are used up, unless its
-     * reason is concealed.
+     * The code of a refusal, by its flow.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\AuthenticationFailed  $event
      * @return \BackedEnum
@@ -289,11 +227,8 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * Whether the refusal is a sign-in's lockout: the identifier, the session
-     * or the IP address has used up its attempts, which audit-log's
-     * `authentication.locked_out` means. An account's own limit
-     * (`account_rate_limited`) is concealed, and so is no lockout here, whose
-     * code would drop the `concealed` flag.
+     * Whether the refusal is a sign-in lockout; an account's own limit is
+     * concealed, and `locked_out` would drop that flag.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\AuthenticationFailed  $event
      * @return bool
@@ -326,10 +261,8 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * Who a return to pending's record says acted: the identity for one its own
-     * session's action made (its switch, or its refresh falling short of what
-     * the session now requires), and the caller for any other (a factor change,
-     * which the member does not say who made).
+     * Who a return to pending's record says acted: the identity for its own
+     * switch or refresh, else the caller.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\AuthenticationFlow  $flow
      * @return \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution
@@ -344,9 +277,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * Who a revocation's record says acted: the identity for its own sign-out
-     * and a session its own sign-in replaced, no one for a replay the package
-     * detected, and the caller for any other.
+     * Who a revocation's record says acted.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\RevocationReason  $reason
      * @return \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution
@@ -362,10 +293,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The properties the event describes itself with, beside its context's
-     * sign-in method, the credential it manages and, when its actor is left to
-     * the caller, the principal it acted on; a value the event does not have is
-     * left out. The code's definition decides which are kept.
+     * The method and event details, less any null.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution  $attribution
@@ -386,11 +314,8 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * What an event whose actor is left to the caller adds: the principal its
-     * context names, which is what the activity was done to, not who the actor
-     * acted as, kept as properties named for what it is (a bulk sign-out's
-     * principal scope, an API key's principal, a revoked or returned session's
-     * principal), since the record's principal is the actor's.
+     * The principal a caller's event acted on, as properties, since the
+     * record's principal is the caller's.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @return array<string, ?string>
@@ -431,8 +356,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * What a change of a session's principal or tenant, or its return to
-     * pending, adds.
+     * What a switch or a return to pending adds.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @return array<string, mixed>
@@ -472,9 +396,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * What a credential's event, or an external result's, adds: a managed
-     * credential's id among it, which is never the record's credential, since
-     * the activity did not use it.
+     * What a credential's or an external result's event adds.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\AuthenticationEvent  $event
      * @return array<string, mixed>
@@ -498,8 +420,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * What a session left when it changed principal or tenant: the previous
-     * principal and the previous tenant's id.
+     * The principal and tenant a session left when it switched.
      *
      * @param  ?string  $type
      * @param  ?string  $id
@@ -512,8 +433,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * A principal kept as properties under the prefix: its type, read through
-     * the morph map, and its id.
+     * A principal as properties under the prefix, its type mapped.
      *
      * @param  string  $prefix
      * @param  ?string  $type
@@ -529,9 +449,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * The correlation of the challenge a refusal names: MFA's namespace for a
-     * further factor's code, whose challenge MFA's own events name, and
-     * `laravel-authentication`'s for any other.
+     * The challenge's correlation: MFA's for a factor code, else this member's.
      *
      * @param  \SineMacula\Laravel\Authentication\Events\AuthenticationFailed  $event
      * @return ?string
@@ -544,9 +462,7 @@ final readonly class AuthenticationEventMapper implements EventMapper
     }
 
     /**
-     * Record the refusal: denied with its reason for a lockout, as audit-log's
-     * own code is, failed with it otherwise, and the identifier it named, which
-     * audit-log hashes.
+     * Mark the refusal denied for a lockout, else failed, with the identifier.
      *
      * @param  \SineMacula\Laravel\AuditLog\Records\PendingRecord  $record
      * @param  \SineMacula\Laravel\Authentication\Events\AuthenticationFailed  $event

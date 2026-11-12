@@ -11,8 +11,7 @@ use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException;
 
 /**
- * Unit tests for carrying `laravel-authentication`'s refusal of an external
- * re-authentication out of the redemption's transaction.
+ * Unit tests for the refused external re-authentication exception.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +22,7 @@ use SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException;
 final class ExternalReauthenticationRefusedExceptionTest extends TestCase
 {
     /**
-     * The exception names the reason, says the code stays unspent, and carries
-     * the failed result as given.
+     * The message names the reason and the result is carried as given.
      *
      * @return void
      */

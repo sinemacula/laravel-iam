@@ -9,10 +9,7 @@ use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 
 /**
- * A principal an identity holds beside itself, as a membership principal an
- * application keeps for each tenant a person belongs to: named by its own id,
- * owned by the identity given, and acting in the tenant of its own given, or in
- * none.
+ * A membership principal an identity holds, optionally in its own tenant.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -63,8 +60,7 @@ final readonly class Membership implements Principal
     }
 
     /**
-     * The tenant of its own, or `null` when the membership acts in whichever
-     * the sign-in chooses.
+     * Its own tenant, or `null` to act in whichever the sign-in chooses.
      *
      * @return ?\SineMacula\Laravel\Authentication\Contracts\Tenant
      */

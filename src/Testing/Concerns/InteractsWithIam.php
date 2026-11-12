@@ -19,24 +19,11 @@ use SineMacula\Laravel\Iam\Testing\VerifiedSession;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 
 /**
- * Act across the suite in a Laravel test, with this package's adapters bound.
+ * Acts as a caller across the suite in a Laravel test, with this package's
+ * adapters bound.
  *
- * `actingAsCaller()` is the one call that arranges a whole caller from plain
- * values: the identity, the principal, the active tenant by its id, the guard,
- * how the session was signed in (`CallerSession`: started, signed in with
- * credentials, or through SSO with SSO's provenance), the level MFA verified it
- * at, and, for a machine, its scopes. A person is signed in for real, as the
- * application signs people in, so every adapter reads the caller from the
- * session `laravel-authentication` wrote, as it reads a real caller's; a
- * machine identity is acted as without a session. `actingOnVerifiedSession()`
- * verifies a session the test already holds instead.
- *
- * MFA's `actingAsVerified()` works too, through the recorder this package binds
- * (`Testing\VerifiedSignInRecorderAdapter`).
- *
- * Acting composes with `laravel-authentication`'s helpers, which this trait
- * brings in: the same context authenticates every request the test then sends
- * through the HTTP kernel, until the test acts again or stops acting.
+ * A person is signed in for real, so every adapter reads the session
+ * `laravel-authentication` wrote; a machine is acted as without one.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,55 +35,13 @@ trait InteractsWithIam
     use InteractsWithAuthenticationContext;
 
     /**
-     * Act as the caller: the identity, as the principal given (or its default
-     * one), on the guard given (or the default guard), in the tenant given (or
-     * the principal's default), until the test acts again or stops acting.
+     * Sign the caller in and act as them until the test acts again.
      *
-     * A person is first signed in on the guard as the session says
-     * (`CallerSession::started()` when it says nothing), as the application
-     * signs people in, and the test acts on the new session, as
-     * `actingOnSession()` does. The guard must allow the session's method
-     * (`external_provider`, through SSO), and the sign-in must activate. One
-     * left pending on a further factor, as the sign-in of a person who already
-     * holds a confirmed factor is under an application that then requires one
-     * (a person seeded with a factor, or one a level was verified for before),
-     * is completed as the person completes it, with a proof of the level's
-     * evidence (an authenticator app's when no level is given) made with a
-     * confirmed factor of its type the person holds, or one enrolled for them
-     * when they hold none; a session `CallerSession::started()` holds no first
-     * factor MFA can judge, so it cannot be. One refused, or left pending all
-     * the same (on a choice of principal, say), throws a `LogicException`
-     * naming the reason, and, for a started session, what to do instead. The
-     * tenant is chosen at sign-in, so the session records it as MFA's
-     * active-tenant resolver reads it, and the test then acts in it, as
-     * `actingInTenant()` does, so `Auth::tenant()` answers it too. A tenant the
-     * tenant resolver does not resolve, or tenant access refuses, fails the
-     * sign-in, which throws a `LogicException` naming the reason
-     * (`tenant_ineligible`), with everything the sign-in wrote rolled back. A
-     * tenant given must be resolvable by `laravel-authentication`'s
-     * `TenantResolver` even when it is the principal's own, which
-     * `laravel-authentication` admits at sign-in without asking a resolver:
-     * under the default `ResolveNoTenant`, `UnresolvedReferenceException` is
-     * thrown once the person has signed in, and for a machine. With no tenant
-     * given, the person acts in the principal's own tenant without a resolver.
-     * With a level, the session is then verified at exactly that level with
-     * additional verification, as `actingOnVerifiedSession()` verifies it,
-     * which needs a first factor MFA can judge: a session signed in with
-     * credentials or through SSO. The person then holds a confirmed factor of
-     * the level's type, so the same person can be acted as again, signed in
-     * with credentials or through SSO, in another tenant or at another level.
-     * Through SSO, MFA's default combination policy classifies the provider's
-     * first factor at no level, so no level is reached under it; a test of a
-     * level through SSO binds the policy the application binds. Without a
-     * level, the session holds its first factor alone, and, when the sign-in
-     * was left pending, the further proof that completed it.
-     *
-     * A machine identity signs in to no session: the test acts as it, as
-     * `actingAsIdentity()` does, limited to the scopes given (none, `[]`, when
-     * no list is given), in the tenant given. A session or a level for a
-     * machine, scopes for a person, a level for a session started with no first
-     * factor MFA can judge, or the unclassified level, throws an
-     * `InvalidArgumentException` before anything is written.
+     * A tenant given must resolve through `laravel-authentication`'s
+     * `TenantResolver`. A level needs a session signed in with credentials or
+     * through SSO, and through SSO a combination policy that classifies the
+     * provider's factor. Invalid arguments throw before anything is written; a
+     * refused sign-in throws a `LogicException` and rolls back.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  ?\SineMacula\Laravel\Authentication\Contracts\Principal  $principal
@@ -147,13 +92,7 @@ trait InteractsWithIam
     }
 
     /**
-     * Act on the session, on the guard it records (or the guard given, or the
-     * default guard), verified now at exactly the level with additional
-     * verification.
-     *
-     * The further proof is MFA's level evidence, made now with a confirmed
-     * factor of its type the identity holds (one is enrolled when it holds
-     * none), so a test of freshness moves the clock on afterwards.
+     * Act on the session, verified now at exactly the level.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
@@ -177,7 +116,7 @@ trait InteractsWithIam
     }
 
     /**
-     * Act on the caller's new session, verified at the level when one is given.
+     * Act on the new session, verified at the level when one is given.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  ?\SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $verified

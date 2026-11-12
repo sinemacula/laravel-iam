@@ -11,11 +11,8 @@ use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
 
 /**
- * A stand-in for the application's evidence contract that accepts whatever the
- * provider's own assertion stated: its methods and its raw context class, as
- * they were verified, at the provider's authentication time. SSO's default
- * accepts nothing, so no raw context class reaches a session until one is
- * bound.
+ * An evidence contract that accepts whatever the provider's own assertion
+ * stated.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

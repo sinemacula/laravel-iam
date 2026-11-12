@@ -7,12 +7,8 @@ namespace SineMacula\Laravel\Iam\Exceptions;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 
 /**
- * Thrown when an adapter needs a tenant, an identity, a principal, a session or
- * the guard an application names, and it cannot be resolved (IAM-8.2).
- *
- * It is thrown inside the transaction the member opened, so whatever the member
- * was changing rolls back: no adapter answers a security question with a guess,
- * so one that cannot find what the question is about refuses it.
+ * Thrown when an adapter cannot resolve the tenant, identity, principal,
+ * session or guard it needs; the member's change rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -36,17 +32,14 @@ final class UnresolvedReferenceException extends \RuntimeException
         /** What could not be resolved. */
         public readonly ReferenceKind $kind,
 
-        /** The application (the guard) it was looked for on, when there is one. */
+        /** The guard it was looked for on, when there is one. */
         public readonly ?string $application = null,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for an application that names no guard of
-     * `laravel-authentication`'s holding sessions, so no session of it can be
-     * resolved: a misconfiguration, told apart from a guard that merely holds
-     * no session now.
+     * Build an exception for an application naming no session-holding guard.
      *
      * @param  string  $application
      * @return self
@@ -60,9 +53,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for a guard that holds no current session of the
-     * identity asked about: none is bound to it, or the one bound is another
-     * identity's.
+     * Build an exception for a guard with no current session of the identity.
      *
      * @param  string  $application
      * @return self
@@ -76,9 +67,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for a sign-in MFA names that is no session of the
-     * identity asked about on the guard: no session holds its key, or the one
-     * that does is another identity's or another guard's.
+     * Build an exception for a sign-in that is no session of the identity.
      *
      * @param  string  $application
      * @return self
@@ -92,8 +81,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for an identity that does not implement
-     * `laravel-authentication`'s `Identity` contract.
+     * Build an exception for an identity that does not implement `Identity`.
      *
      * @param  string  $type
      * @return self
@@ -104,9 +92,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for an identity `laravel-authentication` signs in that
-     * does not implement MFA's `MultiFactorAuthenticatable` contract, so MFA
-     * holds no factors for it and nothing it must prove can be judged.
+     * Build an exception for an identity MFA cannot hold factors for.
      *
      * @param  string  $type
      * @return self
@@ -120,11 +106,9 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for an identity SSO names by reference that cannot be
-     * resolved to `laravel-authentication`'s identity: its type names, through
-     * the morph map, no Eloquent model implementing the `Identity` contract, no
-     * stored identity holds its id, or the one found is named another way. The
-     * id is left out of the message, as any identifier of a person is.
+     * Build an exception for an SSO identity reference that resolves to none.
+     *
+     * The id is left out of the message, as any identifier of a person is.
      *
      * @param  string  $type
      * @return self
@@ -138,10 +122,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for a tenant SSO names by its opaque id that
-     * `laravel-authentication`'s tenant resolver resolves to no tenant, or to
-     * one with another identifier, so the sessions acting in it cannot be
-     * judged.
+     * Build an exception for a tenant id the tenant resolver cannot resolve.
      *
      * @param  string  $tenantId
      * @return self
@@ -155,10 +136,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for a tenant a grant that widens an identity's scope
-     * holds in that `laravel-authentication`'s tenant resolver resolves to no
-     * tenant, or to one of another type or identifier, so the widening cannot
-     * be reported to SSO for it.
+     * Build an exception for a grant's tenant the resolver cannot resolve.
      *
      * @param  string  $tenantId
      * @return self
@@ -172,9 +150,7 @@ final class UnresolvedReferenceException extends \RuntimeException
     }
 
     /**
-     * Build an exception for a tenant `laravel-authentication` asks about whose
-     * identifier is neither a non-empty string nor an integer, so it cannot be
-     * named to the member that answers for it.
+     * Build an exception for a tenant identifier that is not a string or int.
      *
      * @return self
      */

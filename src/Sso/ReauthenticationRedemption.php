@@ -17,67 +17,8 @@ use SineMacula\Laravel\Sso\Handoffs\HandoffRedemption;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 
 /**
- * Redeems a `reauthenticate` handoff code SSO issued, and renews the session it
- * names through `laravel-authentication`, with exactly one write, in one
- * transaction (IAM-4.2, AUTH-3.11, SSO-9.5).
- *
- * The transaction is opened on the storage connection through the retry helper
- * (IAM-11.2), as a sign-in's is. In it, in this order:
- *
- * 1. the application is resolved to its guard, which must be one of
- *    `laravel-authentication`'s guards holding sessions, or an
- *    `UnresolvedReferenceException` rolls the redemption back before the code
- *    is touched (IAM-8.2);
- * 2. SSO admits the code (`HandoffRedemption::admit()`), taking its locks in
- *    its order, then asking its reauthentication sessions contract for the
- *    session's locked standing (its row locked last) and to renew it, which the
- *    adapter records and does not write (`RenewalRecorder`); SSO's refusal is
- *    answered as the redemption's result, and commits, so the code is spent;
- * 3. the admitted redemption is recorded for this request, so
- *    `laravel-authentication`'s link contract answers exactly the link it
- *    resolved (`AdmittedRedemptions`);
- * 4. the renewal recorded is taken, and must be the one session the redemption
- *    names: none, or another session, is a `LogicException`;
- * 5. `laravel-authentication` re-authenticates that session once, on the guard,
- *    with the result built from the redemption and the renewal
- *    (`ExternalResults::renewing()`): the one write, `auth_time` becoming the
- *    later of the session's and the provider's under the session's lock, and
- *    the only token issued. It takes no lock after that. A failed access token
- *    result throws `ExternalReauthenticationRefusedException`, rolling the
- *    consumption back, so nothing reports a renewal that did not happen; an
- *    issued one has `laravel-authorization` forget the decisions of the request
- *    or job (`DecisionCacheInvalidation`, IAM-6.11), since the session's
- *    authentication they read has been renewed, and again should
- *    the transaction roll back;
- * 6. a renewal still recorded when the transaction is about to commit, one SSO
- *    asked for and the redemption never wrote, is a `LogicException`, and rolls
- *    back.
- *
- * The refusal `laravel-authentication` reports inside the transaction is
- * recorded once it has rolled back (IAM-9.5).
- *
- * `laravel-authentication`'s external re-authentication is never called when
- * SSO refused, or when SSO recorded no renewal, and the session's time is
- * written nowhere else. Both records are forgotten as each attempt starts and
- * ends, so a retried attempt never meets the renewal of one rolled back, and
- * the renewal recorder is open only while an attempt runs, so a renewal SSO
- * asks for outside one (a `reauthenticate` code admitted through SSO's own
- * `admit()`) is a `LogicException` that rolls that admission back: a
- * `reauthenticate` code is redeemed through this service alone. The access
- * token leaves only once the transaction has committed; the application sends
- * it with `Cache-Control: no-store`.
- *
- * It is handed plain values alone: the code, the verifier, the application, the
- * connection and the client the redemption is made for, which the application
- * builds where it reads the request (`ClientContext::fromRequest()`), or as a
- * client of which nothing is known from a job or a command. The session is the
- * one the code names, never the one a request is authenticated with. SSO's
- * redemption and the request's records are resolved on each call.
- *
- * The code and the verifier are handed to the transaction's work wrapped in a
- * `SensitiveParameterValue`, and unwrapped only inside it, so the trace of
- * anything thrown there, whose frames carry the work and what it captured,
- * never holds either in the clear.
+ * Redeems a `reauthenticate` handoff code and renews the session it names with
+ * one write, in one transaction on the storage connection retried whole.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -110,9 +51,7 @@ final readonly class ReauthenticationRedemption
     ) {}
 
     /**
-     * Redeem the `reauthenticate` code for the application through the
-     * connection, with its verifier, for the client, and answer SSO's refusal,
-     * committed, or the access token issued for the renewed session.
+     * Redeem the `reauthenticate` code, answering SSO's refusal or the token.
      *
      * @param  string  $application
      * @param  string  $connectionId
@@ -133,6 +72,7 @@ final readonly class ReauthenticationRedemption
         #[\SensitiveParameter] string $verifier,
         ClientContext $client,
     ): AccessTokenResult|RedemptionResult {
+        // Wrapped so no trace of a throw inside holds the secrets in the clear.
         $secrets = new \SensitiveParameterValue([$code, $verifier]);
 
         return $this->transaction->run(function () use ($application, $connectionId, $secrets, $client): AccessTokenResult|RedemptionResult {
@@ -161,9 +101,7 @@ final readonly class ReauthenticationRedemption
     }
 
     /**
-     * Admit the code, then renew the session the renewal recorded, and forget
-     * the decisions that read its authentication, inside the redemption's
-     * transaction.
+     * Admit the code, renew the session and forget the decisions that read it.
      *
      * @param  \SineMacula\Laravel\Iam\Sso\AdmittedRedemptions  $admitted
      * @param  \SineMacula\Laravel\Iam\Sso\RenewalRecorder  $recorder

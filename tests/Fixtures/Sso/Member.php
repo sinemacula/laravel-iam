@@ -11,12 +11,8 @@ use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
 /**
- * An identity of a second kind, signed in on a guard of its own, whose email
- * address is kept in its normal form and verified once its `email_verified_at`
- * column is set, as a person's is. Its table holds no unique index on the email
- * address, so a test can give two kinds of identity the same verified address.
- *
- * Its table is created by the test that needs it.
+ * An identity of a second kind, with no unique index on its verified email
+ * address.
  *
  * @property int $id
  * @property string $email
@@ -41,8 +37,7 @@ final class Member extends User implements HasVerifiableIdentifiers, Identity
     protected $fillable = ['email', 'email_verified_at'];
 
     /**
-     * The attributes cast on read and write: the email address, kept in its
-     * normal form, and when it was verified.
+     * The email address in its normal form, and when it was verified.
      *
      * @return array<string, string>
      */

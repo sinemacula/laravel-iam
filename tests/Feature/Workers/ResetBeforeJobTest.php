@@ -46,8 +46,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * Each queued job starts with `laravel-authentication`'s guards reset by
-     * its own listener.
+     * Each queued job starts with the guards reset by laravel-authentication.
      *
      * @return void
      *
@@ -64,9 +63,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * Each queued job starts with the worker's session flushed, so it reads
-     * none of the proofs `laravel-mfa`'s default proof store kept there for an
-     * earlier job.
+     * Each queued job starts with the session, and any MFA proofs, flushed.
      *
      * @return void
      *
@@ -82,8 +79,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * A job run on the `sync` connection keeps the session of the request or
-     * command that dispatched it.
+     * A `sync` job keeps the session of whatever dispatched it.
      *
      * @return void
      *
@@ -99,8 +95,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * The scoped instances the queue worker forgot before fetching the job, and
-     * other listeners have filled for it since, are kept.
+     * Scoped instances other listeners filled for the job are kept.
      *
      * @return void
      *
@@ -116,8 +111,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * The execution frame the audit log enters as a job starts outlives the
-     * reset, whatever order the listeners run in.
+     * Audit-log's job frame outlives the reset, whatever the listener order.
      *
      * @return void
      *
@@ -169,8 +163,7 @@ final class ResetBeforeJobTest extends TestCase
     }
 
     /**
-     * Return the application's session, holding a proof record, as
-     * `laravel-mfa`'s default proof store leaves one.
+     * The application's session, holding a laravel-mfa proof record.
      *
      * @return \Illuminate\Contracts\Session\Session
      *

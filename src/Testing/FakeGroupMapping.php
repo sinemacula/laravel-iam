@@ -10,9 +10,8 @@ use SineMacula\Laravel\Iam\Contracts\GroupMapping;
 use SineMacula\Laravel\Iam\Provisioning\GrantInstruction;
 
 /**
- * A group mapping for tests (IAM-7.2): each group maps to the grants the test
- * gave it (`map()`), any other to nothing, and every question throws once told
- * to `refuse()`. `fake()` binds a fresh instance.
+ * A group mapping for tests: each group maps to the grants `map()` gave it, and
+ * every question throws once told to `refuse()`.
  *
  * @api
  *
@@ -27,15 +26,14 @@ final class FakeGroupMapping implements GroupMapping
     /** @var array<string, list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>> The grants each group maps to, by its name. */
     private array $map = [];
 
-    /** @var ?\Throwable What every question throws, once the test has it refuse. */
+    /** @var ?\Throwable What every question throws once told to refuse. */
     private ?\Throwable $refusal = null;
 
     /** @var list<array{connection: string, tenant: string, groups: list<string>}> Every question asked, in order. */
     private array $asked = [];
 
     /**
-     * Bind a fresh fake as the application's group mapping in the container
-     * given, or the application's own, and return it.
+     * Bind a fresh fake as the group mapping and return it.
      *
      * @param  ?\Illuminate\Contracts\Container\Container  $container
      * @return self
@@ -50,8 +48,8 @@ final class FakeGroupMapping implements GroupMapping
     }
 
     /**
-     * Have the group map to the grants given from now on: a role's name, which
-     * holds in the connection's tenant alone, or a grant instruction.
+     * Map the group to the grants; a string is a role in the connection's
+     * tenant.
      *
      * @param  string  $group
      * @param  \SineMacula\Laravel\Iam\Provisioning\GrantInstruction|string  ...$grants
@@ -69,8 +67,7 @@ final class FakeGroupMapping implements GroupMapping
     }
 
     /**
-     * Have every question throw from now on, as an application's mapping that
-     * declines a result does.
+     * Throw on every question from now on.
      *
      * @param  ?\Throwable  $refusal
      * @return self
@@ -83,8 +80,7 @@ final class FakeGroupMapping implements GroupMapping
     }
 
     /**
-     * The grants the groups map to, each once, or throw the refusal the test
-     * told it to.
+     * The grants the groups map to, each once, unless told to refuse.
      *
      * @param  string  $connectionId
      * @param  string  $tenantId
@@ -112,8 +108,7 @@ final class FakeGroupMapping implements GroupMapping
     }
 
     /**
-     * Every question asked, in order: the connection, the tenant and the
-     * groups.
+     * Every question asked, in order.
      *
      * @return list<array{connection: string, tenant: string, groups: list<string>}>
      */

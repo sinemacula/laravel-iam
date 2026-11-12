@@ -52,23 +52,8 @@ use Tests\Fixtures\Sso\TrustsConnections;
 use Tests\TestCase;
 
 /**
- * Integration tests for when MFA may see an SSO sign-in's first factor naming
- * its connection, so a combination policy that trusts a connection counts only
- * what SSO's evidence gate accepted, from a connection the session's tenant
- * trusts (IAM-4.6, IAM-5.1).
- *
- * With a combination policy that trusts the connection and SSO's evidence gate
- * closed, a password-only sign-in through the connection meets no multifactor
- * requirement, neither in `laravel-authentication`'s requirement check nor at
- * MFA's route gate. With the gate open, the accepted evidence passes MFA's
- * route gate, and `laravel-authentication` counts it through its external
- * evidence policy, never through its requirement check, which is told neither
- * the tenant nor what SSO accepted. A tenant that does not trust the connection
- * never has it counted for its session.
- *
- * Every scenario that commits a sign-in runs at the connection's own level on
- * every engine, then at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * Integration tests for when MFA sees an SSO first factor naming its
+ * connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -113,11 +98,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * With SSO's evidence gate closed, a policy that trusts the connection
-     * counts nothing of a sign-in through it: the session holds no accepted
-     * evidence, `laravel-authentication`'s requirement check leaves multifactor
-     * unmet, MFA's route gate refuses, and MFA sees the first factor naming no
-     * connection.
+     * With SSO's evidence gate closed, a trusted connection counts for nothing.
      *
      * @param  ?string  $level
      * @return void
@@ -142,11 +123,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * With SSO's evidence gate open, the evidence it accepted from a trusted
-     * connection passes MFA's route gate, MFA seeing the first factor naming
-     * the connection; `laravel-authentication`'s requirement check still never
-     * trusts the connection, since its external evidence policy counts the
-     * evidence, with the tenant whose requirement it is.
+     * Evidence SSO accepted from a trusted connection passes MFA's route gate.
      *
      * @param  ?string  $level
      * @return void
@@ -173,8 +150,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * Rows of the tenant a session acts in and whether MFA sees an accepted
-     * first factor through the tests' connection naming it.
+     * Rows of the session's tenant and whether MFA sees the connection named.
      *
      * @return iterable<string, array{0: ?string, 1: bool}>
      */
@@ -188,9 +164,8 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * An accepted first factor names its connection to MFA only for a session
-     * acting in no tenant, or in a tenant that trusts the connection: one
-     * tenant's trust is never another's.
+     * An accepted first factor names its connection only for a tenant that
+     * trusts it.
      *
      * @param  ?string  $tenant
      * @param  bool  $named
@@ -206,8 +181,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * Without an enforcement that names it, a tenant trusts its own connection
-     * alone: never another tenant's, nor a connection that does not exist.
+     * Without enforcement, a tenant trusts its own connection alone.
      *
      * @return void
      */
@@ -236,8 +210,8 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * Link the person and sign them in through SSO, the provider asserting the
-     * methods given, failing unless a session starts active, and return it.
+     * Link and sign the person in through SSO with the given methods, and
+     * return the active session.
      *
      * @param  list<string>  $methods
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
@@ -257,8 +231,8 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * What `laravel-authentication`'s requirement check, as bound, leaves unmet
-     * of a multifactor requirement for the session.
+     * What the bound requirement check leaves unmet of a multifactor
+     * requirement.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
@@ -278,8 +252,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * The connection MFA sees the served session's first factor name, failing
-     * unless it is a first factor on an `external_provider` channel.
+     * The connection the served session's external first factor names to MFA.
      *
      * @return ?string
      *
@@ -296,8 +269,7 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
-     * An SSO sign-in's first factor through the connection, carrying evidence
-     * SSO accepted.
+     * An SSO first factor through the connection, carrying accepted evidence.
      *
      * @param  string  $connectionId
      * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof

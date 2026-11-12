@@ -5,9 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Exceptions;
 
 /**
- * Thrown when the application boots with a member's storage connection naming a
- * different connection from the one this package configures, so a change that
- * spans members could not run in one transaction.
+ * Thrown at boot when a member's storage connection differs from
+ * `iam.storage.connection`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -32,18 +31,17 @@ final class StorageConnectionMismatchException extends \RuntimeException
         /** The member key that names another connection. */
         public readonly string $key,
 
-        /** The connection the member key names; `null` for the default connection. */
+        /** The connection the member key names; null for the default. */
         public readonly ?string $member,
 
-        /** The connection `iam.storage.connection` names; `null` for the default connection. */
+        /** The connection `iam.storage.connection` names; null for the default. */
         public readonly ?string $storage,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for a member key that names another connection, naming
-     * the key and both connections.
+     * Build an exception naming the key and both connections.
      *
      * @param  string  $key
      * @param  ?string  $member

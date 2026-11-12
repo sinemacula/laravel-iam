@@ -15,8 +15,9 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 
 /**
- * While SSO is in use, every SSO application allows `external_provider` and
- * keeps `unlinked_handoffs` off (IAM-2.5), and SSO's mandatory seams are bound.
+ * Checks, while SSO is in use, that each SSO application allows
+ * `external_provider` and keeps `unlinked_handoffs` off, and that SSO's
+ * mandatory seams are bound.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -25,16 +26,16 @@ use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
  */
 final readonly class SsoBridgeCheck implements Check
 {
-    /** @var list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>> The capabilities whose mandatory seams this check holds. */
+    /** @var list<class-string<\SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams>> The capabilities whose mandatory seams this check covers. */
     public const array CAPABILITIES = [SsoSeams::class, TenancySeams::class];
 
     /** @var string The key of SSO's applications. */
     private const string APPLICATIONS = 'sso.applications';
 
-    /** @var string Why an application whose guard does not allow an external sign-in is refused. */
+    /** @var string The failure for a guard that does not allow external sign-in. */
     private const string NO_EXTERNAL_SIGN_IN = '`%s.%s` is served by SSO, but its guard does not list `%s` among laravel-authentication\'s sign-in methods.';
 
-    /** @var list<mixed> The values SSO reads a switch as off from; a missing one is off too. */
+    /** @var list<mixed> The values SSO reads a switch as off from. */
     private const array OFF = [null, false, 0, '0', 'false'];
 
     /**
@@ -46,10 +47,10 @@ final readonly class SsoBridgeCheck implements Check
      */
     public function __construct(
 
-        /** The container `laravel-authentication`'s application policy and the capabilities are resolved from. */
+        /** The container the application policy and capabilities are resolved from. */
         private Container $container,
 
-        /** The configuration SSO's and `laravel-authentication`'s settings are read from. */
+        /** The configuration SSO's and laravel-authentication's settings are read from. */
         private Repository $config,
 
         /** Checks the mandatory seams of SSO's flows. */
@@ -79,8 +80,7 @@ final readonly class SsoBridgeCheck implements Check
     }
 
     /**
-     * Each application's sign-in method and unlinked handoffs, then the
-     * mandatory seams.
+     * Each application's sign-in method and handoffs, then the mandatory seams.
      *
      * @return list<\Closure(): mixed>
      *
@@ -102,8 +102,7 @@ final readonly class SsoBridgeCheck implements Check
     }
 
     /**
-     * Refuse an application whose guard does not allow a session to start
-     * through an external provider.
+     * Refuse an application whose guard does not allow external sign-in.
      *
      * @param  string  $application
      * @return void

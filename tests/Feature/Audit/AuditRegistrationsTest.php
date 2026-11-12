@@ -46,19 +46,7 @@ use Tests\Fixtures\Providers\RegistersAuditLogWhileBooting;
 use Tests\TestCase;
 
 /**
- * Feature tests for this package's registrations with audit-log (IAM-9.1,
- * IAM-9.2): made from the provider's `boot()` before audit-log freezes its
- * registries, in every provider order; one mapper for each member's marker
- * interface and never for audit-log's own events; every code of this package's
- * defined and none of audit-log's defined again; a member's event recorded once
- * through them; nothing mapped or defined with the switch off; a provider
- * booted again once the application has booted, with its part already
- * registered, registering nothing more; a provider whose first registration
- * comes only then refused with a `\LogicException`; an audit-log registered
- * only from a later provider's `boot()` registered with once the application
- * has booted, before it freezes, never through a throwaway recorder; and an
- * audit-log left out refusing the boot, except while a configuration command
- * runs.
+ * Feature tests for this package's registrations with audit-log.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -73,7 +61,7 @@ final class AuditRegistrationsTest extends TestCase
 
     /**
      * The registrations are made before audit-log freezes, in every provider
-     * order: each member's events go to its mapper, and every code is defined.
+     * order.
      *
      * @param  list<class-string<\Illuminate\Support\ServiceProvider>>  $providers
      * @return void
@@ -89,7 +77,7 @@ final class AuditRegistrationsTest extends TestCase
 
     /**
      * Each member's marker interface has its own mapper, and nothing else is
-     * mapped by this package.
+     * mapped.
      *
      * @return void
      */
@@ -126,8 +114,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * No code is defined twice: none of this package's is one of audit-log's,
-     * no two enums share one, and audit-log's own keep their definitions.
+     * No code is defined twice, and audit-log's own keep their definitions.
      *
      * @return void
      */
@@ -166,8 +153,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * Registered once already while the application boots, before this
-     * package's provider boots, the registrations change nothing.
+     * Registering again while the application boots changes nothing.
      *
      * @return void
      */
@@ -195,9 +181,8 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * Once the application has booted, audit-log takes no registration, so a
-     * provider booted again then, its part already registered, registers
-     * nothing more, and boots.
+     * A provider booted again after boot, already registered, registers nothing
+     * more.
      *
      * @return void
      */
@@ -214,9 +199,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * A first registration once the application has booted is refused, never
-     * skipped, so an application never seems to record the members' events
-     * while it records none.
+     * A first registration after boot is refused.
      *
      * @return void
      */
@@ -236,11 +219,8 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * With audit-log registered only from a later provider's `boot()`, nothing
-     * is registered with a recorder its registries are not bound behind yet:
-     * the registrations wait for the application to have booted, and are made
-     * then, before audit-log freezes, with audit-log's own registries, so one
-     * capture listener is added and a member's event is recorded once.
+     * An audit-log registered from a later provider's `boot()` is registered
+     * with once booted, before it freezes.
      *
      * @return void
      */
@@ -262,9 +242,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * With audit-log never registered, the application refuses to finish
-     * booting, naming audit-log's provider, rather than seem to record the
-     * members' events while it records none.
+     * An audit-log never registered refuses the boot, naming its provider.
      *
      * @return void
      */
@@ -279,8 +257,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * Provide the configuration commands an audit-log never registered does not
-     * refuse.
+     * Provide the configuration commands that skip the refusal.
      *
      * @return iterable<string, array{list<string>}>
      */
@@ -292,10 +269,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * While a console command that lists, describes, discovers, caches or
-     * clears configuration runs, an audit-log never registered refuses no boot,
-     * as a missing member does not, so the command that would clear a stale
-     * package manifest or a cached configuration still runs; nothing is
+     * A configuration command boots without audit-log, and nothing is
      * registered.
      *
      * @param  list<string>  $arguments
@@ -313,8 +287,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * Registered in a normal boot, one capture listener is added for the three
-     * mappings.
+     * A normal boot adds one capture listener for the mappings.
      *
      * @return void
      */
@@ -324,8 +297,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * With the switch off, the registration is still recorded, so a provider
-     * booted again then is not refused.
+     * With the switch off, the registration is still recorded.
      *
      * @return void
      */
@@ -342,8 +314,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * Register the mappers and codes from a booting callback, before any
-     * provider boots.
+     * Register the mappers and codes from a booting callback.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -384,8 +355,7 @@ final class AuditRegistrationsTest extends TestCase
     }
 
     /**
-     * How many of audit-log's mapped-event capture listeners listen to every
-     * event.
+     * How many of audit-log's capture listeners listen to every event.
      *
      * @return int
      */

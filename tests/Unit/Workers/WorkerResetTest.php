@@ -67,9 +67,7 @@ final class WorkerResetTest extends TestCase
     use MockeryPHPUnitIntegration;
 
     /**
-     * Clear the facades' resolved roots, the application they resolve from and
-     * the global container an application sets itself as, so no test's
-     * container reaches another.
+     * Clear the facade roots and the global container.
      *
      * @return void
      */
@@ -84,8 +82,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset sets every `laravel-authentication` guard already resolved back
-     * to the current request.
+     * The reset forgets every resolved guard's state.
      *
      * @return void
      *
@@ -101,8 +98,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Rows of `[abstract]`: each scoped binding a member keeps request state
-     * in.
+     * Rows of `[abstract]`: each scoped binding holding member state.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -147,8 +143,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset forgets each scoped instance a member keeps request state in,
-     * so the next unit of work builds its own.
+     * The reset forgets each scoped instance a member keeps request state in.
      *
      * @param  string  $abstract
      * @return void
@@ -184,8 +179,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset forgets each adapter this package scopes, under the key the
-     * binding rule scopes it under, so the next unit of work builds its own.
+     * The reset forgets each adapter this package scopes.
      *
      * @param  class-string  $seam
      * @return void
@@ -228,8 +222,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset keeps every other scoped instance, so what the process queued
-     * or entered for its own unit of work is still there after it.
+     * The reset keeps every other scoped instance.
      *
      * @param  string  $abstract
      * @return void
@@ -251,8 +244,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset clears the root a facade resolved from a member's scoped
-     * instance.
+     * The reset clears a facade root resolved from a member's scoped instance.
      *
      * @return void
      */
@@ -273,8 +265,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * A facade over a scoped instance the reset keeps still returns that same
-     * instance once its root is cleared, as Laravel's `Context` facade does.
+     * A facade over a kept scoped instance still returns that instance.
      *
      * @return void
      */
@@ -292,8 +283,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Forgetting the members' state alone resets the guards and keeps every
-     * scoped instance.
+     * Forgetting the member state keeps every scoped instance.
      *
      * @return void
      *
@@ -314,8 +304,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * The reset flushes the session already resolved, where `laravel-mfa`'s
-     * default proof store keeps its proofs.
+     * The reset flushes the resolved session.
      *
      * @return void
      *
@@ -335,8 +324,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Forgetting the members' state alone flushes the session too, beside the
-     * guards.
+     * Forgetting the member state flushes the session too.
      *
      * @return void
      *
@@ -380,8 +368,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * A session nothing has resolved holds nothing, so the reset does not build
-     * one.
+     * An unresolved session is not built.
      *
      * @return void
      *
@@ -400,8 +387,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * An auth manager nothing has resolved holds no guard, so the reset does
-     * not build one.
+     * An unresolved auth manager is not built.
      *
      * @return void
      *
@@ -419,8 +405,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Return a session holding a proof record, as `laravel-mfa`'s default proof
-     * store leaves one.
+     * A session holding a laravel-mfa proof record.
      *
      * @return \Illuminate\Session\Store
      */
@@ -434,8 +419,7 @@ final class WorkerResetTest extends TestCase
     }
 
     /**
-     * Return a `laravel-authentication` auth manager that expects its guard
-     * state forgotten exactly once.
+     * An auth manager expecting its guard state forgotten exactly once.
      *
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */

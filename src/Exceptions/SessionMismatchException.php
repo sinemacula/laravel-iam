@@ -5,12 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Exceptions;
 
 /**
- * Thrown when the sign-in a member names is not the current session of the
- * guard it is on: the identity is signed in there, but the change is about
- * another of its sessions.
- *
- * It is thrown inside the transaction the member opened, so the change rolls
- * back rather than being committed against a session nobody judged.
+ * Thrown when the sign-in a member names is another session than the guard's
+ * current one; the change rolls back.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -30,15 +26,14 @@ final class SessionMismatchException extends \RuntimeException
         // What differs, naming the guard.
         string $message,
 
-        /** The application (the guard) whose current session is another. */
+        /** The guard whose current session is another. */
         public readonly string $application,
     ) {
         parent::__construct($message);
     }
 
     /**
-     * Build an exception for a sign-in that is not the guard's current session,
-     * naming the guard but neither session.
+     * Build an exception naming the guard but neither session.
      *
      * @param  string  $application
      * @return self

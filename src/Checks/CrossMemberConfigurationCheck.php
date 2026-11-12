@@ -23,59 +23,13 @@ use SineMacula\Laravel\Mfa\Enums\Operation;
 use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
 
 /**
- * The configuration that crosses `laravel-authentication`, MFA, SSO and
- * `laravel-authorization` holds (IAM-2.5), at deploy.
+ * Checks the configuration that spans authentication, MFA, SSO and
+ * authorization.
  *
- * - MFA's applications are `laravel-authentication`'s guards: every key of
- *   `mfa.applications` names a guard in `auth.guards` of the `jwt` driver,
- *   since MFA's application is the guard of the same name (IAM-3.12) and only a
- *   `jwt` guard holds sessions, so an application on a guard of another driver
- *   is refused at deploy rather than by every MFA call at runtime
- *   (`Mfa\CurrentSession`). A guard with no MFA application is the
- *   application's choice, and enables no factor.
- * - Every operation MFA names (`Mfa\Enums\Operation`) is declared under
- *   `laravel-authentication`'s freshness configuration for each MFA
- *   application's guard, and, while SSO is in use, every operation SSO names
- *   (`Freshness\Enums\FreshnessOperation`) for each SSO application's guard: in
- *   `authentication.freshness`, or in the guard's own `freshness` block, where
- *   `null` removes one. Operations are read as array keys, never as
- *   configuration paths, since their names hold dots.
- * - `laravel-authentication`'s tenant resolver resolves tenants while SSO's
- *   enforcement is on, the application binds MFA's tenant requirement,
- *   `laravel-authorization`'s grants are reported to SSO's scope widening (both
- *   capabilities' switches on, as they are by default,
- *   `AuthorizationSeams::reportsWidenings()`), or the application binds a
- *   tenant tree to `laravel-authorization`: the tenant policy, the tree's
- *   changes, SSO's enforcement inheritance and revocation resolve the session's
- *   tenant through it, and the grant hook every tenant a widening grant holds
- *   in (`Tenancy\TenantReferences`), while `laravel-authentication` admits a
- *   principal's own tenant without one, so an application that never needed a
- *   resolver would otherwise refuse every grant to an identity, or a
- *   principal's first, in a tenant, and every move of a tenant, at runtime. A
- *   resolver still on `laravel-authentication`'s default, as it says, is
- *   refused.
- * - While the application has memberships, so its people act in tenants,
- *   `laravel-authorization`'s resource tenant resolver still on its default is
- *   noted, never failed: the shipped `NoResourceTenant` knows no model's
- *   tenant, so a grant in one tenant reaches another tenant's records unless
- *   each model declares its tenancy (`QueryableResource`) or names its tenant
- *   (`AuthorizableResource`), which no check can see without the application's
- *   models. Which tenant owns a record is the application's answer, never this
- *   package's (IAM-1.2), so nothing here binds one. Whether it is still the
- *   default is `laravel-authorization`'s own answer
- *   (`AuthorizationServiceProvider::isPackageDefault()`).
- *
- * The rest of IAM-2.5 is checked where it belongs, each bullet once: SSO's
- * applications and their unlinked handoffs by `Sso\SsoBridgeCheck`;
- * `sso.endpoints.base_url` by SSO's own `EndpointsCheck`;
- * `sso.storage.connection` by the storage alignment, at boot and in
- * `StorageCheck`; audit-log's exclusions, Gate capture and `require_registered`
- * by `AuditCheck`. `laravel-authorization`'s seams are bound through the
- * container (`Authorization\AuthorizationSeams`), not named in its
- * configuration, so none of its resolver keys is required to name an adapter.
- * Whether a provider attribute lies beyond SSO's standard mapping depends on
- * each connection's mapping, which is a database row, so it is left to the
- * guide, as SSO's routes are.
+ * Every MFA application is a `jwt` guard; MFA's and SSO's operations are
+ * declared in each guard's freshness; the tenant resolver is bound off its
+ * default wherever a member resolves tenants; and a default resource tenant
+ * resolver is noted while people act in tenants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -93,29 +47,29 @@ final readonly class CrossMemberConfigurationCheck implements Check
     /** @var string The key of SSO's applications. */
     private const string SSO_APPLICATIONS = 'sso.applications';
 
-    /** @var string The key of `laravel-authentication`'s freshness operations. */
+    /** @var string The key of laravel-authentication's freshness operations. */
     private const string FRESHNESS = 'authentication.freshness';
 
-    /** @var string Why an MFA application naming no guard is refused. */
+    /** @var string The failure for an MFA application naming no guard. */
     private const string NO_GUARD = '`%s.%s` names no guard in `%s`: MFA\'s application is the guard of the same name.';
 
-    /** @var string Why an MFA application naming a guard of another driver is refused. */
+    /** @var string The failure for an MFA application on a guard of another driver. */
     private const string NOT_SESSION_GUARD = '`%s.%s` names a guard in `%s` whose driver is not `jwt`: MFA\'s application is a guard that holds sessions.';
 
-    /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
+    /** @var string The failure for a tenant resolver still on its default. */
     private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on, MFA\'s tenant requirement is bound,'
         . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
         . ' bind a resolver that resolves every tenant id'
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
 
-    /** @var string The key of `laravel-authorization`'s configuration naming its resource tenant resolver, which the note names. */
+    /** @var string The key naming laravel-authorization's resource tenant resolver. */
     private const string RESOURCE_TENANTS = 'authorization.resource_tenant_resolver';
 
-    /** @var string The note of a resource tenant resolver still on `laravel-authorization`'s default while people act in tenants. */
+    /** @var string The note for a resource tenant resolver still on its default. */
     private const string NO_RESOURCE_TENANTS = '%s is still %s while people act in tenants: no record is refused for its tenant unless its model declares its tenancy'
         . ' (QueryableResource) or names its tenant (AuthorizableResource); name a resolver in `%s`, or bind %s.';
 
-    /** @var string Why a member's operations the guard's freshness does not declare are refused. */
+    /** @var string The failure for operations a guard's freshness does not declare. */
     private const string UNDECLARED = '%s\'s freshness operations [%s] are not declared for guard [%s] under `%s` or the guard\'s `freshness`.';
 
     /**
@@ -129,7 +83,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
         /** The configuration every member's settings are read from. */
         private Repository $config,
 
-        /** The container the tenant resolver and MFA's tenant requirement are bound in. */
+        /** The container the resolvers and MFA's tenant requirement are bound in. */
         private Container $container,
     ) {}
 
@@ -145,8 +99,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The check always applies: an application with no MFA application and SSO
-     * out of use is checked for nothing.
+     * The check always applies.
      *
      * @return bool
      */
@@ -157,11 +110,8 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The tenant resolver while a tenant's rule reaches a session, a grant is
-     * reported to SSO's scope widening or `laravel-authorization` reads the
-     * application's tree, the resource tenant resolver while the application
-     * has memberships, every MFA application a guard, then the freshness
-     * operations of MFA's applications and, while SSO is in use, of SSO's.
+     * The tenant resolvers, then each MFA application's guard and freshness,
+     * then SSO's.
      *
      * @return list<\Closure(): mixed>
      */
@@ -189,10 +139,8 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Whether a member resolves tenants through `laravel-authentication`'s
-     * tenant resolver: while a tenant's rule reaches a session, a grant is
-     * reported to SSO's scope widening, or `laravel-authorization` reads the
-     * application's tenant tree.
+     * Whether a member resolves tenants through laravel-authentication's
+     * resolver.
      *
      * @return bool
      */
@@ -204,8 +152,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Refuse a tenant resolver still on `laravel-authentication`'s default,
-     * `ResolveNoTenant`, which resolves no tenant.
+     * Refuse a tenant resolver still on laravel-authentication's default.
      *
      * @return void
      *
@@ -221,9 +168,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The note of `laravel-authorization`'s resource tenant resolver left on
-     * its default, as `laravel-authorization` says, or nothing once the
-     * application names or binds another.
+     * A note while the resource tenant resolver is still on its default.
      *
      * @return ?string
      */
@@ -278,9 +223,8 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The operations declared for the guard, keyed by name:
-     * `laravel-authentication`'s, with the guard's own block over them, where
-     * `null` removes one.
+     * The guard's declared operations by name; `null` in its own block removes
+     * one.
      *
      * @param  string  $guard
      * @return array<array-key, mixed>
@@ -295,7 +239,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * The application names a map of applications keys, none when it is no map.
+     * The keys of an applications map, or none when it is no map.
      *
      * @param  mixed  $applications
      * @return list<string>

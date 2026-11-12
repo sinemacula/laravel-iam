@@ -37,8 +37,7 @@ use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
 /**
- * Feature tests for the check that every mandatory seam is bound off its
- * member's default (IAM-10.2).
+ * Feature tests for the mandatory seams check.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,8 +67,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * Every seam that is always mandatory fails on its member's default, with
-     * the capabilities off.
+     * Every always-mandatory seam fails on its member's default.
      *
      * @return void
      */
@@ -102,8 +100,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The application's own binding passes, as a class, an instance or a
-     * closure.
+     * The application's own binding passes as a class, instance or closure.
      *
      * @return void
      */
@@ -121,8 +118,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The default MFA's provider registers fails while only MFA's adapters are
-     * off.
+     * MFA's registered default fails while MFA's adapters are off.
      *
      * @return void
      */
@@ -149,8 +145,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * While SSO is in use, the seams the check of SSO's side holds are left to
-     * it.
+     * While SSO is in use, the SSO bridge check's seams are left to it.
      *
      * @return void
      */
@@ -189,8 +184,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * Rows of how a tenant's rule is turned on: SSO's enforcement, or MFA's
-     * tenant requirement bound.
+     * Ways a tenant rule is turned on.
      *
      * @return iterable<string, array{\Closure(\Illuminate\Contracts\Foundation\Application): void}>
      */
@@ -206,8 +200,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The re-authentication sessions, the tenant authentication policy and
-     * MFA's active tenant resolver are mandatory once a tenant's rule is on.
+     * The tenant seams are mandatory once a tenant rule is on.
      *
      * @param  \Closure(\Illuminate\Contracts\Foundation\Application): void  $turnOn
      * @return void
@@ -229,8 +222,7 @@ final class MandatorySeamsCheckTest extends TestCase
     }
 
     /**
-     * The enforcement inheritance is mandatory while enforcing over a tenant
-     * tree, and neither alone makes it so.
+     * The inheritance is mandatory only while enforcing over a tree.
      *
      * @return void
      */

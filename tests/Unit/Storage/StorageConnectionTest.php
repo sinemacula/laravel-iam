@@ -11,8 +11,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
 
 /**
- * Unit tests for reading the one storage connection every member keeps its
- * tables on.
+ * Unit tests for reading the shared storage connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +22,7 @@ use SineMacula\Laravel\Iam\Storage\StorageConnection;
 final class StorageConnectionTest extends TestCase
 {
     /**
-     * The shared connection is read from `iam.storage.connection`, and the
-     * members whose keys must name it are authentication, MFA and SSO.
+     * The shared key is `iam.storage.connection`, followed by the member keys.
      *
      * @return void
      */
@@ -71,8 +69,7 @@ final class StorageConnectionTest extends TestCase
     }
 
     /**
-     * The key is read on every call, so a change to the configuration is seen
-     * at once.
+     * The key is read on every call.
      *
      * @return void
      */
@@ -103,8 +100,7 @@ final class StorageConnectionTest extends TestCase
     }
 
     /**
-     * A value that is neither a name, `null` nor empty fails closed, naming the
-     * key, rather than falling back to the default connection.
+     * A malformed value fails closed, naming the key.
      *
      * @param  mixed  $value
      * @return void
@@ -121,8 +117,7 @@ final class StorageConnectionTest extends TestCase
     }
 
     /**
-     * Any connection key is read the same way: a name as given, an unset or
-     * empty one as the default connection.
+     * Any connection key is read the same way.
      *
      * @return void
      */

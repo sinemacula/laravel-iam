@@ -52,13 +52,7 @@ use Tests\Fixtures\Testing\LeveledCombinationPolicy;
 use Tests\TestCase;
 
 /**
- * MFA's own `actingAsVerified()` under this package: its sign-in is started
- * from a password first factor and its proofs recorded through
- * `laravel-authentication`, by the recorder this package binds, as of the time
- * the helper is asked for, so MFA's route gate and the `mfa` namespace of the
- * authentication context read the session at exactly the level asked for, on
- * the requests the test then sends, whether the session activated at once or
- * waited on a further factor the person holds.
+ * MFA's `actingAsVerified()` through this package's recorder.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -111,8 +105,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The levels, the type of the factor each is verified with, and the route
-     * of the level above, which stays shut.
+     * Each level, its factor type, and the route above it that stays shut.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\AssuranceLevel, 1: string, 2: ?string}>
      */
@@ -124,9 +117,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * MFA's helper signs the person in and verifies the session at exactly the
-     * level: MFA's route gate lets the next request through at that level and
-     * no higher, and the authentication context reads the level.
+     * MFA's helper verifies the session at exactly the level.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  string  $type
@@ -152,10 +143,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A person who already holds a confirmed factor must verify one to sign in
-     * under the application: the sign-in waits on it, and the helper's further
-     * proof completes it, so the session reaches exactly the level all the
-     * same, with the factor the person holds when it is of the level's type.
+     * A person who must verify at sign-in is verified through the pending one.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  string  $type
@@ -188,10 +176,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The session is one `laravel-authentication` started from a password first
-     * factor as of the time asked for, which MFA's helper keeps as its first
-     * factor, then stepped up with a proof made with the factor the person
-     * holds at that same time, however long ago; the clock is then as it was.
+     * The session holds the password and a further proof made at that time.
      *
      * @return void
      *
@@ -225,9 +210,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A pending sign-in begun as of a time further back than its pending
-     * credential lives is completed at that time all the same, so both proofs
-     * are made then, and the clock is then as it was.
+     * A pending sign-in is completed at the time asked, however far back.
      *
      * @return void
      *
@@ -255,9 +238,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The person's stored credentials are never touched: the row is as it was,
-     * and the person still signs in with their own password (and is asked for
-     * the factor the helper enrolled for them).
+     * The person's stored credentials are untouched.
      *
      * @return void
      *
@@ -275,8 +256,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The same person can be verified again: the second sign-in waits on the
-     * factor the first enrolled, and is completed with it.
+     * A verified person can be verified again with the factor already enrolled.
      *
      * @return void
      *
@@ -299,8 +279,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in refused, a method the guard does not allow say, throws naming
-     * the guard and the reason, leaves no session, and puts the clock back.
+     * A refused sign-in throws, leaves no session and restores the clock.
      *
      * @return void
      *
@@ -325,8 +304,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` cannot sign in is refused before
-     * anything is written.
+     * An identity laravel-authentication cannot sign in is refused up front.
      *
      * @return void
      *
@@ -340,10 +318,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A further proof that leaves the pending sign-in pending all the same,
-     * under a policy that never counts it, throws naming the reason, and
-     * everything it wrote is rolled back: the sign-in still waits, and, once
-     * the policy counts the proof, is completed with it alone.
+     * A further proof leaving the sign-in pending is refused and rolled back.
      *
      * @return void
      *
@@ -381,8 +356,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A pending sign-in that is gone by the time the further proof arrives
-     * cannot be read back, so the proof is refused.
+     * A further proof for a pending sign-in that is gone is refused.
      *
      * @return void
      *
@@ -405,8 +379,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The active sign-in's own first factor is kept through the proof store,
-     * and adds nothing; another first factor is refused.
+     * The active sign-in's own first factor is kept; another is refused.
      *
      * @return void
      *
@@ -428,8 +401,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * The pending sign-in's own first factor, the password it was started with,
-     * is kept; a first factor of another method or channel is refused.
+     * A pending sign-in's password is kept; another first factor is refused.
      *
      * @return void
      *
@@ -461,8 +433,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A further proof bound to a sign-in that is not its identity's current
-     * one, or to another identity, is refused, and nothing is recorded.
+     * A proof bound to another sign-in or identity is refused.
      *
      * @return void
      *
@@ -480,9 +451,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A further proof made by another identity than the one whose pending
-     * sign-in it names, or naming a pending sign-in an earlier `begin()` left,
-     * does not complete it, and is refused.
+     * Only the last pending sign-in is completed, and only for its identity.
      *
      * @return void
      *
@@ -505,8 +474,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * Define the routes MFA's gate guards at each level, and one answering the
-     * level the authentication context reads.
+     * Define a gated route per level and one reading the context's level.
      *
      * @param  mixed  $router
      * @return void
@@ -526,8 +494,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * Add a guard people may sign in on only with a code, beside the one they
-     * sign in on with a password.
+     * Add a code-only guard beside the password one.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -545,8 +512,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * Assert MFA's route gate lets the session through at the level, and no
-     * higher, and the authentication context reads the level.
+     * Assert the session passes the gate at the level and no higher.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\AssuranceLevel  $level
      * @param  ?string  $above
@@ -565,8 +531,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * How many of the authenticator app proofs, each bound as given, the
-     * recorder refused as bound to no current sign-in of the identity.
+     * How many of the bound proofs the recorder refused as unbound.
      *
      * @param  \SineMacula\Laravel\Iam\Testing\VerifiedSignInRecorderAdapter  $recorder
      * @param  \Tests\Fixtures\Models\Person  $identity
@@ -593,8 +558,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * A combination policy that judges the first factor alone, so no further
-     * proof ever meets a requirement.
+     * A combination policy no further proof ever satisfies.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\CombinationPolicy
      */
@@ -602,8 +566,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     {
         return new class implements CombinationPolicy {
             /**
-             * Whether the factor may follow the first factor, as MFA's default
-             * policy judges it.
+             * Whether the factor may follow, as MFA's default judges.
              *
              * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $firstFactor
              * @param  \SineMacula\Laravel\Mfa\Assurance\Channel  $factor
@@ -687,8 +650,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * MFA's AAL2 further proof, made now with the factor (a synthetic one when
-     * none is given), bound as given.
+     * An AAL2 further proof made now with the factor, bound as given.
      *
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  ?string  $factor
@@ -700,8 +662,7 @@ final class VerifiedSignInRecorderAdapterTest extends TestCase
     }
 
     /**
-     * Give the person a confirmed factor of the type on the guard's
-     * application.
+     * Give the person a confirmed factor of the type.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $type
