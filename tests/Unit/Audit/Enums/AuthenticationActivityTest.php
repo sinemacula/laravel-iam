@@ -8,11 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthenticationActivity;
 
 /**
- * Unit tests for the `authentication.*` codes this package defines and their
- * definitions (IAM-9.2, IAM-9.3): none of audit-log's own, every one in the
- * `security` category keeping exactly its properties, a refusal its method,
- * wait and concealment, and an identifier change's identifiers only as keyed
- * hashes.
+ * Unit tests for the `authentication.*` codes and their definitions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

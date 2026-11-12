@@ -46,14 +46,7 @@ use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Unit tests for the mapper of MFA's events (IAM-9.1, IAM-9.4, IAM-9.5): every
- * event is recorded under its own code, keeping only what its code keeps; a
- * failed verification carries its reason and a lockout is denied; the actor is
- * the operator the event names, else the identity, no one or the caller, an
- * enrolment abandoned, which names neither cause nor operator, among them; the
- * subject, principal, tenant, guard, session and client are MFA's context's,
- * through the morph map; and a challenge's events are correlated by it, any
- * other by the session.
+ * Tests the mapper of MFA's events.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -193,8 +186,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * Each event is recorded under its code, keeping exactly what its code
-     * keeps.
+     * Each event is recorded under its code, keeping what its code keeps.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @param  \SineMacula\Laravel\Iam\Audit\Enums\MfaActivity  $code
@@ -246,8 +238,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * A failed verification carries its reason; a lockout is denied; anything
-     * else succeeds.
+     * A failed verification carries its reason and a lockout is denied.
      *
      * @return void
      */
@@ -263,8 +254,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * The identity's own action is by the identity, on it, as its principal, in
-     * its tenant, under the application's guard, its session and client.
+     * The identity's own action is the identity's, from MFA's context.
      *
      * @return void
      */
@@ -302,8 +292,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * A context naming nothing gives nothing: explicitly no one, and none of
-     * the rest.
+     * A context naming nothing gives explicitly no one and none of the rest.
      *
      * @return void
      */
@@ -323,8 +312,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` naming the operator who acted on someone else's
-     * factors.
+     * Rows of `[event]` naming an operator who acted on someone else's factors.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Contracts\MfaEvent}>
      */
@@ -346,8 +334,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * An operator's action is by the operator, on the identity, in its tenant,
-     * with the operator's principal left to the contributors.
+     * An operator's action is the operator's, on the identity.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return void
@@ -398,8 +385,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * A failed verification is explicitly by no one, its author never proven,
-     * with the identity's principal and tenant still the event's.
+     * A failed verification is by no one.
      *
      * @return void
      */
@@ -417,10 +403,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` naming no operator where MFA reads one missing as the
-     * identity having acted itself: a lockout lifted, as `liftLockout()`
-     * documents a lift with no actor, a factor removed and recovery codes made
-     * or removed.
+     * Rows of `[event]` naming no operator.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Contracts\MfaEvent}>
      */
@@ -438,9 +421,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * An action naming no operator is the identity's own, settled from the
-     * event, so no caller a guard holds is credited with it: by the identity,
-     * on it, as its principal, in its tenant.
+     * An action naming no operator is the identity's own.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return void
@@ -460,9 +441,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * Rows of `[event]` of an enrolment abandoned, one for each place MFA
-     * abandons one: an operator's reset, the confirmation attempts running out,
-     * a replacement and a cancellation.
+     * Rows of `[event]` of an enrolment abandoned, one per cause.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Events\EnrollmentAbandoned}>
      */
@@ -480,10 +459,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * An enrolment abandoned names neither who abandoned it nor why, so it is
-     * the caller's: the operator serving a reset, the person serving their own
-     * replacement, never the identity named as having acted. It is still on the
-     * identity, in its tenant, with the principal left to the contributors.
+     * An enrolment abandoned is the caller's, on the identity.
      *
      * @param  \SineMacula\Laravel\Mfa\Events\EnrollmentAbandoned  $event
      * @return void
@@ -503,8 +479,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * A code sent and its verifications are correlated by their challenge,
-     * ahead of the session.
+     * A challenge's events are correlated by it, ahead of the session.
      *
      * @return void
      */
@@ -518,8 +493,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * The snapshot of the record the mapper describes the event on, failing the
-     * test when it skips it.
+     * The snapshot of the record the mapper describes the event on.
      *
      * @param  object  $event
      * @return \SineMacula\Laravel\AuditLog\Records\PendingSnapshot
@@ -534,8 +508,7 @@ final class MfaEventMapperTest extends TestCase
     }
 
     /**
-     * MFA's context for the person, acting as themselves in the tenant, on the
-     * sign-in, through the tests' client and the `api` application.
+     * MFA's context for the person in the tenant, on the sign-in.
      *
      * @return array<string, int|string|null>
      */

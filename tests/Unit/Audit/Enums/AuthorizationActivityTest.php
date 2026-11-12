@@ -8,10 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity;
 
 /**
- * Unit tests for the `authorization.*` codes and their definitions (IAM-9.2,
- * IAM-9.3): the decisions in the `security` category, every change in the
- * `access_management` category, each keeping exactly its properties, a policy
- * by its document's version and digest alone, never its document.
+ * Unit tests for the `authorization.*` codes and their definitions.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

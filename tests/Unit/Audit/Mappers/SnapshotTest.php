@@ -14,7 +14,7 @@ use SineMacula\Laravel\Iam\Audit\Mappers\Snapshot;
 
 /**
  * Unit tests for how a snapshot's guard, session and client meet the
- * contributors' (IAM-9.5).
+ * contributors'.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -76,8 +76,7 @@ final class SnapshotTest extends TestCase
     }
 
     /**
-     * The record's snapshot once the snapshot is attributed and a contributor
-     * has filled the request's guard, session and client.
+     * The record's snapshot once attributed and filled by a contributor.
      *
      * @param  \SineMacula\Laravel\Iam\Audit\Mappers\Snapshot  $snapshot
      * @return \SineMacula\Laravel\AuditLog\Records\PendingSnapshot

@@ -11,10 +11,8 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 
 /**
- * Unit tests for what audit-log's own capture must leave alone (IAM-9.6,
- * IAM-2.5): every `jwt` and `api_key` guard, found by its driver, in
- * `audit-log.capture.laravel.except_guards`, and Gate capture off. It only
- * computes, for `iam:check` to enforce, and writes nothing.
+ * Unit tests for the guards and Gate capture audit-log's own capture must leave
+ * alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -34,8 +32,7 @@ final class CaptureExclusionsTest extends TestCase
     ];
 
     /**
-     * The keys are audit-log's own, and the drivers are
-     * `laravel-authentication`'s.
+     * The keys are audit-log's and the drivers `laravel-authentication`'s.
      *
      * @return void
      */
@@ -48,8 +45,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * Every guard of either driver is found, in the order the application
-     * configures them, and no guard of any other driver.
+     * Every guard of either driver is found in configured order, and no other.
      *
      * @return void
      */
@@ -105,8 +101,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * With nothing excluded, every guard of either driver is missing, and the
-     * exclusions to write are all of them.
+     * With nothing excluded, every guard of either driver is missing.
      *
      * @return void
      */
@@ -120,8 +115,8 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * The exclusions to write keep every guard the application excludes, in its
-     * order, its own guards included, and add only those still missing.
+     * The exclusions keep the application's own, in order, and add the missing
+     * guards.
      *
      * @return void
      */
@@ -134,8 +129,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * Once every guard of either driver is excluded, none is missing and the
-     * exclusions are what the application holds.
+     * With every guard excluded, none is missing.
      *
      * @return void
      */
@@ -149,8 +143,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * Excluding every guard (`['*']`) leaves none missing, and is kept as it
-     * is.
+     * Excluding every guard leaves none missing and is kept as it is.
      *
      * @return void
      */
@@ -184,9 +177,8 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * An exclusion list that is no list of guard names is refused, naming the
-     * key and never the value, rather than replaced or read as excluding
-     * nothing.
+     * A malformed exclusion list is refused, naming the key and never the
+     * value.
      *
      * @param  mixed  $excepted
      * @return void
@@ -235,8 +227,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * Gate capture is off only while its flag is `false`: anything else, a
-     * value audit-log refuses among them, is not off.
+     * Gate capture is off only while its flag is `false`.
      *
      * @param  mixed  $enabled
      * @param  bool  $off
@@ -264,8 +255,7 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * Everything is read when it is asked for: a guard configured, or an
-     * exclusion written, after the exclusions were built counts.
+     * Everything is read when asked, so later configuration counts.
      *
      * @return void
      */
@@ -306,8 +296,8 @@ final class CaptureExclusionsTest extends TestCase
     }
 
     /**
-     * The exclusions over the given configuration, the guards of an application
-     * with both of the package's drivers unless it names its own.
+     * The exclusions over the configuration, with both package drivers unless
+     * it names its own guards.
      *
      * @param  array<string, mixed>  $config
      * @return \SineMacula\Laravel\Iam\Audit\CaptureExclusions
