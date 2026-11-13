@@ -275,7 +275,7 @@ invoice by its id.
   `authorization.resource_tenant_resolver`, or bind the contract yourself;
 - or scope every route-bound model to the caller's tenant, so another tenant's resource is never found.
 
-While your memberships are bound or named, `iam:check` notes the default resolver left in place (see
+While your memberships are bound, `iam:check` notes the default resolver left in place (see
 [Checks](checks.md#configuration)). It cannot see your models, so it only notes it.
 
 ## Grants, the tree and SSO
@@ -384,7 +384,8 @@ those, call `Authorization::forgetDecisionsFor($sessionId, $user)` yourself once
   `laravel-authorization`'s grants of the catalogue's audit permissions, one set for each purpose (`read`, `count`,
   `export`, `verify`): `audit-log.{purpose}` for every category, `audit-log.{purpose}.{category}` for one of `security`,
   `access_management` and `audit`, and `audit-log.{purpose}.own` for the viewer's own activity. The scope is never
-  wider than the grants allow and sees only the tenants the viewer belongs to, never the whole platform's trail (see
+  wider than the grants allow and sees only the tenants the viewer belongs to or holds those permissions in, never the
+  whole platform's trail (see
   [The audit trail](audit-trail.md#reading-the-trail)). Freshness for reading the trail belongs on the route that
   reads it: the policy is never told how the reader signed in, so a permission an authentication requirement guards,
   on its allow or on a deny, is not held there. Your own binding of the policy
@@ -416,14 +417,13 @@ on the same connection (see [Configuration](configuration.md#storage)).
   names the very binding this package made, so once you bind over a contract the seam is shown as your binding, with
   `declared by laravel-iam as ..., but overridden later`, or `but an instance is bound over it` for an instance. A
   contract this package left to your binding, or whose switch is off, carries no declaration; one holding a class you
-  name in `laravel-authorization`'s configuration reads `configured in` that key, with this package's declaration shown
-  overridden where this package registered first.
+  name in `laravel-authorization`'s configuration reads `configured in` that key.
 
 ## Further reading
 
 - [The authorization design note](../design/authorization.md): how each seam is bound and answered.
 - [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): the principal scope's two halves.
-- [The install and check design note](../design/install-and-check.md#what-the-authorization-glue-adds): what the checks gain.
+- [The install and check design note](../design/install-and-check.md#checks): what the checks cover.
 
 [authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md

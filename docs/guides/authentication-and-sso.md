@@ -16,7 +16,7 @@ specification the adapters are written to. This guide covers what you call, and 
 |--------------------------------------------|-------------------------------------------------------------------|------------------------------------------------------------------------------------|
 | SSO `SessionRevocation` (mandatory)        | `laravel-authentication`'s revocations                            | a change to a connection, a link, a scope or enforcement ends its sessions         |
 | Auth `ExternalIdentityLinks`               | the redemption SSO admitted in this request alone                 | a sign-in finds exactly the identity SSO's link names                              |
-| SSO `Linker` and `LinkStorage`             | SSO's own link store                                              | links can be made, found and removed                                               |
+| SSO `Linker`                               | SSO's own link store, its `LinkStorage`                           | links can be made, found and removed                                               |
 | SSO `ReauthenticationSessions`             | `laravel-authentication`'s sessions                               | a session held to a tenant's rule can renew at its provider                        |
 | Auth `ExternalEvidencePolicy`              | the evidence SSO accepted, then MFA's combination policy          | a provider's evidence counts only through both (see [MFA and SSO](mfa-and-sso.md)) |
 | SSO `Freshness`                            | `laravel-authentication`'s freshness policy                       | SSO's sensitive changes ask for a fresh session, as your own do                    |
@@ -95,7 +95,8 @@ It answers SSO's refusal, committed, or `laravel-authentication`'s `AccessTokenR
 access token. The session renewed is the one the code names, never the one the request is authenticated with, so tell
 the caller they are fresh only when `$result->session` is their own. A refusal by `laravel-authentication` throws
 `ExternalReauthenticationRefusedException`, carrying the failed result, with the code unspent. Redeem `reauthenticate`
-codes through this call alone: SSO's own `admit()` refuses one.
+codes through this call alone: one admitted through SSO's own `admit()` throws a `LogicException` when SSO asks the
+package to renew the session.
 
 ## Linking an identity
 
