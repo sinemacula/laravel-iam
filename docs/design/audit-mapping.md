@@ -114,8 +114,6 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - `laravel-authentication`: `ContextualGuard` has no bound-only caller snapshot, so the reader needs `AbstractGuard`.
 - `laravel-authentication`: proofs within one second are ordered by UUIDv7 id, which breaks when the shared UUIDv7
   state is rewound.
-- `laravel-audit-log`: `RecordPipeline` calls `Str::uuid7($occurredAt)`, which rewinds that shared state; the test
-  suite resets it in `Tests\TestCase::setUp()`.
 - `laravel-audit-log`: `Contribution` has no credential filler, so only the mappers set the credential.
 - `laravel-mfa`: `EnrollmentAbandoned` names no cause or operator, so its actor is left to the caller.
 - `laravel-mfa`, `laravel-sso`: event contexts give a tenant id with no type, so tenants share the one type `tenant`.
