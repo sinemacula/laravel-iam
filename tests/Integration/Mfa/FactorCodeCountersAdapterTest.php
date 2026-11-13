@@ -372,7 +372,12 @@ final class FactorCodeCountersAdapterTest extends TestCase
         $binding  = new FactorCodeBinding($proof, 'factor-1', new Channel(ChannelKind::SMS, self::DELIVERED_PHONE));
         $counters = $this->app?->make(FactorCodeCountersAdapter::class) ?? self::fail('The application has not booted.');
 
-        foreach ([static fn (): mixed => $counters->admit($binding), static fn (): mixed => $counters->report($binding, 'challenge-1', false)] as $call) {
+        $calls = [
+            static fn (): mixed => $counters->admit($binding, self::client()),
+            static fn (): mixed => $counters->report($binding, 'challenge-1', false, self::client()),
+        ];
+
+        foreach ($calls as $call) {
 
             $refusal = null;
 
@@ -400,7 +405,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         $counters = $this->app?->make(FactorCodeCountersAdapter::class) ?? self::fail('The application has not booted.');
         $binding  = $this->factorCodeBinding(factor: 'removed-factor');
-        $answer   = DB::connection(StorageConnection::name())->transaction(static fn (): mixed => $counters->report($binding, 'challenge-1', true));
+        $answer   = DB::connection(StorageConnection::name())->transaction(static fn (): mixed => $counters->report($binding, 'challenge-1', true, self::client()));
 
         self::assertSame(FactorCodeRefusal::NOT_FOUND, $answer->refusal);
         self::assertSame(0, $this->failures());
@@ -423,7 +428,12 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         $app->make(FactorCodeCallers::class)->hold($binding, CallerContext::nobody(self::GUARD));
 
-        foreach ([static fn (): mixed => $counters->admit($binding), static fn (): mixed => $counters->report($binding, 'challenge-1', true)] as $call) {
+        $calls = [
+            static fn (): mixed => $counters->admit($binding, self::client()),
+            static fn (): mixed => $counters->report($binding, 'challenge-1', true, self::client()),
+        ];
+
+        foreach ($calls as $call) {
             try {
                 DB::connection(StorageConnection::name())->transaction($call);
 
@@ -462,13 +472,14 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A binding the gateway did not make is judged from the binding alone.
+     * A binding the gateway did not make is counted for the client the check
+     * was handed.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testABindingTheGatewayDidNotMakeIsJudgedFromTheBindingAlone(): void
+    public function testABindingTheGatewayDidNotMakeIsCountedForTheChecksClient(): void
     {
         config()->set('mfa.attempts.factor_limit', 1);
 
@@ -484,7 +495,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
 
         self::assertSame(FactorCodeOutcome::INVALID, $this->checkWrongly()->outcome);
         self::assertSame(1, $this->failures());
-        self::assertSame([[null, null]], $this->lockouts);
+        self::assertSame([[self::CLIENT_IP, self::CLIENT_AGENT]], $this->lockouts);
     }
 
     /**
@@ -602,7 +613,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     #[\Override]
     protected function isChallengeAdmitted(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding): bool
     {
-        return $this->adapter()->admit($this->codeBindingOf($identity, $factor, $binding))->isAdmitted();
+        return $this->adapter()->admit($this->codeBindingOf($identity, $factor, $binding), self::client())->isAdmitted();
     }
 
     /**
@@ -619,7 +630,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     #[\Override]
     protected function isChallengeReported(MultiFactorAuthenticatable $identity, EloquentFactor&Model $factor, ProofBinding $binding, bool $passed): bool
     {
-        return $this->adapter()->report($this->codeBindingOf($identity, $factor, $binding), 'challenge-1', $passed)->refusal === null;
+        return $this->adapter()->report($this->codeBindingOf($identity, $factor, $binding), 'challenge-1', $passed, self::client())->refusal === null;
     }
 
     /**
