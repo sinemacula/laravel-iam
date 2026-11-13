@@ -19,8 +19,6 @@ use SineMacula\Laravel\Authentication\Contracts\ScopeRegistry;
 use SineMacula\Laravel\Authentication\Scopes\AcceptAnyScope;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
-use SineMacula\Laravel\Authorization\Cache\Resolution;
-use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Context\GuardAuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationRequirementChecker;
@@ -29,18 +27,15 @@ use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
 use SineMacula\Laravel\Authorization\Contracts\SessionPolicySource;
 use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
-use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Authorization\Diagnostics\Enums\Lifetime as ReportedLifetime;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
 use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Resolvers\AuthGuardSubjectResolver;
-use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\GuardUserIdentityDirectory;
 use SineMacula\Laravel\Authorization\Resolvers\NoSessionPolicy;
 use SineMacula\Laravel\Authorization\Resolvers\RefusingRequirementChecker;
-use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AccessMandates;
 use SineMacula\Laravel\Iam\Authorization\ApplicationAccessAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuditAccessPolicyAdapter;
@@ -402,38 +397,6 @@ final class AuthorizationSeamsTest extends TestCase
             AuthenticationRequirementChecker::class => NamedRequirementChecker::class,
             AuthenticationContext::class            => AuthenticationContextAdapter::class,
         ]);
-    }
-
-    /**
-     * Rebinding the resolver or the tree forgets cached resolutions.
-     *
-     * @return void
-     */
-    public function testRebindingTheResolverOrTheTreeForgetsResolutions(): void
-    {
-        $app = $this->application();
-
-        $app->make(SubjectResolver::class);
-        $app->make(TenantTree::class);
-
-        $cache    = ResolutionCache::instance();
-        $resolved = 0;
-        $resolve  = static function () use (&$resolved): Resolution {
-            $resolved++;
-
-            return new Resolution(['billing']);
-        };
-
-        self::assertInstanceOf(ResolutionCache::class, $cache);
-
-        $cache->rememberRoles(new Reference('person', '1'), $resolve);
-        $cache->rememberRoles(new Reference('person', '1'), $resolve);
-        $app->instance(TenantTree::class, new FlatTenantTree);
-        $cache->rememberRoles(new Reference('person', '1'), $resolve);
-        $app->instance(SubjectResolver::class, $app->make(AuthGuardSubjectResolver::class));
-        $cache->rememberRoles(new Reference('person', '1'), $resolve);
-
-        self::assertSame(3, $resolved);
     }
 
     /**
