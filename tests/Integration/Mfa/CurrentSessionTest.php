@@ -5,13 +5,11 @@ declare(strict_types = 1);
 namespace Tests\Integration\Mfa;
 
 use Illuminate\Foundation\Auth\User;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
-use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
@@ -352,71 +350,6 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * An identity-wide change uses the default guard when it is `jwt`.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheIdentitysSessionServiceIsTheDefaultGuardsWhenItHoldsSessions(): void
-    {
-        $person = $this->createPerson();
-
-        $this->declareGuards(['admin' => $this->sessionGuard(), ...$this->guards()]);
-
-        self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-        self::assertIsThePerson($person, Auth::guard(self::GUARD)->user());
-        self::assertNull(Auth::guard('admin')->user());
-    }
-
-    /**
-     * Otherwise it uses the first `jwt` guard declared.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testTheIdentitysSessionServiceIsTheFirstJwtGuardsWhereTheDefaultHoldsNone(): void
-    {
-        $person = $this->createPerson();
-        $guards = $this->guards();
-
-        config()->set('auth.defaults.guard', 'web');
-
-        $this->declareGuards([
-            'web'       => $guards['web'],
-            'broken'    => 'not a guard',
-            'keys'      => ['driver' => 'api_key', 'provider' => 'people'],
-            'admin'     => $this->sessionGuard(),
-            self::GUARD => $guards[self::GUARD],
-        ]);
-
-        self::assertTrue($this->signInThroughTheIdentitysService($person)->isSignedIn());
-        self::assertIsThePerson($person, Auth::guard('admin')->user());
-        self::assertNull(Auth::guard(self::GUARD)->user());
-    }
-
-    /**
-     * Without a `jwt` guard an identity-wide change is refused.
-     *
-     * @return void
-     */
-    public function testTheIdentitysSessionServiceIsUnresolvedWithoutAJwtGuard(): void
-    {
-        $guards = $this->guards();
-
-        config()->set('auth.defaults.guard', 'web');
-
-        $this->declareGuards(['web' => $guards['web'], 'keys' => ['driver' => 'api_key', 'provider' => 'people']]);
-
-        self::assertUnresolvedGuard('web', fn (): mixed => $this->currentSession()->identitySessions());
-
-        config()->set('auth.guards', 'not guards');
-
-        self::assertUnresolvedGuard('web', fn (): mixed => $this->currentSession()->identitySessions());
-    }
-
-    /**
      * Assert the resolution refuses an application that names no session guard.
      *
      * @param  string  $application
@@ -503,19 +436,6 @@ final class CurrentSessionTest extends TestCase
     private function sessionGuard(): mixed
     {
         return $this->guards()[self::GUARD];
-    }
-
-    /**
-     * Sign the person in through the identity-wide session service.
-     *
-     * @param  \Tests\Fixtures\Models\Person  $person
-     * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult
-     *
-     * @throws \Throwable
-     */
-    private function signInThroughTheIdentitysService(Person $person): SignInResult
-    {
-        return $this->currentSession()->identitySessions()->signIn('password', ['email' => $person->email, 'password' => self::PASSWORD], new SignInContext(self::client()));
     }
 
     /**

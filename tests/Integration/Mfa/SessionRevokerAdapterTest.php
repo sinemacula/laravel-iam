@@ -352,7 +352,7 @@ final class SessionRevokerAdapterTest extends TestCase
      *
      * @throws \Throwable
      */
-    public function testAResetWithNoSessionGuardDeclaredIsUnresolved(): void
+    public function testAResetWithNoSessionGuardDeclaredIsRefused(): void
     {
         $person = $this->revokedPerson();
 
@@ -362,12 +362,13 @@ final class SessionRevokerAdapterTest extends TestCase
         Config::set('auth.defaults.guard', 'web');
         Config::set('auth.guards', ['web' => $guards['web'], 'broken' => 'not a guard']);
 
-        $exception = self::unresolved(function () use ($person): void {
+        try {
             $this->revoker()->revokeAll($person);
-        });
 
-        self::assertSame(ReferenceKind::GUARD, $exception->kind);
-        self::assertSame('web', $exception->application);
+            self::fail('A reset with no jwt guard was not refused.');
+        } catch (\InvalidArgumentException $exception) {
+            self::assertSame('No jwt guard is configured.', $exception->getMessage());
+        }
 
         Config::set('auth.defaults.guard', self::GUARD);
         Config::set('auth.guards', $guards);

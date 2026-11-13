@@ -93,12 +93,12 @@ final readonly class CurrentSession
      * @param  string  $session
      * @return (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null
      *
+     * @throws \InvalidArgumentException
      * @throws \LogicException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     public function owned(Identity $identity, string $session): (EloquentSession&Model)|null
     {
-        return $identity instanceof HasSessions ? $this->identitySessions()->sessionRecord($identity, $session) : null;
+        return $identity instanceof HasSessions ? Auth::sessions()->sessionRecord($identity, $session) : null;
     }
 
     /**
@@ -194,21 +194,6 @@ final readonly class CurrentSession
         $this->guard($application);
 
         return Auth::sessions($application);
-    }
-
-    /**
-     * The default `jwt` guard's session service, else the first guard's.
-     *
-     * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     */
-    public function identitySessions(): SessionService
-    {
-        $default = Auth::getDefaultDriver();
-        $guards  = Auth::sessionGuards();
-
-        return $this->sessions(in_array($default, $guards, true) ? $default : ($guards[0] ?? $default));
     }
 
     /**

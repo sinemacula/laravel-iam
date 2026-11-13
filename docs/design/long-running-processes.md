@@ -6,19 +6,15 @@ Nothing one request or job bound may reach the next in an Octane worker, a queue
 
 - The `iam` manager resolves every service from the current container on each call, so it reaches each Octane
   request's sandbox.
-- `WorkerReset::reset()` (`Iam::resetWorkerState()`) flushes the suite's request state through each member's own reset
-  where it has one:
-  - the resolved session, which holds laravel-mfa's default proof store, and `AuthManager::forgetGuardState()`;
-  - laravel-sso's and laravel-authorization's `RequestState::forget()`;
-  - every binding under `iam.scoped:`, the package's own scoped adapters and records;
-  - the facade roots, which live outside the container.
-- Every other scoped instance is kept: Laravel's `Context` and `defer()` callbacks, and audit-log's execution frames.
+- `WorkerReset::reset()` (`Iam::resetWorkerState()`) flushes the resolved session, which holds laravel-mfa's default
+  proof store, calls `AuthManager::forgetGuardState()`, forgets every scoped instance with the container's
+  `forgetScopedInstances()`, and clears the facade roots, which live outside the container.
 - `ResetWhenWorkerStarts` runs `reset()` as each Octane worker starts, so nothing from boot is cloned into the first
   request.
-- `ResetBetweenRequests` runs `forgetMemberState()` before each Octane request. Octane forgets scoped instances itself.
+- Each Octane request relies on Octane's default listeners to flush the session and the guards.
 - `ResetBeforeJob` flushes the session before each non-`sync` queued job. laravel-authentication resets its guards and
   the queue worker forgets scoped instances.
-- The Octane listeners are registered by event name, so Octane stays optional. All three are on while
+- The Octane listener is registered by event name, so Octane stays optional. Both listeners are on while
   `iam.workers.reset` is; only a clear off value (`false`, `0`, `off`, `no`) turns it off.
 
 ## Invariants
@@ -29,6 +25,4 @@ Nothing one request or job bound may reach the next in an Octane worker, a queue
 
 ## Member gaps
 
-- `laravel-authentication`: no public reset for its scoped request state, so `WorkerReset::AUTHENTICATION_STATE` lists
-  `Rehashing`, `KeptSessions`, `RequiredWork` and `WatchedSessions`.
 - `laravel-mfa`: no reset of its session-held proofs before a job, so `ResetBeforeJob` flushes the session.

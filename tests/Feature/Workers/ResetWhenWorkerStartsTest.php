@@ -166,7 +166,7 @@ final class ResetWhenWorkerStartsTest extends TestCase
      */
     private function scopedInstanceOfTheApplication(): object
     {
-        $this->app?->instance('auth', $this->managerForgettingOnce($this->app));
+        $this->app?->instance('auth', $this->managerForgettingOnce());
         $instance = $this->app?->make(DriverScope::class);
 
         self::assertIsObject($instance);
@@ -177,18 +177,12 @@ final class ResetWhenWorkerStartsTest extends TestCase
     /**
      * An auth manager expecting its guard state forgotten exactly once.
      *
-     * @param  \Illuminate\Contracts\Foundation\Application|null  $app
      * @return \SineMacula\Laravel\Authentication\AuthManager
      */
-    private function managerForgettingOnce(?Application $app = null): AuthManager
+    private function managerForgettingOnce(): AuthManager
     {
         $manager = \Mockery::mock(AuthManager::class);
-
-        if ($app !== null) {
-            $manager->shouldReceive('setApplication')->once()->with($app)->ordered()->andReturnSelf();
-        }
-
-        $manager->shouldReceive('forgetGuardState')->once()->ordered();
+        $manager->shouldReceive('forgetGuardState')->once();
 
         return $manager;
     }

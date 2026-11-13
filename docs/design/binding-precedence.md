@@ -10,8 +10,7 @@ How the package binds its adapters over the members' seams without replacing a b
   provider registered later applies them from its own `boot()`.
 - A row binds its adapter only where the seam is unbound or the member's `isPackageDefault()` says it still holds the
   member's default. The member decides, so the package never guesses at another package's bindings.
-- A scoped adapter is held under `iam.scoped:<seam>` and the seam binds a transient closure resolving that key, so the
-  worker reset finds the package's state by the prefix.
+- A scoped adapter is held under `iam.scoped:<seam>` and the seam binds a transient closure resolving that key.
 - An adapter over a `laravel-authorization` contract is declared to its configuration report, so `authorization:check`
   names it.
 

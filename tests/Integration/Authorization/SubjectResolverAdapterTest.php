@@ -190,7 +190,7 @@ final class SubjectResolverAdapterTest extends TestCase
 
         $reset = new WorkerReset($this->app ?? self::fail('The application has not booted.'));
 
-        $reset->forgetMemberState();
+        $reset->reset();
 
         self::assertSame([], array_keys(self::callerMemos()));
 
@@ -198,7 +198,7 @@ final class SubjectResolverAdapterTest extends TestCase
 
         self::assertSubject(new Subject($second, $second, null, self::GUARD, self::GUARD, self::keyOf($session)), $this->resolver()->resolve());
 
-        $reset->forgetMemberState();
+        $reset->reset();
 
         self::assertNull($this->resolver()->resolve());
     }
