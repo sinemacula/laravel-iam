@@ -58,6 +58,7 @@ final class AuthorizationActivityTest extends CodesTestCase
 
         return [
             'authorization.access_denied'            => ['security', self::retained(...$decision)],
+            'authorization.access_allowed'           => ['security', self::retained(...$decision)],
             'authorization.break_glass_used'         => ['security', self::retained(...$decision)],
             'authorization.access_previewed'         => ['security', self::retained(...$decision, ...['effect', 'reason'])],
             'authorization.role_created'             => [$change, self::retained(...$definition, ...['system'])],

@@ -47,7 +47,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
   after a refusal on purpose (SSO redemptions, MFA's step-up and pending completion), and a refusal is still a fact.
   Every other record is written at once.
 - Skipped: a bind's `PrincipalAssigned` and `SessionAuthenticated`, a refresh's `SignedIn`, which repeats
-  `Refreshed`, and every allowed decision but a preview or a break-glass one. Pairs that are two facts, such as
+  `Refreshed`, and every allowed decision but a preview, a break-glass one or one `laravel-authorization` reports as a
+  sensitive action (`DecisionReport::SENSITIVE_ACTION`). Pairs that are two facts, such as
   `SessionCreated` and `SignedIn`, or SSO's and `laravel-authentication`'s halves of one external sign-in, are
   recorded once each.
 - The actor follows `Mappers\Enums\Attribution`:

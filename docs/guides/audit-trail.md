@@ -64,9 +64,10 @@ Everything else has a code of its own, under its member's prefix, defined by the
   factor's id and type as a lockout lifted (`mfa.lockout_lifted`) does.
 - **`sso.*`** (34 codes): a flow's stages and its failure (`sso.flow_failed`, keeping its flow), links, connections,
   domains, enforcement and exemptions, keys, and metadata and key set refreshes.
-- **`authorization.*`** (31 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,
-  the application and the deciding statements, with the decision's reason code), allowed by a break-glass grant
-  (`authorization.break_glass_used`) or previewed for another principal (`authorization.access_previewed`); roles,
+- **`authorization.*`** (32 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,
+  the application and the deciding statements, with the decision's reason code), a sensitive action allowed
+  (`authorization.access_allowed`), a check allowed by a break-glass grant (`authorization.break_glass_used`) or one
+  previewed for another principal (`authorization.access_previewed`); roles,
   permissions and policies created, updated and deleted; two roles declared mutually exclusive or that exclusion
   removed (`authorization.role_exclusion_declared`, `_removed`, keeping both roles' names and the second role's
   reference); a permission granted to or revoked from a role; a role, permission or policy assigned to or taken from a
@@ -169,22 +170,24 @@ people in through `Auth::sessions()`.
 
 ## Authorization decisions
 
-`laravel-authorization` reports every check it decides, allows included, and a denial `authorize()` throws a second
-time (`AuthorizationFailed`). The mapper records:
+`laravel-authorization` reports the checks its `authorization.events.decisions` settings name, and a denial
+`authorize()` throws a second time (`AuthorizationFailed`). The mapper records:
 
 - a denial, once, as `authorization.access_denied`, denied with `laravel-authorization`'s reason code (`no_match`,
   `tenant_scope`, `explicit_deny` and the rest), whether it came from `can()`, `check()`, `authorize()`, the Gate or
   your own `Gate` checks, since `laravel-authorization` answers the Gate;
 - a check a break-glass grant allowed, as `authorization.break_glass_used`;
+- an allowed check of an action listed in `authorization.events.decisions.sensitive_actions`, as
+  `authorization.access_allowed`;
 - a preview, as `authorization.access_previewed`, by the previewer, about the principal previewed, whatever it decided.
 
-It records no other allow. A denial as `insufficient_authentication` is recorded as `authorization.access_denied` too,
-denied with that reason: on a request's own session it asks for a stronger proof, and MFA's step-up records what
-follows, but a check made on no session, a job's or a command's, can never be stepped up, so the denial is the only
-record of the refusal. Filter on the reason to tell step-up prompts apart from other denials. A role, permission or
-policy deleted with grants still held carries every grantee as its manifest, as audit-log's bulk record does, so the
-bound store must keep attachments, as audit-log's own stores do; a store that keeps none fails the record, reported as
-`AuditCaptureFailed`.
+It records no other allow, so setting `authorization.events.decisions.allows` to `all` adds no records. A denial as
+`insufficient_authentication` is recorded as `authorization.access_denied` too, denied with that reason: on a request's
+own session it asks for a stronger proof, and MFA's step-up records what follows, but a check made on no session, a
+job's or a command's, can never be stepped up, so the denial is the only record of the refusal. Filter on the reason to
+tell step-up prompts apart from other denials. A role, permission or policy deleted with grants still held carries every
+grantee as its manifest, as audit-log's bulk record does, so the bound store must keep attachments, as audit-log's own
+stores do; a store that keeps none fails the record, reported as `AuditCaptureFailed`.
 
 Each `authorization.*` record is filed under the tenant `laravel-authorization` names, by its identifier, which is its
 key: a tenant whose key does not resolve back to it through `laravel-authentication`'s

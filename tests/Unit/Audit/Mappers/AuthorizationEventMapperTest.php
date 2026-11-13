@@ -25,6 +25,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionEffect;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
+use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport;
 use SineMacula\Laravel\Authorization\Evaluation\StatementReference;
 use SineMacula\Laravel\Authorization\Events\AuthorizationFailed;
 use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
@@ -146,6 +147,12 @@ final class AuthorizationEventMapperTest extends TestCase
         yield 'a denial' => [
             self::decision(DecisionEffect::DENY, DecisionReason::TENANT_SCOPE),
             AuthorizationActivity::ACCESS_DENIED,
+            ['action' => 'invoices:refund', 'resource' => 'invoice:9', 'application' => 'admin', 'policies' => ['Billing[12]#0']],
+        ];
+
+        yield 'a sensitive action allowed' => [
+            self::decision(DecisionEffect::ALLOW, null, report: DecisionReport::SENSITIVE_ACTION),
+            AuthorizationActivity::ACCESS_ALLOWED,
             ['action' => 'invoices:refund', 'resource' => 'invoice:9', 'application' => 'admin', 'policies' => ['Billing[12]#0']],
         ];
 
@@ -397,6 +404,8 @@ final class AuthorizationEventMapperTest extends TestCase
     {
         yield 'an allow' => [self::decision(DecisionEffect::ALLOW, null)];
 
+        yield 'an allow reported because every allow is' => [self::decision(DecisionEffect::ALLOW, null, report: DecisionReport::ALL_ALLOWS)];
+
         yield 'a hard denial, already recorded' => [
             new AuthorizationFailed(null, null, null, 'invoices:refund', null, null, null, DecisionEffect::DENY, DecisionReason::NO_MATCH, [], false, []),
         ];
@@ -547,6 +556,19 @@ final class AuthorizationEventMapperTest extends TestCase
     public function testABreakGlassGrantUsedSucceeds(): void
     {
         $snapshot = self::snapshotOf(self::decision(DecisionEffect::ALLOW, null, breakGlass: true));
+
+        self::assertSame([Outcome::SUCCESS, null], [$snapshot->outcome, $snapshot->reason]);
+        self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->actor?->toArray());
+    }
+
+    /**
+     * A sensitive action's allow succeeds.
+     *
+     * @return void
+     */
+    public function testASensitiveActionAllowedSucceeds(): void
+    {
+        $snapshot = self::snapshotOf(self::decision(DecisionEffect::ALLOW, null, report: DecisionReport::SENSITIVE_ACTION));
 
         self::assertSame([Outcome::SUCCESS, null], [$snapshot->outcome, $snapshot->reason]);
         self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->actor?->toArray());
@@ -875,10 +897,16 @@ final class AuthorizationEventMapperTest extends TestCase
      * @param  ?\SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason  $reason
      * @param  ?\SineMacula\Laravel\Authorization\Support\Reference  $previewer
      * @param  bool  $breakGlass
+     * @param  ?\SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport  $report
      * @return \SineMacula\Laravel\Authorization\Events\DecisionEvaluated
      */
-    private static function decision(DecisionEffect $effect, ?DecisionReason $reason, ?Reference $previewer = null, bool $breakGlass = false): DecisionEvaluated
-    {
+    private static function decision(
+        DecisionEffect $effect,
+        ?DecisionReason $reason,
+        ?Reference $previewer = null,
+        bool $breakGlass = false,
+        ?DecisionReport $report = null,
+    ): DecisionEvaluated {
         return new DecisionEvaluated(
             new Reference('member', '70'),
             self::person('7'),
@@ -892,6 +920,7 @@ final class AuthorizationEventMapperTest extends TestCase
             [new StatementReference('Billing', 0, '12')],
             $breakGlass,
             ['subject.id'],
+            $report,
         );
     }
 

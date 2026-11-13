@@ -20,6 +20,9 @@ enum AuthorizationActivity: string implements ListsProperties
 {
     case ACCESS_DENIED = 'authorization.access_denied';
 
+    // A check of a sensitive action was allowed
+    case ACCESS_ALLOWED = 'authorization.access_allowed';
+
     // A check was allowed by a break-glass grant
     case BREAK_GLASS_USED = 'authorization.break_glass_used';
 
@@ -102,6 +105,7 @@ enum AuthorizationActivity: string implements ListsProperties
     /** @var array<string, list<string>> What each code keeps, by code. */
     private const array RETAINED = [
         self::ACCESS_DENIED->value            => self::DECISION,
+        self::ACCESS_ALLOWED->value           => self::DECISION,
         self::BREAK_GLASS_USED->value         => self::DECISION,
         self::ACCESS_PREVIEWED->value         => [...self::DECISION, 'effect', 'reason'],
         self::ROLE_CREATED->value             => [...self::DEFINITION, 'system'],
@@ -167,6 +171,7 @@ enum AuthorizationActivity: string implements ListsProperties
     {
         return match ($this) {
             self::ACCESS_DENIED,
+            self::ACCESS_ALLOWED,
             self::BREAK_GLASS_USED,
             self::ACCESS_PREVIEWED => self::SECURITY,
             default                => self::ACCESS_MANAGEMENT,
