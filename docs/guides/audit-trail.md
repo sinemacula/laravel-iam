@@ -53,15 +53,15 @@ Everything else has a code of its own, under its member's prefix, defined by the
   `authentication.api_key_rejected`, and `authentication.{flow}_failed` for client credentials, code requests,
   identifier verification, password resets, identifier changes, factor codes and password changes), a sign-in refused
   for a concealed reason (`authentication.sign_in_failed_concealed`), SSO's redemption halves
-  (`authentication.external_result_redeemed`, `authentication.external_result_unlinked`), identifier and password
-  changes, passkeys, API keys and client credentials.
+  (`authentication.external_result_redeemed`, `authentication.external_result_unlinked`), identifier verifications and
+  changes, passwords set and changed, passkeys, API keys and client credentials.
 - **`session.*`** (16 codes): a session created, pending, activated or returned to pending, revoked, every session
   ended together (`session.signed_out_everywhere`), refreshed, switched, stepped up and reauthenticated, and each of
   those refused (`session.{flow}_failed`, `session.factor_recheck_failed`).
-- **`mfa.*`** (21 codes): codes sent, enrolments, factors confirmed, disabled, enabled again, removed, renamed and
-  reset, lockouts, recovery codes, and every verification passed or failed. A factor enabled again
-  (`mfa.factor_enabled`) is recorded as the act of whoever `Mfa::enableFactor()` names, on the person, keeping the
-  factor's id and type as a lockout lifted (`mfa.lockout_lifted`) does.
+- **`mfa.*`** (21 codes): codes sent, enrolments, passkeys associated, factors confirmed, disabled, enabled again,
+  removed, renamed and reset, the preferred factor changed, lockouts, recovery codes, and every verification passed or
+  failed. A factor enabled again (`mfa.factor_enabled`) is recorded as the act of whoever `Mfa::enableFactor()` names,
+  on the person, keeping the factor's id and type as a lockout lifted (`mfa.lockout_lifted`) does.
 - **`sso.*`** (34 codes): a flow's stages and its failure (`sso.flow_failed`, keeping its flow), links, connections,
   domains, enforcement and exemptions, keys, and metadata and key set refreshes.
 - **`authorization.*`** (32 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,

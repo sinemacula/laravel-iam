@@ -9,8 +9,9 @@ to the members' own guides (refreshing, signing out, enrolment, factor changes a
 **It is an example, never shipped.** Every class under `App\` is the example application's own: replace its
 controllers, models and messages with yours. Every class outside `App\` is a member's or this package's, used as it is.
 Each controller reads the request only to build the plain values it hands over (`SignInContext::fromRequest()`,
-`ClientContext::fromRequest()`, `Auth::caller()`); nothing it calls reads the request itself. SSO's own start,
-completion and metadata routes are laid out in SSO's [example application][sso-example] and are not repeated here.
+`ClientContext::fromRequest()`, `CallerContext::fromRequest()`, `Auth::caller()`); nothing it calls reads the request
+itself. SSO's own start, completion and metadata routes are laid out in SSO's [example application][sso-example] and
+are not repeated here.
 
 ## The routes
 
@@ -503,7 +504,7 @@ middleware as the example's own (`auth:api`, then `mfa`), and mind what changes 
 |---------------------------------------|-------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Refreshing a session's tokens         | `laravel-authentication`'s [refreshing guide][auth-refreshing], behind `authentication.refresh`       | Nothing changes in the route.                                                                                                                                                                                                                                            |
 | Signing out, and revoking sessions    | `laravel-authentication`'s [sessions guide][auth-signing-out]                                         | Nothing changes in the route; a person's own sign-out is recorded as `authentication.signed_out`.                                                                                                                                                                        |
-| Enrolling a factor, and replacing one | MFA's [enrolment guide][mfa-enrollment], a bootstrap enrolment exempt from the gate with `mfa.exempt` | Takes `mfa.add_factor` or `mfa.replace_factor` freshness, declared for the guard; an identity's first additional factor takes a fresh reauthentication instead. Without an enrolment route a person who signs in with a password never meets a tenant's MFA requirement. |
+| Enrolling a factor                    | MFA's [enrolment guide][mfa-enrollment], a bootstrap enrolment exempt from the gate with `mfa.exempt` | Takes `mfa.add_factor` freshness, declared for the guard; an identity's first additional factor takes a fresh reauthentication instead. Without an enrolment route a person who signs in with a password never meets a tenant's MFA requirement.                         |
 | Removing a factor                     | MFA's [lifecycle guide][mfa-removing]                                                                 | Takes `mfa.remove_factor` freshness. The package's adapters end the identity's other sessions and return a session left short to pending; the removal's `completion()` carries its new pending credential back to the client.                                            |
 | Generating recovery codes             | MFA's [recovery codes guide][mfa-recovery-codes], behind `mfa.no-store`                               | Takes `mfa.generate_recovery_codes` freshness.                                                                                                                                                                                                                           |
 
