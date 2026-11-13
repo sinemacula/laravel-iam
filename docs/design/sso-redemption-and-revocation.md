@@ -128,7 +128,6 @@ sessions, on every guard, as a savepoint of SSO's transaction:
   `tenantPolicyChanged()`'s second pass stands until its first refresh.
 - `laravel-authentication`: no public identity resolver or key-shape check; `IdentityReferences` reuses
   `SessionKeyShape::matches()`.
-- `laravel-authentication`: no lookup by verified identifier, so the matcher checks `hasVerifiedIdentifier()` per row.
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
 - `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.
