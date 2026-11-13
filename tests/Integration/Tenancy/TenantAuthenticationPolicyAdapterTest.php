@@ -193,6 +193,27 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
+     * A session judged again is exempt without reporting the exemption.
+     *
+     * @return void
+     */
+    public function testASessionJudgedAgainIsExemptWithoutReportingIt(): void
+    {
+        $this->enforcement()->requireThrough([self::SSO_CONNECTION]);
+
+        $person  = $this->createPerson();
+        $session = $this->signIn($person)->record;
+        $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
+        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), $session, static fn (): ?string => null, rejudging: true);
+
+        $this->exemptions()->exempt(self::referenceOf($person));
+
+        self::assertNull($policy->requirementFor($context)->connections);
+        self::assertCount(1, $this->exemptions()->asked());
+        Event::assertNotDispatched(ExemptionUsed::class);
+    }
+
+    /**
      * An exempt identity's compliant session reports no exemption.
      *
      * @return void

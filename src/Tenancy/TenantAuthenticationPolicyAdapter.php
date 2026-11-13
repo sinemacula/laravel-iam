@@ -15,6 +15,7 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
+use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 use SineMacula\Laravel\Sso\Enforcement\ExemptionGate;
@@ -40,7 +41,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
      */
     public function __construct(
 
-        /** Resolves SSO's enforcement, its exemption gate and the request's records on each call. */
+        /** Resolves SSO's enforcement, its exemption gate and contract, and the request's records on each call. */
         private Container $container,
 
         /** Asks the application's MFA tenant requirement. */
@@ -75,7 +76,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
-     * The exemption gate's answer, or `null` when the rule would not refuse.
+     * Whether the identity is exempt, or `null` when the rule would not refuse.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext  $context
@@ -102,7 +103,10 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
         $sessionId = self::sessionIdOf($context->session);
         $client    = $this->container->make(AdmittedRedemptions::class)->clientFor($identity, $sessionId) ?? new SsoClient(null, null);
 
-        return $this->container->make(ExemptionGate::class)->admit($policy, $context->application, $identity, $client, $sessionId);
+        // Only an admitted call reports its exemption, through the gate.
+        return $context->rejudging
+            ? $this->container->make(EnforcementExemption::class)->exemption($policy, $context->application, $identity)
+            : $this->container->make(ExemptionGate::class)->admit($policy, $context->application, $identity, $client, $sessionId);
     }
 
     /**

@@ -226,10 +226,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
             && $event->context->userAgent                                                                                  === 'renewing-agent');
 
         self::assertSame(0, $this->sessions()->tenantPolicyChanged(new ClaimedTenant($tenant)));
-        Event::assertDispatchedTimes(ExemptionUsed::class, 3);
-        Event::assertDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId === self::keyOf($session)
-            && $event->context->ip                                                                                         === null
-            && $event->context->userAgent                                                                                  === null);
+        Event::assertDispatchedTimes(ExemptionUsed::class, 2);
     }
 
     /**
@@ -262,9 +259,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         self::assertNull($this->stored($external)->getRevokedAt());
         self::assertNotNull($this->stored($password)->getRevokedAt());
         self::assertNull($this->stored($exempt)->getRevokedAt());
-        Event::assertDispatchedTimes(ExemptionUsed::class, 2);
-        Event::assertDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId === self::keyOf($exempt));
-        Event::assertNotDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId !== self::keyOf($exempt));
+        Event::assertNotDispatched(ExemptionUsed::class);
 
         self::versionOf($this->enforcement()->update(self::TENANT, false, [], self::ssoClient()));
 

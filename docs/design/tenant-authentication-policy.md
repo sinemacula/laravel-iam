@@ -22,7 +22,8 @@ adapters off the application binds the policy itself.
 - The answer is composed on every call, with nothing cached:
   1. SSO's `Enforcement::policy()` for the tenant and the guard as the application;
   2. SSO's `ExemptionGate::admit()`, only where the rule requires a connection and the session or sign-in was not made
-     through one that satisfies it;
+     through one that satisfies it, or SSO's `EnforcementExemption` alone when `TenantPolicyContext::$rejudging` says a
+     session already written is judged again;
   3. MFA's tenant requirement for the identity, the application and the tenant, translated part by part.
 
   The connections are the rule's satisfying ones, or `null` when the rule requires none or the identity is exempt.
@@ -35,8 +36,10 @@ adapters off the application binds the policy itself.
 - The session's connection is asked of `TenantPolicyContext::connectionId()` only once the rule requires one, so a
   tenant with nothing enforced costs no read of the session's provenance.
 - The gate is handed the client of the redemption this package admitted in the request (`AdmittedRedemptions`), so
-  `ExemptionUsed` carries that request's IP address and user agent. Every other judgement (a refresh, a switch, a
-  password or passkey sign-in, `tenantPolicyChanged()`) hands it an empty client.
+  `ExemptionUsed` carries that request's IP address and user agent. Every other admitted call (a refresh, a switch, a
+  password or passkey sign-in) hands it an empty client.
+- `ExemptionUsed` is reported once per admitted call. The check after a sign-in, choice or switch commits and both
+  passes of `tenantPolicyChanged()` are rejudging, so they report none.
 - `Iam::tenantPolicies()->changed($tenant)` is the application's report of a changed requirement or exemption, made
   inside the transaction that publishes it. It calls `laravel-authentication`'s `tenantPolicyChanged()`, which judges
   the tenant's sessions there and again once the transaction commits, catching a session that entered the tenant
@@ -58,5 +61,7 @@ adapters off the application binds the policy itself.
 
 - `laravel-authentication`'s `TenantPolicyContext` carries no `ClientContext`, so the gate is handed the admitted
   redemption's client where there is one and an empty client otherwise.
+- `laravel-sso`'s `ExemptionGate` reports every exemption it grants, so a rejudging context asks
+  `EnforcementExemption` directly.
 - `laravel-sso`'s `EnforcementPolicy::$version` does not change when a satisfying connection is disabled, and an
   exemption has no version, so the adapter hashes the whole policy and the gate's outcome.
