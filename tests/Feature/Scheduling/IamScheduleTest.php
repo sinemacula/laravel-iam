@@ -142,20 +142,24 @@ final class IamScheduleTest extends TestCase
     }
 
     /**
-     * A malformed SSO cadence is refused as the schedule is built.
+     * A malformed SSO cadence leaves out only that task.
      *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    public function testAMalformedSsoCadenceIsRefusedAsTheScheduleIsBuilt(): void
+    public function testAMalformedSsoCadenceLeavesOutOnlyThatTask(): void
     {
         $this->config()->set('sso.features.saml2', true);
         $this->config()->set('sso.operations.cadence.prune', 'whenever');
 
-        $this->expectException(\InvalidArgumentException::class);
-
-        $this->scheduled();
+        self::assertSame([
+            ['mfa:prune', '0 0 * * *'],
+            ['authorization:prune', '0 0 * * *'],
+            ['sso:domains:recheck', '0 * * * *'],
+            ['sso:metadata:refresh', '*/5 * * * *'],
+            ['sso:keys:expiring', '0 0 * * *'],
+        ], $this->scheduled());
     }
 
     /**
