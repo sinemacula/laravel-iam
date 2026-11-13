@@ -189,7 +189,7 @@ Reports a note only, since something no check can see may start a run.
   `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
   `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
 
-A schedule that cannot be built, usually through a malformed `sso.operations.cadence.*` value, fails the run with its
-cause.
+A malformed `sso.operations.cadence.*` value is named by `sso:check`, which `iam:check` runs; SSO leaves that task
+off the schedule.
 
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md
