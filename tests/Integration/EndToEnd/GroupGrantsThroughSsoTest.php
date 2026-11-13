@@ -13,8 +13,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Authorization\Exceptions\RoleExclusionConflictException;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
+use SineMacula\Laravel\Authorization\Services\RoleExclusionService;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Contracts\GroupResync;
 use SineMacula\Laravel\Iam\Contracts\Provisioner;
@@ -227,6 +229,30 @@ final class GroupGrantsThroughSsoTest extends TestCase
     }
 
     /**
+     * Groups that map to both roles of a mutually exclusive pair refuse the
+     * sign-in and roll the provisioning back.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testGroupsMappingToExclusiveRolesRollTheProvisioningBack(): void
+    {
+        $this->app?->make(RoleExclusionService::class)->declare(self::VIEWER, self::APPROVER);
+
+        try {
+            $this->handoffWith(['finance-ops']);
+
+            self::fail('A person was provisioned holding both roles of an exclusive pair.');
+        } catch (\Throwable $exception) {
+            self::assertInstanceOf(RoleExclusionConflictException::class, $exception);
+            self::assertStringContainsString(sprintf('Roles \'%s\' and \'%s\'', self::VIEWER, self::APPROVER), $exception->getMessage());
+        }
+
+        $this->assertNothingProvisioned();
+    }
+
+    /**
      * With no mapping configured, nothing is granted, and the person is still
      * provisioned.
      *
@@ -374,6 +400,37 @@ final class GroupGrantsThroughSsoTest extends TestCase
 
         self::assertInstanceOf(RedemptionResult::class, $again);
         self::assertFalse($again->isRedeemed());
+    }
+
+    /**
+     * A re-sync to both roles of a mutually exclusive pair is refused like any
+     * other refused re-sync: nothing changes and no credential is handed out.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAReSyncToExclusiveRolesHandsOutNoCredential(): void
+    {
+        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
+
+        $this->redeem($this->handoffWith(['finance']));
+
+        $person  = Person::query()->sole();
+        $handoff = $this->handoffWith(['finance-ops']);
+
+        $this->app?->make(RoleExclusionService::class)->declare(self::VIEWER, self::APPROVER);
+
+        try {
+            Iam::signIns()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, new SignInContext(self::client()));
+
+            self::fail('A sign-in whose re-sync broke a role exclusion handed out its credential.');
+        } catch (RoleExclusionConflictException $exception) {
+            self::assertStringContainsString(sprintf('Roles \'%s\' and \'%s\'', self::VIEWER, self::APPROVER), $exception->getMessage());
+        }
+
+        self::assertSame([self::VIEWER => false], $this->rolesOf($person, self::TENANT));
+        self::assertSame(0, DB::connection()->transactionLevel());
     }
 
     /**

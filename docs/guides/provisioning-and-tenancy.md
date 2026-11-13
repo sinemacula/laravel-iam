@@ -133,12 +133,13 @@ start:
 ```
 
 Each role is granted to the new identity itself, which holds across every principal of it, in the tenant of the
-connection the groups came through, reaching that tenant alone, in every application and never expiring. The grants
-are made through `laravel-authorization`'s grant service, as trusted system work, in the provisioning's one
-transaction, once SSO's helper has made the link: a role that does not exist, a mapping that throws, or a grant hook
-that refuses rolls the identity, its membership and its link back with it, and the completion ends as a server error.
-Groups are compared byte for byte, a group the map does not name grants nothing, and a connection that reports no
-groups grants nothing.
+connection the groups came through, reaching that tenant alone, in every application and never expiring. The grants are
+made through `laravel-authorization`'s grant service, as trusted system work, in the provisioning's one transaction,
+once SSO's helper has made the link: a role that does not exist, a mapping that throws, a grant hook that refuses, or
+roles that would leave the identity holding both of a mutually exclusive pair (`RoleExclusionConflictException`, naming
+both roles) roll the identity, its membership and its link back with it, and the completion ends as a server error.
+Groups are compared byte for byte, a group the map does not name grants nothing, and a connection that reports no groups
+grants nothing.
 
 A mapping that tells one connection's groups from another's, or grants a role across the tenant's subtree, is a class of
 yours, bound in the container as `SineMacula\Laravel\Iam\Contracts\GroupMapping` (which wins over the map):
@@ -179,11 +180,12 @@ also revokes a role an administrator granted the identity itself in that tenant,
 principal instead, or bind your own `Contracts\GroupResync`; roles of the identity's principals, of another tenant, or
 platform-wide are never touched. A grant that widens the person's scope reports it to SSO first, which takes SSO's
 identity guard before any of SSO's other locks, so the re-sync never runs under the redemption's locks, which would
-deadlock with a grant or a link of the same person made meanwhile. A re-sync that throws grants and revokes nothing, and
-reaches you from `redeem()` once the sign-in has committed: the code is spent, and the session written is never handed
-out, so nobody can use it; the person signs in again. Grants are read on every check, so nothing in the session depends
-on the re-sync. Call `redeem()` with no transaction of your own open on the storage connection: inside one, the re-sync
-runs under the redemption's locks after all.
+deadlock with a grant or a link of the same person made meanwhile. A re-sync that throws, one to both roles of a
+mutually exclusive pair included, grants and revokes nothing, and reaches you from `redeem()` once the sign-in has
+committed: the code is spent, and the session written is never handed out, so nobody can use it; the person signs in
+again. Grants are read on every check, so nothing in the session depends on the re-sync. Call `redeem()` with no
+transaction of your own open on the storage connection: inside one, the re-sync runs under the redemption's locks after
+all.
 
 ## Scope widening
 
