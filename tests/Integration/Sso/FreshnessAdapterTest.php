@@ -279,7 +279,7 @@ final class FreshnessAdapterTest extends TestCase
     }
 
     /**
-     * Inside SSO's transaction the policy is asked plainly, locking nothing.
+     * Inside SSO's transaction the policy is asked for a current read.
      *
      * @param  ?string  $level
      * @return void
@@ -287,7 +287,7 @@ final class FreshnessAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideEveryIsolationLevel')]
-    public function testThePolicyIsAskedPlainlyInsideSsosTransaction(?string $level): void
+    public function testThePolicyIsAskedCurrentInsideSsosTransaction(?string $level): void
     {
         self::runAtIsolationLevel($level);
 
@@ -300,7 +300,7 @@ final class FreshnessAdapterTest extends TestCase
         $answer   = DB::transaction(fn (): FreshnessOutcome => $this->adapter()->check(FreshnessOperation::ENFORCEMENT_UPDATE, self::MAX_AGE, $caller));
 
         self::assertSame(FreshnessOutcome::FRESH, $answer);
-        self::assertAskedOnlyIn($recorder, false);
+        self::assertAskedOnlyIn($recorder, true);
         self::assertAskedOnlyBy($recorder, FreshnessAdapter::class, FreshnessOperation::ENFORCEMENT_UPDATE->value);
     }
 
@@ -351,7 +351,7 @@ final class FreshnessAdapterTest extends TestCase
         $linked   = Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
 
         self::assertTrue($linked->isRedeemed(), sprintf('The person was not linked: [%s].', $linked->reason->value ?? $linked->status->value));
-        self::assertAskedOnlyIn($recorder, false);
+        self::assertAskedOnlyIn($recorder, true);
         self::assertAskedOnlyBy($recorder, FreshnessAdapter::class, FreshnessOperation::LINK_CREATE->value);
         self::assertSame(1, DB::table('sso_links')->count());
     }
