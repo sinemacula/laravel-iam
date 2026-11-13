@@ -46,8 +46,11 @@ final readonly class CodeTranslator
     /** @var string The detail of a check of a challenge `laravel-authentication` did not find for the binding. */
     public const string NOT_FOUND = 'laravel-authentication found no challenge of the binding\'s by that id.';
 
-    /** @var string The detail of a check of the binding's challenge once it is used up. */
-    public const string REPLAYED = 'laravel-authentication found the challenge already used up.';
+    /** @var string The detail of a check of the code that used the binding's challenge up. */
+    public const string REPLAYED = 'laravel-authentication found the code already used.';
+
+    /** @var string The detail of a check of another code at the binding's used or ended challenge. */
+    public const string USED = 'laravel-authentication found the challenge used up by another code, or ended.';
 
     /** @var string The detail of a check of a challenge that has expired or used up its attempts. */
     public const string EXPIRED = 'laravel-authentication found the challenge expired, or out of attempts.';
@@ -211,7 +214,8 @@ final readonly class CodeTranslator
             FactorCodeOutcome::VERIFIED                              => ChallengeOutcome::passed(),
             FactorCodeOutcome::INVALID                               => ChallengeOutcome::failed(FailureReason::INVALID_CODE, self::INVALID),
             FactorCodeOutcome::NOT_FOUND                             => ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND),
-            FactorCodeOutcome::USED                                  => ChallengeOutcome::refused(FailureReason::REPLAYED, self::REPLAYED),
+            FactorCodeOutcome::USED                                  => ChallengeOutcome::refused(FailureReason::INVALID_CODE, self::USED),
+            FactorCodeOutcome::REPLAYED                              => ChallengeOutcome::refused(FailureReason::REPLAYED, self::REPLAYED),
             FactorCodeOutcome::EXPIRED, FactorCodeOutcome::EXHAUSTED => ChallengeOutcome::refused(FailureReason::EXPIRED, self::EXPIRED),
             FactorCodeOutcome::LOCKED                                => ChallengeOutcome::refused(FailureReason::LOCKED, self::LOCKED, $check->lockedUntil),
             FactorCodeOutcome::REFUSED                               => ChallengeOutcome::refused(self::reason($check->refusal), self::REFUSED),
