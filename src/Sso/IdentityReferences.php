@@ -7,9 +7,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
-use SineMacula\Laravel\Authentication\Database\WriteConnection;
-use SineMacula\Laravel\Authentication\SessionRecords\SessionKeyShape;
-use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
+use SineMacula\Laravel\Authentication\Resolvers\IdentityReferences as AuthenticationIdentityReferences;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
@@ -34,21 +32,8 @@ final readonly class IdentityReferences
      */
     public function identity(IdentityReference $reference): Identity&Model
     {
-        $class = self::classOf($reference->type);
-
-        if (!self::isIdentityModel($class)) {
-            throw UnresolvedReferenceException::forIdentityReference($reference->type);
-        }
-
-        $blank = new $class;
-        // laravel-authentication lacks a public key-shape check.
-        $found = SessionKeyShape::matches($blank, $reference->id) ? self::find($blank, $reference->id) : null;
-
-        if (!$found instanceof Identity || !self::namedBy($found, $reference)) {
-            throw UnresolvedReferenceException::forIdentityReference($reference->type);
-        }
-
-        return $found;
+        return AuthenticationIdentityReferences::resolve($reference->type, $reference->id)
+            ?? throw UnresolvedReferenceException::forIdentityReference($reference->type);
     }
 
     /**
@@ -59,7 +44,9 @@ final readonly class IdentityReferences
      */
     public function namesIdentity(string $type): bool
     {
-        return self::isIdentityModel(self::classOf($type));
+        $class = Relation::getMorphedModel($type) ?? $type;
+
+        return is_a($class, Model::class, true) && is_a($class, Identity::class, true);
     }
 
     /**
@@ -83,53 +70,5 @@ final readonly class IdentityReferences
         }
 
         return new IdentityReference($identity->getMorphClass(), (string) $key);
-    }
-
-    /**
-     * The class the type names: its morph map entry, or the type itself.
-     *
-     * @param  string  $type
-     * @return string
-     */
-    private static function classOf(string $type): string
-    {
-        return Relation::getMorphedModel($type) ?? $type;
-    }
-
-    /**
-     * Whether the class is an Eloquent model implementing `Identity`.
-     *
-     * @param  string  $class
-     * @return bool
-     *
-     * @phpstan-assert-if-true class-string<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\Identity> $class
-     */
-    private static function isIdentityModel(string $class): bool
-    {
-        return is_a($class, Model::class, true) && is_a($class, Identity::class, true);
-    }
-
-    /**
-     * Whether the reference names the identity byte for byte.
-     *
-     * @param  \Illuminate\Database\Eloquent\Model  $identity
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $reference
-     * @return bool
-     */
-    private static function namedBy(Model $identity, IdentityReference $reference): bool
-    {
-        return $identity->getMorphClass() === $reference->type && IdentifierCoercion::stringify($identity->getKey()) === $reference->id;
-    }
-
-    /**
-     * The model holding the key, read on the write connection.
-     *
-     * @param  \Illuminate\Database\Eloquent\Model  $blank
-     * @param  string  $id
-     * @return ?\Illuminate\Database\Eloquent\Model
-     */
-    private static function find(Model $blank, string $id): ?Model
-    {
-        return WriteConnection::during($blank, static fn (): ?Model => WriteConnection::query($blank->newQuery())->find($id));
     }
 }
