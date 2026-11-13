@@ -8,6 +8,7 @@ use SineMacula\Laravel\AuditLog\Contracts\EventMapper;
 use SineMacula\Laravel\AuditLog\Records\PendingRecord;
 use SineMacula\Laravel\AuditLog\Records\Reference;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
+use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport;
 use SineMacula\Laravel\Authorization\Evaluation\StatementReference;
 use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
 use SineMacula\Laravel\Authorization\Events\SystemOverrideUsed;
@@ -186,7 +187,7 @@ final readonly class AuthorizationEventMapper implements EventMapper
     }
 
     /**
-     * The code a preview, a break-glass use or a denial is recorded under.
+     * The code a decision is recorded under, or null for one not recorded.
      *
      * @param  \SineMacula\Laravel\Authorization\Events\DecisionEvaluated  $event
      * @return ?\SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity
@@ -194,9 +195,11 @@ final readonly class AuthorizationEventMapper implements EventMapper
     private static function decisionCode(DecisionEvaluated $event): ?AuthorizationActivity
     {
         return match (true) {
-            $event->previewer !== null => AuthorizationActivity::ACCESS_PREVIEWED,
-            $event->isAllowed()        => $event->usedBreakGlass ? AuthorizationActivity::BREAK_GLASS_USED : null,
-            default                    => AuthorizationActivity::ACCESS_DENIED,
+            $event->previewer !== null                                     => AuthorizationActivity::ACCESS_PREVIEWED,
+            !$event->isAllowed()                                           => AuthorizationActivity::ACCESS_DENIED,
+            $event->usedBreakGlass                                         => AuthorizationActivity::BREAK_GLASS_USED,
+            $event->reportedBecause() === DecisionReport::SENSITIVE_ACTION => AuthorizationActivity::ACCESS_ALLOWED,
+            default                                                        => null,
         };
     }
 
