@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Mfa;
 
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
@@ -66,6 +67,7 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return void
      *
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
@@ -74,7 +76,7 @@ final readonly class SessionRevokerAdapter implements SessionRevoker
     {
         $owner = $this->sessions->identity($identity);
 
-        $this->sessions->identitySessions()->factorReset($owner);
+        Auth::sessions()->factorReset($owner);
 
         $this->decisions->authenticationChanged($identity);
     }

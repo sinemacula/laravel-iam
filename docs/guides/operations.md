@@ -218,23 +218,18 @@ the same way.
 ## Workers and Octane
 
 Nothing one request or job binds may reach the next. With `iam.workers.reset` on (`IAM_WORKERS_RESET`, the default),
-the package resets every member's request state at each boundary:
+the package resets the request state Laravel and the members leave behind:
 
-| When                                | What is reset                                                                  |
-|-------------------------------------|--------------------------------------------------------------------------------|
-| An Octane worker starts             | everything below, and the members' scoped state the worker's boot left         |
-| Before each Octane request          | every `laravel-authentication` guard already resolved, and the Laravel session |
-| Before each queued job (not `sync`) | the same                                                                       |
+| When                                | What is reset                                                                         |
+|-------------------------------------|---------------------------------------------------------------------------------------|
+| An Octane worker starts             | the Laravel session, every resolved guard, every scoped instance and the facade roots |
+| Before each queued job (not `sync`) | the Laravel session; `laravel-authentication` resets its guards itself                |
 
-Octane and the queue worker forget the container's scoped instances themselves at each boundary. The full reset, as a
-worker starts and whenever `Iam::resetWorkerState()` is called, also forgets the members' scoped request state
-(`laravel-authentication`'s, SSO's and `laravel-authorization`'s: its resolved tenant, its resolution cache's memo and
-its last decision among them), this package's own scoped adapters and records (those
-scoped under the `iam.scoped:` prefix), and the facade roots that would keep them, so a long-running command that
-resets between tenants keeps none of the suite's decisions about the first tenant. It forgets only the suite's scoped
-state: a scoped binding your application made, over a seam or of its own, is kept, so a loop of your own forgets those
-with the container's `forgetScopedInstances()` (below). It keeps Laravel's `Context`, its deferred callbacks and
-audit-log's execution frames, so a reset called by hand inside a job keeps the actor the job carried.
+Octane's default listeners flush the session and the guards before each request, and Octane and the queue worker
+forget the container's scoped instances at each boundary. `Iam::resetWorkerState()` runs the same reset as a worker's
+start, so a long-running command that resets between tenants keeps none of the suite's decisions about the first
+tenant. It forgets every scoped instance, Laravel's `Context` and deferred callbacks and audit-log's execution frames
+among them, so call it between units of work, never inside one.
 
 - **Octane.** Keep Octane's default listeners. Under Octane every listener and scoped record this package uses
   resolves from the request's sandbox, so nothing reaches another request. Leave the members' services out of
@@ -244,9 +239,7 @@ audit-log's execution frames, so a reset called by hand inside a job keeps the a
   so it is skipped. A queued job carries the caller who dispatched it for the audit trail (see
   [The audit trail](audit-trail.md#who-did-it)).
 - **Any other long-lived process.** A loop of your own (a consumer of another queue, a daemon) calls the reset between
-  its units of work, and forgets the container's scoped instances itself, as Octane and the queue worker do, so a
-  scoped binding of your own (an adapter you bound in a seam's place among them) keeps nothing of one unit for the
-  next:
+  its units of work:
 
   ```php
   use SineMacula\Laravel\Iam\Facades\Iam;
@@ -255,7 +248,6 @@ audit-log's execution frames, so a reset called by hand inside a job keeps the a
       $handler->handle($message);
 
       Iam::resetWorkerState();
-      app()->forgetScopedInstances();
   }
   ```
 

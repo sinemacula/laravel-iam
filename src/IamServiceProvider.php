@@ -36,7 +36,6 @@ use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
-use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContributor;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
@@ -252,7 +251,6 @@ final class IamServiceProvider extends ServiceProvider
         }
 
         Event::listen(ResetWhenWorkerStarts::EVENT, ResetWhenWorkerStarts::class);
-        Event::listen(ResetBetweenRequests::EVENT, ResetBetweenRequests::class);
         Event::listen(JobProcessing::class, ResetBeforeJob::class);
     }
 

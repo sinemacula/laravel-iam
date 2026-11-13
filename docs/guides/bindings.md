@@ -61,10 +61,8 @@ package's adapters keep:
   current session or the default guard when the member hands you the identity, the session or the application.
 - Refuse only by throwing. An unresolved identity, session or tenant throws inside the member's transaction, so the
   change it was making rolls back.
-- Keep no request state in a property. State for one request belongs in a scoped binding, which Octane and the queue
-  worker forget at each boundary; `Iam::resetWorkerState()` forgets only the suite's own, so a loop of your own also
-  calls the container's `forgetScopedInstances()` (see
-  [Operations](operations.md#workers-and-octane)).
+- Keep no request state in a property. State for one request belongs in a scoped binding, which Octane, the queue
+  worker and `Iam::resetWorkerState()` forget at each boundary (see [Operations](operations.md#workers-and-octane)).
 - Take the locks the member's guide names, in the order it names. SSO's adapters follow SSO's lock order
   ([laravel-sso: lock order][sso-lock-order]).
 

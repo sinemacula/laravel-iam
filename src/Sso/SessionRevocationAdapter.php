@@ -5,8 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Sso;
 
 use SineMacula\Laravel\Authentication\Contracts\Identity;
-use SineMacula\Laravel\Authentication\Sessions\SessionService;
-use SineMacula\Laravel\Iam\Mfa\CurrentSession;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason;
@@ -27,14 +26,10 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges  $policyChanges
      */
     public function __construct(
-
-        /** Resolves the session service the revocations go through. */
-        private CurrentSession $sessions,
 
         /** Resolves the identity an identity scope names. */
         private IdentityReferences $identities,
@@ -61,8 +56,8 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
         match ($scope->kind) {
             RevocationScopeKind::TENANT              => $this->policyChanges->changed($scope->tenantId),
             RevocationScopeKind::CONNECTION          => $this->connection($scope),
-            RevocationScopeKind::IDENTITY_CONNECTION => $this->sessions()->linkRemoved($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
-            RevocationScopeKind::IDENTITY_LINK       => $this->sessions()->linkScopeWidened($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
+            RevocationScopeKind::IDENTITY_CONNECTION => Auth::sessions()->linkRemoved($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
+            RevocationScopeKind::IDENTITY_LINK       => Auth::sessions()->linkScopeWidened($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
         };
     }
 
@@ -79,8 +74,8 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
         $connectionId = self::connectionOf($scope);
 
         return match ($scope->reason) {
-            RevocationReason::CONNECTION_DISABLED => $this->sessions()->connectionDisabled($connectionId),
-            RevocationReason::CONNECTION_DELETED  => $this->sessions()->connectionDeleted($connectionId),
+            RevocationReason::CONNECTION_DISABLED => Auth::sessions()->connectionDisabled($connectionId),
+            RevocationReason::CONNECTION_DELETED  => Auth::sessions()->connectionDeleted($connectionId),
             default                               => throw new \LogicException(sprintf('A connection\'s sessions are not revoked for [%s].', $scope->reason->value)),
         };
     }
@@ -97,18 +92,6 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
     private function identity(RevocationScope $scope): Identity
     {
         return $this->identities->identity($scope->identity ?? throw self::incomplete($scope, 'identity'));
-    }
-
-    /**
-     * The session service every revocation goes through.
-     *
-     * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     */
-    private function sessions(): SessionService
-    {
-        return $this->sessions->identitySessions();
     }
 
     /**

@@ -153,14 +153,12 @@ Iam::transaction(function () use ($tenant): void {
 
 ## Workers
 
-| Key                 | Default | Environment         | What it does                                                                                                                                                                                                                                        |
-|---------------------|---------|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `iam.workers.reset` | `true`  | `IAM_WORKERS_RESET` | Flushes every member's request state as each Octane worker starts, before each Octane request and before each queued job not on the `sync` connection, which runs inside the request that dispatched it and keeps its signed-in guards and session. |
+| Key                 | Default | Environment         | What it does                                                                                                                                                                                                                         |
+|---------------------|---------|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.workers.reset` | `true`  | `IAM_WORKERS_RESET` | Flushes every member's request state as each Octane worker starts, and the session before each queued job not on the `sync` connection, which runs inside the request that dispatched it and keeps its signed-in guards and session. |
 
 Read leniently: `false`, `0`, `off` and `no` turn it off, and any other value leaves it on. Turn it off only when your
 application performs the same reset itself. Any other long-lived process calls `Iam::resetWorkerState()` between its
-units of work. That reset forgets only the members' and this package's scoped state, never a scoped binding your
-application made (over a seam or of its own), so such a loop also calls the container's `forgetScopedInstances()`; see
-[Operations](operations.md#workers-and-octane).
+units of work; see [Operations](operations.md#workers-and-octane).
 
 [sso-custom-attributes]: https://github.com/sinemacula/laravel-sso/blob/master/docs/guides/managing-connections.md
