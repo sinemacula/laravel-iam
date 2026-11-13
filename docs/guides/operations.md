@@ -37,7 +37,8 @@ and run Laravel's scheduler. It registers:
 | `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`   |
 
 - Audit-log registers its own sealing, sweep, verification and pruning on the schedule itself, so `Iam::schedule()`
-  never registers them again. `iam:check` notes any of them switched off with nothing else running it.
+  never registers them again. `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or verification
+  schedule switched off.
 - `sso:prune` is registered only through SSO's own schedule, so it runs once. With `sso.operations.cadence.prune`
   switched off, schedule `sso:prune` yourself.
 - None of this package's tasks takes a cache mutex. SSO's take one only while `sso.operations.cache_mutexes` is on

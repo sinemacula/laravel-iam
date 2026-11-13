@@ -31,19 +31,20 @@ among them, runs in one transaction. A member key that names another connection 
 keep its own connection; `iam:check` notes it.
 
 Your identity models, and every principal model your guards resolve, must live on this connection too, or a sign-in
-and the session it writes cannot commit together. `iam:check` checks the identity models of every guard; it cannot
-see your principal models, so set their `$connection` (or leave it unset, on the default connection) yourself.
+and the session it writes cannot commit together. `iam:check` checks the identity models of every `jwt` and `api_key`
+guard; it cannot see your principal models, so set their `$connection` (or leave it unset, on the default connection)
+yourself.
 
 Keep it fixed while the application runs: moving the tables is a deploy, with a migration and a restart of every
 worker.
 
 ## Adapters
 
-| Key                          | Default | Environment                  | What it does                                                                                                                                                                                                                 |
-|------------------------------|---------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `iam.adapters.mfa`           | `true`  | `IAM_ADAPTERS_MFA`           | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.                                                                                                                               |
-| `iam.adapters.sso`           | `true`  | `IAM_ADAPTERS_SSO`           | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams.                                                                                                                 |
-| `iam.adapters.authorization` | `true`  | `IAM_ADAPTERS_AUTHORIZATION` | Binds `laravel-authorization` to the other members: its subject, context, requirement checker and session policy, its step-up, the access seams, its identity directory, tree and grant hook, and audit-log's access policy. |
+| Key                          | Default | Environment                  | What it does                                                                                                                                                                                                                                        |
+|------------------------------|---------|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `iam.adapters.mfa`           | `true`  | `IAM_ADAPTERS_MFA`           | Binds `laravel-authentication` and MFA through each other's seams, passkeys and MFA's context.                                                                                                                                                      |
+| `iam.adapters.sso`           | `true`  | `IAM_ADAPTERS_SSO`           | Binds `laravel-authentication` and SSO, the tenant authentication policy, and the membership and tree seams.                                                                                                                                        |
+| `iam.adapters.authorization` | `true`  | `IAM_ADAPTERS_AUTHORIZATION` | Binds `laravel-authorization` to the other members: its subject, context, requirement checker and session policy, the access seams, its identity directory and grant hook, and audit-log's access policy, and renders its step-up refusal as MFA's. |
 
 Each is read leniently, as the members read a switch an environment variable fills: `false`, `0`, `off` and `no`
 turn one off, and anything else, an empty value included, leaves it on. Every seam each one binds, and what turning it
