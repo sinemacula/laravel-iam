@@ -176,7 +176,8 @@ people in through `Auth::sessions()`.
 - a denial, once, as `authorization.access_denied`, denied with `laravel-authorization`'s reason code (`no_match`,
   `tenant_scope`, `explicit_deny` and the rest), whether it came from `can()`, `check()`, `authorize()`, the Gate or
   your own `Gate` checks, since `laravel-authorization` answers the Gate;
-- a check a break-glass grant allowed, as `authorization.break_glass_used`;
+- a check a break-glass grant allowed, as `authorization.break_glass_used`, keeping the activations it came through,
+  whatever `allows` says;
 - an allowed check of an action listed in `authorization.events.decisions.sensitive_actions`, as
   `authorization.access_allowed`;
 - a preview, as `authorization.access_previewed`, by the previewer, about the principal previewed, whatever it decided.

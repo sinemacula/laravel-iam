@@ -143,6 +143,7 @@ final readonly class AuthorizationEventMapper implements EventMapper
             'resource'    => $event->resource,
             'application' => $event->application,
             'policies'    => array_map(static fn (StatementReference $statement): string => $statement->toString(), $event->statements),
+            'activations' => $event->activations,
             'effect'      => $event->effect->value,
             'reason'      => $event->reason?->value,
         ]));
