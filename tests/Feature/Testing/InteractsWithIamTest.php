@@ -849,7 +849,7 @@ final class InteractsWithIamTest extends TestCase
 
         $records = $this->app?->make(AdmittedRedemptions::class);
 
-        self::assertNull($records?->matching(self::SSO_CONNECTION, CallerSignIn::ISSUER, (new IdentityReferences)->reference($person)->id));
+        self::assertNull($records?->matching(self::SSO_CONNECTION, CallerSignIn::ISSUER, (new IdentityReferences)->reference($person)->id, null));
     }
 
     /**

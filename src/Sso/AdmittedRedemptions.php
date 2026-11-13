@@ -50,18 +50,24 @@ final class AdmittedRedemptions
     }
 
     /**
-     * The admitted redemption for exactly this connection, issuer and subject.
+     * The admitted redemption for exactly this connection, issuer, subject and
+     * NameID format.
      *
      * @param  string  $connectionId
      * @param  string  $issuer
      * @param  string  $subject
+     * @param  ?string  $nameIdFormat
      * @return ?\SineMacula\Laravel\Sso\Handoffs\RedemptionResult
      */
-    public function matching(string $connectionId, string $issuer, string $subject): ?RedemptionResult
+    public function matching(string $connectionId, string $issuer, string $subject, ?string $nameIdFormat): ?RedemptionResult
     {
         $result = $this->admitted?->result;
 
-        return $result !== null && $result->connectionId === $connectionId && $result->issuer === $issuer && $result->subject === $subject
+        return $result !== null
+            && $result->connectionId === $connectionId
+            && $result->issuer       === $issuer
+            && $result->subject      === $subject
+            && $result->nameIdFormat === $nameIdFormat
             ? $this->admitted
             : null;
     }

@@ -529,8 +529,8 @@ final class SignInRedemptionTest extends TestCase
         $admitted->record(Redemptions::signIn(), Redemptions::client());
 
         self::assertInstanceOf(SignInResult::class, $this->redeem($this->handoff()));
-        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject'));
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject', null));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**

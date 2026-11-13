@@ -122,8 +122,6 @@ sessions, on every guard, as a savepoint of SSO's transaction:
 - `laravel-sso`: `ReauthenticationSessions::renewAuthentication()` is not handed the result's issuer and subject, so the
   renewal is recorded and written by the redemption.
 - `laravel-sso`: freshness is asked before guards that precede the session's row, so it cannot be judged current.
-- `laravel-authentication`: `ExternalIdentityLinks::find()` is not handed the SAML `NameID` format, so no link is looked
-  up again.
 - `laravel-authentication`: sign-ins judge the tenant policy without a lock, so a sign-in that writes its session after
   `tenantPolicyChanged()`'s second pass stands until its first refresh.
 - `laravel-authentication`: no public identity resolver or key-shape check; `IdentityReferences` reuses
