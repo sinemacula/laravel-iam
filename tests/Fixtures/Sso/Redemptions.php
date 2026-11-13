@@ -9,7 +9,6 @@ use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Flows\RequestReference;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Http\ClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Results\AuthenticationContext;
@@ -58,16 +57,6 @@ final class Redemptions
 
     /** @var string The session's latest end. */
     public const string NOT_AFTER = '2026-11-01T17:30:00Z';
-
-    /**
-     * The client every redemption is made for, as SSO is handed it.
-     *
-     * @return \SineMacula\Laravel\Sso\Http\ClientContext
-     */
-    public static function client(): ClientContext
-    {
-        return new ClientContext('203.0.113.7', 'redemption-agent');
-    }
 
     /**
      * The identity every result links to.

@@ -12,6 +12,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
@@ -193,6 +194,27 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
+     * The gate is handed the context's client.
+     *
+     * @return void
+     */
+    public function testTheGateIsHandedTheContextsClient(): void
+    {
+        $this->enforcement()->requireThrough([self::SSO_CONNECTION]);
+
+        $person  = $this->createPerson();
+        $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
+        $client  = new ClientContext('203.0.113.7', 'asking-agent');
+        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), null, $client, static fn (): ?string => null);
+
+        $this->exemptions()->exempt(self::referenceOf($person));
+
+        self::assertNull($policy->requirementFor($context)->connections);
+        Event::assertDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->ip === '203.0.113.7'
+            && $event->context->userAgent                                                                           === 'asking-agent');
+    }
+
+    /**
      * An exempt identity's compliant session reports no exemption.
      *
      * @return void
@@ -263,7 +285,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
 
             self::assertInstanceOf(TenantAuthenticationPolicy::class, $policy);
 
-            return $policy->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), null, $connection));
+            return $policy->requirementFor(new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), null, null, $connection));
         };
 
         self::assertNull($ask()->connections);
@@ -471,7 +493,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     {
         $identity = \Mockery::mock(Identity::class);
         $policy   = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $context  = new TenantPolicyContext(self::GUARD, $identity, $this->createPerson(), new ClaimedTenant(self::SSO_TENANT), null, static fn (): ?string => null);
+        $context  = new TenantPolicyContext(self::GUARD, $identity, $this->createPerson(), new ClaimedTenant(self::SSO_TENANT), null, null, static fn (): ?string => null);
 
         self::assertTrue($policy->requirementFor($context)->factor->isEmpty());
 

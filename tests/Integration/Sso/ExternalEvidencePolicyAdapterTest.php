@@ -653,7 +653,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
             linkId: Redemptions::LINK,
             evidence: $evidence,
             admitted: true,
-        ), Redemptions::client());
+        ));
     }
 
     /**

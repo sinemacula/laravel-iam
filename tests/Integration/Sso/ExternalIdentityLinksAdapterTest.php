@@ -15,7 +15,6 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\ExternalIdentityLinksAdapter;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
@@ -161,7 +160,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
             linkedIdentity: new IdentityReference(Person::class, '987654'),
             linkId: self::LINK,
             admitted: true,
-        ), new SsoClientContext(null, null));
+        ));
 
         try {
             $this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person));

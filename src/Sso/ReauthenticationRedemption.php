@@ -129,15 +129,14 @@ final readonly class ReauthenticationRedemption
         ClientContext $client,
     ): AccessTokenResult|RedemptionResult {
         $sessions   = $this->sessions->sessions($application);
-        $ssoClient  = ClientTranslator::toSso($client);
         $redemption = $this->container->make(HandoffRedemption::class)
-            ->admit(Purpose::REAUTHENTICATE, $application, $connectionId, $code, $verifier, $ssoClient);
+            ->admit(Purpose::REAUTHENTICATE, $application, $connectionId, $code, $verifier, ClientTranslator::toSso($client));
 
         if (!$redemption->isRedeemed()) {
             return $redemption;
         }
 
-        $admitted->record($redemption, $ssoClient);
+        $admitted->record($redemption);
 
         $renewal = $recorder->take() ?? throw new \LogicException('SSO admitted a re-authentication without asking for its renewal.');
 

@@ -12,8 +12,8 @@ use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
-use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
+use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
@@ -40,7 +40,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
      */
     public function __construct(
 
-        /** Resolves SSO's enforcement, its exemption gate and the request's records on each call. */
+        /** Resolves SSO's enforcement and its exemption gate on each call. */
         private Container $container,
 
         /** Asks the application's MFA tenant requirement. */
@@ -100,7 +100,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
 
         $identity  = $this->identities->reference($context->identity);
         $sessionId = self::sessionIdOf($context->session);
-        $client    = $this->container->make(AdmittedRedemptions::class)->clientFor($identity, $sessionId) ?? new SsoClient(null, null);
+        $client    = $context->client === null ? new SsoClient(null, null) : ClientTranslator::toSso($context->client);
 
         return $this->container->make(ExemptionGate::class)->admit($policy, $context->application, $identity, $client, $sessionId);
     }

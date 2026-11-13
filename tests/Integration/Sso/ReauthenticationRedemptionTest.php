@@ -354,7 +354,7 @@ final class ReauthenticationRedemptionTest extends TestCase
 
         $handoff = $this->reauthenticationHandoff();
 
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
+        $admitted->record(Redemptions::signIn());
         $recorder->open();
         $recorder->record(Redemptions::identity(), Redemptions::SESSION, now()->toImmutable(), null);
 

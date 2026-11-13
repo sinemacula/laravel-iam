@@ -6,12 +6,11 @@ namespace SineMacula\Laravel\Iam\Sso;
 
 use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Http\ClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
- * The one redemption SSO admitted in this request, which the link contract, the
- * evidence policy and the exemption gate answer from.
+ * The one redemption SSO admitted in this request, which the link contract and
+ * the evidence policy answer from.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,19 +22,15 @@ final class AdmittedRedemptions
     /** @var ?\SineMacula\Laravel\Sso\Handoffs\RedemptionResult The redemption admitted in this request, while its transaction runs. */
     private ?RedemptionResult $admitted = null;
 
-    /** @var ?\SineMacula\Laravel\Sso\Http\ClientContext The client SSO was handed for the admitted redemption. */
-    private ?ClientContext $client = null;
-
     /**
-     * Record the redemption SSO admitted, with the client it was handed.
+     * Record the redemption SSO admitted.
      *
      * @param  \SineMacula\Laravel\Sso\Handoffs\RedemptionResult  $redemption
-     * @param  \SineMacula\Laravel\Sso\Http\ClientContext  $client
      * @return void
      *
      * @throws \LogicException
      */
-    public function record(RedemptionResult $redemption, ClientContext $client): void
+    public function record(RedemptionResult $redemption): void
     {
         if (!$redemption->isAdmitted() || $redemption->result === null || $redemption->linkedIdentity === null || $redemption->linkId === null) {
             throw new \LogicException('Only a redemption SSO admitted, with the identity and the link it resolved, is recorded.');
@@ -46,7 +41,6 @@ final class AdmittedRedemptions
         }
 
         $this->admitted = $redemption;
-        $this->client   = $client;
     }
 
     /**
@@ -64,20 +58,6 @@ final class AdmittedRedemptions
         return $result !== null && $result->connectionId === $connectionId && $result->issuer === $issuer && $result->subject === $subject
             ? $this->admitted
             : null;
-    }
-
-    /**
-     * The admitted redemption's client, for its identity and session alone.
-     *
-     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
-     * @param  ?string  $sessionId
-     * @return ?\SineMacula\Laravel\Sso\Http\ClientContext
-     */
-    public function clientFor(IdentityReference $identity, ?string $sessionId): ?ClientContext
-    {
-        $admitted = $this->admitted;
-
-        return $admitted?->linkedIdentity?->is($identity) === true && $admitted->sessionId === $sessionId ? $this->client : null;
     }
 
     /**
