@@ -111,11 +111,11 @@ The gate raises MFA's `InsufficientAuthenticationException`, which you answer in
 
 ## Factor changes and removal
 
-Adding, replacing or removing a factor, and generating recovery codes, takes a fresh step-up, judged by
-`laravel-authentication` under the session's lock; an identity's first additional factor takes a fresh
-reauthentication instead. Declare MFA's freshness operations for each MFA application's guard (see
-[Installation](installation.md#guards-and-applications)). A minimum assurance level in MFA's own freshness settings is
-refused with an `InvalidArgumentException`, since no stored proof records a level.
+Adding or removing a factor, and generating recovery codes, takes a fresh step-up, judged by `laravel-authentication`
+under the session's lock; an identity's first additional factor takes a fresh reauthentication instead. Declare MFA's
+freshness operations for each MFA application's guard (see [Installation](installation.md#guards-and-applications)). A
+minimum assurance level in MFA's own freshness settings is refused with an `InvalidArgumentException`, since no stored
+proof records a level.
 
 Removing a factor ends every other session of the identity and voids the current session's proofs made with it;
 resetting an identity ends all of its sessions. When the current session is returned to pending, the removal's
@@ -211,7 +211,10 @@ proofs. This package's `InteractsWithIam` helpers arrange more of the caller (se
 ## Further reading
 
 - [Bindings](bindings.md): replacing each adapter, and what it risks.
-- [The authentication and MFA design note](../design/authentication-and-mfa.md): every adapter, translation and lock.
+- [The authentication and MFA design note](../design/authentication-and-mfa.md): the adapters, translations and lock
+  order.
+- [The codes, delivery and passkeys design note](../design/codes-delivery-and-passkeys.md): code challenges, code
+  delivery, passkeys and the context MFA reads.
 - MFA's guide [within `laravel-iam`][mfa-within-iam], and its [extending guide][mfa-extending].
 
 [mfa-requirements]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/requirements.md

@@ -113,7 +113,7 @@ Applies only while SSO is in use (`sso.features.saml2` or `sso.features.oidc` on
   laravel-authentication's sign-in methods.*: add `external_provider` to the methods of the guard of the same name
   (`auth.guards.<name>.application.methods`), or stop serving the application through SSO.
 - *`sso.applications.<name>.unlinked_handoffs` must stay off under laravel-iam: an unlinked result is provisioned or
-  refused, never handed off.*: set it to `false`, and name a provisioner instead
+  refused, never handed off.*: set it to `false`, and bind a provisioner instead
   ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 - Every mandatory seam of SSO and tenancy, with the messages under [seams](#seams).
 
@@ -172,7 +172,7 @@ The members' settings agree with each other.
   default is refused, as it says.
 - Note: *SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver is still
   SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant while people act in tenants: ...*: shown while your
-  memberships are bound or named. `laravel-authorization`'s default resolver knows no record's tenant, so a grant in
+  memberships are bound. `laravel-authorization`'s default resolver knows no record's tenant, so a grant in
   one tenant reaches another tenant's records unless each model declares its tenancy or names its tenant. Name your
   resolver in `authorization.resource_tenant_resolver`, bind the contract yourself, or leave it where every model the
   checks name declares its tenant (see [Authorization](authorization.md#tenants)).

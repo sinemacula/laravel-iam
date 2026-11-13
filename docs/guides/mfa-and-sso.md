@@ -20,7 +20,8 @@ in its [assurance guide][mfa-assurance].
 
    The package then binds SSO's `SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy`, which accepts what each
    connection's evidence settings list (`Sso\Connections\EvidenceSettingsService`, with `sso.connection.trust`
-   freshness). Only `true` turns it on, and it never replaces an evidence policy you bound yourself.
+   freshness). Only a true value (`true`, `1`, `on` or `yes`) turns it on, and only while `iam.adapters.sso` is on.
+   It never replaces an evidence policy you bound yourself.
 
 2. **MFA decides what accepted evidence satisfies.** The package hands `laravel-authentication` only what SSO accepted,
    and answers `laravel-authentication`'s external evidence policy with MFA's `CombinationPolicy`, judging the sign-in
