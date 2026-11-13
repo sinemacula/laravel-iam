@@ -56,23 +56,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s requirement check answered
- * by MFA's (IAM-3.2): a sign-in its password alone does not meet waits for a
- * further factor, one that meets it activates, MFA judges the session's own
- * proofs bound to its sign-in, read in one bounded query, and the parts MFA
- * leaves unmet are the answer (IAM-3.14).
- *
- * The adapter refuses only by throwing: an identity MFA holds no factors for,
- * and a session or identity whose key names nothing, are refused (IAM-8.2), and
- * a refusal inside `laravel-authentication`'s transaction rolls back the proof
- * it was judging. Judged under the session row's lock, it takes no MFA lock, so
- * it never waits on MFA's identity state or factors, on MySQL or PostgreSQL, at
- * either isolation level.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password. The capability's switch is off, so MFA's other seams keep their
- * defaults, and the test binds this adapter and the additional-factor policy's
- * as an application would; MFA has no kit for its requirement check.
+ * Tests for `laravel-authentication`'s requirement check answered by MFA's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -95,8 +79,7 @@ final class RequirementCheckAdapterTest extends TestCase
     private const int LOCK_WAIT_SECONDS = 2;
 
     /**
-     * Bind this adapter and the additional-factor policy's, and have MFA ask a
-     * further factor of every sign-in.
+     * Bind the adapters and have MFA ask a further factor of every sign-in.
      *
      * @return void
      */
@@ -112,8 +95,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in whose password alone does not meet what MFA asks waits for the
-     * further factor.
+     * A sign-in its password alone does not satisfy waits for a further factor.
      *
      * @return void
      *
@@ -145,8 +127,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A further factor that meets too little of what MFA asks leaves the
-     * session pending, and one that meets the rest activates it.
+     * Too little leaves the session pending, and the rest activates it.
      *
      * @return void
      *
@@ -166,10 +147,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * MFA judges the session's first factor and its further proofs, each bound
-     * to the person, the application and the sign-in judged, under the person's
-     * current verification generation; at sign-in, before the session is
-     * written, the sign-in no session key can name.
+     * MFA judges the session's proofs, each bound to its sign-in.
      *
      * @return void
      *
@@ -221,10 +199,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[requirement, the oldest time asked for, in seconds before the
-     * time judged, or null for none]`: the longest maximum age of the parts,
-     * none when a part has no maximum age, and the time judged itself when no
-     * part is asked for.
+     * Rows of `[requirement, the oldest time asked for in seconds before the time judged, or null for none]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Requirements\Requirement, 1: ?int}>
      */
@@ -243,11 +218,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * The proofs are read in one query bounded by the requirement: only those
-     * made since the oldest time a part's maximum age allows, only the kinds a
-     * requirement can be met with beside the first factor (never a
-     * reauthentication at the external provider), and as many as one query
-     * returns.
+     * The proofs are read in one query bounded by the requirement.
      *
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @param  ?int  $since
@@ -276,8 +247,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * The proofs read, newest first, reach MFA after the first factor oldest
-     * first.
+     * The proofs reach MFA after the first factor, oldest first.
      *
      * @return void
      */
@@ -301,9 +271,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[requirement, the parts left unmet]` for a session holding a
-     * password and an authenticator app's code made half a minute ago: each
-     * part MFA finds met is met, and each it does not is the answer.
+     * Rows of `[requirement, the parts left unmet]`.
      *
      * @return iterable<string, array{\SineMacula\Laravel\Authentication\Requirements\Requirement, list<\SineMacula\Laravel\Authentication\Requirements\Enums\RequirementKind>}>
      */
@@ -345,8 +313,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA holds no factors for is refused, naming its type and
-     * MFA's contract it does not implement.
+     * An identity MFA holds no factors for is refused.
      *
      * @return void
      */
@@ -392,9 +359,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A proof MFA would not build, refused while `laravel-authentication`
-     * judges the session it was just recorded on, rolls back with the whole
-     * transaction: the proof is not kept and the session still waits.
+     * A refusal inside the member's transaction rolls back the proof.
      *
      * @return void
      *
@@ -419,9 +384,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Judging the session under its row's lock takes no MFA lock: with the
-     * person's identity state and factors held on another connection, the
-     * further factor still activates the session, without waiting.
+     * Judging the session under its row's lock takes no MFA lock.
      *
      * @param  string  $level
      * @return void
@@ -455,8 +418,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Satisfy the pending sign-in with a further factor proved now, bound to
-     * the person, the application and the pending session for sign-in.
+     * Satisfy the pending sign-in with a further factor proved now.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Authentication\Sessions\SignInResult  $pending
@@ -489,8 +451,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A passkey's assertion, made now, verifying its user and resisting
-     * phishing.
+     * A passkey's assertion made now, user-verifying and phishing-resistant.
      *
      * @return \Closure(\SineMacula\Laravel\Authentication\Proofs\ProofBinding): \SineMacula\Laravel\Authentication\Proofs\ProofResult
      */
@@ -565,8 +526,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Have MFA's requirement check judge as the closure does, given the proofs
-     * as a list.
+     * Have MFA's requirement check judge as the closure does.
      *
      * @param  \Closure(\SineMacula\Laravel\Mfa\Requirements\Requirement, list<\SineMacula\Laravel\Mfa\Proofs\Proof>): \SineMacula\Laravel\Mfa\Assurance\Evaluation  $judge
      * @return void
@@ -626,9 +586,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A subject of the identity at sign-in, before its session is written, with
-     * a first factor on its password and the further proofs given, newest
-     * first.
+     * A subject of the identity at sign-in, with the further proofs given.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  \Carbon\CarbonImmutable  $now
@@ -655,8 +613,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * A further factor, an authenticator app's code, made with the method given
-     * at the time given.
+     * An authenticator app's code made with the method given at the time given.
      *
      * @param  string  $method
      * @param  \Carbon\CarbonImmutable  $at
@@ -674,8 +631,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Assert that the callback is refused as unresolved, for the kind of
-     * reference given, and return the refusal.
+     * Assert the callback is refused as unresolved, and return the refusal.
      *
      * @param  \SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind  $kind
      * @param  \Closure(): mixed  $callback
@@ -695,8 +651,7 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
-     * Lock the person's MFA identity state and factors on the other connection,
-     * and have this one wait only briefly for any lock.
+     * Lock the person's MFA identity state and factors on the other connection.
      *
      * @param  \PDO  $other
      * @param  \Tests\Fixtures\Models\Person  $person

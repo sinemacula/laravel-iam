@@ -52,26 +52,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s additional-factor policy
- * answered by MFA's requirement policy alone (IAM-3.1): a sign-in MFA asks
- * nothing further of activates, one it asks a further factor of waits for it,
- * MFA is asked about the identity on the application with the first factor as
- * its own proof, and its answer crosses part for part and age for age
- * (IAM-3.14), the same however often and in whatever order it is asked.
- *
- * The adapter refuses only by throwing: an identity MFA holds no factors for,
- * or whose key names nothing, is refused (IAM-8.2), as is an answer
- * `laravel-authentication` cannot hold, which rolls back the proof
- * `laravel-authentication` was settling the session with, on every engine and
- * also at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL. The
- * policy only reads, so it takes no lock of its own to order.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password. The capability's switch is off, so every other seam keeps its
- * member's default, `laravel-authentication`'s requirement check included,
- * which meets nothing: what the policy asks is what the session waits for. MFA
- * has no kit for its requirement policy; its requirement seams' statelessness
- * assertion is applied to the answers instead.
+ * Tests for the additional-factor policy answered by MFA's requirement.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -104,8 +85,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement mode for the application, whether the sign-in
-     * waits for a further factor]`.
+     * Rows of `[MFA's requirement mode for the application, whether the sign-in waits for a further factor]`.
      *
      * @return iterable<string, array{0: string, 1: bool}>
      */
@@ -119,8 +99,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in MFA asks nothing further of activates, and one it asks a
-     * further factor of waits for an additional verification.
+     * A sign-in waits for a further factor only when MFA asks one.
      *
      * @param  string  $mode
      * @param  bool  $waits
@@ -141,10 +120,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * MFA's policy is asked about the person, on the application, with the
-     * password the person signed in with as MFA's first factor, bound to the
-     * sign-in no session key can name and stamped with the person's current
-     * verification generation.
+     * MFA is asked about the identity with its password as first factor.
      *
      * @return void
      *
@@ -190,8 +166,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * MFA's answer is `laravel-authentication`'s requirement, part for part and
-     * age for age.
+     * MFA's answer crosses part for part and age for age.
      *
      * @return void
      *
@@ -212,8 +187,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The policy keeps no state between calls: the same question answers the
-     * same requirement whatever was asked in between.
+     * The policy keeps no state between calls.
      *
      * @return void
      */
@@ -235,8 +209,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA holds no factors for is refused, naming its type and
-     * MFA's contract it does not implement.
+     * An identity MFA holds no factors for is refused.
      *
      * @return void
      */
@@ -260,8 +233,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An answer `laravel-authentication` cannot hold refuses the sign-in by
-     * throwing, before any session is written.
+     * An answer the session cannot hold refuses the sign-in.
      *
      * @return void
      *
@@ -285,9 +257,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * An answer `laravel-authentication` cannot hold, refused while it settles
-     * a pending session with a further factor, rolls back with the whole
-     * transaction: the proof is not kept and the session still waits.
+     * A refusal inside the member's transaction rolls back the proof.
      *
      * @return void
      *
@@ -299,8 +269,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The refusal rolls back the same way on MySQL and PostgreSQL at READ
-     * COMMITTED and REPEATABLE READ.
+     * The refusal rolls back at READ COMMITTED and REPEATABLE READ.
      *
      * @param  string  $level
      * @return void
@@ -317,9 +286,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Assert an answer `laravel-authentication` cannot hold, refused while it
-     * settles a pending session with a further factor, rolls back with the
-     * whole transaction: the proof is not kept and the session still waits.
+     * Assert a refusal rolls back the proof and leaves the session waiting.
      *
      * @return void
      *
@@ -431,8 +398,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The context of the identity's sign-in on the application with its
-     * password, as `laravel-authentication` builds it.
+     * The context of the identity's password sign-in on the application.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @return \SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext
@@ -447,8 +413,7 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * Assert that the callback is refused for an identity that cannot be
-     * resolved, with a message naming the identity's type and what it lacks.
+     * Assert the callback is refused for an unresolved identity.
      *
      * @param  \Closure(): mixed  $callback
      * @param  string  $type

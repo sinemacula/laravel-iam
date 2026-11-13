@@ -39,12 +39,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * Unit tests for translating proofs between `laravel-authentication` and MFA
- * (IAM-3.14, IAM-5.2): every kind, purpose and observed property crosses as
- * itself, a reauthentication at the external provider is MFA's reauthentication
- * with the first factor on an `external_provider` channel, a recovery code
- * travels on no channel in MFA and an unknown one in `laravel-authentication`,
- * and a recorded proof is bound to the sign-in it is read for.
+ * Unit tests for translating proofs between `laravel-authentication` and MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -86,9 +81,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Every kind of `laravel-authentication`'s is MFA's of the same kind, and a
-     * reauthentication at the external provider is MFA's reauthentication with
-     * the first factor.
+     * Every proof kind crosses as MFA's of the same kind.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind  $authentication
      * @param  \SineMacula\Laravel\Mfa\Enums\ProofKind  $mfa
@@ -101,8 +94,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[laravel-authentication's purpose, MFA's purpose]` for every
-     * purpose.
+     * Rows of `[laravel-authentication's purpose, MFA's purpose]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Proofs\Enums\Purpose, 1: \SineMacula\Laravel\Mfa\Enums\Purpose}>
      */
@@ -132,8 +124,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[laravel-authentication's properties, MFA's]`: each property
-     * observed alone, the key protections, and nothing observed.
+     * Rows of `[laravel-authentication's properties, MFA's]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Proofs\ObservedProperties, 1: \SineMacula\Laravel\Mfa\Assurance\ObservedProperties}>
      */
@@ -157,8 +148,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Every observed property crosses under its own name, both ways, and one
-     * not observed stays not observed.
+     * Every observed property crosses under its own name, both ways.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\ObservedProperties  $authentication
      * @param  \SineMacula\Laravel\Mfa\Assurance\ObservedProperties  $mfa
@@ -172,8 +162,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Properties MFA would refuse, a credential backed up but not eligible for
-     * backup, are refused.
+     * Properties MFA would refuse are refused.
      *
      * @return void
      */
@@ -185,9 +174,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A first factor is MFA's first factor on its channel (a password's
-     * reference dropped), with its method, factor, properties and time, bound
-     * to the sign-in at sign-in and stamped with its generation.
+     * A first factor is bound to the sign-in and stamped with its generation.
      *
      * @return void
      */
@@ -244,10 +231,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A reauthentication at the external provider is MFA's reauthentication
-     * with the first factor, on the provider's channel with its reference when
-     * it carries accepted evidence, for the reauthenticate purpose (IAM-3.14,
-     * IAM-5.2).
+     * An external reauthentication is on the provider's channel.
      *
      * @return void
      */
@@ -264,10 +248,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of an external provider's proof: whether it is a reauthentication at
-     * the provider rather than a sign-in's first factor, whether it carries
-     * evidence SSO accepted, whether it is translated under a trust that counts
-     * accepted evidence, and the connection MFA is handed.
+     * Rows of `[reauthentication, accepted evidence, trust counts evidence, expected connection]`.
      *
      * @return iterable<string, array{0: bool, 1: bool, 2: bool, 3: ?string}>
      */
@@ -286,10 +267,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * An external provider's proof names its connection to MFA only when it
-     * carries evidence SSO accepted and the trust counts accepted evidence;
-     * otherwise it is on the provider's channel naming no connection, so no
-     * combination policy can trust it by its connection (IAM-4.6, IAM-5.1).
+     * A provider's proof names its connection only with accepted evidence.
      *
      * @param  bool  $reauthentication
      * @param  bool  $accepted
@@ -310,8 +288,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * An external provider's proof recorded on no connection names none, even
-     * with accepted evidence.
+     * A provider's proof recorded on no connection names none.
      *
      * @return void
      */
@@ -323,9 +300,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A reauthentication at the external provider recorded on another channel
-     * is still on the provider's channel, naming no reference it did not record
-     * there.
+     * An external reauthentication on another channel is on the provider's.
      *
      * @return void
      */
@@ -337,8 +312,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A proof MFA would refuse to build, a first factor not made at sign-in, is
-     * refused.
+     * A proof MFA would refuse to build is refused.
      *
      * @return void
      */
@@ -352,11 +326,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A verified additional factor is the proof result `laravel-authentication`
-     * takes: its kind, method, channel, factor, properties and time, accepted
-     * and multifactor as it refreshes the multifactor evidence, its own `amr`
-     * values without `mfa`, and a binding to the identity on the proof's
-     * application and sign-in, for its purpose.
+     * A verified proof is the proof result `laravel-authentication` takes.
      *
      * @return void
      */
@@ -400,11 +370,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * The proof crosses accepted, and multifactor exactly when MFA says it
-     * refreshes the multifactor evidence of the session's first factor, never
-     * as MFA's evaluation of the whole session the result carries: a fresh
-     * email code after an old authenticator app code, which MFA's whole-session
-     * evaluation reports multifactor, crosses as not multifactor.
+     * The proof is multifactor only when it refreshes the evidence.
      *
      * @param  bool  $refreshes
      * @param  bool  $wholeSession
@@ -427,8 +393,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A verified recovery code travels on an unknown channel in
-     * `laravel-authentication`.
+     * A recovery code travels on an unknown channel.
      *
      * @return void
      */
@@ -458,8 +423,7 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * Assert MFA's channel is of the given kind and names the given reference,
-     * which a dump of the channel hides.
+     * Assert MFA's channel is of the given kind and names the given reference.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $kind
      * @param  ?string  $reference

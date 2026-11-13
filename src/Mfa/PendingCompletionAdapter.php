@@ -24,56 +24,8 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * MFA's pending completion, satisfying `laravel-authentication`'s pending
- * session as the last write of MFA's transaction, so the sign-in result never
- * reaches a response if MFA's commit fails (IAM-3.3).
- *
- * MFA hands it the caller the verification was served to, as plain values: the
- * pending session it holds (`CallerContext::$pending`) and its client
- * (`CallerContext::$client`). A caller holding no pending session, a failed
- * result, and a proof bound to another identity, application or sign-in than
- * the pending session's, or made for a purpose a pending session cannot take (a
- * sign-in, or the enrolment of the additional factor that confirms a bootstrap
- * enrolment), are refused with an `OperationRefusedException` as `not_accepted`
- * before anything is read or written, so the verification rolls back with them.
- *
- * Otherwise the proof crosses as `laravel-authentication`'s proof result, bound
- * to the pending session's key for the same purpose, accepted (MFA hands over
- * only a proof it accepted after the pending session's first factor), and
- * multifactor only when MFA says the proof itself refreshes the multifactor
- * evidence of that first factor (`VerificationResult::$refreshesMultifactor`),
- * never because of another proof the session holds. It is handed to
- * `Auth::sessions()->satisfy()` on the guard the pending context's application
- * names, with the pending credential that context keeps
- * (`PendingContext::credential()`, kept by `PendingSessionResolverAdapter` and
- * read again under MFA's lock), and with the caller's client, translated one to
- * one (`ClientTranslator::toAuthentication()`), never either read from a
- * request. `laravel-authentication` judges that client: on a guard whose
- * refresh token travels in a cookie, a client without an `Origin` of its own
- * site or the guard's CSRF header is refused as `cross_site_request` before the
- * pending session is read; and the activation records its IP address and user
- * agent as the session's last use.
- *
- * It is called only inside a transaction on the storage connection, where MFA
- * calls it last: `satisfy()` then stores the proof and activates the session in
- * a savepoint of MFA's transaction, and binds the guard only once that
- * transaction commits, so a rollback, or a commit that fails, leaves the
- * session pending, the proof unstored and the result unreturned. A refusal
- * `laravel-authentication` answers (a cross-site client, the session no longer
- * pending, the proof not one it takes, its binding not the credential's
- * session, a tenant requiring single sign-on) is thrown as `not_accepted` too,
- * naming its reason in the detail for logs; it wrote nothing. A pending context
- * that kept no credential, and an identity that is not
- * `laravel-authentication`'s, cannot be resolved and throw (IAM-8.2).
- *
- * What it returns is `laravel-authentication`'s `SignInResult`, signed in or
- * still pending, which reaches the caller as MFA's completion. Once the session
- * has taken the proof, the decisions `laravel-authorization` keeps for the
- * request or job are forgotten, naming that session and the identity
- * (`DecisionCacheInvalidation`, IAM-6.11): the verification passed changed the
- * proofs they read.
- *
- * Stateless: the guard and the session are read on every call (IAM-8.1).
+ * MFA's pending completion, satisfying the pending session as the last write of
+ * MFA's transaction.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -106,9 +58,7 @@ final readonly class PendingCompletionAdapter implements PendingCompletion
     ) {}
 
     /**
-     * Satisfy the caller's pending sign-in with the verified proof, for the
-     * caller's client, then forget the decisions that read its authentication,
-     * returning `laravel-authentication`'s sign-in result as MFA's completion.
+     * Satisfy the caller's pending sign-in and forget the decisions it read.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result

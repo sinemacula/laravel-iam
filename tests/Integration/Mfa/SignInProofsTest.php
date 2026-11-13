@@ -20,8 +20,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for a session's recorded proofs read as MFA's proofs of the
- * sign-in (IAM-3.11).
+ * Integration tests for a session's proofs read as MFA's sign-in proofs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

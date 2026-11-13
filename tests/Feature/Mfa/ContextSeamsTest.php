@@ -72,8 +72,7 @@ final class ContextSeamsTest extends TestCase
     }
 
     /**
-     * With MFA's switch off each member keeps its default and the application
-     * resolver stays unbound.
+     * With MFA's switch off each member keeps its default.
      *
      * @return void
      *
@@ -126,8 +125,7 @@ final class ContextSeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[value, on]`: MFA's capability switch, and whether it leaves the
-     * bindings on.
+     * Rows of `[value, on]` for MFA's capability switch.
      *
      * @return iterable<string, array{0: mixed, 1: bool}>
      */

@@ -11,10 +11,8 @@ use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 
 /**
- * The seams passkeys become MFA factors through (IAM-3.10). MFA's passkey
- * gateway is bound only while an MFA application offers the `passkey` type. The
- * factor gate is bound, and mandatory, whenever the capability is on: a passkey
- * enrolled while the type was offered stays a factor once it is withdrawn.
+ * The seams passkeys become MFA factors through; the factor gate stays bound so
+ * a withdrawn type's passkeys still remove their factors.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -47,9 +45,7 @@ final readonly class PasskeySeams implements ProvidesSeams
     }
 
     /**
-     * Whether any MFA application offers the `passkey` factor type. An
-     * application's settings or types that are not a list are read as offering
-     * nothing, as MFA's own configuration check refuses them.
+     * Whether any MFA application offers the `passkey` factor type.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @return bool
@@ -69,8 +65,7 @@ final readonly class PasskeySeams implements ProvidesSeams
     }
 
     /**
-     * Whether the MFA application of the given name offers the `passkey` factor
-     * type, read as `isOffered()` reads every application's.
+     * Whether the named MFA application offers the `passkey` factor type.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  string  $application
@@ -84,8 +79,7 @@ final readonly class PasskeySeams implements ProvidesSeams
     }
 
     /**
-     * Whether an application's settings list the `passkey` factor type among
-     * its types.
+     * Whether an application's settings list the `passkey` type.
      *
      * @param  mixed  $settings
      * @return bool

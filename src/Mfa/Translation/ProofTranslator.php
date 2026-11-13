@@ -26,39 +26,7 @@ use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * Translates proofs between `laravel-authentication` and MFA (IAM-3.14,
- * IAM-5.2): a proof a session recorded becomes MFA's proof bound to the
- * sign-in, and a proof MFA verified becomes the proof result
- * `laravel-authentication` takes to satisfy a pending session or step one up,
- * accepted, and multifactor only when MFA says the proof itself supplies or
- * completes the multifactor evidence of the session's first factor.
- *
- * Both members spell the first four proof kinds, the four purposes, the key
- * protections and the channel kinds the same, and translate one to one, but for
- * the application's own `recovery`, which is MFA's `unknown`
- * (`ChannelTranslator`). `laravel-authentication`'s fifth kind, a
- * reauthentication at the external provider the session began with, is MFA's
- * reauthentication with the first factor, on an `external_provider` channel and
- * with the reauthenticate purpose it is recorded with; an SSO sign-in is a
- * first factor in both. A recovery code travels on no channel in MFA and on an
- * unknown one in `laravel-authentication`, which has no proof without one. The
- * observed properties cross under their own names (`backupEligible` is MFA's
- * `backupEligibility`, `phishingResistant` its `phishingResistance`).
- *
- * An external provider's proof (an SSO sign-in's first factor, or a
- * reauthentication at the provider) names its connection to MFA only as the
- * `ProviderTrust` handed in allows: when it carries evidence SSO's evidence
- * contract accepted, and, for a tenant, from a connection the tenant trusts
- * (`ConnectionTrust`). Otherwise it reaches MFA on an `external_provider`
- * channel naming no connection, so a combination policy that trusts a
- * connection can never count a sign-in SSO's evidence gate refused, nor count
- * one tenant's trust for another (IAM-4.6, IAM-5.1).
- *
- * Nothing is relaxed on the way: a proof one member would refuse to build (an
- * additional factor without its factor, or on a password channel; a first
- * factor not made at sign-in; a credential backed up but not eligible for
- * backup) is refused here too, with the member's own exception, so no adapter
- * answers with a proof it guessed.
+ * Translates proofs between `laravel-authentication` and MFA.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -86,10 +54,7 @@ final readonly class ProofTranslator
     ) {}
 
     /**
-     * MFA's proof for one a session recorded, bound to the sign-in for the
-     * purpose it was made for, stamped with the sign-in's verification
-     * generation; an external provider's proof names its connection only as the
-     * trust given allows.
+     * MFA's proof for one a session recorded, bound to the sign-in.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
      * @param  \SineMacula\Laravel\Iam\Mfa\Translation\SignIn  $signIn
@@ -113,22 +78,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * The proof result `laravel-authentication` takes for a verification MFA
-     * made: the proof's kind, method, channel, factor, observed properties and
-     * time, its own `amr` values, a binding to the identity given (the one the
-     * proof names), on the proof's application and sign-in, for its purpose,
-     * and its own evaluation.
-     *
-     * `laravel-authentication` keeps the evaluation on the proof's row, and its
-     * freshness reads "multifactor within so many seconds" as the newest proof
-     * flagged multifactor, timed by that proof. So the proof is recorded
-     * accepted (a result exists only for a proof MFA accepted after the
-     * session's first factor), and multifactor exactly when the result's
-     * `refreshesMultifactor` says the freshest evidence that the first factor
-     * and this proof are multifactor is this proof's own: never from MFA's
-     * evaluation of the whole session, which the result carries too and which
-     * would flag a fresh email code multifactor because of an authenticator app
-     * code proved hours before. A result without a proof is refused.
+     * The proof result for a verification; multifactor only from its own proof.
      *
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
@@ -156,9 +106,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * MFA's kind for `laravel-authentication`'s: the same kind, except that a
-     * reauthentication at the external provider is a reauthentication with the
-     * first factor.
+     * MFA's kind; an external reauthentication is a first-factor one.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind  $kind
      * @return \SineMacula\Laravel\Mfa\Enums\ProofKind
@@ -175,7 +123,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * MFA's purpose for `laravel-authentication`'s, case by case.
+     * MFA's purpose for `laravel-authentication`'s.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\Purpose  $purpose
      * @return \SineMacula\Laravel\Mfa\Enums\Purpose
@@ -191,7 +139,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * `laravel-authentication`'s purpose for MFA's, case by case.
+     * `laravel-authentication`'s purpose for MFA's.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @return \SineMacula\Laravel\Authentication\Proofs\Enums\Purpose
@@ -207,8 +155,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * MFA's observed properties for `laravel-authentication`'s, each kept as it
-     * was observed, or not.
+     * MFA's observed properties for `laravel-authentication`'s.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\ObservedProperties  $observed
      * @return \SineMacula\Laravel\Mfa\Assurance\ObservedProperties
@@ -228,8 +175,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * `laravel-authentication`'s observed properties for MFA's, each kept as it
-     * was observed, or not.
+     * `laravel-authentication`'s observed properties for MFA's.
      *
      * @param  \SineMacula\Laravel\Mfa\Assurance\ObservedProperties  $properties
      * @return \SineMacula\Laravel\Authentication\Proofs\ObservedProperties
@@ -247,7 +193,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * The refusal of a verification result that holds no proof to hand over.
+     * The refusal of a result that holds no proof.
      *
      * @return \InvalidArgumentException
      */
@@ -257,10 +203,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * MFA's channel for a recorded proof: none for a recovery code, an
-     * `external_provider` one for a reauthentication at the external provider
-     * or a proof recorded on one (naming the connection only as the trust
-     * allows), and the recorded channel otherwise.
+     * MFA's channel for a recorded proof; a recovery code has none.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
      * @param  string  $application
@@ -284,10 +227,7 @@ final readonly class ProofTranslator
     }
 
     /**
-     * The connection an external provider's proof may name to MFA: its own,
-     * when the trust counts accepted evidence, the proof carries evidence SSO's
-     * evidence contract accepted, and the tenant the trust names, if any,
-     * trusts the connection on the application; none otherwise.
+     * The connection a provider's proof may name, if accepted and trusted.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
      * @param  string  $application

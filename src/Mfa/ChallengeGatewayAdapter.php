@@ -27,8 +27,8 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * MFA's challenge gateway, sending and checking SMS and email factor codes
- * through `Auth::codes()` (IAM-3.9).
+ * MFA's challenge gateway, sending and checking SMS and email codes through
+ * `Auth::codes()`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -178,8 +178,7 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     }
 
     /**
-     * The channel kind the factor's driver delivers on, when it is SMS or
-     * email.
+     * The factor's channel kind, when it is SMS or email.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @return ?\SineMacula\Laravel\Mfa\Enums\ChannelKind
@@ -192,8 +191,7 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     }
 
     /**
-     * The factor code binding for the factor, with the caller kept beside it
-     * for the counters.
+     * The factor code binding, with the caller kept for the counters.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $owner

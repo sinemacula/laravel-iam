@@ -31,43 +31,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * Translates a delivered factor's code challenges between MFA and
- * `laravel-authentication` (IAM-3.9): MFA's factor and proof binding become the
- * factor code binding `laravel-authentication` issues and checks a code under,
- * and back; MFA's admission and counted attempt become the factor code
- * admission `laravel-authentication` asks for; and `laravel-authentication`'s
- * code request and check become MFA's send result and challenge outcome.
- *
- * A factor code binding names MFA's factor by its id, the channel by the kind
- * the factor's driver states and the factor's own destination, and, for an
- * enrolment, a grant: MFA's grant is a secret it never hands out, and an
- * enrolment always makes a new pending factor, so the pending factor's id is
- * the grant, and MFA's counters judge the live enrolment itself under its lock.
- *
- * Both members spell the factor code refusals the same, so a refusal crosses by
- * value. MFA's refusals `laravel-authentication` has no word for (a pending
- * factor, an expired enrolment) cross as `not_found`, the factor named being
- * none MFA will challenge, and come back as that. A lockout crosses as a lock,
- * until when MFA says.
- *
- * `laravel-authentication` tells a wrong code apart from a challenge it did not
- * check one against. A wrong code, which it counted and reported, is MFA's
- * counted `invalid_code` failure, as is a malformed code, which it refuses as
- * `invalid` before checking any challenge: what MFA does with a counted failure
- * (keeping the IP address's slot, committing what the check did) is the safe
- * answer for both, while a refusal would let a wrong code's count roll back. A
- * challenge that is malformed, unknown, replaced or another binding's is
- * refused as `not_found`, and the binding's own challenge once it is used up,
- * by its code or by being ended, as `replayed`: neither counts against the
- * factor, and `laravel-authentication` reports neither (MFA's enrolment
- * confirmation counts a `replayed` against the enrolment, as it would not an
- * `expired`). It does not say whether the code checked at a used challenge is
- * the one that used it, so any well-formed code at one is `replayed`, never the
- * `expired` MFA's own codes answer a different code at a used challenge with.
- * An expired or exhausted challenge, which counts nothing, is refused as
- * `expired`, as MFA's own codes answer it; a lock, or the IP address's limit,
- * as `locked`, the limit until its window ends; and a send refused for the
- * cooldown, a full delivery window or the limits on code requests as
- * `sending_capped`, with how long to wait.
+ * `laravel-authentication`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -113,10 +77,7 @@ final readonly class CodeTranslator
     ) {}
 
     /**
-     * The factor code binding `laravel-authentication` issues and checks the
-     * factor's codes under: the identity, the binding's application, sign-in
-     * and purpose, the factor's id, its channel, and for an enrolment the
-     * pending factor's id as the grant.
+     * The factor code binding codes are issued and checked under.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
@@ -131,6 +92,7 @@ final readonly class CodeTranslator
         $reference = self::reference($factor);
         $proof     = new AuthenticationBinding($identity, $binding->application, $binding->sessionId, $this->proofs->toAuthenticationPurpose($binding->purpose));
 
+        // MFA never hands out its grant, so the pending factor id stands in.
         return new FactorCodeBinding($proof, $reference, $this->channel($factor, $kind), $binding->purpose === MfaPurpose::ENROLLMENT ? $reference : null);
     }
 
@@ -158,8 +120,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * The channel the factor's codes go through, in `laravel-authentication`'s
-     * terms: the kind its driver states, naming its destination.
+     * The factor's channel: its driver's kind, naming its destination.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $kind
@@ -173,8 +134,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * The factor's id as a proof or a factor code binding names it, or `''`
-     * when it is neither a string nor an integer.
+     * The factor's id as a string, or `''` when it is not scalar.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\Factor  $factor
      * @return string
@@ -187,8 +147,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * `laravel-authentication`'s admission for MFA's: admitted, locked until
-     * the lockout ends, or refused for MFA's reason.
+     * `laravel-authentication`'s admission for MFA's.
      *
      * @param  \SineMacula\Laravel\Mfa\Attempts\ChallengeAdmission  $admission
      * @return \SineMacula\Laravel\Authentication\Codes\FactorCodeAdmission
@@ -203,14 +162,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * `laravel-authentication`'s answer to an attempt MFA counted: admitted
-     * when MFA passed it, or when it counted a wrong code that locked nothing;
-     * locked when a lockout refused it, or when counting the wrong code locked
-     * or disabled the factor or locked the identity
-     * (`AttemptOutcome::$caused`), until the lockout ends, or with no time for
-     * a factor disabled or an identity held at the failure ceiling; refused
-     * when the factor is no longer the identity's, or MFA did not pass a code
-     * that matched.
+     * The admission for an attempt MFA counted.
      *
      * @param  \SineMacula\Laravel\Mfa\Attempts\AttemptOutcome  $outcome
      * @param  bool  $matched
@@ -268,8 +220,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * MFA's send result for a code `laravel-authentication` sent, which always
-     * names its challenge for a factor's code.
+     * MFA's send result for a sent code, which always names its challenge.
      *
      * @param  \SineMacula\Laravel\Authentication\Codes\CodeRequest  $request
      * @return \SineMacula\Laravel\Mfa\Codes\SendResult
@@ -289,8 +240,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * `laravel-authentication`'s refusal for MFA's reason: the same value, or
-     * `not_found` for a reason it has no word for.
+     * `laravel-authentication`'s refusal for MFA's reason, or `not_found`.
      *
      * @param  ?\SineMacula\Laravel\Mfa\Enums\FailureReason  $reason
      * @return \SineMacula\Laravel\Authentication\Codes\Enums\FactorCodeRefusal
@@ -301,8 +251,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * MFA's reason for `laravel-authentication`'s refusal: the same value, or
-     * `not_found` when none was given.
+     * MFA's reason for `laravel-authentication`'s refusal, or `not_found`.
      *
      * @param  ?\SineMacula\Laravel\Authentication\Codes\Enums\FactorCodeRefusal  $refusal
      * @return \SineMacula\Laravel\Mfa\Enums\FailureReason
@@ -313,7 +262,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * The seconds until the time given, or `null` when there is none.
+     * The seconds until the time, if any.
      *
      * @param  ?\Carbon\CarbonImmutable  $until
      * @return ?int
@@ -324,8 +273,7 @@ final readonly class CodeTranslator
     }
 
     /**
-     * The time the seconds given from now end at, or `null` when there are
-     * none.
+     * The time the seconds from now end at, if any.
      *
      * @param  ?int  $seconds
      * @return ?\Carbon\CarbonImmutable

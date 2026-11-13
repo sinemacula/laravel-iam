@@ -54,20 +54,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s passkey factor gate calling
- * MFA's passkey change gate inside the passkey transaction (IAM-3.10), with
- * every adapter between the two members bound by this package's binding rule,
- * as an application gets them while its MFA application offers passkeys.
- *
- * Passkeys are registered and removed through `laravel-authentication`'s public
- * passkey service, as a browser and an application would, so the gate runs in
- * that service's own transaction: a registration bound for an MFA enrolment
- * becomes a confirmed factor with its recovery codes and the session judged
- * again, its completion reaching the registration's caller; a removal removes
- * the factor in the same change, so no factor is left without its passkey, and
- * a refusal of either keeps nothing. MFA's identity and factor locks are taken
- * before the passkey's row is written or deleted, on MySQL and PostgreSQL at
- * READ COMMITTED and REPEATABLE READ.
+ * Integration tests for the passkey factor gate over MFA's passkey change gate.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -94,11 +81,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     private (EloquentSession&Model)|null $gatedSession = null;
 
     /**
-     * A passkey registered for an MFA enrolment on a session fresh enough for a
-     * first factor becomes a confirmed passkey factor of the person's, under
-     * its credential and label, and the registration answers MFA's factor and
-     * its whole result, with `laravel-authentication`'s judgement of the active
-     * session again, which the new factor returns to pending.
+     * An enrolment's passkey becomes a factor and the session is judged again.
      *
      * @return void
      *
@@ -131,8 +114,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A registration whose options were asked for without a binding stays a
-     * sign-in passkey: MFA is not asked, and no factor is made.
+     * A registration without a binding stays a sign-in passkey.
      *
      * @return void
      *
@@ -151,8 +133,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A registration bound for anything but an enrolment is refused, keeping no
-     * passkey and no factor.
+     * A registration bound for anything but an enrolment keeps nothing.
      *
      * @return void
      *
@@ -170,12 +151,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A passkey registered for the enrolment of a pending sign-in (a bootstrap
-     * enrolment, MFA requiring a factor of someone who has none), handed that
-     * sign-in's pending credential, becomes a confirmed passkey factor in the
-     * same change, and its proof satisfies the pending session, which
-     * activates: the registration answers MFA's result with the verification,
-     * whose completion is `laravel-authentication`'s signed-in result.
+     * A bootstrap enrolment's passkey activates the pending session.
      *
      * @return void
      *
@@ -210,10 +186,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A bootstrap enrolment handed a pending credential that names no pending
-     * sign-in is answered `pending_invalid` by `laravel-authentication`, before
-     * the gate is asked: no passkey, factor or association is kept, and the
-     * session stays pending.
+     * A bad pending credential is answered `pending_invalid`.
      *
      * @return void
      *
@@ -234,12 +207,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A bootstrap enrolment is served to the client the registration was handed
-     * and satisfies the pending session its credential names, though a request
-     * bound in the container comes from another client and carries another
-     * pending sign-in's credential: MFA's events about it, and the activated
-     * session's last use, describe the handed client, and the other sign-in
-     * stays pending.
+     * A bootstrap enrolment is served to the client handed in.
      *
      * @return void
      *
@@ -274,8 +242,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[whose]` for a pending credential the gate is handed that names
-     * no pending sign-in of the identity registering.
+     * Rows of `[whose]` for a pending credential of no sign-in of the identity.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -287,10 +254,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A pending credential the gate is handed that names no pending sign-in of
-     * the identity registering, which `laravel-authentication` refuses before
-     * asking the gate, is refused as `not_found` all the same, by throwing
-     * inside the transaction: no factor is made.
+     * A pending credential of no sign-in of the identity is `not_found`.
      *
      * @param  string  $whose
      * @return void
@@ -317,8 +281,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A registration MFA refuses, on a session not fresh enough to add a first
-     * factor, keeps neither the passkey nor any factor.
+     * A registration MFA refuses keeps neither the passkey nor any factor.
      *
      * @return void
      *
@@ -342,10 +305,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Removing a passkey factor through `laravel-authentication` removes the
-     * factor and its association in the same change, on a fresh step-up with
-     * another factor, and answers `laravel-authentication`'s judgement of the
-     * session, which the removal's caller gets back.
+     * Removing a passkey removes its factor and association in one change.
      *
      * @param  string  $level
      * @return void
@@ -374,8 +334,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A removal MFA refuses, on a session never stepped up, keeps the passkey,
-     * its factor and its association.
+     * A removal MFA refuses keeps the passkey, its factor and its association.
      *
      * @param  string  $level
      * @return void
@@ -400,8 +359,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Removing a sign-in passkey, associated as no factor, answers no
-     * completion and removes the passkey alone.
+     * Removing a sign-in passkey removes the passkey alone.
      *
      * @return void
      *
@@ -421,9 +379,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * MFA's identity state and factor locks, and the session's row, are taken
-     * before the passkey's row is written on registration, and before it is
-     * deleted on removal.
+     * MFA's locks and the session row are taken before the passkey's row.
      *
      * @param  string  $level
      * @return void
@@ -457,13 +413,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A request bound in the container never reaches the change: though it
-     * comes from another client and carries another person's pending sign-in
-     * credential, the registration and the removal are judged as the active
-     * caller `laravel-authentication`'s values name, on the application it
-     * names, and MFA's events about both describe that identity on that
-     * application, on the sign-in the change was made on, served to the client
-     * the registration and the removal were handed, never the request's.
+     * A request bound in the container never stands in for the caller.
      *
      * @return void
      *
@@ -513,8 +463,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA cannot hold factors for holds no passkey factor: nothing
-     * is associated for it or removed.
+     * An identity MFA holds no factors for has nothing associated or removed.
      *
      * @return void
      *
@@ -530,8 +479,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * MFA associates nothing on an application that does not offer passkeys, so
-     * the registration stays a sign-in passkey.
+     * An application without passkeys associates nothing.
      *
      * @return void
      *
@@ -550,8 +498,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A binding whose session is neither a non-empty string nor an integer
-     * cannot be resolved, and throws inside the transaction.
+     * A binding whose session is no non-empty string or integer throws.
      *
      * @return void
      *
@@ -577,8 +524,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * The identity registering passkeys, signed in and acting on its session on
-     * the guard, whose MFA application offers passkeys.
+     * The identity registering passkeys, on an application offering them.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *
@@ -606,9 +552,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Register a passkey with the credential id through
-     * `laravel-authentication`'s passkey service, bound for an MFA enrolment on
-     * the gated identity's session, so the gate is asked.
+     * Register a passkey bound for an MFA enrolment.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $credentialId
@@ -626,9 +570,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Ask this package's gate to let a passkey with the credential id be
-     * registered for an MFA enrolment on the gated identity's session, as
-     * `laravel-authentication`'s passkey service asks it.
+     * Ask the gate to let a passkey be registered for an MFA enrolment.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -649,8 +591,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Ask this package's gate to let the passkey with the credential id be
-     * removed, as `laravel-authentication`'s passkey service asks it.
+     * Ask the gate to let a passkey be removed.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -681,8 +622,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A person signed in a moment ago and acting on the session, fresh enough
-     * to add a first factor.
+     * A person signed in a moment ago, fresh enough to add a first factor.
      *
      * @return array{0: \Tests\Fixtures\Models\Person, 1: \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession}
      *
@@ -699,9 +639,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A person with no factor signed in pending, MFA requiring a factor of
-     * everyone and allowing a pending session to enrol a passkey as its first,
-     * with the pending session and its credential.
+     * A person with no factor signed in pending, allowed to enrol a passkey.
      *
      * @return array{0: \Tests\Fixtures\Models\Person, 1: \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession, 2: string}
      *
@@ -725,8 +663,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * A person holding a passkey factor, registered for an enrolment on an
-     * active session that stays active, and a TOTP factor beside it.
+     * A person holding a passkey factor and a TOTP factor on an active session.
      *
      * @formatter:off
      *
@@ -755,9 +692,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * From now on, have MFA ask nothing of the identity, neither as the
-     * application's requirement nor as its own, so a session judged again after
-     * a factor change stays active.
+     * Have MFA ask nothing of the identity, so the session stays active.
      *
      * @return void
      */
@@ -848,8 +783,7 @@ final class PasskeyFactorGateAdapterTest extends TestCase
     }
 
     /**
-     * Assert every lock of MFA's identity state, its factors and the session
-     * precedes the first statement on the passkeys' table of the kind given.
+     * Assert MFA's and the session's locks precede the passkeys statement.
      *
      * @param  string  $statement
      * @return void

@@ -38,14 +38,7 @@ use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Arranges the sessions the factor-change adapters judge (IAM-3.6 to IAM-3.8):
- * a step-up or a reauthentication made through `laravel-authentication`'s
- * public session service, a factor stored for MFA, MFA's current sign-in named
- * by the session's key, `laravel-authentication` asking for a further factor
- * from now on, and the factor-change adapters bound alone, over the members'
- * defaults, while the rest of this package's adapters are switched off.
- *
- * It is used with `SignsInPeople` and `MigratesMembers`.
+ * Arranges sessions for the factor-change adapters, bound alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -57,8 +50,7 @@ use Tests\Fixtures\Models\Person;
 trait ArrangesFactorChanges
 {
     /**
-     * Step the session up with a further factor, as MFA's step-up adapter would
-     * hand it over once verified, failing the test unless it is.
+     * Step the session up with a further factor, failing the test unless it is.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -75,9 +67,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * Step the session up with a further factor, as MFA's step-up adapter would
-     * hand it over once verified: a TOTP code of the factor given, reported
-     * multifactor, made now.
+     * Step the session up with a multifactor TOTP proof of the factor given.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -118,8 +108,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * Store a confirmed TOTP factor of the person's on the application, as an
-     * enrolment confirmed in MFA leaves it.
+     * Store a confirmed TOTP factor of the person's on the application.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \SineMacula\Laravel\Mfa\Models\Factor
@@ -138,8 +127,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * A summary of a confirmed TOTP factor, as MFA hands one to a session
-     * transition.
+     * A summary of a confirmed TOTP factor.
      *
      * @param  string  $id
      * @return \SineMacula\Laravel\Mfa\Factors\FactorSummary
@@ -150,9 +138,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * Make MFA's proof store, its own default here, name the session's key as
-     * the person's current sign-in, as this package's proof store does, so the
-     * sign-in MFA hands the adapters is the guard's session.
+     * Name the session's key as the person's current sign-in in MFA.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -164,9 +150,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * From now on, have `laravel-authentication` ask every session for a
-     * further factor, which its default requirement check never finds met, so a
-     * session judged again returns to pending.
+     * Ask every session for a further factor, so a rejudged one goes pending.
      *
      * @return void
      */
@@ -188,8 +172,7 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * Bind the factor-change adapters over MFA's defaults, as this package's
-     * binding rule does, while its other adapters stay switched off.
+     * Bind the factor-change adapters while the other adapters stay off.
      *
      * @return void
      */

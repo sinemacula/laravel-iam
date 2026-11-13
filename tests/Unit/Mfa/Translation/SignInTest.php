@@ -17,8 +17,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * Unit tests for naming one of `laravel-authentication`'s sessions as MFA names
- * a sign-in, and binding the proofs read from it.
+ * Unit tests for naming a `laravel-authentication` session as an MFA sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -68,8 +67,7 @@ final class SignInTest extends TestCase
     }
 
     /**
-     * A session whose key MFA cannot name is refused, as a session that cannot
-     * be resolved on the application.
+     * A session whose key MFA cannot name is refused.
      *
      * @param  mixed  $key
      * @return void
@@ -88,8 +86,7 @@ final class SignInTest extends TestCase
     }
 
     /**
-     * A proof read from the sign-in is bound to its identity, application and
-     * session, for the purpose given.
+     * A proof read from the sign-in is bound to it.
      *
      * @return void
      */

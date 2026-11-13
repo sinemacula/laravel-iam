@@ -11,8 +11,7 @@ use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClient;
 
 /**
- * Unit tests for translating the client an action is served to between MFA's
- * client context and `laravel-authentication`'s, either way.
+ * Unit tests for translating the client context both ways.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,8 +22,7 @@ use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClient;
 final class ClientTranslatorTest extends TestCase
 {
     /**
-     * MFA's client crosses one to one: its IP address, user agent, `Origin`,
-     * scheme and host, and the names of the headers it carried with a value.
+     * MFA's client crosses with every fact it carries.
      *
      * @return void
      */
@@ -42,8 +40,7 @@ final class ClientTranslatorTest extends TestCase
     }
 
     /**
-     * A client with no same-site facts crosses with none: nothing MFA does not
-     * carry is invented.
+     * A client with no same-site facts crosses with none.
      *
      * @return void
      */
@@ -59,8 +56,7 @@ final class ClientTranslatorTest extends TestCase
     }
 
     /**
-     * `laravel-authentication` keeps what it stores safely: an IP address that
-     * is not one is dropped.
+     * An IP address that is not one is dropped.
      *
      * @return void
      */
@@ -73,9 +69,7 @@ final class ClientTranslatorTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s client crosses to MFA's one to one: its IP
-     * address, user agent, `Origin`, scheme and host, and the names of the
-     * headers it carried with a value.
+     * `laravel-authentication`'s client crosses to MFA's with every fact.
      *
      * @return void
      */
@@ -93,8 +87,7 @@ final class ClientTranslatorTest extends TestCase
     }
 
     /**
-     * `laravel-authentication`'s client with no same-site facts crosses to MFA
-     * with none, its IP address and user agent as it kept them.
+     * A client with no same-site facts crosses to MFA with none.
      *
      * @return void
      */

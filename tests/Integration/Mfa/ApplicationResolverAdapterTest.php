@@ -27,12 +27,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's application named after the guard (IAM-3.12): the
- * guard MFA reads the caller through or names a sign-in after, and otherwise
- * the default guard as `Auth::shouldUse()` leaves it, whether the request is
- * signed in or a guest's, the same guard MFA would name without a resolver, and
- * the application of the caller MFA then reads from a request; a guard that
- * names nothing throws (IAM-8.2), rolling back the transaction it is asked in.
+ * Tests for MFA's application, named after the guard.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,8 +46,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     private const string PANEL = 'panel';
 
     /**
-     * The application is the guard that serves the request: the default guard,
-     * until a route's `auth` middleware has another serve it.
+     * The application is the guard that serves the request.
      *
      * @return void
      */
@@ -66,9 +60,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A signed-in request and a guest's are named alike, as MFA names a request
-     * without a resolver, so a change made outside a signed-in request stays on
-     * the guard MFA would have named.
+     * A signed-in request and a guest's are named alike.
      *
      * @return void
      *
@@ -85,9 +77,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Nothing the request carries names the application: a path, a host, a
-     * header, a query and a body each naming another guard leave it the guard
-     * that serves the request, or the guard MFA names.
+     * Nothing the request carries names the application.
      *
      * @return void
      */
@@ -101,8 +91,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Bound as MFA's application resolver, the guard it names is the
-     * application of the caller MFA reads from a request.
+     * Once bound, MFA names the caller's application after the guard.
      *
      * @return void
      *
@@ -118,9 +107,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A caller MFA reads through another guard than the default is named after
-     * that guard while the adapter is bound, as MFA alone names it, while the
-     * default guard stays the one that serves the request.
+     * A caller read through another guard is named after that guard.
      *
      * @return void
      *
@@ -140,9 +127,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in on a guard other than the default, one that holds no sessions
-     * of `laravel-authentication`'s included, begins MFA's sign-in on the
-     * application named after that guard, without throwing.
+     * A sign-in on another guard is named after that guard.
      *
      * @return void
      *
@@ -165,8 +150,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[default guard]` that name nothing: an empty name and a blank
-     * one.
+     * Rows of `[default guard]` that name nothing.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -178,8 +162,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A default guard that names nothing names no application, and is refused
-     * as no guard, never answered blank.
+     * A default guard that names nothing is refused as no guard.
      *
      * @param  string  $guard
      * @return void
@@ -195,8 +178,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A guard MFA names that names nothing names no application, and is refused
-     * as no guard, never answered blank, whatever the default guard.
+     * A guard MFA names that names nothing is refused as no guard.
      *
      * @return void
      */
@@ -211,8 +193,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A refusal inside the transaction MFA asks it in rolls back what the
-     * transaction wrote before it.
+     * A refusal rolls back the transaction it is asked in.
      *
      * @return void
      */
@@ -275,8 +256,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * A guard the request may be served through other than the default: the
-     * administrators'.
+     * A guard other than the default: the administrators'.
      *
      * @return string
      */
@@ -287,8 +267,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Declare the administrators' guard and a panel's session guard beside the
-     * guard people sign in on.
+     * Declare the administrators' guard and a panel's session guard.
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -303,8 +282,7 @@ final class ApplicationResolverAdapterTest extends TestCase
     }
 
     /**
-     * Fail the test unless the call is refused as naming no guard, and return
-     * the refusal.
+     * Assert the call is refused as naming no guard, and return it.
      *
      * @param  \Closure(): mixed  $call
      * @return \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException

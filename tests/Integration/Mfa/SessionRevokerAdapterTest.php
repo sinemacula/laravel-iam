@@ -38,20 +38,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's session revoker through `laravel-authentication`
- * (IAM-3.7): MFA's contract kit, a removal that ends every other session, voids
- * the current session's proofs made with the factor and judges it again,
- * carrying `laravel-authentication`'s result and any new pending credential
- * back as MFA's completion, a removal made from the sign-in MFA names whatever
- * the guard holds, a reset that ends every session, a removal and a reset each
- * forgetting the decision that read the authentication it changed (IAM-6.11),
- * and a removal from a sign-in that is no session of the identity's refused by
- * throwing so the removal rolls back (IAM-8.2).
- *
- * MFA's own flows are run too: removing a factor and resetting an identity,
- * with this package's factor-change adapters bound alone, end the sessions in
- * MFA's transaction, locking their rows after MFA's own, on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ * Integration tests for MFA's session revoker through `laravel-authentication`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -71,9 +58,7 @@ final class SessionRevokerAdapterTest extends TestCase
     private (EloquentSession&Model)|null $other = null;
 
     /**
-     * A removal ends the other sessions and judges the current one itself,
-     * carrying `laravel-authentication`'s result as the completion: the current
-     * session still meets its requirement, so it stays active.
+     * A removal ends the other sessions and judges the current one again.
      *
      * @return void
      *
@@ -98,8 +83,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A current session that falls short once the factor is removed returns to
-     * pending, and its new pending credential reaches MFA's removal result.
+     * A new pending credential reaches MFA's removal result.
      *
      * @return void
      *
@@ -121,8 +105,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * The proofs the current session made with the removed factor, named by
-     * MFA's id for it, stop counting, and the others it holds are kept.
+     * The current session's proofs made with the removed factor stop counting.
      *
      * @return void
      *
@@ -164,8 +147,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A reset names no sign-in, and the decisions `laravel-authorization` keeps
-     * for the request are forgotten all the same (IAM-6.11).
+     * A reset forgets the request's authorization decisions.
      *
      * @return void
      *
@@ -183,8 +165,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal forgets the decisions `laravel-authorization` keeps for the
-     * request, whatever session and identity the last was about (IAM-6.11).
+     * A removal forgets the request's authorization decisions.
      *
      * @return void
      *
@@ -204,9 +185,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal is made from the sign-in MFA names, never the guard's session:
-     * from another of the identity's sessions, that one is judged and the
-     * guard's ends with the rest.
+     * A removal from another sign-in judges that sign-in.
      *
      * @return void
      *
@@ -226,9 +205,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * The sign-in MFA names is judged whatever the guard holds, as a removal
-     * made from a queued job or a console command is: a guard serving no one
-     * still keeps that sign-in and ends the others.
+     * A removal from the named sign-in is made whatever the guard holds.
      *
      * @return void
      *
@@ -247,10 +224,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal from a sign-in that is no session of the identity's on the
-     * guard (another identity's session, or a key no session holds) is refused
-     * inside the removal's transaction, which rolls back: no session is ended,
-     * and what the removal wrote is gone.
+     * A removal from a sign-in not the identity's is refused and rolls back.
      *
      * @param  string  $level
      * @return void
@@ -278,8 +252,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` does not sign in has no sessions to
-     * end, so a removal and a reset are both refused.
+     * An identity `laravel-authentication` does not sign in is refused.
      *
      * @return void
      */
@@ -296,10 +269,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A removal is made on the application MFA names with it, never the default
-     * guard: one that holds no sessions names no current session a removal
-     * could be made from, and is refused, and the application's own guard
-     * judges the removal while the default guard is another.
+     * A removal is made on the application it names, never the default guard.
      *
      * @return void
      *
@@ -326,10 +296,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A reset names no sign-in, so it is made wherever the default guard holds
-     * no sessions (an admin panel's session guard, a console command, a queued
-     * job) through the `jwt` guard declared: resetting an identity through MFA
-     * then ends every session of it and removes its factors.
+     * A reset with no default session guard ends every session.
      *
      * @return void
      *
@@ -353,9 +320,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * A reset goes through the default guard when it is a `jwt` guard, though
-     * another is declared before it, so the guard bound to the identity forgets
-     * its binding once the reset commits.
+     * A reset goes through the default guard when it is a `jwt` guard.
      *
      * @return void
      *
@@ -381,8 +346,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * With no `jwt` guard declared at all, nothing names the sessions a reset
-     * would end, so it is refused.
+     * A reset with no `jwt` guard declared is refused.
      *
      * @return void
      *
@@ -412,10 +376,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Removing a factor through MFA, with the factor-change adapters bound,
-     * ends the other sessions in MFA's transaction, their rows locked after
-     * MFA's locks on the identity's state and factors, and the current
-     * session's new pending credential reaches the removal result.
+     * Removing a factor through MFA ends the other sessions after MFA's locks.
      *
      * @param  string  $level
      * @return void
@@ -462,8 +423,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Resetting an identity through MFA, with the factor-change adapters bound,
-     * ends every session of it, the current one included.
+     * Resetting an identity through MFA ends every session.
      *
      * @return void
      *
@@ -546,8 +506,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Whether the session the guard acts on is still one of its live, active
-     * sessions.
+     * Whether the guard's current session is still live and active.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return bool
@@ -579,8 +538,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Whether the other session is still one of the guard's live, active
-     * sessions.
+     * Whether the other session is still live and active.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @return bool
@@ -647,9 +605,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Assert the removal, made in a transaction on the storage connection after
-     * the person's name was changed there, is refused with the exception given,
-     * and that the change rolled back with it.
+     * Assert the removal is refused and its transaction rolled back.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  class-string<\RuntimeException>  $refusal
@@ -677,8 +633,7 @@ final class SessionRevokerAdapterTest extends TestCase
     }
 
     /**
-     * Assert the call is refused as an unresolved reference, and return the
-     * refusal.
+     * Assert the call is refused as an unresolved reference.
      *
      * @param  \Closure(): mixed  $call
      * @return \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException

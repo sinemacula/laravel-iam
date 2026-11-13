@@ -28,64 +28,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
  * `laravel-authentication`'s passkey factor gate, calling MFA's passkey change
- * gate inside the passkey transaction (IAM-3.10).
- *
- * `registering()` hands the new credential, what its registration observed and
- * the enrolment binding its options were asked for to
- * `PasskeyChangeGate::registering()`, which associates it as a factor when the
- * application enables passkeys and the identity is a person, and answers the
- * association with MFA's factor id as its reference and MFA's whole result as
- * its completion: the factor's summary, the recovery codes made with the
- * identity's first factor (to reveal only once the registration has committed),
- * the pending session's verification, and on an active session the bound
- * session transition's answer (`completion()`), which is
- * `laravel-authentication`'s `factorChanged()` result (IAM-3.8). That reaches
- * the registration's caller as `PasskeyRegistration::$factor->completion`.
- * `removing()` hands the credential to `PasskeyChangeGate::removing()`, which
- * removes the factor it is associated as, with every check of a removal, and
- * ends the identity's other sessions through the bound session revoker; its
- * answer, `laravel-authentication`'s `factorRemoved()` result, reaches the
- * caller as `PasskeyRemoval::$completion`.
- *
- * Both run in `laravel-authentication`'s transaction on the shared storage
- * connection, before the passkey's row is written or deleted, so MFA's identity
- * state and factor locks come first and the session's row after them, and a
- * passkey is never removed leaving its factor standing, nor a factor made for a
- * passkey that is not stored. MFA refuses by throwing, so the whole change
- * rolls back. MFA is handed the caller as the values `laravel-authentication`
- * hands the gate, never read from a request: its client, translated one to one
- * (`Translation\ClientTranslator::toMfa()`), so MFA's events and the pending
- * completion describe and judge the client the registration or removal was
- * given, and either the identity on the application it names, as an active
- * caller (`CallerContext::forIdentity()`), whose sign-in MFA reads from the
- * proof store and checks the registration's binding against, so it acts only on
- * that caller's own sign-in, or, for a registration handed a pending credential
- * (a bootstrap enrolment on a pending sign-in), that pending session
- * (`CallerContext::forPending()`). The pending context is read from the
- * credential on the application's guard
- * (`PendingSessionResolverAdapter::fromCredential()`), which
- * `laravel-authentication` has proved, under the identity's and the session's
- * locks, names a live pending session of this identity; one that names none, or
- * another identity's, is refused as `not_found` all the same. MFA then confirms
- * the factor and hands its proof to the bound pending completion
- * (`PendingCompletionAdapter`), which satisfies the pending session in the same
- * change, with the same client, and refuses by throwing what `satisfy()`
- * refuses, so the registration rolls back with it.
- *
- * A registration whose options were asked for without a binding was not asked
- * for by a factor enrolment, so it stays a sign-in passkey and MFA is not
- * asked; one bound for anything but enrolment is refused (`not_found`), as MFA
- * associates a passkey only from the enrolment it was registered for. An
- * identity MFA cannot hold factors for holds no passkey factor: nothing is
- * associated or removed for it. A binding's session that is neither a non-empty
- * string nor an integer cannot be resolved and throws
- * `UnresolvedReferenceException` (IAM-8.2).
- *
- * It is mandatory, and bound while MFA's capability switch is on whether or not
- * an MFA application offers the `passkey` factor type now: left on
- * `laravel-authentication`'s default, removing a passkey enrolled as a factor
- * before the type was withdrawn would leave its factor standing. It holds
- * nothing between calls (IAM-8.1).
+ * gate inside the passkey transaction.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -114,9 +57,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
     ) {}
 
     /**
-     * Associate the passkey being registered as an MFA factor, in the same
-     * change, for the pending sign-in the credential names or else the active
-     * caller, served to the client given, and answer the association.
+     * Associate the passkey as a factor for the pending sign-in or caller.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $application
@@ -155,9 +96,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
     }
 
     /**
-     * Remove the MFA factor of the passkey being removed, in the same change,
-     * for the active caller served to the client given, and answer MFA's
-     * completion.
+     * Remove the passkey's MFA factor and answer MFA's completion.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $application
@@ -236,7 +175,7 @@ final readonly class PasskeyFactorGateAdapter implements PasskeyFactorGate
     }
 
     /**
-     * The sign-in MFA names the binding's session by: its key, as a string.
+     * The binding's session key as a string.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\ProofBinding  $binding
      * @return string

@@ -19,33 +19,7 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 
 /**
  * `laravel-authentication`'s additional-factor policy, answered by MFA's
- * requirement policy alone, which already composes the application's setting,
- * the identity's requirement and any re-enrolment obligation (IAM-3.1).
- *
- * MFA's policy is asked about the identity, on the application the sign-in is
- * for (the guard's name), with the first factor the identity signed in with as
- * MFA's proof, and its answer is handed back as `laravel-authentication`'s
- * requirement, part for part and age for age (IAM-3.14). Nothing is added to
- * the answer and nothing taken from it: whether the first factor meets it on
- * its own is MFA's to say.
- *
- * `laravel-authentication` names no session when it asks (at sign-in there is
- * none yet), so the first factor is bound to the sign-in no session key can
- * name (`SignIn::UNNAMED`), as its requirement check binds a sign-in's proofs,
- * and stamped with the identity's current verification generation, as MFA
- * stamps a proof it records. An SSO sign-in's first factor names its connection
- * to MFA only when it carries evidence SSO's evidence contract accepted, and,
- * for a proven session acting in a tenant, only when that tenant trusts the
- * connection (`ProviderTrust::accepted()`), so a combination policy that trusts
- * the connection never waives the further factor of a sign-in SSO's evidence
- * gate refused. An identity MFA cannot hold factors for, or one whose key names
- * nothing, is refused by throwing (IAM-8.2), as is an answer
- * `laravel-authentication` cannot hold: no requirement is guessed.
- *
- * It reads nothing of its own but the generation, writes nothing and takes no
- * lock: it is asked inside `laravel-authentication`'s transaction, after the
- * session row's lock when there is one, so a lock taken here would invert the
- * order identity state, factors, session row.
+ * requirement policy alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

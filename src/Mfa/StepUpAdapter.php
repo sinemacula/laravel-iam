@@ -16,48 +16,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
- * MFA's step-up, stepping `laravel-authentication`'s session up with the
- * verified proof bound to it for `step_up` (IAM-3.4).
- *
- * MFA hands it the caller, whose identity and application it acts for: never
- * the identity the guard serves, so the step-up is the caller's own. The caller
- * must be an active one (a pending caller's proof is the pending completion's,
- * and nobody has no session to step up), and the proof's binding must name the
- * caller's application, which is the guard of the same name, and the identity.
- * The session stepped up is the sign-in the binding names, never the guard's
- * current one, so a step-up made from a queued job, a console command or a
- * request another guard serves steps up the sign-in MFA named. The proof is
- * translated into the proof result `laravel-authentication` takes, bound to
- * that identity, guard and session for the purpose MFA verified it for,
- * accepted, and multifactor only when MFA says the proof itself refreshes the
- * multifactor evidence of the session's first factor
- * (`VerificationResult::$refreshesMultifactor`), never because of another proof
- * the session holds. It is handed to `stepUp()`, which locks the row of the
- * session the proof is bound to (after MFA's own locks, as the last write of
- * MFA's transaction), checks it is still one of the guard's live, active
- * sessions of a person, owned by the identity, records the proof and issues the
- * session a new access token, handed the caller's client (`ClientTranslator`)
- * as the client it was served to. The access token result is MFA's completion,
- * so it reaches the caller as `VerificationResult::$completion`. Once the token
- * is issued, the decisions `laravel-authorization` keeps for the request or job
- * are forgotten, naming the session stepped up and the caller
- * (`DecisionCacheInvalidation`, IAM-6.11): the verification passed changed the
- * proofs they read.
- *
- * MFA hands over only a proof it accepted after the session's first factor, so
- * nothing here judges the proof again. A failed result, a caller that is
- * pending or nobody, a proof bound to another application or to another
- * identity, and a proof `laravel-authentication` refuses (one made for another
- * purpose than `step_up`, a sign-in's included, or bound to a session that is
- * not one of the identity's live, active sessions on the guard) are refused
- * with an `OperationRefusedException` carrying `not_accepted`, as MFA's own
- * completion refuses them, so the code's use and the count roll back;
- * `laravel-authentication`'s reason is kept in the exception's detail. An
- * application that names no guard of `laravel-authentication`'s, and a caller
- * `laravel-authentication` does not sign in, cannot be resolved and throw
- * `UnresolvedReferenceException` (IAM-8.2), inside the same transaction.
- *
- * It holds nothing between calls (IAM-8.1).
+ * MFA's step-up, recording the verified proof on the sign-in it is bound to.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -128,8 +87,7 @@ final readonly class StepUpAdapter implements StepUp
     }
 
     /**
-     * The refusal of a result the session cannot take, with the detail for the
-     * logs.
+     * The refusal of a result the session cannot take.
      *
      * @param  string  $detail
      * @return \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException

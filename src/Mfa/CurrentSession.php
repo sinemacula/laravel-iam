@@ -22,8 +22,7 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 
 /**
- * Resolves the application and sign-in MFA names to a `jwt` guard and its
- * session, throwing `UnresolvedReferenceException` for anything else (IAM-8.2).
+ * Resolves the application and sign-in MFA names to a `jwt` guard's session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,8 +47,7 @@ final readonly class CurrentSession
     ) {}
 
     /**
-     * The guard's current session, when it is the identity's and the sign-in
-     * MFA names.
+     * The guard's current session, if it is the identity's named sign-in.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -69,8 +67,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The identity's session on the application's guard that the sign-in names,
-     * whatever the guard holds now.
+     * The identity's named session on the guard, whatever the guard holds.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -90,8 +87,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The identity's session with the key, of whichever guard, or `null` when
-     * it has none or holds no sessions at all.
+     * The identity's session with the key on any guard, if it has one.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $session
@@ -106,8 +102,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The guard's current session, whichever sign-in it is, when it is the
-     * identity's.
+     * The guard's current session, which must be the identity's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -157,8 +152,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The identity the application's guard serves, for the testing helper that
-     * is handed no caller.
+     * The identity the guard serves, for the testing helper handed no caller.
      *
      * @param  string  $application
      * @return \SineMacula\Laravel\Authentication\Contracts\Identity&\SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
@@ -203,8 +197,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * The session service for a change that names no guard: the default guard's
-     * when it is a `jwt` guard, otherwise the first `jwt` guard's.
+     * The default `jwt` guard's session service, else the first guard's.
      *
      * @return \SineMacula\Laravel\Authentication\Sessions\SessionService
      *
@@ -219,8 +212,7 @@ final readonly class CurrentSession
     }
 
     /**
-     * Whether a transaction is open on `laravel-authentication`'s storage
-     * connection, where its freshness policy accepts a current judgement.
+     * Whether a transaction is open; freshness refuses a current read outside.
      *
      * @return bool
      *

@@ -29,21 +29,7 @@ use Tests\Fixtures\Resolvers\RecordsTenants;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's active tenant read from the tenant
- * `laravel-authentication`'s validated session records (IAM-3.12): the
- * session's own tenant, never one a request claims or a bind sets on the guard
- * beside the session; none for a session in no tenant, for an identity the
- * request serves no session of, and for a sign-in judged before its session is
- * written, which therefore still signs in; the tenant MFA then composes its
- * requirement with; an application that is no session guard, or an identity
- * whose key names nothing, throws (IAM-8.2), rolling back the transaction it is
- * asked in; and inside a transaction, at either isolation level, it runs no
- * query, so it takes no lock and reads no tenant committed after the session
- * was validated.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password, their tenant written on their row as a sign-in into a tenant
- * records it, and the adapter is resolved on its own.
+ * Tests for MFA's active tenant, read from the validated session.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +48,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     private const string CLAIMED = 'tenant-claimed';
 
     /**
-     * The tenant is the one the identity's validated session records, and a
-     * session in no tenant answers none.
+     * The tenant is the one the session records, if any.
      *
      * @return void
      *
@@ -83,8 +68,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * A credential the guard validated without a session, such as an access
-     * token that records none, has no session's tenant to answer.
+     * A credential validated without a session has no tenant to answer.
      *
      * @return void
      *
@@ -100,8 +84,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Neither a tenant the request claims nor one a bind sets on the guard
-     * beside the session is ever the active tenant: only the session's own.
+     * Only the session's own tenant is the active tenant.
      *
      * @return void
      *
@@ -125,8 +108,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * An identity the request serves no session of has no active tenant: a
-     * guest's request, and another identity's session in a tenant.
+     * An identity the request serves no session of has no active tenant.
      *
      * @return void
      *
@@ -144,8 +126,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in MFA judges before its session is written asks for the active
-     * tenant, is answered none, and signs in.
+     * A sign-in judged before its session exists still signs in.
      *
      * @return void
      *
@@ -165,8 +146,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Bound as MFA's active tenant resolver, the session's tenant is the one
-     * MFA composes the identity's requirement with.
+     * Once bound, MFA composes its requirement with the session's tenant.
      *
      * @return void
      *
@@ -193,9 +173,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[application]` that are no guard of `laravel-authentication`'s
-     * holding sessions: a name no guard is declared under, Laravel's own
-     * session guard, and none.
+     * Rows of `[application]` that are no session guard.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -209,8 +187,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * An application that is no session guard cannot be resolved, and throws
-     * rather than answering no tenant.
+     * An application that is no session guard throws.
      *
      * @param  string  $application
      * @return void
@@ -246,8 +223,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * A refusal inside the transaction MFA asks it in rolls back what the
-     * transaction wrote before it.
+     * A refusal rolls back the transaction it is asked in.
      *
      * @return void
      *
@@ -268,10 +244,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Inside a transaction that already holds the identity's lock, at either
-     * isolation level, it runs no query: it takes no lock after the
-     * transaction's, and a tenant committed to the session's row after the
-     * session was validated is not the one the request acts in.
+     * Inside a transaction it runs no query.
      *
      * @param  string  $level
      * @return void
@@ -306,9 +279,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Sign the person in, record the tenant on the new session's row as a
-     * sign-in into the tenant records it, and act on the session as a bearer
-     * request for it would.
+     * Sign the person in and act on a session in the tenant.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $tenant
@@ -328,8 +299,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * Fail the test unless the call is refused as an unresolved reference of
-     * the kind given, and return the refusal.
+     * Assert the call is refused as unresolved, and return the refusal.
      *
      * @param  \Closure(): mixed  $call
      * @param  \SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind  $kind

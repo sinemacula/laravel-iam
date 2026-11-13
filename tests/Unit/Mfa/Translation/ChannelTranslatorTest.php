@@ -14,10 +14,7 @@ use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 
 /**
- * Unit tests for translating a proof's channel between `laravel-authentication`
- * and MFA, and to and from its array form: every kind MFA has crosses as
- * itself, the application's own recovery as MFA's `unknown`, and a reference
- * crosses unless MFA's kind takes none.
+ * Unit tests for translating a proof's channel both ways.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -31,8 +28,7 @@ final class ChannelTranslatorTest extends TestCase
     private const string REFERENCE = 'ada@example.test';
 
     /**
-     * Rows of `[authentication kind, MFA kind, whether the reference crosses]`
-     * for every channel kind.
+     * Rows of `[authentication kind, MFA kind, whether the reference crosses]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind, 1: \SineMacula\Laravel\Mfa\Enums\ChannelKind, 2: bool}>
      */
@@ -54,9 +50,7 @@ final class ChannelTranslatorTest extends TestCase
     }
 
     /**
-     * Every kind of `laravel-authentication`'s channel is MFA's of the same
-     * kind, with the reference where MFA's kind takes one and without it where
-     * it does not.
+     * Every channel kind crosses to MFA's, with a reference where it takes one.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind  $authentication
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $mfa
@@ -74,8 +68,7 @@ final class ChannelTranslatorTest extends TestCase
     }
 
     /**
-     * The application's own `recovery` channel, which MFA has no kind for, is
-     * MFA's `unknown`, without a reference, in its array form too.
+     * The application's `recovery` channel is MFA's `unknown`.
      *
      * @return void
      */
@@ -90,8 +83,7 @@ final class ChannelTranslatorTest extends TestCase
     }
 
     /**
-     * Every kind of MFA's channel is `laravel-authentication`'s of the same
-     * kind, with its reference, or none.
+     * Every MFA channel kind crosses back as the same kind.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind  $authentication
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $mfa
@@ -108,8 +100,7 @@ final class ChannelTranslatorTest extends TestCase
     }
 
     /**
-     * The array form is MFA's, with the kind and the reference MFA keeps, and
-     * reads back as the same channel.
+     * The array form is MFA's and reads back as the same channel.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind  $authentication
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $mfa
@@ -132,8 +123,7 @@ final class ChannelTranslatorTest extends TestCase
     }
 
     /**
-     * An array form MFA would refuse is refused: an unknown field, an unknown
-     * kind, or a reference on a kind that takes none.
+     * An array form MFA would refuse is refused.
      *
      * @return void
      */

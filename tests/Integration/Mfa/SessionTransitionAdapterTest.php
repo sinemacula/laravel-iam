@@ -37,18 +37,7 @@ use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's session transition through
- * `laravel-authentication` (IAM-3.8): MFA's contract kit, the session MFA names
- * judged again by `laravel-authentication`'s rules, whatever the guard holds,
- * and its result returned as MFA's completion, a session that falls short
- * returned to pending with a new credential, and a change on a sign-in that is
- * no session of the identity's refused by throwing so the change rolls back
- * unjudged (IAM-8.2).
- *
- * MFA's own flow is run too: confirming an enrolment on an active session, with
- * this package's factor-change adapters bound alone, judges the session last,
- * locking its row after MFA's own, on MySQL and PostgreSQL at READ COMMITTED
- * and REPEATABLE READ.
+ * Tests for MFA's session transition through `laravel-authentication`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,8 +51,7 @@ final class SessionTransitionAdapterTest extends TestCase
     use ArrangesFactorChanges, MigratesMembers, RecordsRequirementDecisions, RunsAtIsolationLevels, SessionTransitionTests, SignsInPeople;
 
     /**
-     * Each change MFA made is judged by `laravel-authentication`, whose result
-     * is the completion: a session still meeting its requirement stays active.
+     * Each change is judged, and the result is the completion.
      *
      * @return void
      *
@@ -81,8 +69,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * The decisions `laravel-authorization` keeps for the request are forgotten
-     * once the session the change was made on is judged again (IAM-6.11).
+     * The request's authorization decisions are forgotten.
      *
      * @return void
      *
@@ -100,9 +87,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * A session that falls short of its requirement after the change returns
-     * to pending, and the completion carries its new pending credential;
-     * MFA's own assessment of the session plays no part.
+     * A session that falls short returns to pending with a new credential.
      *
      * @return void
      *
@@ -123,8 +108,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * MFA's assessment that the session falls short does not stand in for
-     * `laravel-authentication`'s judgement, which keeps it active.
+     * MFA's assessment does not stand in for the judgement.
      *
      * @return void
      *
@@ -139,9 +123,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * The sign-in MFA names is the session judged, never the guard's: a change
-     * on another of the identity's sessions returns that one to pending and
-     * leaves the guard's alone.
+     * A change on another session judges that session, not the guard's.
      *
      * @return void
      *
@@ -163,9 +145,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * The sign-in MFA names is judged whatever the guard holds, as a change
-     * made from a queued job or a console command is: a guard serving no one
-     * still judges it.
+     * The sign-in MFA names is judged whatever the guard holds.
      *
      * @return void
      *
@@ -183,10 +163,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * A change on a sign-in that is no session of the identity's on the guard
-     * (another identity's session, or a key no session holds) is refused inside
-     * the change's transaction, which rolls back: no session is judged, and
-     * what the change wrote is gone.
+     * A change on a sign-in not the identity's is refused and rolls back.
      *
      * @param  string  $level
      * @return void
@@ -226,8 +203,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` does not sign in holds no session to
-     * judge, so the change is refused before any guard is read.
+     * An identity of another kind is refused before any guard is read.
      *
      * @return void
      */
@@ -243,10 +219,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * Confirming an enrolment on an active session through MFA, with the
-     * factor-change adapters bound, judges the session last: its row is locked
-     * after every row MFA locks, and the session that falls short returns to
-     * pending, its credential reaching the confirmation.
+     * Confirming an enrolment through MFA judges the session last.
      *
      * @param  string  $level
      * @return void
@@ -305,9 +278,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * The change, made on an active session arranged afresh for it: a person
-     * signed in on the guard, acting on the session, and its key as MFA names
-     * the sign-in.
+     * The change, made on an active session arranged afresh for it.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChangeMade  $change
      * @return \SineMacula\Laravel\Mfa\Requirements\SessionChange
@@ -339,8 +310,7 @@ final class SessionTransitionAdapterTest extends TestCase
     }
 
     /**
-     * Assert the call is refused as an unresolved reference, and return the
-     * refusal.
+     * Assert the call is refused as unresolved, and return the refusal.
      *
      * @param  \Closure(): mixed  $call
      * @return \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException

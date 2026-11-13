@@ -10,11 +10,7 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 
 /**
- * An additional-factor policy that asks every sign-in for an additional
- * verification, of any age, so a password alone leaves the session pending.
- *
- * It stands in for the requirement MFA would set, so the tests of the pending
- * adapters arrange pending sessions without the requirement adapters.
+ * A policy that asks every sign-in for an additional verification.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

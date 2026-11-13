@@ -51,20 +51,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's step-up over `laravel-authentication`'s
- * (IAM-3.4): a verified proof bound to one of the caller's sessions for
- * `step_up` steps the session it is bound to up, whatever the guard holds, for
- * the client MFA served the caller, and a failed result, a caller that is
- * pending, nobody or on another application, a proof bound to another identity
- * or to a session that is not the identity's, and a proof
- * `laravel-authentication` refuses are refused with a reason; an application
- * that is no guard throws (IAM-8.2). A refusal inside MFA's transaction rolls
- * back what the transaction wrote, a step-up rolls back with the transaction it
- * ran in, and the only lock it takes is the session's, last.
- *
- * The sessions are real ones, signed in through `laravel-authentication` with a
- * password, and the adapter is resolved on its own, so none of this package's
- * other adapters takes part.
+ * Integration tests for MFA's step-up over `laravel-authentication`'s.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -90,9 +77,7 @@ final class StepUpAdapterTest extends TestCase
     private ?Person $kitPerson = null;
 
     /**
-     * A verified proof bound to the caller's current session for `step_up`
-     * steps the session up: the session records it, and the access token result
-     * issued for the session is the completion.
+     * A verified step-up proof steps the caller's session up.
      *
      * @return void
      *
@@ -121,9 +106,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Once the session is stepped up, the decisions `laravel-authorization`
-     * keeps for the request are forgotten (IAM-6.11), so the next check reads
-     * the step-up.
+     * A step-up forgets the request's authorization decisions.
      *
      * @return void
      *
@@ -143,8 +126,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A step-up that is refused changes nothing the decision read, so the
-     * decision is kept.
+     * A refused step-up keeps the decision.
      *
      * @return void
      *
@@ -168,9 +150,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * The step-up is made for the client MFA served the caller: the event that
-     * reports it describes that client, never the one a request bound in the
-     * container comes from.
+     * The step-up describes the client MFA served the caller.
      *
      * @return void
      *
@@ -194,8 +174,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[caller]` that are no active caller on the proof's application:
-     * a pending caller, nobody, and a caller on another application.
+     * Rows of `[caller]` that are no active caller on the proof's application.
      *
      * @return iterable<string, array{0: \Closure(\Tests\Fixtures\Models\Person, string): \SineMacula\Laravel\Mfa\Context\CallerContext}>
      */
@@ -209,9 +188,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Only an active caller's session is stepped up, with a proof made on the
-     * caller's application: any other caller is refused before anything is
-     * read, and nothing is recorded.
+     * Only an active caller's session on the proof's application is stepped up.
      *
      * @param  \Closure(\Tests\Fixtures\Models\Person, string): \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @return void
@@ -232,9 +209,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A caller that is no active caller on the proof's application is refused
-     * by throwing inside MFA's transaction, which rolls back what it wrote
-     * before, though the guard serves the identity's session.
+     * Any other caller is refused inside the transaction, which rolls back.
      *
      * @param  \Closure(\Tests\Fixtures\Models\Person, string): \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @return void
@@ -260,9 +235,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * The caller's application is the guard stepped up, never the default
-     * guard: while the default guard is another, the caller's session on its
-     * own application is stepped up.
+     * The caller's application is stepped up, never the default guard.
      *
      * @return void
      *
@@ -293,10 +266,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * The proof is recorded accepted, at the time MFA proved it, and
-     * multifactor exactly when MFA says it refreshes the multifactor evidence
-     * of the session's first factor, whatever MFA's evaluation of the whole
-     * session says.
+     * The proof is multifactor exactly when it refreshes the evidence.
      *
      * @param  bool  $refreshes
      * @param  bool  $wholeSession
@@ -328,8 +298,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to another identity, on the caller's current session, is
-     * refused, and nothing is recorded.
+     * A proof of another identity is refused and nothing is recorded.
      *
      * @return void
      *
@@ -348,9 +317,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to another of the identity's live sessions than the guard's
-     * steps that session up, the sign-in MFA named, and the guard's session
-     * records nothing.
+     * A proof bound to another of the identity's sessions steps that one up.
      *
      * @return void
      *
@@ -371,9 +338,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to another identity's session, though made by the caller,
-     * is refused with `laravel-authentication`'s reason, and neither session
-     * records it.
+     * A proof bound to another identity's session is refused.
      *
      * @return void
      *
@@ -393,9 +358,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof `laravel-authentication` will not take for a step-up, one made
-     * for a sign-in, is refused with its reason in the detail, and nothing is
-     * recorded.
+     * A proof `laravel-authentication` refuses is refused with its reason.
      *
      * @return void
      *
@@ -414,9 +377,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A session revoked since the request was authenticated, which the guard
-     * still holds, is not stepped up: `laravel-authentication` refuses it under
-     * the session's lock, and nothing is recorded.
+     * A session revoked since the request was authenticated is not stepped up.
      *
      * @return void
      *
@@ -436,8 +397,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[application]` that name no guard of `laravel-authentication`'s:
-     * one that is no guard at all, and Laravel's own session guard.
+     * Rows of `[application]` that name no guard of `laravel-authentication`'s.
      *
      * @return iterable<string, array{0: string}>
      */
@@ -449,8 +409,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to an application that is no guard of
-     * `laravel-authentication`'s cannot be resolved, and throws.
+     * A proof bound to an application that is no guard throws.
      *
      * @param  string  $application
      * @return void
@@ -472,9 +431,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * The session the proof is bound to is stepped up whatever the guard holds:
-     * from a guard serving no one, as a queued job or a console command calls
-     * MFA, and from a guard acting as the identity on no session.
+     * The bound session is stepped up whatever the guard holds.
      *
      * @return void
      *
@@ -496,8 +453,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A proof bound to a sign-in no session holds is refused with
-     * `laravel-authentication`'s reason, inside the transaction.
+     * A proof of a sign-in no session holds is refused inside the transaction.
      *
      * @return void
      *
@@ -513,8 +469,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A refusal inside MFA's transaction rolls back what the transaction wrote
-     * before it.
+     * A refusal rolls back the transaction it is made in.
      *
      * @return void
      *
@@ -537,8 +492,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A step-up made inside MFA's transaction rolls back with it, as when the
-     * transaction fails after the step-up, its last write.
+     * A step-up rolls back with the transaction it is made in.
      *
      * @return void
      *
@@ -567,9 +521,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Inside MFA's transaction, holding the identity's state row, the step-up
-     * locks the session's row and takes no lock of MFA's, so it never takes a
-     * lock out of the order identity state, factors, challenge, session row.
+     * The session row is the only lock the step-up takes.
      *
      * @param  string  $level
      * @return void
@@ -607,8 +559,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * The caller the kit's step-ups are handed: the kit's person, an active
-     * caller on the guard.
+     * The caller the kit's step-ups are handed.
      *
      * @return \SineMacula\Laravel\Mfa\Context\CallerContext
      */
@@ -630,8 +581,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A successful result of the kit's person bound to a session that is not
-     * one of theirs: another identity's live session.
+     * A successful result bound to another identity's live session.
      *
      * @return \SineMacula\Laravel\Mfa\Verification\VerificationResult
      *
@@ -649,10 +599,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A verified TOTP proof of the person's, bound to the sign-in on the
-     * application for the purpose given, made at the time given (now by
-     * default), refreshing the multifactor evidence or not, with MFA's
-     * evaluation of the whole session multifactor or not (both by default).
+     * A verified TOTP proof of the person's, bound to the sign-in.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $signIn
@@ -700,8 +647,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * A pending context of the person's on the sign-in given, as a pending
-     * caller would be served it.
+     * A pending context of the person's on the sign-in.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $signIn
@@ -726,8 +672,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Mark the session revoked in storage, as another request revoking it
-     * would, while this request's guard still holds it.
+     * Mark the session revoked in storage while the guard still holds it.
      *
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @return void
@@ -738,8 +683,7 @@ final class StepUpAdapterTest extends TestCase
     }
 
     /**
-     * Assert the call is refused as not accepted, by this package and not by
-     * MFA, and return the refusal.
+     * Assert the call is refused as not accepted by this package.
      *
      * @param  \Closure(): mixed  $call
      * @return \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException

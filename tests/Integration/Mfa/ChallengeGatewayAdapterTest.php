@@ -55,16 +55,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's challenge gateway over `laravel-authentication`'s
- * factor codes (IAM-3.9): a code is issued and checked by
- * `laravel-authentication`, under a binding made from MFA's, with MFA's
- * challenge counters asked and told through this package's factor code counters
- * inside the same transaction, and delivered by `laravel-authentication`'s
- * one-time code sender once that commits, never by MFA's senders.
- *
- * Every adapter of this package's is bound, as an application runs them, and
- * the sessions are real ones, signed in through `laravel-authentication` with a
- * password, so MFA's counters read the session's first factor from it.
+ * Integration tests for MFA's challenge gateway over factor codes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -112,10 +103,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A code sent through the gateway is issued by `laravel-authentication` and
-     * delivered by its one-time code sender, once, as a further factor's code
-     * to the factor's destination for the person on the guard, never by MFA's
-     * own senders.
+     * A code is issued and delivered by `laravel-authentication`.
      *
      * @return void
      *
@@ -142,9 +130,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A step-up is proved end to end with a code MFA asks for and checks
-     * through the gateway: `laravel-authentication` delivers it, and once it is
-     * checked the session records the step-up with the SMS factor.
+     * A step-up is proved end to end with a code through the gateway.
      *
      * @return void
      *
@@ -172,11 +158,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A pending sign-in's further factor is proved end to end with a code MFA
-     * asks for and checks through the gateway as the pending caller's: the
-     * counters judge the caller the gateway was handed, the pending sign-in
-     * whose first factor the code follows, never anything of the request the
-     * container holds, so the code is sent, checked and activates the sign-in.
+     * A pending sign-in is completed with a code as the pending caller's.
      *
      * @return void
      *
@@ -211,9 +193,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * `laravel-authentication` is handed the caller's client with each code: a
-     * send its counters refuse is reported for that client, never for the
-     * client of the request the container holds.
+     * The caller's client is handed on, never the bound request's.
      *
      * @return void
      *
@@ -244,11 +224,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A request bound in the container never reaches a code: though it comes
-     * from another client and carries a pending sign-in's credential of the
-     * person's, the code is sent and counted as the active caller's the gateway
-     * was handed, on the session the binding names, and MFA's lockout names the
-     * caller's client, never the request's.
+     * A request bound in the container never reaches a code.
      *
      * @return void
      *
@@ -281,10 +257,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A caller that is nobody is refused by throwing, inside
-     * `laravel-authentication`'s transaction, before any code is issued or
-     * checked: no code is kept or delivered for it, nothing is counted, and the
-     * challenge it checked still answers the caller it was sent for.
+     * A caller that is nobody is refused by throwing.
      *
      * @return void
      *
@@ -318,9 +291,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A binding of another application than the caller's is refused by throwing
-     * `not_accepted`: no code is kept or delivered for it, nothing is counted,
-     * and the challenge it checked still answers the caller it was sent for.
+     * A binding of another application is refused as `not_accepted`.
      *
      * @return void
      *
@@ -355,10 +326,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A caller who is another identity than the binding's is judged as that
-     * caller, never as the binding's identity: MFA's counters refuse the
-     * binding as another identity's, so no code is issued for it and the code
-     * already sent is neither checked nor counted.
+     * A caller of another identity than the binding's is judged as that caller.
      *
      * @return void
      *
@@ -384,10 +352,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An SMS factor is enrolled end to end, on a session that has just proved
-     * its password again: MFA's first code goes out through
-     * `laravel-authentication` as an enrolment's, bound to the pending factor,
-     * and confirms it.
+     * An SMS factor is enrolled end to end with a code.
      *
      * @return void
      *
@@ -417,8 +382,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A wrong code fails as an invalid code, and is counted against the factor
-     * by MFA's challenge counters.
+     * A wrong code fails as invalid and is counted against the factor.
      *
      * @return void
      *
@@ -437,9 +401,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A used code never answers its challenge again: it is refused as replayed,
-     * and counted against nothing, as `laravel-authentication` reports no
-     * attempt at a used challenge.
+     * A used code is refused as replayed and counted against nothing.
      *
      * @return void
      *
@@ -461,9 +423,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Any well-formed code at a used challenge is refused as replayed, not only
-     * the code that used it: `laravel-authentication` answers a used challenge
-     * alike whatever the well-formed code, and counts nothing.
+     * Any well-formed code at a used challenge is refused as replayed.
      *
      * @return void
      *
@@ -501,8 +461,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A challenge id in the form `laravel-authentication` issues that names no
-     * challenge of the binding's is not found, and counted against nothing.
+     * A well-formed challenge id naming no challenge is not found.
      *
      * @return void
      *
@@ -519,10 +478,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Through MFA, repeated checks of a challenge that is not found, or that is
-     * used up, are never counted by MFA's own IP throttle: MFA gives the IP
-     * address's slot back for a refusal, so a limit of one lets every check
-     * through to be refused for what it is.
+     * MFA's IP throttle never counts a challenge that is not found or used.
      *
      * @return void
      *
@@ -555,11 +511,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Through MFA, repeated checks of a challenge id in the form
-     * `laravel-authentication` issues that is not found are bounded by its
-     * limit on checking factor codes from the IP address: its count of a
-     * refused check commits with MFA's verification, so the check beyond the
-     * limit is refused as locked.
+     * The IP limit bounds checks of a challenge that is not found.
      *
      * @return void
      *
@@ -586,13 +538,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Through MFA, repeated checks of a challenge id that is not in the form
-     * `laravel-authentication` issues are bounded by its limit on checking
-     * factor codes from the IP address, as a well-formed one is: it takes its
-     * per-IP count before it judges the challenge's shape, and that count of a
-     * refused check commits with MFA's verification, so the check beyond the
-     * limit is refused as locked, and so is a real check from the same IP
-     * address until the limit's window ends.
+     * The IP limit bounds checks of a malformed challenge id.
      *
      * @return void
      *
@@ -623,10 +569,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Through MFA, a code at an enrolment's challenge once it is used up is
-     * refused as replayed, and MFA's enrolment confirmation counts that against
-     * the enrolment's attempts, where the `expired` MFA's contract gives a
-     * different code would count nothing.
+     * A code at a used enrolment challenge is counted against the enrolment.
      *
      * @return void
      *
@@ -657,8 +600,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A code checked once it has expired is refused as expired, and counted
-     * against nothing.
+     * An expired code is refused as expired and counted against nothing.
      *
      * @return void
      *
@@ -680,8 +622,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A factor MFA has locked is sent no code, refused as locked with how long
-     * until the lock ends, and checked against nothing.
+     * A locked factor is sent no code and refused as locked.
      *
      * @return void
      *
@@ -711,8 +652,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A factor of a type the application no longer offers is sent no code, and
-     * refused for MFA's reason.
+     * A factor of a type no longer offered is refused for MFA's reason.
      *
      * @return void
      *
@@ -735,8 +675,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A code asked for again before `laravel-authentication`'s cooldown ends is
-     * refused as sending capped, with how long to wait.
+     * A code asked for again too soon is refused as sending capped.
      *
      * @return void
      *
@@ -758,8 +697,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Checks beyond `laravel-authentication`'s limit for the IP address are
-     * refused as locked until its window ends, and counted against nothing.
+     * Checks beyond the IP address's limit are refused as locked.
      *
      * @return void
      *
@@ -785,8 +723,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A factor of another identity than the binding's is not found: no code is
-     * sent for it, and none is checked.
+     * A factor of another identity is not found.
      *
      * @return void
      *
@@ -809,8 +746,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A factor that keeps no state of its own on a row is not found, as MFA
-     * finds none.
+     * A factor keeping no state of its own is not found.
      *
      * @return void
      *
@@ -829,8 +765,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A reauthentication proves the first factor, so no code is sent or checked
-     * for one: both are refused as not accepted.
+     * A reauthentication is refused as not accepted.
      *
      * @return void
      *
@@ -860,8 +795,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A driver the application registers for SMS or email has its codes sent
-     * and checked through `laravel-authentication`, never by itself.
+     * An application's SMS or email driver goes through authentication.
      *
      * @param  string  $type
      * @param  \SineMacula\Laravel\Mfa\Enums\ChannelKind  $kind
@@ -892,8 +826,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A factor whose driver delivers by neither SMS nor email is refused as not
-     * accepted, and no code is issued for it.
+     * A factor whose driver delivers by neither SMS nor email is not accepted.
      *
      * @return void
      *
@@ -919,8 +852,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An application that names no guard of `laravel-authentication`'s cannot
-     * be resolved, and both a send and a check throw.
+     * An application that names no guard throws on send and check.
      *
      * @return void
      *
@@ -947,8 +879,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * An authentication factory that is not `laravel-authentication`'s holds no
-     * factor codes, so the guard cannot be resolved.
+     * An authentication factory of another kind cannot resolve the guard.
      *
      * @return void
      *
@@ -965,9 +896,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A code sent inside the caller's transaction is issued in it: when the
-     * caller rolls back, no code is kept and none is delivered, at either
-     * isolation level.
+     * A code sent inside the caller's transaction rolls back with it.
      *
      * @param  string  $level
      * @return void
@@ -1002,10 +931,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A code checked inside the caller's transaction is used up and counted in
-     * it: when the caller rolls back, the failure MFA counted rolls back with
-     * the attempt, and the right code still answers the challenge afterwards,
-     * at either isolation level.
+     * A check inside the caller's transaction rolls back with it.
      *
      * @param  string  $level
      * @return void
@@ -1042,8 +968,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The caller the kit's challenges are for: the person signed in on the
-     * guard, served to the tests' client.
+     * The person signed in on the guard, served to the tests' client.
      *
      * @return \SineMacula\Laravel\Mfa\Context\CallerContext
      *
@@ -1089,8 +1014,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The code delivered for the challenge, read from
-     * `laravel-authentication`'s fake sender once the delivery has run.
+     * The code delivered for the challenge, read from the fake sender.
      *
      * @param  string  $challengeId
      * @return string
@@ -1147,8 +1071,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Send a code for the kit's factor through the gateway, failing unless it
-     * is sent, and return its challenge.
+     * Send a code for the kit's factor and return its challenge.
      *
      * @return string
      *
@@ -1204,8 +1127,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * The binding of a challenge of the person's current session for the
-     * purpose.
+     * The binding of a challenge of the person's current session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose

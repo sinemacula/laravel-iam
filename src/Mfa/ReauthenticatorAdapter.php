@@ -20,43 +20,8 @@ use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 
 /**
- * MFA's reauthenticator, answered with the newest first-factor reauthentication
- * proof `laravel-authentication`'s freshness policy finds on the identity's
- * current session (IAM-3.5).
- *
- * The application is the guard of the same name, and the session is that
- * guard's current one, held by the identity asked about. The person proves the
- * first factor again through `laravel-authentication`
- * (`Auth::sessions()->reauthenticate()`, or at the external provider the
- * session began with), which records the proof on the session; this adapter
- * only finds it. It asks the freshness policy for the session's newest proof
- * meeting `first_additional_factor`, the operation a reauthentication
- * authorises in `laravel-authentication`, held to a reauthentication with the
- * first factor or at the external provider made within the five minutes MFA
- * allows one to authorise a change, so the application's own setting for the
- * operation can only make it stricter. The proof is MFA's reauthentication with
- * the first factor, bound to the identity, the application and the session for
- * `reauthenticate`, under the identity's current verification generation; a
- * reauthentication at the provider names its connection as the proof store's
- * proofs do (`ProviderTrust::accepted()`, with the session's tenant).
- *
- * MFA asks it from its own factor-change gate, inside MFA's transaction, after
- * MFA's own locks, and grants the change on the answer: before the proof is
- * read, the session's row is locked through `Auth::sessions()->firstFactor()`,
- * after them, as every adapter takes it, a session that is no longer one of the
- * guard's live, active sessions of a person answers no reauthentication, and
- * the freshness policy is then asked current, under that lock, on the session's
- * proofs as committed, so a reauthentication recorded before the call counts
- * and one voided before it never does, whatever the transaction read first.
- * Outside a transaction on the session model's connection (MFA's contract kit,
- * or the application's own call) nothing acts on the answer atomically, so
- * those are plain reads, and the policy is asked plainly, as it refuses a
- * current judgement there (`CurrentSession::isInTransaction()`). A guard that
- * holds no session of the identity, or an application that is no guard of
- * `laravel-authentication`'s, cannot be resolved and throws (IAM-8.2), so the
- * change asking for it rolls back.
- *
- * It holds nothing between calls (IAM-8.1).
+ * MFA's reauthenticator: the current session's newest reauthentication within
+ * MFA's five minutes.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -117,8 +82,7 @@ final readonly class ReauthenticatorAdapter implements Reauthenticator
     }
 
     /**
-     * The reauthentication MFA takes to authorise a change: with the first
-     * factor or at the external provider, within the last five minutes.
+     * A first-factor or provider reauthentication within MFA's maximum age.
      *
      * @return \SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement
      *

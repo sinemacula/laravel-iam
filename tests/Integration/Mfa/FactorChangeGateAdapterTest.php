@@ -43,22 +43,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's factor-change gate through
- * `laravel-authentication`'s (IAM-3.6): MFA's contract kit, asked inside a
- * transaction on the storage connection; the requirement MFA's application
- * configures crossing as `laravel-authentication`'s freshness requirement, the
- * stricter applying; every refusal, a session no longer live included, thrown
- * as MFA's `not_fresh`; the session's row held until the caller's transaction
- * ends; the change judged on `laravel-authentication`'s verdict alone, made
- * under that lock on the session's proofs as committed, so a step-up voided or
- * made by another request after the caller's transaction first read is judged
- * as committed; the change gated on the sign-in MFA names, whatever the guard
- * holds; and a change from a sign-in that is no session of the identity's
- * refused by throwing so the change rolls back (IAM-8.2).
- *
- * MFA's own flow is run too: enrolling a further factor, with this package's
- * factor-change adapters bound alone, is gated after MFA's locks, on MySQL and
- * PostgreSQL at READ COMMITTED and REPEATABLE READ.
+ * Integration tests for MFA's factor-change gate through authentication's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -81,9 +66,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     private const string STEPPED_UP = 'factor-stepped-up';
 
     /**
-     * An allowed change lasts until the session stops being fresh for it: the
-     * step-up's time and the shorter of `laravel-authentication`'s age and the
-     * age MFA's application configures.
+     * An allowed change lasts until the session stops being fresh for it.
      *
      * @return void
      *
@@ -105,8 +88,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement, whether a step-up with a TOTP code reported
-     * multifactor allows a further factor under it]`.
+     * Rows of `[MFA's requirement, whether a TOTP step-up reported multifactor allows a further factor]`.
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: bool}>
      */
@@ -128,9 +110,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * MFA's requirement crosses as what a stored proof can show: its parts'
-     * kinds and flags, within the shortest of their ages and never longer than
-     * a day.
+     * MFA's requirement is held to what a stored proof can show.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  bool  $allowed
@@ -147,8 +127,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A part's age is the shortest of all of them: a step-up older than one
-     * part's age is refused even within another's.
+     * The shortest age of the requirement's parts binds.
      *
      * @return void
      *
@@ -164,9 +143,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * An additional verification is a further factor or a recovery code, so a
-     * first additional factor, which a reauthentication with the first factor
-     * allows, is refused under it.
+     * An additional verification takes a further factor or a recovery code.
      *
      * @return void
      *
@@ -184,8 +161,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A minimum assurance level cannot be shown by a stored proof's freshness,
-     * so a requirement asking for one is refused as a misconfiguration.
+     * A minimum assurance level is refused as a misconfiguration.
      *
      * @return void
      *
@@ -204,8 +180,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A session that is no longer live is refused as not fresh, with
-     * `laravel-authentication`'s reason in the refusal's detail.
+     * A session no longer live is refused as not fresh.
      *
      * @return void
      *
@@ -229,12 +204,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The change is judged on `laravel-authentication`'s verdict alone, which
-     * reads the session's proofs once, current, under the session's lock: a
-     * step-up behind more newer step-ups made with the factor the removal names
-     * than one read of the proofs returns still allows the removal, as the
-     * verdict leaves those out in its own read, and the gate reads no proof of
-     * its own after it.
+     * The change is judged on `laravel-authentication`'s verdict alone.
      *
      * @return void
      *
@@ -267,13 +237,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside a caller's transaction that read before another request voided the
-     * session's step-up (removing the factor it was made with), the change is
-     * refused as not fresh, on `laravel-authentication`'s own refusal: the
-     * step-up is judged as committed, never as the transaction's snapshot shows
-     * it, which on MySQL at REPEATABLE READ still holds it. On PostgreSQL at
-     * REPEATABLE READ the session's lock fails to serialise first, and the
-     * change asked again in a new transaction is refused the same.
+     * A step-up voided after the first read never allows the change.
      *
      * @param  string  $level
      * @return void
@@ -304,12 +268,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Inside a caller's transaction that read before another request stepped
-     * the session up, the change is allowed on that step-up, which the
-     * transaction's snapshot on MySQL at REPEATABLE READ does not hold. On
-     * PostgreSQL at REPEATABLE READ the session's lock fails to serialise
-     * first, and the change asked again in a new transaction is allowed the
-     * same.
+     * A step-up made after the transaction's first read allows the change.
      *
      * @param  string  $level
      * @return void
@@ -338,11 +297,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A change from a sign-in that is no session of the identity's on the guard
-     * (another identity's session, or a key no session holds), by an identity
-     * `laravel-authentication` does not sign in, or on an application that is
-     * no session guard, is refused inside the change's transaction, which rolls
-     * back.
+     * A change without the identity's session is refused and rolls back.
      *
      * @param  string  $level
      * @return void
@@ -377,11 +332,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A change is gated on the sign-in MFA names, never the guard's session:
-     * another of the identity's sessions, stepped up, allows it while the
-     * guard's, not stepped up, would not, and so does the named session once
-     * the guard serves no one, as a change made from a queued job or a console
-     * command is.
+     * A change is gated on the sign-in MFA names, never the guard's session.
      *
      * @return void
      *
@@ -404,9 +355,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The session's row is locked in the caller's transaction and held until it
-     * ends, so a revocation waits for the change, or commits first and the
-     * change is refused.
+     * The session's row is held until the caller's transaction ends.
      *
      * @param  string  $level
      * @return void
@@ -433,11 +382,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Enrolling a further factor through MFA, with the factor-change adapters
-     * bound, is gated by `laravel-authentication` after MFA's locks on the
-     * identity's state and factors, the session's row taken last of them:
-     * refused on a session never stepped up, with nothing started, and allowed
-     * once it is.
+     * Enrolling a further factor through MFA is gated after MFA's locks.
      *
      * @param  string  $level
      * @return void
@@ -482,8 +427,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The storage connection MFA's transactions run on, for the gate the kit
-     * asks.
+     * The storage connection MFA's transactions run on.
      *
      * @return \Illuminate\Database\Connection
      */
@@ -493,8 +437,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The gate under test, asked inside a transaction on the storage
-     * connection, as MFA asks it.
+     * The gate under test, asked inside a transaction.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\FactorChangeGate
      */
@@ -532,10 +475,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The change from a session fresh enough for it: reauthenticated with the
-     * first factor for a first additional factor, stepped up with another
-     * factor than the one a removal names for every other change, carrying
-     * MFA's default requirement for the change's operation.
+     * The change from a session fresh enough for it.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
      * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
@@ -559,8 +499,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The change from a session only signed in, with neither a step-up nor a
-     * reauthentication since.
+     * The change from a session only signed in.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
      * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
@@ -578,8 +517,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The removal of a factor from a session stepped up only with it, while the
-     * person has another confirmed factor.
+     * The removal of a factor from a session stepped up only with it.
      *
      * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
      *
@@ -607,9 +545,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * A change from a session fresh by `laravel-authentication`'s own policy,
-     * carrying a configured requirement for phishing resistance, which a
-     * step-up with a TOTP code never shows.
+     * A fresh change carrying a requirement a TOTP step-up never shows.
      *
      * @return \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest
      *
@@ -622,9 +558,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The requirement MFA configures for every operation a factor change is
-     * judged for by default: an additional verification within its default age,
-     * as `laravel-authentication` asks too.
+     * The requirement MFA configures for factor changes by default.
      *
      * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
      */
@@ -634,9 +568,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The change, carrying the requirement given, from a session of a new
-     * person's stepped up just now with a factor other than the one a removal
-     * names.
+     * The change from a new person's session, freshly stepped up.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FactorChange  $change
      * @param  ?\SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
@@ -655,8 +587,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The change, carrying the requirement given, from the session, naming the
-     * removed factor when the change names one.
+     * The change from the session, naming the removed factor when there is one.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -685,8 +616,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Whether the gate allows the change, asked inside a transaction on the
-     * storage connection.
+     * Whether the gate allows the change.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $change
      * @return bool
@@ -707,8 +637,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * The detail of the gate's refusal of the change, asked in the caller's
-     * transaction as it stands, or `null` when the change is allowed.
+     * The detail of the gate's refusal of the change, or `null` when allowed.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest  $change
      * @return ?string
@@ -729,9 +658,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Assert the change, asked in a transaction on the storage connection after
-     * the person's name was changed there, is refused with the exception given,
-     * and that the change rolled back with it.
+     * Assert the change is refused with the exception given and rolls back.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  class-string<\RuntimeException>  $refusal
@@ -759,8 +686,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Open a second connection, of the test's own, to the database the storage
-     * connection is on.
+     * Open a second connection to the storage connection's database.
      *
      * @return \PDO
      */
@@ -778,8 +704,7 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * Whether the other connection can lock the session's row at once, without
-     * waiting for another transaction.
+     * Whether the other connection can lock the session's row without waiting.
      *
      * @param  \PDO  $other
      * @param  string  $session

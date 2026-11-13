@@ -11,13 +11,7 @@ use SineMacula\Laravel\Authentication\Codes\SendOneTimeCode;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 
 /**
- * Delivers the factor codes `laravel-authentication` sends for MFA's delivered
- * factors (IAM-3.9) to its fake one-time code sender, running each queued
- * `SendOneTimeCode` job as a queue worker would.
- *
- * A test calls `defineFactorCodes()` from `defineEnvironment()`, so the sender
- * is bound before MFA's boot check resolves its senders, and
- * `fakeFactorCodeDelivery()` once the application has booted.
+ * Delivers factor codes to the fake sender by running the queued jobs.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -46,8 +40,7 @@ trait DeliversFactorCodes
     }
 
     /**
-     * Bind `laravel-authentication`'s fake one-time code sender as the
-     * application's, before it boots.
+     * Bind the fake one-time code sender before the application boots.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -58,9 +51,7 @@ trait DeliversFactorCodes
     }
 
     /**
-     * Queue `laravel-authentication`'s deliveries on a connection of their own
-     * with no cooldown and the most deliveries a window allows, and fake the
-     * queue.
+     * Queue deliveries on their own connection, uncapped, and fake the queue.
      *
      * @return void
      */
@@ -79,8 +70,7 @@ trait DeliversFactorCodes
     }
 
     /**
-     * Run every delivery queued since the last, as a queue worker would, and
-     * return the messages they sent.
+     * Run every delivery queued since the last and return the messages sent.
      *
      * @return list<\SineMacula\Laravel\Authentication\Codes\OneTimeCodeMessage>
      */
@@ -102,8 +92,7 @@ trait DeliversFactorCodes
     }
 
     /**
-     * Run the deliveries queued since the last and return the code last sent to
-     * the destination, failing the test when none was.
+     * Run the queued deliveries and return the last code sent there.
      *
      * @param  string  $destination
      * @return string
@@ -126,8 +115,7 @@ trait DeliversFactorCodes
     }
 
     /**
-     * The fake one-time code sender `laravel-authentication`'s deliveries
-     * reach.
+     * The fake one-time code sender the deliveries reach.
      *
      * @return \SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender
      */

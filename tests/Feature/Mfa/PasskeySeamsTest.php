@@ -39,8 +39,7 @@ final class PasskeySeamsTest extends TestCase
     private array $offeredTypes = ['totp', 'passkey'];
 
     /**
-     * Both adapters are bound over their members' defaults while passkeys are
-     * offered.
+     * Both adapters are bound while passkeys are offered.
      *
      * @return void
      *
@@ -71,9 +70,7 @@ final class PasskeySeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, offered, on]`: what MFA's configuration and the
-     * capability's switch hold, whether the passkey gateway is on, and whether
-     * the passkey factor gate is.
+     * Rows of `[configuration, gateway on, gate on]`.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: bool, 2: bool}>
      */
@@ -103,8 +100,7 @@ final class PasskeySeamsTest extends TestCase
     }
 
     /**
-     * The gateway is on while MFA is and passkeys are offered, the gate while
-     * MFA is.
+     * The gateway needs MFA and passkeys offered, the gate MFA alone.
      *
      * @param  array<string, mixed>  $configuration
      * @param  bool  $offered
@@ -126,9 +122,7 @@ final class PasskeySeamsTest extends TestCase
     }
 
     /**
-     * Rows of `[configuration, application, offered]`: what MFA's configuration
-     * holds, the application asked about, and whether that application offers
-     * the `passkey` type.
+     * Rows of `[configuration, application, offered]`.
      *
      * @return iterable<string, array{0: array<string, mixed>, 1: string, 2: bool}>
      */

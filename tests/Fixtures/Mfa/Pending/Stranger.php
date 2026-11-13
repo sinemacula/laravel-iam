@@ -15,12 +15,7 @@ use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Models\Session;
 
 /**
- * A person `laravel-authentication` signs in who is no identity of MFA's: one
- * holding no factors, so a pending session of theirs names no one MFA could
- * verify a further factor for.
- *
- * It reads the fixtures' people table, so a person created there signs in as a
- * stranger too, on a guard over this model.
+ * A person `laravel-authentication` signs in who is no MFA identity.
  *
  * @property int $id
  * @property string $email
@@ -52,8 +47,7 @@ final class Stranger extends User implements HasSessions, Identity, Principal
     }
 
     /**
-     * The attributes cast on read and write: the email address, an identifier
-     * kept in its normal form, and the password, hashed.
+     * The attributes cast on read and write.
      *
      * @return array<string, string>
      */

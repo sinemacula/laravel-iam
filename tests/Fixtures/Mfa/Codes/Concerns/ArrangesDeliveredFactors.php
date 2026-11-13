@@ -11,16 +11,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use Tests\Fixtures\Models\Person;
 
 /**
- * Stores the delivered factors code challenges are sent for (IAM-3.9): an SMS
- * or email factor of a person's on the application people sign in on, confirmed
- * as an enrolment confirmed in MFA leaves it, or pending with no enrolment
- * under way.
- *
- * An SMS factor's codes go to `DELIVERED_PHONE` unless the test names another
- * number, and an email factor's to the person's own address. A test that sends
- * through either also offers its type (`mfaTypes()`), and binds a sender or
- * names a gateway for it before the application boots. It is used with
- * `SignsInPeople` and `MigratesMembers`.
+ * Stores the SMS and email factors code challenges are sent for.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,8 +26,7 @@ trait ArrangesDeliveredFactors
     protected const string DELIVERED_PHONE = '+447700900123';
 
     /**
-     * Store a confirmed delivered factor of the person's: `sms` or `email`,
-     * sent to the destination given or the type's own.
+     * Store a confirmed delivered factor of the person's.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $type
@@ -49,8 +39,7 @@ trait ArrangesDeliveredFactors
     }
 
     /**
-     * Store a pending delivered factor of the person's, with no enrolment under
-     * way: `sms` or `email`, sent to the destination given or the type's own.
+     * Store a pending delivered factor with no enrolment under way.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $type
@@ -63,8 +52,7 @@ trait ArrangesDeliveredFactors
     }
 
     /**
-     * The destination a delivered factor of the type sends to by default:
-     * `DELIVERED_PHONE` for SMS, the person's own address for email.
+     * The default destination of a delivered factor of the type.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  string  $type

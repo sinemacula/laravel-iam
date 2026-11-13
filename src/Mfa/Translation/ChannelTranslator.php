@@ -11,19 +11,7 @@ use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 
 /**
  * Translates a proof's channel between `laravel-authentication` and MFA, and to
- * and from the array form a channel is stored and carried in (IAM-3.11,
- * IAM-3.14).
- *
- * Both members spell seven channel kinds the same. `laravel-authentication`'s
- * eighth, `recovery` (the application's own account recovery, a first factor
- * only), has no kind in MFA, so it is MFA's `unknown`, one way only: MFA never
- * hands one back. They differ on the reference too: `laravel-authentication`
- * keeps one on any kind, while MFA refuses one on a password or an unknown
- * channel, which name nothing, so it is dropped there; on every other kind it
- * crosses unchanged, since two proofs on the same channel and destination are
- * not independent. The array form is MFA's own (`kind` and `reference`), read
- * back as strictly as MFA reads it, and holds the full destination, so it is
- * for storing a proof, never for an event, a log or a response.
+ * and from MFA's array form.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -33,8 +21,7 @@ use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 final readonly class ChannelTranslator
 {
     /**
-     * MFA's channel for `laravel-authentication`'s, without the reference on a
-     * kind that takes none; a `recovery` channel is MFA's `unknown`.
+     * MFA's channel for `laravel-authentication`'s.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Channel  $channel
      * @return \SineMacula\Laravel\Mfa\Assurance\Channel
@@ -62,8 +49,7 @@ final readonly class ChannelTranslator
     }
 
     /**
-     * The array form of `laravel-authentication`'s channel: MFA's, with the
-     * channel's kind and the reference MFA keeps.
+     * The channel's array form, which holds the full destination.
      *
      * @param  \SineMacula\Laravel\Authentication\Proofs\Channel  $channel
      * @return array{kind: string, reference: ?string}
@@ -76,8 +62,7 @@ final readonly class ChannelTranslator
     }
 
     /**
-     * `laravel-authentication`'s channel read back from its array form; an
-     * unknown kind or field, or a reference the kind takes none of, is refused.
+     * The channel read back strictly from its array form.
      *
      * @param  array<array-key, mixed>  $data
      * @return \SineMacula\Laravel\Authentication\Proofs\Channel

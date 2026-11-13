@@ -27,18 +27,7 @@ use Tests\Concerns\SignsInPeople;
 use Tests\Performance\PerformanceContractTestCase;
 
 /**
- * The statements one requirement judgement makes through the adapters between
- * `laravel-authentication` and MFA (IAM-3.1, IAM-3.2), each asked as
- * `laravel-authentication` asks it on every sign-in and every judgement of a
- * session, so a read added to either path is seen here.
- *
- * Judging the proofs reads the identity's verification generation, once, and
- * nothing else of its own: the proofs are the subject's, read by
- * `laravel-authentication` in the one bounded query it makes (in memory at
- * sign-in, as here), and MFA's default check judges them in memory. Asking the
- * policy reads the generation, once, and then what MFA's default policy reads
- * to compose its answer: the identity's factors and its re-enrolment
- * obligation. Neither writes, opens a transaction or takes a lock.
+ * The statements one requirement judgement makes through the MFA adapters.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -74,9 +63,7 @@ final class RequirementQueryBudgetTest extends PerformanceContractTestCase
     }
 
     /**
-     * Judging an active session's proofs reads the generation, and nothing
-     * else, however many parts the requirement asks for: the session names the
-     * sign-in in memory, and its proofs are the subject's.
+     * Judging a session's proofs reads the generation and nothing else.
      *
      * @return void
      *
@@ -100,8 +87,7 @@ final class RequirementQueryBudgetTest extends PerformanceContractTestCase
     }
 
     /**
-     * Asking the policy reads the generation, the identity's factors and its
-     * re-enrolment obligation.
+     * Asking the policy reads the generation, factors and re-enrolment.
      *
      * @return void
      *

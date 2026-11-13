@@ -28,19 +28,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * The stateless-guard reproduction of sinemacula/laravel-iam#3: a person signed
- * in with a bearer token verifies a further factor on one request, and the
- * verification counts on the next request with the same token, with no Laravel
- * session started or kept by either, and the request's authentication context
- * reports it under `mfa` (`mfa.accepted`).
- *
- * Every adapter between `laravel-authentication` and MFA is bound by this
- * package's binding rule, as an application gets them: MFA's proof store and
- * first-factor resolver are this package's, so the sign-in is the token's
- * session and its proofs are the ones `laravel-authentication` records, and the
- * verified proof reaches the session through the step-up adapter's
- * `Auth::sessions()->stepUp()`. The `mfa` namespace is this package's
- * contributor's, which reads the same session's proofs.
+ * A verification on a stateless guard counts on the token's next request.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -56,8 +44,7 @@ final class StatelessVerificationTest extends TestCase
     use MigratesMembers, SignsInPeople;
 
     /**
-     * A verification made on one request counts on the next request with the
-     * same bearer token, and on no other session of the person's.
+     * A verification counts on the same token's next request only.
      *
      * @return void
      *
@@ -84,8 +71,7 @@ final class StatelessVerificationTest extends TestCase
     }
 
     /**
-     * Define the routes the requests are made to, on the stateless guard and
-     * with no session middleware.
+     * Define the routes on the stateless guard, with no session middleware.
      *
      * @param  mixed  $router
      * @return void
@@ -110,8 +96,7 @@ final class StatelessVerificationTest extends TestCase
     }
 
     /**
-     * Make a request as a new one, with the bearer token and nothing the
-     * previous request bound.
+     * Make a fresh request with the bearer token.
      *
      * @param  string  $method
      * @param  string  $uri
@@ -133,8 +118,7 @@ final class StatelessVerificationTest extends TestCase
     }
 
     /**
-     * A confirmed authenticator app factor of the person's on the guard's
-     * application.
+     * A confirmed authenticator app factor on the guard's application.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \SineMacula\Laravel\Mfa\Models\Factor

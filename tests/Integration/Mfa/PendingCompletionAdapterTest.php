@@ -53,21 +53,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for MFA's pending completion through
- * `laravel-authentication`'s `satisfy()` (IAM-3.3): MFA's contract kit, a
- * verified factor activating the pending session or leaving it pending for the
- * caller's client, the session satisfied only as the last write of MFA's
- * transaction (after MFA's locks, rolled back with it, and never answered when
- * its commit fails), a caller holding no pending session refused, the refusals
- * `laravel-authentication` answers thrown as MFA's (a cross-site client's on a
- * guard whose refresh token travels in a cookie among them, as
- * `cross_site_request`), and the references that cannot be resolved thrown
- * (IAM-8.2).
- *
- * The sessions are real ones, signed in with a password through
- * `laravel-authentication`, whose additional-factor policy and requirement
- * check are stand-ins that leave them pending; MFA verifies through its own
- * defaults, with the pending resolver and completion adapters bound.
+ * Integration tests for MFA's pending completion through `satisfy()`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -112,9 +98,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A verified factor satisfies the pending session inside the transaction,
-     * which activates once it commits: the proof is stored with the session's
-     * and the guard is bound to it.
+     * A verified factor activates the pending session.
      *
      * @return void
      *
@@ -134,8 +118,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The decisions `laravel-authorization` keeps for the request are forgotten
-     * once the pending session takes the proof (IAM-6.11).
+     * The request's decisions are forgotten once the session takes the proof.
      *
      * @return void
      *
@@ -180,8 +163,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A verified factor that leaves the requirement short keeps the session
-     * pending, holding the proof for the rest of it.
+     * A factor that leaves the requirement short keeps the session pending.
      *
      * @return void
      *
@@ -202,12 +184,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Each proof is recorded accepted, and multifactor only when MFA says it
-     * refreshes the multifactor evidence of the first factor, never because of
-     * the whole pending session: an email code that completes the sign-in after
-     * an authenticator app code is recorded accepted but not multifactor,
-     * although MFA's evaluation of the session's proofs together, which the
-     * verification carries, is multifactor.
+     * Each proof is recorded multifactor only when MFA says it refreshes it.
      *
      * @return void
      *
@@ -261,8 +238,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The proof an enrolment confirms reaches `laravel-authentication`, which
-     * decides whether the session takes it.
+     * The proof an enrolment confirms reaches `laravel-authentication`.
      *
      * @return void
      *
@@ -298,8 +274,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A proof for a purpose a pending session cannot take, or bound to another
-     * identity, application or sign-in, is refused before anything is read.
+     * A proof bound elsewhere is refused before anything is read.
      *
      * @param  string  $mismatch
      * @return void
@@ -327,9 +302,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A proof `laravel-authentication` refuses is refused as MFA's refusal,
-     * naming its reason for the logs, and writes nothing: here one made before
-     * the session began waiting.
+     * A proof `laravel-authentication` refuses is refused and writes nothing.
      *
      * @return void
      *
@@ -349,10 +322,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * On a guard whose refresh token travels in a cookie, a completion handed a
-     * same-site client (an `Origin` of the API's own site and the guard's
-     * configured custom header) passes `laravel-authentication`'s same-site
-     * check and activates the session.
+     * A same-site completion on a cookie guard activates the session.
      *
      * @return void
      *
@@ -388,12 +358,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * On a guard whose refresh token travels in a cookie, a completion handed a
-     * cross-site client is refused as `not_accepted`, naming
-     * `cross_site_request`, by throwing inside MFA's transaction, which rolls
-     * back what it wrote before: the session stays pending and the guard
-     * unbound, though a request bound in the container carries the very facts
-     * the client lacks, since the request is never read in its place.
+     * A cross-site completion on a cookie guard is refused and rolls back.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\ClientContext  $client
      * @return void
@@ -427,8 +392,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The activated session's last use is the client the caller was served
-     * from, its IP address and user agent, not the sign-in's.
+     * The activated session's last use is the caller's client.
      *
      * @return void
      *
@@ -447,9 +411,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A caller holding no pending session is refused as a result bound
-     * elsewhere is, though the result is the pending session's and the caller
-     * its identity on its application, and nothing is satisfied.
+     * A caller holding no pending session is refused.
      *
      * @return void
      *
@@ -469,8 +431,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A session already satisfied is no longer pending, so a second completion
-     * for it is refused.
+     * A second completion of a satisfied session is refused.
      *
      * @return void
      *
@@ -489,9 +450,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A pending context keeping another pending session's credential cannot
-     * satisfy this one: `laravel-authentication` refuses the proof's binding,
-     * and neither session changes.
+     * Another pending session's credential cannot satisfy this one.
      *
      * @return void
      *
@@ -509,8 +468,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Without a pending credential on the context, the pending session cannot
-     * be resolved, and nothing is satisfied.
+     * Without a pending credential nothing is satisfied.
      *
      * @return void
      *
@@ -536,11 +494,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The pending session satisfied is the one the context names, on the guard
-     * its application names, for the client the caller carries: a request bound
-     * in the container, carrying another pending session's credential and
-     * coming from another client, names neither the session nor the client, and
-     * the default guard being another changes nothing.
+     * The context is satisfied whatever the bound request carries.
      *
      * @return void
      *
@@ -574,10 +528,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A context that kept no credential is refused by throwing inside MFA's
-     * transaction, which rolls back what it wrote before, though a request
-     * bound in the container carries that very session's credential: the
-     * request is never read in its place.
+     * A context without a credential never reads the bound request instead.
      *
      * @return void
      *
@@ -610,8 +561,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` does not sign in cannot be resolved,
-     * so its pending session is never satisfied.
+     * An identity `laravel-authentication` does not sign in cannot be resolved.
      *
      * @return void
      *
@@ -641,8 +591,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Outside a transaction on the storage connection nothing is satisfied: the
-     * session is satisfied only as the last write of MFA's.
+     * Outside a transaction on the storage connection nothing is satisfied.
      *
      * @return void
      *
@@ -665,10 +614,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A factor MFA verifies on a pending session activates it through the
-     * adapters: MFA's own verification resolves the pending session from the
-     * request's credential and hands its proof to `satisfy()`, whose result is
-     * MFA's completion.
+     * A factor MFA verifies activates the pending session through the adapters.
      *
      * @return void
      *
@@ -692,8 +638,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The session is satisfied after MFA's locks: the identity's state row is
-     * locked before the session's row, at either isolation level.
+     * The session's row is locked after the identity's state row.
      *
      * @param  string  $level
      * @return void
@@ -732,9 +677,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A transaction that rolls back after the session was satisfied leaves it
-     * pending, its proof unstored and the guard unbound, at either isolation
-     * level.
+     * A rollback after the session was satisfied leaves it pending.
      *
      * @param  string  $level
      * @return void
@@ -770,9 +713,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * When MFA's commit fails, its verification throws, so the sign-in result
-     * never reaches a response, and the session stays pending with the guard
-     * unbound, at either isolation level.
+     * A failed commit never answers the sign-in and leaves the session pending.
      *
      * @param  string  $level
      * @return void
@@ -816,9 +757,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The completion under test, for MFA's contract kit, called as MFA calls
-     * it: inside a transaction on the storage connection, outside which it
-     * satisfies nothing.
+     * The completion under test, called inside a transaction.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\PendingCompletion
      */
@@ -855,9 +794,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A real pending session, for MFA's contract kit, on a guard whose refresh
-     * token travels in a cookie once the person has signed in, so the kit's
-     * completion passes the same-site check only with the caller's client.
+     * A real pending session on a cookie guard, for MFA's contract kit.
      *
      * @return \SineMacula\Laravel\Mfa\Context\PendingContext
      *
@@ -878,8 +815,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * The pending session's caller, for MFA's contract kit, served from a
-     * same-site client, which a cookie guard's same-site check passes.
+     * The pending session's caller, served from a same-site client.
      *
      * @return \SineMacula\Laravel\Mfa\Context\CallerContext
      *
@@ -906,8 +842,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A verified proof bound to another sign-in than the pending session's, for
-     * MFA's contract kit.
+     * A verified proof bound to another sign-in, for MFA's contract kit.
      *
      * @return \SineMacula\Laravel\Mfa\Verification\VerificationResult
      *
@@ -922,9 +857,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Complete the pending session with the result inside a transaction on the
-     * storage connection, as MFA's verification does, for the pending session's
-     * caller served from a same-site client.
+     * Complete the pending session inside a transaction.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
      * @param  \SineMacula\Laravel\Mfa\Verification\VerificationResult  $result
@@ -940,10 +873,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A client that came from a page of the API's own site: it presents the
-     * site's own `Origin`, is served from that scheme and host, and carries the
-     * custom header a cookie guard's same-site check requires, from another IP
-     * address and user agent than the sign-in's.
+     * A same-site client from another IP address and user agent.
      *
      * @return \SineMacula\Laravel\Mfa\Context\ClientContext
      */
@@ -953,8 +883,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Carry the guard's refresh token in a cookie from now on, with the custom
-     * header its same-site check requires.
+     * Carry the guard's refresh token in a cookie.
      *
      * @return void
      */
@@ -976,8 +905,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * A confirmed TOTP factor of the person's, on the authenticator app MFA's
-     * testing helper shows codes for.
+     * A confirmed TOTP factor on the testing authenticator app.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \SineMacula\Laravel\Mfa\Models\Factor
@@ -1047,8 +975,7 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
-     * Assert the call is refused as MFA's refusal, `not_accepted`, with the
-     * detail given.
+     * Assert the call is refused as `not_accepted` with the detail given.
      *
      * @param  string  $detail
      * @param  \Closure(): mixed  $call

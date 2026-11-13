@@ -25,16 +25,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for resolving the sign-in MFA names to a session of the
- * guard the MFA application is: by its key whatever the guard holds, where MFA
- * names it, refused for a key that is no session of the identity's on the
- * guard; and the guard's current session, the identity's session when it is the
- * one named, and a refusal by throwing for another of its sessions, for another
- * identity's, for none, and for an application that is no session guard
- * (IAM-8.2). The identity's session SSO's caller names by its key is found of
- * whichever guard. A change to the identity as a whole, which names no guard,
- * goes through the default guard when it holds sessions and otherwise through
- * the first `jwt` guard declared, and is refused when none is.
+ * Tests for resolving MFA's sign-in to a session of the guard.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,8 +39,7 @@ final class CurrentSessionTest extends TestCase
     use MigratesMembers, SignsInPeople;
 
     /**
-     * The guard's current session is resolved when it is the identity's and the
-     * sign-in named.
+     * The guard's session resolves when it is the sign-in named.
      *
      * @return void
      *
@@ -66,9 +56,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The session a sign-in names is resolved by its key whatever the guard
-     * holds: another of the identity's sessions than the guard's, and the
-     * identity's session once the guard serves no one.
+     * The session a sign-in names resolves by its key whatever the guard holds.
      *
      * @return void
      *
@@ -88,10 +76,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * A sign-in that is no session of the identity's on the guard resolves
-     * none: a key no session holds, one that cannot be a key of the session
-     * model, another identity's session, a session of another guard, and any
-     * sign-in of an identity that holds no sessions.
+     * A sign-in that is no session of the identity's resolves none.
      *
      * @return void
      *
@@ -125,9 +110,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The identity's session a key names is found whichever guard it is of, and
-     * nothing else is: another identity's session, a key no session holds, and
-     * any key of an identity that holds no sessions are none.
+     * The identity's session a key names is found on whichever guard.
      *
      * @return void
      *
@@ -151,8 +134,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The guard's current session is resolved whichever sign-in it is, when it
-     * is the identity's.
+     * The guard's current session resolves whichever sign-in it is.
      *
      * @return void
      *
@@ -168,8 +150,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Another of the identity's sessions than the guard's is refused as a
-     * mismatch, naming the guard.
+     * Another of the identity's sessions is refused as a mismatch.
      *
      * @return void
      *
@@ -206,8 +187,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * A guard acting as the identity on no session, as a trusted bind leaves
-     * it, resolves none.
+     * A guard acting as the identity on no session resolves none.
      *
      * @return void
      */
@@ -222,8 +202,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * A guard that stopped acting on the identity's session, as a sign-out
-     * leaves it, resolves none.
+     * A guard signed out of the identity's session resolves none.
      *
      * @return void
      *
@@ -240,8 +219,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Another identity's session on the guard is not the identity's, even for
-     * the sign-in it names.
+     * Another identity's session on the guard is not resolved.
      *
      * @return void
      *
@@ -258,10 +236,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * An application that names no guard, a guard that is not
-     * `laravel-authentication`'s, or one of its guards that holds no sessions
-     * (an `api_key` guard), resolves no session: a misconfiguration, told apart
-     * from a guard that holds no session of the identity now.
+     * An application that is no session guard resolves no session.
      *
      * @return void
      *
@@ -290,8 +265,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The identity MFA asks about is `laravel-authentication`'s identity when
-     * it is one, and refused when it is not.
+     * An identity that is not `laravel-authentication`'s is refused.
      *
      * @return void
      */
@@ -316,9 +290,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The guard an application names is `laravel-authentication`'s guard of
-     * that name, and an application that names none, or names a guard that
-     * holds no sessions, is unresolved.
+     * The guard is the one the application names.
      *
      * @return void
      */
@@ -334,8 +306,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The caller is the identity the guard serves, and a guard serving no one
-     * holds no session of anyone.
+     * The caller is the identity the guard serves.
      *
      * @return void
      *
@@ -358,9 +329,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * The session service is `laravel-authentication`'s for a guard of the
-     * `jwt` driver, and an application whose guard holds no sessions is
-     * unresolved.
+     * The session service is the `jwt` guard's.
      *
      * @return void
      *
@@ -383,9 +352,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * A change to the identity as a whole goes through the default guard's
-     * session service when the default guard is a `jwt` guard, though another
-     * is declared before it: signing in through it binds the default guard.
+     * An identity-wide change uses the default guard when it is `jwt`.
      *
      * @return void
      *
@@ -403,9 +370,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Where the default guard holds no sessions, a change to the identity as a
-     * whole goes through the first `jwt` guard declared, passing over guards of
-     * other drivers and entries that are no guard.
+     * Otherwise it uses the first `jwt` guard declared.
      *
      * @return void
      *
@@ -432,9 +397,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * With no `jwt` guard declared, or no guards at all, nothing names the
-     * sessions a change to the identity as a whole would reach: the default
-     * guard is refused.
+     * Without a `jwt` guard an identity-wide change is refused.
      *
      * @return void
      */
@@ -454,8 +417,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Assert the resolution refuses an application that names no session guard
-     * of `laravel-authentication`'s.
+     * Assert the resolution refuses an application that names no session guard.
      *
      * @param  string  $application
      * @param  \Closure(): mixed  $resolve
@@ -474,8 +436,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Assert the resolution refuses with no session of the identity on the
-     * guard.
+     * Assert the resolution refuses with no session on the guard.
      *
      * @param  \Closure(): mixed  $resolve
      * @return void
@@ -494,8 +455,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Assert the resolution refuses a sign-in that is no session of the
-     * identity's on the guard.
+     * Assert the resolution refuses a sign-in that is no such session.
      *
      * @param  \Closure(): mixed  $resolve
      * @return void
@@ -546,8 +506,7 @@ final class CurrentSessionTest extends TestCase
     }
 
     /**
-     * Sign the person in through the session service a change to the identity
-     * as a whole goes through.
+     * Sign the person in through the identity-wide session service.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult

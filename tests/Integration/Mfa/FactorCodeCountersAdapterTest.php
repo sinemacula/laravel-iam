@@ -52,17 +52,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for `laravel-authentication`'s factor code counters over
- * MFA's challenge counters (IAM-3.9): `laravel-authentication`, the owner of
- * the challenges, asks MFA before each delivery and each check and tells it
- * each attempt it counts, inside its own transaction, so a wrong code counts
- * against the factor and the identity once, and rolls back with whatever the
- * transaction was part of.
- *
- * The challenges are `laravel-authentication`'s own, sent and checked through
- * `Auth::codes()` as any owner's path would, with every adapter of this
- * package's bound and real sessions signed in with a password, so MFA reads the
- * session's first factor from it.
+ * Integration tests for the factor code counters over MFA's counters.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -113,8 +103,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A matching code is verified once MFA admits it, and its success resets
-     * the failures the factor had in a row.
+     * A matching code is verified and resets the factor's failures.
      *
      * @return void
      *
@@ -135,8 +124,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A wrong code that locks nothing is invalid and counted, and carries no
-     * lock.
+     * A wrong code that locks nothing is counted and carries no lock.
      *
      * @return void
      *
@@ -152,9 +140,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A wrong code that reaches the factor's limit is invalid and counted, and
-     * carries the lock it caused, until the lock ends: the factor is locked
-     * from then on, so the next code is refused as locked until then.
+     * A wrong code that reaches the factor's limit locks the factor.
      *
      * @return void
      *
@@ -179,9 +165,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A wrong code that reaches the identity's limit, though not the factor's,
-     * is invalid and counted, and carries the identity's lock it caused, until
-     * that ends: the next code is refused as locked until then.
+     * A wrong code that reaches the identity's limit carries its lock.
      *
      * @return void
      *
@@ -226,12 +210,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * An identity `laravel-authentication` has deactivated is inactive to MFA
-     * too, through the active state adapter: once deactivated, no code is sent
-     * for its factor and the code it was sent before is never checked, each
-     * refused as `identity_inactive`, though no request's bearer token is
-     * refused first, as a queued job's or a console's call to the factor codes
-     * runs, at either isolation level.
+     * A deactivated identity's factor codes are refused as `identity_inactive`.
      *
      * @param  string  $level
      * @return void
@@ -268,8 +247,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A factor that is not the identity's, and one that does not exist, are not
-     * found: no code is issued for either.
+     * A factor that is not the identity's, or does not exist, is not found.
      *
      * @return void
      *
@@ -294,9 +272,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A binding that names the factor on another channel than its own, or to
-     * another destination, is not found, so no code for the factor goes
-     * anywhere but to the factor.
+     * A binding on another channel or destination is not found.
      *
      * @return void
      *
@@ -318,9 +294,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A binding naming no session MFA could refer back to cannot be resolved,
-     * and throws inside `laravel-authentication`'s transaction: no new code is
-     * kept and none is delivered, at either isolation level.
+     * A binding naming no resolvable session throws and keeps nothing.
      *
      * @param  string  $level
      * @return void
@@ -350,9 +324,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * An attempt counted inside the caller's transaction rolls back with it:
-     * the factor's failure and `laravel-authentication`'s attempt are both
-     * undone, at either isolation level.
+     * A counted attempt rolls back with the caller's transaction.
      *
      * @param  string  $level
      * @return void
@@ -387,8 +359,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * An identity MFA holds no factors for cannot be resolved, so neither an
-     * admission nor a report is answered.
+     * An identity MFA holds no factors for throws.
      *
      * @return void
      *
@@ -417,8 +388,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * An attempt reported for a factor that is no longer the identity's counts
-     * nothing, and is refused as not found.
+     * An attempt at a factor no longer stored is not found.
      *
      * @return void
      *
@@ -437,10 +407,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The counters judge the caller MFA's challenge gateway kept beside the
-     * binding, never the binding's identity in its place: a caller kept as
-     * nobody is refused by MFA's counters, for an admission and for an attempt
-     * alike, though the binding's identity has a factor to count.
+     * The caller kept beside the binding is judged.
      *
      * @return void
      *
@@ -470,9 +437,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The caller kept beside the binding is the one an attempt is counted for:
-     * a wrong code that locks the factor is reported by MFA for that caller's
-     * client, though the container holds a request from another client.
+     * An attempt is counted for the kept caller's client.
      *
      * @return void
      *
@@ -497,13 +462,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * A binding the challenge gateway did not make is judged as its identity's
-     * own on its application, from the binding alone: though the container
-     * holds a request from another client carrying a pending sign-in's
-     * credential of the identity's, the binding's active session is the one
-     * judged, and the attempt is counted for no client known, never the
-     * request's. (`laravel-authentication` hands the counters no client, so MFA
-     * names none; member gap.).
+     * A binding the gateway did not make is judged from the binding alone.
      *
      * @return void
      *
@@ -529,8 +488,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The person whose challenges are counted, signed in on the guard and
-     * acting on their session.
+     * The person whose challenges are counted, signed in on the guard.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable
      *
@@ -548,8 +506,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The person's confirmed SMS factor, with a code already delivered for it,
-     * so a wrong code is always one other than the code sent.
+     * The person's confirmed SMS factor, with a code already delivered for it.
      *
      * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor
      *
@@ -596,8 +553,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * Check a wrong code against the live challenge through
-     * `laravel-authentication`, as a person submitting it would.
+     * Check a wrong code against the live challenge.
      *
      * @return void
      *
@@ -610,8 +566,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * Check the right code against the live challenge through
-     * `laravel-authentication`, using it up, and return what checks it again.
+     * Use up the live challenge, and return what checks it again.
      *
      * @return \Closure(): void
      *
@@ -635,9 +590,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * Ask this package's counters whether they admit a challenge of the factor
-     * under the binding, translated to the factor code binding
-     * `laravel-authentication` asks them under.
+     * Ask the counters whether they admit a challenge under the binding.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
@@ -653,9 +606,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * Report a challenge's outcome through this package's counters, under the
-     * factor code binding `laravel-authentication` reports under, and answer
-     * whether they took it: a refused admission is their refusal.
+     * Report a challenge's outcome and answer whether it was taken.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
@@ -697,8 +648,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * Check a wrong code against the live challenge through
-     * `laravel-authentication`.
+     * Check a wrong code against the live challenge.
      *
      * @return \SineMacula\Laravel\Authentication\Codes\FactorCodeCheck
      *
@@ -712,8 +662,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * From now on, record the IP address and user agent of each lockout MFA
-     * reports.
+     * Record the IP address and user agent of each lockout MFA reports.
      *
      * @return void
      */
@@ -738,8 +687,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The live challenge and the code delivered for it: one is sent and
-     * delivered when there is none, or the last was used up.
+     * The live challenge and its code, sending one when needed.
      *
      * @return array{0: string, 1: string}
      *
@@ -779,10 +727,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The factor code binding `laravel-authentication` asks the counters under
-     * for MFA's binding: the identity the binding names (the person, or another
-     * identity of the same type and the key the binding gives), and the
-     * factor's SMS channel.
+     * The factor code binding the counters are asked under for MFA's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Mfa\Contracts\EloquentFactor  $factor
@@ -801,8 +746,7 @@ final class FactorCodeCountersAdapterTest extends TestCase
     }
 
     /**
-     * The factor code binding of the person's step-up on their session, for the
-     * factor and on the channel given, or the counted factor's own.
+     * The factor code binding of the person's step-up.
      *
      * @param  ?string  $factor
      * @param  ?\SineMacula\Laravel\Authentication\Proofs\Channel  $channel

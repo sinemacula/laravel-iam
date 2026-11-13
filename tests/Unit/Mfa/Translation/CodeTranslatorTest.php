@@ -38,11 +38,7 @@ use SineMacula\Laravel\Mfa\Proofs\ProofBinding as MfaBinding;
 use Tests\Fixtures\Mfa\Codes\DetachedFactor;
 
 /**
- * Unit tests for translating a delivered factor's code challenges between MFA
- * and `laravel-authentication`: the binding both ways, MFA's admission and
- * counted attempt into `laravel-authentication`'s admission, and
- * `laravel-authentication`'s code request and check into MFA's send result and
- * challenge outcome.
+ * Unit tests for translating code challenges both ways.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -107,10 +103,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's binding becomes the factor code binding of the identity, the
-     * application, the sign-in and the purpose, for the factor by its id on its
-     * channel; an enrolment's is bound to the pending factor as its grant, and
-     * MFA's binding comes back unchanged from it.
+     * A binding crosses both ways, an enrolment's granting the pending factor.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $mfa
      * @param  \SineMacula\Laravel\Authentication\Proofs\Enums\Purpose  $authentication
@@ -136,9 +129,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A factor numbered by an integer is named by its number, and a factor
-     * whose id is neither a string nor an integer by nothing, which a factor
-     * code binding refuses.
+     * A factor is named by its id as text, or by nothing.
      *
      * @return void
      */
@@ -176,8 +167,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A session key that is neither a string nor an integer names no sign-in
-     * MFA could refer back to, and cannot be resolved.
+     * A session key that is neither a string nor an integer cannot be resolved.
      *
      * @return void
      */
@@ -223,8 +213,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * MFA's refusal crosses by value, or as `not_found` for a reason
-     * `laravel-authentication` has no word for.
+     * MFA's refusal crosses by value, or as `not_found`.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\FailureReason  $reason
      * @param  \SineMacula\Laravel\Authentication\Codes\Enums\FactorCodeRefusal  $refusal
@@ -240,8 +229,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * An admission crosses as admitted, and a lockout as a lock until it ends,
-     * or with no end for a factor disabled at its failure ceiling.
+     * An admission crosses as admitted, and a lockout as a lock until it ends.
      *
      * @return void
      */
@@ -261,8 +249,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's outcome, whether the code matched, the standing it
-     * crosses as, the refusal]`.
+     * Rows of `[MFA's outcome, whether the code matched, the standing it crosses as, the refusal]`.
      *
      * @formatter:off
      *
@@ -326,9 +313,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A wrong code whose count locked the factor or the identity until a time
-     * crosses as that lock, until it ends; one held at the failure ceiling
-     * crosses as a lock with no end.
+     * A lockout a wrong code caused crosses as a lock until it ends.
      *
      * @return void
      */
@@ -362,8 +347,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A code answered as sent with no challenge is no factor code, and is
-     * refused as a broken answer.
+     * A code answered as sent with no challenge is refused.
      *
      * @return void
      */
@@ -407,8 +391,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A code request refused crosses as MFA's refusal, with how long to wait
-     * when waiting will help.
+     * A refused code request crosses as MFA's refusal, with any retry delay.
      *
      * @param  \Closure(\Carbon\CarbonImmutable): \SineMacula\Laravel\Authentication\Codes\CodeRequest  $request
      * @param  \SineMacula\Laravel\Mfa\Enums\FailureReason  $reason
@@ -452,8 +435,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * Every check crosses as MFA's outcome: passed, a counted invalid code, or
-     * refused for the reason, counting nothing.
+     * Every check crosses as MFA's outcome.
      *
      * @param  \SineMacula\Laravel\Authentication\Codes\Enums\FactorCodeOutcome  $outcome
      * @param  ?\SineMacula\Laravel\Mfa\Enums\FailureReason  $reason
@@ -478,8 +460,7 @@ final class CodeTranslatorTest extends TestCase
     }
 
     /**
-     * A lock carries its end, a refusal its reason, and the IP address's limit
-     * the end of its window.
+     * A lock, a refusal and the IP address limit carry what they say.
      *
      * @return void
      */
