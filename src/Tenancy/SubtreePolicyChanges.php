@@ -5,8 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Tenancy;
 
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
-use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Mfa\Database\AfterStorageCommit;
 
 /**
@@ -26,7 +26,6 @@ final readonly class SubtreePolicyChanges
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenancyContracts  $contracts
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenantReferences  $tenants
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $translator
-     * @param  \SineMacula\Laravel\Iam\Mfa\CurrentSession  $sessions
      * @param  \Illuminate\Contracts\Container\Container  $container
      */
     public function __construct(
@@ -39,9 +38,6 @@ final readonly class SubtreePolicyChanges
 
         /** Names each tenant of the subtree to `laravel-authorization`, and back. */
         private TenantTranslator $translator,
-
-        /** Resolves the session service both passes go through. */
-        private CurrentSession $sessions,
 
         /** Holds the transactions manager the second pass waits on. */
         private Container $container,
@@ -78,13 +74,14 @@ final readonly class SubtreePolicyChanges
      * @return int
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     private function judge(array $tenantIds): int
     {
         $tenants  = array_map($this->tenants->tenant(...), $tenantIds);
-        $sessions = $this->sessions->identitySessions();
+        $sessions = Auth::sessions();
         $revoked  = 0;
 
         foreach ($tenants as $tenant) {

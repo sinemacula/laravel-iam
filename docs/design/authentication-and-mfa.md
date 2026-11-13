@@ -59,7 +59,7 @@ removed factor would leave the identity's other sessions standing.
 - A minimum assurance level cannot be held as freshness, since no stored proof records a level, so asking for one there
   throws `InvalidArgumentException`. A freshness part with no maximum age is refused when asked part by part, and held
   to a day when asked as a whole.
-- A reset names no guard, so it goes through the default guard when that is `jwt`, otherwise the first `jwt` guard.
+- A reset names no guard, so it goes through `Auth::sessions()`, which picks the `jwt` guard.
 - `MfaContextContributor` fills the `mfa` namespace with MFA's own `contributeFor()`, from the contribution subject's
   session and its newest proofs, so the keys match `Mfa::authenticationContext()` for that session. It is registered
   only while the switch is on and nothing else holds `mfa`.

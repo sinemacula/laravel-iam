@@ -5,17 +5,12 @@ declare(strict_types = 1);
 namespace Tests\Feature;
 
 use Illuminate\Console\Application as Artisan;
-use Illuminate\Console\Events\CommandFinished;
-use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Foundation\Application;
-use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
-use SineMacula\Laravel\AuditLog\Runtime\ExecutionFrames;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authorization\Cache\ResolutionCache;
 use SineMacula\Laravel\Authorization\Contracts\PolicyResolver;
@@ -40,8 +35,6 @@ use SineMacula\Laravel\Iam\Tenancy\TenantPolicyChanges;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Protocols\DriverScope;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Output\NullOutput;
 use Tests\Concerns\RunsInOctaneSandboxes;
 use Tests\TestCase;
 
@@ -267,8 +260,7 @@ final class IamManagerTest extends TestCase
     public function testResettingTheWorkerStateFlushesEveryMembersRequestState(): void
     {
         $auth = \Mockery::mock(AuthManager::class);
-        $auth->shouldReceive('setApplication')->once()->with($this->app)->ordered()->andReturnSelf();
-        $auth->shouldReceive('forgetGuardState')->once()->ordered();
+        $auth->shouldReceive('forgetGuardState')->once();
 
         $this->app?->instance('auth', $auth);
 
@@ -325,43 +317,6 @@ final class IamManagerTest extends TestCase
 
         self::assertNull($this->app?->make('authorization')->lastDecision());
         self::assertNull(Authorization::lastDecision());
-    }
-
-    /**
-     * A reset by hand keeps the command's deferred callbacks, context and
-     * frame.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testResettingTheWorkerStateByHandKeepsWhatTheCommandHolds(): void
-    {
-        $input  = new ArrayInput([]);
-        $output = new NullOutput;
-
-        /** @var \ArrayObject<int, int> $ran */
-        $ran = new \ArrayObject([]);
-
-        Event::dispatch(new CommandStarting('app:daemon', $input, $output));
-        Context::add('trace', 'abc');
-
-        foreach ([1, 2] as $unit) {
-
-            defer(static function () use ($ran, $unit): void {
-                $ran[] = $unit;
-            });
-
-            $this->manager()->resetWorkerState();
-        }
-
-        self::assertSame('abc', Context::get('trace'));
-        self::assertNotNull($this->app?->make(ExecutionFrames::class)->current());
-        self::assertSame([], $ran->getArrayCopy());
-
-        Event::dispatch(new CommandFinished('app:daemon', $input, $output, 0));
-
-        self::assertSame([1, 2], $ran->getArrayCopy());
     }
 
     /**

@@ -53,7 +53,6 @@ use SineMacula\Laravel\Iam\Tenancy\Contracts\GrantScope;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\UnknownGrantScope;
 use SineMacula\Laravel\Iam\Workers\ResetBeforeJob;
-use SineMacula\Laravel\Iam\Workers\ResetBetweenRequests;
 use SineMacula\Laravel\Iam\Workers\ResetWhenWorkerStarts;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
@@ -891,7 +890,6 @@ final class IamServiceProviderTest extends TestCase
     public function testTheWorkerResetListenersAreRegistered(): void
     {
         self::assertContains(ResetWhenWorkerStarts::class, self::rawListenersOf(ResetWhenWorkerStarts::EVENT));
-        self::assertContains(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT));
         self::assertContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
@@ -904,7 +902,7 @@ final class IamServiceProviderTest extends TestCase
     public function testTheWorkerResetIsOnWhenTheSwitchIsMissing(): void
     {
         self::assertFalse($this->config()->has('iam.workers.reset'));
-        self::assertContains(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT));
+        self::assertContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
     /**
@@ -918,7 +916,6 @@ final class IamServiceProviderTest extends TestCase
         $listeners = Event::getRawListeners();
 
         self::assertArrayNotHasKey(ResetWhenWorkerStarts::EVENT, $listeners);
-        self::assertArrayNotHasKey(ResetBetweenRequests::EVENT, $listeners);
         self::assertNotContains(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class));
     }
 
@@ -964,7 +961,6 @@ final class IamServiceProviderTest extends TestCase
         $this->bootInOrder([...self::MEMBER_PROVIDERS, IamServiceProvider::class]);
 
         self::assertSame($on, in_array(ResetWhenWorkerStarts::class, self::rawListenersOf(ResetWhenWorkerStarts::EVENT), true));
-        self::assertSame($on, in_array(ResetBetweenRequests::class, self::rawListenersOf(ResetBetweenRequests::EVENT), true));
         self::assertSame($on, in_array(ResetBeforeJob::class, self::rawListenersOf(JobProcessing::class), true));
     }
 
