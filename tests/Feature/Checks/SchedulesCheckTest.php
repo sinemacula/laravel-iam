@@ -7,7 +7,6 @@ namespace Tests\Feature\Checks;
 use Illuminate\Console\Scheduling\Schedule;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Iam\Checks\SchedulesCheck;
-use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
 use Tests\Concerns\RunsChecks;
 use Tests\TestCase;
@@ -66,27 +65,6 @@ final class SchedulesCheckTest extends TestCase
         $this->schedulePackage();
 
         self::assertSame([], self::notes($this->check()->checks()));
-    }
-
-    /**
-     * A schedule that cannot be built is a problem naming the cause.
-     *
-     * @return void
-     */
-    public function testAScheduleThatCannotBeBuiltIsAProblem(): void
-    {
-        $app = $this->app;
-
-        assert($app !== null);
-
-        $app->make('config')->set('sso.features.saml2', true);
-        $app->make('config')->set('sso.operations.cadence.prune', 'whenever');
-
-        $app->afterResolving(Schedule::class, static function (Schedule $schedule): void {
-            Iam::schedule($schedule);
-        });
-
-        self::assertSame(['sso.operations.cadence.prune must be a cron expression, or null or empty for none.'], self::problems($this->check()->checks()));
     }
 
     /**

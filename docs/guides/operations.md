@@ -46,8 +46,8 @@ and run Laravel's scheduler. It registers:
   `onOneServer()` to each of its tasks, which needs a cache store every server shares and can lock. Every command is
   safe to run on several servers at once without them ([laravel-sso: several servers, and the
   cache][sso-several-servers]).
-- A malformed SSO cadence is SSO's own `InvalidArgumentException`, thrown as the schedule is built, so the scheduler
-  never starts with it.
+- SSO reports a malformed SSO cadence and leaves that task off the schedule; the other tasks still run, and `sso:check`,
+  which `iam:check` runs, names the setting.
 - `authorization:prune` removes `laravel-authorization`'s expired grants and those of grantees and records that are
   gone. An expired grant stops counting at its expiry whether or not the prune has run, so it keeps the grant tables
   small rather than making a check correct. It is registered whatever `iam.adapters.authorization` says.
