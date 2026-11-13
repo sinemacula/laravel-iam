@@ -33,6 +33,10 @@ use SineMacula\Laravel\Authorization\Events\Guardrail\GuardrailRemoved;
 use SineMacula\Laravel\Authorization\Events\Guardrail\GuardrailSet;
 use SineMacula\Laravel\Authorization\Events\Identity\BoundaryRemoved;
 use SineMacula\Laravel\Authorization\Events\Identity\BoundarySet;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassActivated;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassExpired;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassRevoked;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassSurrendered;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionExpired;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionExpiryChanged;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionGranted;
@@ -274,6 +278,30 @@ final class AuthorizationEventMapperTest extends TestCase
             new RoleExpired($operation, $grantee, $role, 'Billing', $scope, $at),
             AuthorizationActivity::GRANT_EXPIRED,
             [...$call, ...$where, 'name' => 'Billing', 'grant' => 'role', 'expired_at' => $stamp],
+        ];
+
+        yield 'a break-glass role activated' => [
+            new BreakGlassActivated($operation, $grantee, $role, 'Billing', $scope, 'activation-1', 'incident', $at),
+            AuthorizationActivity::BREAK_GLASS_ACTIVATED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'justification' => 'incident', 'expires_at' => $stamp],
+        ];
+
+        yield 'a break-glass role given up' => [
+            new BreakGlassSurrendered($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_SURRENDERED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'ended_at' => $stamp],
+        ];
+
+        yield 'a break-glass role revoked' => [
+            new BreakGlassRevoked($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_REVOKED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'ended_at' => $stamp],
+        ];
+
+        yield 'a break-glass role expired' => [
+            new BreakGlassExpired($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_EXPIRED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'expired_at' => $stamp],
         ];
 
         yield 'a role\'s expiry changed' => [

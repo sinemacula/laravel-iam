@@ -64,7 +64,7 @@ Everything else has a code of its own, under its member's prefix, defined by the
   on the person, keeping the factor's id and type as a lockout lifted (`mfa.lockout_lifted`) does.
 - **`sso.*`** (34 codes): a flow's stages and its failure (`sso.flow_failed`, keeping its flow), links, connections,
   domains, enforcement and exemptions, keys, and metadata and key set refreshes.
-- **`authorization.*`** (32 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,
+- **`authorization.*`** (36 codes): a check denied (`authorization.access_denied`, keeping the action, the resource,
   the application and the deciding statements, with the decision's reason code), a sensitive action allowed
   (`authorization.access_allowed`), a check allowed by a break-glass grant (`authorization.break_glass_used`) or one
   previewed for another principal (`authorization.access_previewed`); roles,
@@ -72,7 +72,9 @@ Everything else has a code of its own, under its member's prefix, defined by the
   removed (`authorization.role_exclusion_declared`, `_removed`, keeping both roles' names and the second role's
   reference); a permission granted to or revoked from a role; a role, permission or policy assigned to or taken from a
   grantee; boundaries and guardrails set and removed; a grant expired or its expiry changed; a policy attached to or
-  detached from a resource; and a protected record changed by a system override. None is audit-log's
+  detached from a resource; a protected record changed by a system override; and a break-glass role activated, given up,
+  revoked or expired (`authorization.break_glass_activated`, `_surrendered`, `_revoked`, `_expired`, keeping the
+  activation's id, and the justification code and expiry when activated, never the note). None is audit-log's
   `authorization.gate_denied`, whose capture stays off.
 
 Every definition is version 1 and keeps only the properties it lists. Nothing kept is a secret or free text: a factor
