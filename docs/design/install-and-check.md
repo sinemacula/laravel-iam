@@ -64,7 +64,5 @@ application, since only the root `allow-plugins` counts.
 
 ## Member gaps
 
-- `laravel-sso`: `OperationsSchedule::register()` throws on a malformed cadence, which stops the whole schedule and,
-  when the schedule is resolved at console bootstrap, every console command.
 - `laravel-mfa`: its boot check stands aside only for `mfa:check` and the configuration commands, not for a composing
   package's check command.

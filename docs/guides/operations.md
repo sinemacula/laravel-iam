@@ -37,7 +37,8 @@ and run Laravel's scheduler. It registers:
 | `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`   |
 
 - Audit-log registers its own sealing, sweep, verification and pruning on the schedule itself, so `Iam::schedule()`
-  never registers them again. `iam:check` notes any of them switched off with nothing else running it.
+  never registers them again. `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or verification
+  schedule switched off.
 - `sso:prune` is registered only through SSO's own schedule, so it runs once. With `sso.operations.cadence.prune`
   switched off, schedule `sso:prune` yourself.
 - None of this package's tasks takes a cache mutex. SSO's take one only while `sso.operations.cache_mutexes` is on
@@ -45,8 +46,8 @@ and run Laravel's scheduler. It registers:
   `onOneServer()` to each of its tasks, which needs a cache store every server shares and can lock. Every command is
   safe to run on several servers at once without them ([laravel-sso: several servers, and the
   cache][sso-several-servers]).
-- A malformed SSO cadence is SSO's own `InvalidArgumentException`, thrown as the schedule is built, so the scheduler
-  never starts with it.
+- SSO reports a malformed SSO cadence and leaves that task off the schedule; the other tasks still run, and `sso:check`,
+  which `iam:check` runs, names the setting.
 - `authorization:prune` removes `laravel-authorization`'s expired grants and those of grantees and records that are
   gone. An expired grant stops counting at its expiry whether or not the prune has run, so it keeps the grant tables
   small rather than making a check correct. It is registered whatever `iam.adapters.authorization` says.

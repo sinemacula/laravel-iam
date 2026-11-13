@@ -107,9 +107,8 @@ return [
     | Workers
     |---------------------------------------------------------------------------
     |
-    | `reset`: flushes the members' request state as each Octane worker starts,
-    | before each Octane request and before each non-`sync` queued job. On by
-    | default.
+    | `reset`: flushes the members' request state as each Octane worker starts
+    | and before each non-`sync` queued job. On by default.
     |
     */
 

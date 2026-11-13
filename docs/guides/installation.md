@@ -36,9 +36,9 @@ composer require sinemacula/laravel-iam
 This requires `sinemacula/laravel-authentication`, `sinemacula/laravel-authorization`, `sinemacula/laravel-mfa`,
 `sinemacula/laravel-sso` and `sinemacula/laravel-audit-log`. Every member is required: none is optional, and each
 member's service provider must register with the others, as package discovery registers them. When
-`laravel-authentication`'s, MFA's, SSO's or audit-log's provider has still not registered once the application has
-booted, the boot is refused (`SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException`), since nothing aligned
-its storage or registered its audit mapping.
+`laravel-authentication`'s, `laravel-authorization`'s, MFA's, SSO's or audit-log's provider has still not registered
+once the application has booted, the boot is refused (`SineMacula\Laravel\Iam\Exceptions\MemberNotRegisteredException`),
+since nothing aligned its storage or registered its audit mapping.
 
 ## Publishing
 
@@ -61,8 +61,8 @@ It never overwrites anything, and is safe to run twice:
 
 ### Prefixing the authorization tables
 
-While none of `laravel-authorization`'s files has been published yet, the command offers a prefix for its table names,
-or takes one from the option:
+While neither `laravel-authorization`'s configuration nor any of its migrations has been published yet, the command
+offers a prefix for its table names, or takes one from the option:
 
 ```bash
 php artisan iam:install --prefix=iam_
@@ -73,8 +73,8 @@ name the migrations derive stays within PostgreSQL's and MySQL's limits. It is w
 `config/authorization.php` as the default of `AUTHORIZATION_TABLE_PREFIX`, `laravel-authorization`'s `tables.prefix`
 setting, so the variable still wins where you set it. The member puts the prefix before every table name left at its
 default; a name you set yourself is used as written. With `--no-interaction` the command asks nothing and prefixes
-nothing unless the option says so. Once any of the member's files is published the tables have their names, so a
-prefix is no longer offered.
+nothing unless the option says so. Once its configuration or a migration is published the tables have their names,
+so a prefix is no longer offered. A prefix of another shape stops the run (exit code 2) before anything is published.
 
 ### The audit-log configuration
 
@@ -91,29 +91,29 @@ prefix is no longer offered.
 Every run ends with a short list of what the application still owes, each item linking here. In full, the package
 cannot do these for you:
 
-| Owed                                                                                                                                                                                                                                                          | Where it is covered                                                         |
-|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| Run `php artisan migrate`                                                                                                                                                                                                                                     | [The storage connection](#the-storage-connection)                           |
-| Bind `laravel-authentication`'s `OneTimeCodeSender`                                                                                                                                                                                                           | [Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)      |
-| Bind laravel-mfa's `TenantRequirement`, and name or bind your memberships and tenant tree                                                                                                                                                                     | [Provisioning and tenancy](provisioning-and-tenancy.md)                     |
-| Bind `laravel-authentication`'s `TenantResolver` before you grant in a tenant while the authorization and SSO adapters are on (the default), bind MFA's tenant requirement or turn SSO's enforcement on, even if your principals act only in their own tenant | [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver) |
-| Name or bind your provisioner                                                                                                                                                                                                                                 | [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)        |
-| Add the routes, following laravel-iam's example application guide: redeem SSO's handoffs through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly                                                          | [An example application](example-application.md)                            |
-| Call `Iam::schedule()` and run the scheduler                                                                                                                                                                                                                  | [Operations](operations.md#the-schedule)                                    |
-| Run a queue worker for `laravel-authentication`'s code delivery and, while SSO is in use, SSO's metadata refresh                                                                                                                                              | [Operations](operations.md#queues)                                          |
-| Allow SSO's Composer plugin                                                                                                                                                                                                                                   | [Requirements](#requirements)                                               |
-| Map each application to its permission in `authorization.application_access`, and bind `TenantAccess` if your principals act beyond their own tenant                                                                                                          | [Authorization](authorization.md#access-contracts)                          |
-| Declare MFA's and SSO's freshness operations for their guards                                                                                                                                                                                                 | [Guards and applications](#guards-and-applications)                         |
-| Exclude every `jwt` and `api_key` guard from audit-log's capture, and turn `definitions.require_registered` on                                                                                                                                                | [The audit-log configuration](#the-audit-log-configuration)                 |
-| Define every audit code your application records itself                                                                                                                                                                                                       | [The audit trail](audit-trail.md#codes)                                     |
-| Run `php artisan iam:check` on every deploy                                                                                                                                                                                                                   | [Checks](checks.md)                                                         |
+| Owed                                                                                                                                                                                                                                                                              | Where it is covered                                                         |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| Run `php artisan migrate`                                                                                                                                                                                                                                                         | [The storage connection](#the-storage-connection)                           |
+| Bind `laravel-authentication`'s `OneTimeCodeSender`                                                                                                                                                                                                                               | [Authentication and MFA](authentication-and-mfa.md#codes-and-delivery)      |
+| Bind laravel-mfa's `TenantRequirement` and your memberships, and name or bind your tenant tree                                                                                                                                                                                    | [Provisioning and tenancy](provisioning-and-tenancy.md)                     |
+| Bind `laravel-authentication`'s `TenantResolver` before you grant in a tenant while the authorization and SSO adapters are on (the default), bind MFA's tenant requirement, name a tenant tree or turn SSO's enforcement on, even if your principals act only in their own tenant | [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver) |
+| Bind your provisioner                                                                                                                                                                                                                                                             | [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)        |
+| Add the routes, following laravel-iam's example application guide: redeem SSO's handoffs through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly                                                                              | [An example application](example-application.md)                            |
+| Call `Iam::schedule()` and run the scheduler                                                                                                                                                                                                                                      | [Operations](operations.md#the-schedule)                                    |
+| Run a queue worker for `laravel-authentication`'s code delivery and, while SSO is in use, SSO's metadata refresh                                                                                                                                                                  | [Operations](operations.md#queues)                                          |
+| Allow SSO's Composer plugin                                                                                                                                                                                                                                                       | [Requirements](#requirements)                                               |
+| Map each application to its permission in `authorization.application_access`, and bind `TenantAccess` if your principals act beyond their own tenant                                                                                                                              | [Authorization](authorization.md#access-contracts)                          |
+| Declare MFA's and SSO's freshness operations for their guards                                                                                                                                                                                                                     | [Guards and applications](#guards-and-applications)                         |
+| Exclude every `jwt` and `api_key` guard from audit-log's capture, and turn `definitions.require_registered` on                                                                                                                                                                    | [The audit-log configuration](#the-audit-log-configuration)                 |
+| Define every audit code your application records itself                                                                                                                                                                                                                           | [The audit trail](audit-trail.md#codes)                                     |
+| Run `php artisan iam:check` on every deploy                                                                                                                                                                                                                                       | [Checks](checks.md)                                                         |
 
 A run fails (exit code 1) when a tag it publishes is not registered; the rest is still published.
 
 ## The storage connection
 
-`laravel-authentication`'s, MFA's and SSO's tables live on one database connection, so a change that spans them
-commits or rolls back as one. Name it once:
+`laravel-authentication`'s, `laravel-authorization`'s, MFA's and SSO's tables live on one database connection, so a
+change that spans them commits or rolls back as one. Name it once:
 
 ```dotenv
 IAM_STORAGE_CONNECTION=mysql
@@ -225,12 +225,12 @@ publishing anything twice.
 
 1. Line up the storage connection first, before you require this package. The package refuses the boot
    (`SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException`) whenever a member's storage key
-   (`authentication.storage.connection`, `mfa.storage.connection`, `sso.storage.connection`) names a connection other
-   than `iam.storage.connection`, which is the default connection when unset. Until they agree, every request and
-   every command but `config:cache`, `config:clear`, `config:show`, `help`, `list`, `optimize:clear`,
-   `package:discover` and `iam:check` refuses to boot, `iam:install` and `migrate` among them. So, while the members'
-   tables share a dedicated connection, set `IAM_STORAGE_CONNECTION` to it; while they are on the default connection,
-   unset the member keys, or set each to the default connection. Tables on
+   (`authentication.storage.connection`, `mfa.storage.connection`, `sso.storage.connection`,
+   `authorization.connection`) names a connection other than `iam.storage.connection`, which is the default connection
+   when unset. Until they agree, every request and every command but `config:cache`, `config:clear`, `config:show`,
+   `help`, `list`, `optimize:clear`, `package:discover` and `iam:check` refuses to boot, `iam:install` and `migrate`
+   among them. So, while the members' tables share a dedicated connection, set `IAM_STORAGE_CONNECTION` to it; while
+   they are on the default connection, unset the member keys, or set each to the default connection. Tables on
    different connections must first be moved onto one, by a migration you perform, before the package is required
    (see [The storage connection](#the-storage-connection)).
 2. Require this package. Each member stays installed, now as its dependency; drop the members from your own
@@ -259,7 +259,7 @@ publishing anything twice.
    adapter you wrote for a seam this package binds keeps running in its place, silently. `iam:check` checks it only if
    the seam is mandatory. Search your providers for every contract [Bindings](bindings.md) lists, and remove each
    binding yourself unless you mean to keep it. In particular remove:
-   - your own listener of SSO's `ResultUnlinked` that provisions people: name your provisioner instead (see
+   - your own listener of SSO's `ResultUnlinked` that provisions people: bind your provisioner instead (see
      [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)), and register no provisioning listener
      beside the package's;
    - your own audit mappers of the members' events, or turn `IAM_AUDIT_MAPPERS` off to keep them;

@@ -36,17 +36,19 @@ tenant models, your tenant tree, your membership rules, your message senders and
 - **One install**: every package's configuration, language files and migrations published in a working order, safe to
   run twice, and a list of what remains for your application to bind.
 - **Bridging configuration only**: one file for what crosses packages (the shared storage connection, which adapters
-  are on, the tenant tree, provisioning, the audit options); each package's own settings stay in its own file.
+  are on, provisioning, SSO's evidence policy, the audit, retry and worker options); each package's own settings stay
+  in its own file.
 - **Adapters**: each package's contracts bound to the others' services, every binding a default your application can
   replace through configuration or the container.
 - **Fail closed**: an adapter that cannot translate refuses inside the transaction, never by skipping.
 - **One transaction**: a change that spans packages commits or rolls back as one on the shared storage connection, with
   a helper that retries the whole of it on a serialisation failure or deadlock.
 - **The audit trail**: every package's events mapped to audit entries, and nothing else enforced through events.
-- **Partial suites**: a package's features stay off until configured, and a feature that is off binds nothing and checks
-  nothing.
-- **Ready for production**: safe under Octane and in queue workers, with a combined reset between requests and jobs,
-  one call that registers the scheduled work, and a configuration check for a deploy pipeline.
+- **Partial suites**: a package's features stay off until configured, and a feature that is off is not checked; the
+  adapters stay bound, so turning it on later needs nothing more.
+- **Ready for production**: safe under Octane and in queue workers, with a combined reset as each Octane worker starts
+  and before each queued job, one call that registers the scheduled work, and a configuration check for a deploy
+  pipeline.
 
 ## Installation
 
@@ -63,8 +65,8 @@ php artisan iam:install
 php artisan migrate
 ```
 
-The install command says what remains for your application to bind: its senders, its tenant tree and its access
-contracts. Then check the whole configuration, for example as a deploy step:
+The install command lists what remains for your application: the contracts it binds, its routes, its audit-log and
+freshness settings, and its schedule. Then check the whole configuration, for example as a deploy step:
 
 ```bash
 php artisan iam:check

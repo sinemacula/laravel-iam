@@ -32,7 +32,7 @@ The testing fakes and contract kits for this package's own contracts are in [Tes
 `laravel-authentication`'s `SineMacula\Laravel\Authentication\Contracts\TenantResolver` is not this package's contract,
 but the package depends on it: granting anything in a tenant through `laravel-authorization` while the authorization
 and SSO adapters are on (`iam.adapters.authorization` and `iam.adapters.sso`, both on by default), binding MFA's tenant
-requirement, or turning SSO's enforcement on (with or without a tenant tree), requires binding a resolver that resolves
+requirement, turning SSO's enforcement on, or naming a tenant tree, requires binding a resolver that resolves
 every tenant id to the tenant whose `getTenantIdentifier()` is exactly that id. The tenant policy,
 `Iam::treeChanges()->changed()` and SSO's revocation all resolve a session's
 tenant id through it, and the [grant hook](authorization.md#grants-the-tree-and-sso) the tenant of every grant that
@@ -43,8 +43,8 @@ asking a resolver, so an application that never needed one before needs one now.
 default, `SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant`, each of them throws
 `SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every such grant, tree move or revocation answers a
 server error. Bind yours in a service provider's `register()`; `iam:check` refuses
-`ResolveNoTenant` while the authorization and SSO adapters are both on, MFA's tenant requirement is bound or SSO's
-enforcement is on (see [Checks](checks.md#configuration)), and `laravel-authentication`'s
+`ResolveNoTenant` while the authorization and SSO adapters are both on, MFA's tenant requirement is bound, SSO's
+enforcement is on or a tenant tree is named (see [Checks](checks.md#configuration)), and `laravel-authentication`'s
 [extending guide][auth-extending] describes the contract.
 
 While `iam.adapters.authorization` is on, the resolver names your tenants to `laravel-authorization` too: the grant
@@ -336,23 +336,24 @@ identity that is not `MultiFactorAuthenticatable` acting in a tenant is refused 
 It applies no inheritance down the tree, and it is asked under the session's row lock at times: take no lock and write
 nothing. Test it with laravel-mfa's `TenantRequirementTests` kit.
 
-When the answer changes, report it inside the transaction that publishes it:
+When the answer changes, report it inside the transaction that publishes it, handing over the tenant
+(`laravel-authentication`'s `Tenant`):
 
 ```php
 use SineMacula\Laravel\Iam\Facades\Iam;
 
-Iam::transaction(function () use ($organisation, $tenant): void {
+Iam::transaction(function () use ($organisation): void {
     $organisation->update(['requires_mfa' => true]);
 
-    Iam::tenantPolicies()->changed($tenant);
+    Iam::tenantPolicies()->changed($organisation);
 });
 ```
 
 It judges the tenant's sessions there, so both commit or roll back together, and once more after the transaction
 commits, so a session that entered the tenant meanwhile, having read the old answer, is judged too. Bearer requests
 never recheck a tenant's policy, so without the report a session that no longer meets it acts on its access tokens
-until they expire. Calling `Auth::sessions()->tenantPolicyChanged($tenant)` yourself, call it twice the same way: once
-inside the transaction and once after it commits.
+until they expire. `Auth::sessions()->tenantPolicyChanged($tenant)`, which the report calls, does the same: inside a
+transaction it runs again once that commits.
 
 A bound requirement needs your [tenant resolver](#the-tenant-resolver): the tenant policy resolves the session's tenant
 through it.
