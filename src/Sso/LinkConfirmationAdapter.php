@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
@@ -41,7 +42,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
      */
     public function __construct(
 
-        /** Finds the caller's session and tells whether a transaction is open. */
+        /** Finds the caller's session. */
         private CurrentSession $sessions,
 
         /** Resolves the identity SSO names. */
@@ -85,7 +86,7 @@ final readonly class LinkConfirmationAdapter implements LinkConfirmation
      */
     private function session(Caller $caller): (EloquentSession&Model)|null
     {
-        if ($caller->sessionId === null || !$this->sessions->isInTransaction()) {
+        if ($caller->sessionId === null || !StorageConnection::isInTransaction()) {
             return null;
         }
 

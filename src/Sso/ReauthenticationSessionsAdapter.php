@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Container\Container;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SsoConnection;
@@ -120,7 +121,7 @@ final readonly class ReauthenticationSessionsAdapter implements Reauthentication
      */
     private function assertIsInTransaction(): void
     {
-        if ($this->sessions->isInTransaction()) {
+        if (StorageConnection::isInTransaction()) {
             return;
         }
 

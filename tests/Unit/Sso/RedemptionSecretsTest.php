@@ -9,7 +9,6 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\Connection;
-use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\DatabaseManager;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -125,7 +124,7 @@ final class RedemptionSecretsTest extends TestCase
         $thrown = null;
 
         try {
-            $redemption($this->transaction(), new CurrentSession(\Mockery::mock(AuthFactory::class), \Mockery::mock(ConnectionResolverInterface::class)));
+            $redemption($this->transaction(), new CurrentSession(\Mockery::mock(AuthFactory::class)));
         } catch (UnresolvedReferenceException $exception) {
             $thrown = $exception;
         }

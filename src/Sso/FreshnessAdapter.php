@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Sso;
 
 use SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
@@ -61,7 +62,7 @@ final readonly class FreshnessAdapter implements Freshness
         $session     = $this->session($caller);
 
         // SSO asks inside its transaction only once its own locks are held.
-        return $session !== null && $this->freshness->freshProof($session, $operation->value, $requirement, current: $this->sessions->isInTransaction()) !== null
+        return $session !== null && $this->freshness->freshProof($session, $operation->value, $requirement, current: StorageConnection::isInTransaction()) !== null
             ? FreshnessOutcome::FRESH
             : FreshnessOutcome::STALE;
     }
