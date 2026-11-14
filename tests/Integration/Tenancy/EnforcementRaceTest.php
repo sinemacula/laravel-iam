@@ -18,6 +18,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
+use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
@@ -158,7 +159,8 @@ final class EnforcementRaceTest extends TestCase
     }
 
     /**
-     * Require sessions to come through the connections; return the version.
+     * Require sessions to come through the connections; return the policy
+     * version a session is judged at.
      *
      * @param  list<string>  $connections
      * @param  ?\SineMacula\Laravel\Sso\Http\ClientContext  $client
@@ -171,7 +173,9 @@ final class EnforcementRaceTest extends TestCase
 
         self::assertTrue($result->isChanged(), sprintf('The enforcement did not change: [%s].', $result->reason->value ?? $result->status->value));
 
-        return $result->enforcement->version ?? self::fail('The enforcement has no version.');
+        $tenantId = $result->enforcement->tenantId ?? self::fail('The change named no enforcement.');
+
+        return $this->app->make(Enforcement::class)->policy($tenantId, self::GUARD)->version ?? self::fail('The policy has no version.');
     }
 
     /**
