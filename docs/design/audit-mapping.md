@@ -80,7 +80,7 @@ package only describes. The storage connection is in `storage-and-transactions.m
 
 - `Audit\AuthenticationActorReader` is audit-log's `HeldActorReader`. Audit-log's guard walk asks it about a guard it
   cannot read through `GuardHelpers`.
-- It reads only what an `AbstractGuard` has already bound (identity, principal, tenant, session) and returns `null`
+- It reads the guard's `boundCaller()` (identity, principal, tenant, session and the API key's id) and returns `null`
   for any other guard or none bound. It never authenticates. A tenant the guard cannot load is left out.
 - Audit-log fills the record from it and carries the caller into queued jobs.
 
@@ -111,9 +111,7 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - `laravel-authentication`: the `jwt` guard's `attempt()` and `login()` dispatch only Laravel's `Login`, so those
   sign-ins go unrecorded once the guard is excluded; an `AuthenticationEvent` for them would close it.
 - `laravel-authentication`: the `api_key` guard's `logout()` and trusted `login()` have the same gap.
-- `laravel-authentication`: `ContextualGuard` has no bound-only caller snapshot, so the reader needs `AbstractGuard`.
 - `laravel-audit-log`: `RecordPipeline` calls `Str::uuid7($occurredAt)`, which rewinds the shared UUIDv7 state; the
   test suite resets it in `Tests\TestCase::setUp()`.
-- `laravel-audit-log`: `Contribution` has no credential filler, so only the mappers set the credential.
 - `laravel-mfa`: `EnrollmentAbandoned` names no cause or operator, so its actor is left to the caller.
 - `laravel-mfa`, `laravel-sso`: event contexts give a tenant id with no type, so tenants share the one type `tenant`.

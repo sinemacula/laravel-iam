@@ -7,9 +7,9 @@ namespace SineMacula\Laravel\Iam\Audit;
 use Illuminate\Contracts\Auth\Guard;
 use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\AuditLog\Records\HeldActor;
+use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Events\EventContext;
 use SineMacula\Laravel\Authentication\Exceptions\TenantUnavailableException;
-use SineMacula\Laravel\Authentication\Guards\AbstractGuard;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 
 /**
@@ -34,23 +34,25 @@ final readonly class AuthenticationActorReader implements HeldActorReader
     #[\Override]
     public function read(string $guard, Guard $instance): ?HeldActor
     {
-        if (!$instance instanceof AbstractGuard || !$instance->hasUser()) {
+        $bound = $instance instanceof ContextualGuard ? $instance->boundCaller() : null;
+
+        if ($bound === null) {
             return null;
         }
 
         try {
-            $tenant = $instance->tenant();
+            $tenant = $bound->tenant();
         } catch (TenantUnavailableException) {
             $tenant = null;
         }
 
-        $caller = new EventContext($guard, new ClientContext(null, null), $instance->identity(), $instance->principal(), $tenant, $instance->session());
+        $caller = new EventContext($guard, new ClientContext(null, null), $bound->identity, $bound->principal, $tenant, $bound->session);
         $actor  = References::of($caller->identityType, $caller->identityId);
 
         if ($actor === null) {
             return null;
         }
 
-        return new HeldActor($actor, References::of($caller->principalType, $caller->principalId), References::tenant($caller->tenantId), $caller->sessionId);
+        return new HeldActor($actor, References::of($caller->principalType, $caller->principalId), References::tenant($caller->tenantId), $caller->sessionId, $bound->credentialId);
     }
 }
