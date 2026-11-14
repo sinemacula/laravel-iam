@@ -108,9 +108,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
 
 ## Member gaps
 
-- `laravel-authentication`: the `jwt` guard's `attempt()` and `login()` dispatch only Laravel's `Login`, so those
-  sign-ins go unrecorded once the guard is excluded; an `AuthenticationEvent` for them would close it.
-- `laravel-authentication`: the `api_key` guard's `logout()` and trusted `login()` have the same gap.
+- `laravel-authentication`: the `api_key` guard's `logout()`, and a `jwt` guard's `logout()` with no session bound,
+  dispatch only Laravel's `Logout`, so those sign-outs go unrecorded once the guard is excluded.
 - `laravel-authentication`: `ContextualGuard` has no bound-only caller snapshot, so the reader needs `AbstractGuard`.
 - `laravel-audit-log`: `RecordPipeline` calls `Str::uuid7($occurredAt)`, which rewinds the shared UUIDv7 state; the
   test suite resets it in `Tests\TestCase::setUp()`.

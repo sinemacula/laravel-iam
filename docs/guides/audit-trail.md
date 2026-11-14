@@ -163,10 +163,12 @@ audit-log's own capture of Laravel's events would record each a second time. So:
   recorded once, through `laravel-authorization`'s own events.
 
 Set both in your `config/audit-log.php`: `iam:install` lists them as owed, and `iam:check` refuses a configuration
-without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too. Two
-consequences of the exclusion: a sign-in made through a `jwt` guard's own `attempt()` or `login()`, rather than the
-session service, dispatches only `Login`, and is recorded by nothing; nor is an `api_key` guard's `logout()`. Sign
-people in through `Auth::sessions()`.
+without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
+
+A sign-in through a guard's own `attempt()` or trusted `login()` is recorded once, as one through `Auth::sessions()`
+is. Calling `start()` after `attempt()` records two sign-ins, so sign in with `Auth::sessions()->signIn()` for one. An
+`api_key` guard's `logout()`, and a `jwt` guard's `logout()` with no session bound, dispatch only `Logout`, so the
+exclusion leaves them recorded by nothing.
 
 ## Authorization decisions
 
