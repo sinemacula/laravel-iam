@@ -118,9 +118,9 @@ sessions, on every guard, as a savepoint of SSO's transaction:
 ## Contract kits
 
 Each adapter's test runs SSO's kit for its seam: `FreshnessContract`, `LinkConfirmationContract`,
-`LinkEmailMatcherContract`, `SessionRevocationContract` and `EnforcementInheritanceContract`. The revocation kit runs
-over SSO's stored rule, the tenant policy adapter, the application's exemptions and its tree.
-`ReauthenticationSessionsContract` is not run; see the gaps.
+`LinkEmailMatcherContract`, `ReauthenticationSessionsContract`, `SessionRevocationContract` and
+`EnforcementInheritanceContract`. The revocation kit runs over SSO's stored rule, the tenant policy adapter, the
+application's exemptions and its tree.
 
 ## Member gaps
 
@@ -135,6 +135,3 @@ over SSO's stored rule, the tenant policy adapter, the application's exemptions 
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
 - `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.
-- `laravel-authentication`: an external re-authentication whose provider time is before the session's start is refused
-  (`proof_invalid`), where SSO's `renewAuthentication()` keeps `max(current, provider)`. A provider time within SSO's
-  clock skew of a new session fails the redemption, and SSO's `ReauthenticationSessionsContract` kit is not run.
