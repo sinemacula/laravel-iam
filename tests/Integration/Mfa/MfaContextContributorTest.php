@@ -6,6 +6,7 @@ namespace Tests\Integration\Mfa;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -146,7 +147,7 @@ final class MfaContextContributorTest extends TestCase
         $this->actingOnVerifiedSession($session, AssuranceLevel::AAL1);
         $this->actingOnVerifiedSession($session);
 
-        $further = DB::table(self::PROOFS)->where('kind', 'additional_factor')->orderBy('id')->pluck('method')->all();
+        $further = DB::table(self::PROOFS)->where('kind', 'additional_factor')->orderBy('sequence')->pluck('method')->all();
 
         self::assertCount(2, $further);
         self::assertSame($further, $this->contributed($person, $session)['factor_types']);
@@ -285,7 +286,7 @@ final class MfaContextContributorTest extends TestCase
         $this->travel(1)->minutes();
         $this->actingOnVerifiedSession($session);
 
-        $further  = (array) (DB::table(self::PROOFS)->where('kind', 'additional_factor')->first() ?? self::fail('No further proof was recorded.'));
+        $further  = Arr::except((array) (DB::table(self::PROOFS)->where('kind', 'additional_factor')->first() ?? self::fail('No further proof was recorded.')), 'sequence');
         $verified = CarbonImmutable::now()->startOfSecond();
 
         for ($copy = 1; $copy <= RequirementSubject::MAX_LIMIT; $copy++) {
