@@ -57,13 +57,13 @@ final class AdmittedRedemptions
     {
         $result = $this->admitted?->result;
 
-        return $result !== null
-            && $result->connectionId === $connectionId
-            && $result->issuer       === $issuer
-            && $result->subject      === $subject
-            && $result->nameIdFormat === $nameIdFormat
-            ? $this->admitted
-            : null;
+        if ($result === null) {
+            return null;
+        }
+
+        $admitted = [$result->connectionId, $result->issuer, $result->subject, $result->nameIdFormat];
+
+        return $admitted === [$connectionId, $issuer, $subject, $nameIdFormat] ? $this->admitted : null;
     }
 
     /**
