@@ -57,6 +57,7 @@ use SineMacula\Laravel\Mfa\Testing\Concerns\InteractsWithMfa;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
 use SineMacula\Laravel\Mfa\Testing\LevelEvidence;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
+use SineMacula\Laravel\Sso\Sessions\Enums\ContextKey;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
@@ -773,7 +774,7 @@ final class InteractsWithIamTest extends TestCase
         self::assertSame(self::TENANT, $session->getTenantId());
         self::assertSame(self::TENANT, Auth::tenant()?->getTenantIdentifier());
         self::assertSame(CallerSession::EXTERNAL_METHOD, $session->getSignInMethod());
-        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(AuthenticationContext::CONNECTION));
+        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(ContextKey::CONNECTION->value));
         self::assertSame('passkey', $this->onlyFactorOf($person)->getType());
         self::assertCount(2, $this->proofsOf($session));
 
@@ -803,12 +804,12 @@ final class InteractsWithIamTest extends TestCase
 
         self::assertSame(CallerSession::EXTERNAL_METHOD, $session->getSignInMethod());
         self::assertSame(self::SSO_CONNECTION, $this->firstFactorOf($session)?->channel->reference);
-        self::assertSame(self::SSO_CONNECTION, $context?->get(AuthenticationContext::CONNECTION));
-        self::assertSame(self::TENANT, $context->get(AuthenticationContext::TENANT));
-        self::assertSame('oidc', $context->get(AuthenticationContext::PROTOCOL));
-        self::assertSame(self::LINK, $context->get(AuthenticationContext::LINK));
-        self::assertSame(['pwd', 'mfa'], $context->get(AuthenticationContext::PROVIDER_AMR));
-        self::assertSame($provenance->providerAuthenticatedAt?->format(Provenance::INSTANT_FORMAT), $context->get(AuthenticationContext::PROVIDER_AUTH_TIME));
+        self::assertSame(self::SSO_CONNECTION, $context?->get(ContextKey::CONNECTION->value));
+        self::assertSame(self::TENANT, $context->get(ContextKey::TENANT->value));
+        self::assertSame('oidc', $context->get(ContextKey::PROTOCOL->value));
+        self::assertSame(self::LINK, $context->get(ContextKey::LINK->value));
+        self::assertSame(['pwd', 'mfa'], $context->get(ContextKey::PROVIDER_AMR->value));
+        self::assertSame($provenance->providerAuthenticatedAt?->format(Provenance::INSTANT_FORMAT), $context->get(ContextKey::PROVIDER_AUTH_TIME->value));
         self::assertSame('2026-11-01 09:00:00', $this->firstFactorOf($session)?->authenticatedAt->format('Y-m-d H:i:s'));
         self::assertSame(self::SESSION_NOT_AFTER, $session->getAbsoluteExpiresAt()?->format('Y-m-d H:i:s'));
         self::assertSame(self::ENFORCEMENT_VERSION, DB::table('authentication_provenance')->where('session_id', $session->getKey())->value('policy_version'));
@@ -830,7 +831,7 @@ final class InteractsWithIamTest extends TestCase
         $session = $this->boundSession();
 
         self::assertSame('2026-11-08 10:15:30.000000', $this->firstFactorOf($session)?->authenticatedAt->format('Y-m-d H:i:s.u'));
-        self::assertSame('saml2', Auth::context()?->get(AuthenticationContext::PROTOCOL));
+        self::assertSame('saml2', Auth::context()?->get(ContextKey::PROTOCOL->value));
         self::assertNull(DB::table('authentication_provenance')->where('session_id', $session->getKey())->value('policy_version'));
     }
 
@@ -1074,7 +1075,7 @@ final class InteractsWithIamTest extends TestCase
         $proofs = $this->proofsOf($this->boundSession());
 
         self::assertSame(CallerSession::EXTERNAL_METHOD, $this->boundSession()->getSignInMethod());
-        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(AuthenticationContext::CONNECTION));
+        self::assertSame(self::SSO_CONNECTION, Auth::context()?->get(ContextKey::CONNECTION->value));
         self::assertCount(2, $proofs);
         self::assertSame($held->id, $proofs[0]->factor);
         self::assertSame(AuthenticationPurpose::SIGN_IN, $proofs[0]->purpose);
