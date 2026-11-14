@@ -314,10 +314,9 @@ this package's adapters (see [Bindings](bindings.md)) is proved with that member
 `SineMacula\Laravel\Mfa\Testing\Seams\Concerns` ([laravel-mfa: testing][mfa-testing]) or
 `SineMacula\Laravel\Sso\Testing\Seams\Concerns` ([laravel-sso: testing][sso-testing]).
 
-This package's own tests run MFA's kits against its MFA adapters, and five of SSO's against its SSO adapters:
-`FreshnessContract`, `LinkConfirmationContract`, `LinkEmailMatcherContract`, `SessionRevocationContract` and
-`EnforcementInheritanceContract`. SSO's `ReauthenticationSessionsContract` is not run yet: `laravel-authentication`
-refuses a renewal time before the session's start, where SSO's contract keeps `max(current, provider)`.
+This package's own tests run MFA's kits against its MFA adapters, and SSO's against its SSO adapters:
+`FreshnessContract`, `LinkConfirmationContract`, `LinkEmailMatcherContract`, `ReauthenticationSessionsContract`,
+`SessionRevocationContract` and `EnforcementInheritanceContract`.
 
 `laravel-authentication` ships no contract kits, so an implementation of one of its contracts is proved by tests of
 your own against its guide.
