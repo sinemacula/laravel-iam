@@ -58,9 +58,6 @@ final readonly class IamSchedule
      *
      * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
      * @return void
-     *
-     * @throws \InvalidArgumentException
-     * @throws \LogicException
      */
     public function register(Schedule $schedule): void
     {
