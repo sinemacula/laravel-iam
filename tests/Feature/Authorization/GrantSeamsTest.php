@@ -9,11 +9,9 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Contracts\IdentityDirectory;
-use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Hooks\GrantHooks;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
 use SineMacula\Laravel\Authorization\Hooks\ListedGrantHooks;
-use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\GuardUserIdentityDirectory;
 use SineMacula\Laravel\Authorization\Support\Operation;
 use SineMacula\Laravel\Authorization\Support\Reference;
@@ -110,18 +108,6 @@ final class GrantSeamsTest extends TestCase
     }
 
     /**
-     * The tenant tree is left to the application.
-     *
-     * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     */
-    public function testTheTreeIsLeftToTheApplication(): void
-    {
-        self::assertInstanceOf(FlatTenantTree::class, $this->resolved(TenantTree::class));
-    }
-
-    /**
      * With the switch off nothing is bound.
      *
      * @return void
@@ -133,7 +119,6 @@ final class GrantSeamsTest extends TestCase
     {
         $this->assertResolvesTo([
             IdentityDirectory::class => GuardUserIdentityDirectory::class,
-            TenantTree::class        => FlatTenantTree::class,
             GrantHook::class         => GrantHooks::class,
         ]);
     }

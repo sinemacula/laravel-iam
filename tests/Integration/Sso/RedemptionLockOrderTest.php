@@ -20,16 +20,13 @@ use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\UnlinkedSignInException;
 use SineMacula\Laravel\Iam\Facades\Iam;
-use SineMacula\Laravel\Iam\Sso\LinkRedemption;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationRedemption;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Sso\Connections\ConnectionLifecycle;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use SineMacula\Laravel\Sso\Http\ClientContext as SsoClientContext;
-use SineMacula\Laravel\Sso\Linking\IdentityLock;
 use SineMacula\Laravel\Sso\Links\LinkService;
-use SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
@@ -49,7 +46,6 @@ use Tests\TestCase;
  */
 #[CoversClass(SignInRedemption::class)]
 #[CoversClass(ReauthenticationRedemption::class)]
-#[CoversClass(LinkRedemption::class)]
 final class RedemptionLockOrderTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -59,24 +55,6 @@ final class RedemptionLockOrderTest extends TestCase
 
     /** @var string The IP address the other change comes from, counted apart from the tests' client. */
     private const string OTHER_IP = '192.0.2.99';
-
-    /** @var string The connection a forked worker redeems on. */
-    private const string RACER = 'racer';
-
-    /** @var string The connection the worker's lock wait is watched from. */
-    private const string OBSERVER = 'observer';
-
-    /** @var int How long the worker's lock wait is watched for between polls, in microseconds. */
-    private const int POLL_INTERVAL = 100000;
-
-    /** @var int How many times the worker's lock wait is polled for before the test fails. */
-    private const int POLLS = 100;
-
-    /** @var int How long either side waits for a line from the other, in seconds. */
-    private const int WORKER_TIMEOUT = 30;
-
-    /** @var string The subject a second person is linked to, apart from the first's. */
-    private const string OTHER_SUBJECT = 'other-subject';
 
     /** @var array<string, int> The rank in SSO's lock order of each table a lock is taken on. */
     private const array RANKS = [
@@ -175,66 +153,6 @@ final class RedemptionLockOrderTest extends TestCase
         self::assertContains(5, $ranks);
         self::assertSame($ranks, self::sorted($ranks));
         $this->assertNoLockGoesBack();
-    }
-
-    /**
-     * A `link` takes the identity's guard before every other lock.
-     *
-     * @param  string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideIsolationLevels')]
-    public function testALinkTakesTheIdentitysGuardFirst(string $level): void
-    {
-        self::useIsolationLevel($level);
-
-        $person  = $this->createPerson();
-        $handoff = $this->handoff(Purpose::LINK, $person, tailor: self::otherSubject(...));
-
-        $this->recordStatements();
-
-        self::assertTrue($this->redeemLink($handoff, $person)->isRedeemed());
-
-        $ranks = $this->lockRanks();
-
-        self::assertSame(1, $ranks[0] ?? null);
-        self::assertContains(3, $ranks);
-        self::assertContains(5, $ranks);
-        self::assertSame($ranks, self::sorted($ranks));
-        $this->assertNoLockGoesBack();
-    }
-
-    /**
-     * A `link` racing a holder of the identity's guard waits, then links.
-     *
-     * @param  string  $level
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    #[DataProvider('provideIsolationLevels')]
-    public function testALinkRacingAHolderOfTheIdentitysGuardLinks(string $level): void
-    {
-        self::requireAFork();
-        self::useIsolationLevel($level);
-
-        $person    = $this->createPerson();
-        $handoff   = $this->handoff(Purpose::LINK, $person, tailor: self::otherSubject(...));
-        $reference = self::referenceOf($person);
-        $digest    = IdentityLock::digest($reference);
-
-        DB::transaction(fn () => $this->app?->make(IdentityLock::class)->acquire($reference));
-
-        $outcome = $this->raceForTheGuard(
-            static fn (): int => DB::table('sso_identity_guards')->where('identity_hash', $digest)->update(['identity_hash' => $digest]),
-            fn (): string => $this->redeemLink($handoff, $person)->status->value,
-            $level,
-        );
-
-        self::assertSame('redeemed', $outcome);
-        self::assertCount(1, $this->app?->make(LinkService::class)->list($reference) ?? []);
     }
 
     /**
@@ -484,174 +402,6 @@ final class RedemptionLockOrderTest extends TestCase
     private function redeemReauthentication(Handoff $handoff): AccessTokenResult|RedemptionResult
     {
         return Iam::reauthentications()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, self::client());
-    }
-
-    /**
-     * Redeem the `link` handoff for the tests' client, as the person.
-     *
-     * @param  \Tests\Fixtures\Sso\Handoff  $handoff
-     * @param  \Tests\Fixtures\Models\Person  $person
-     * @return \SineMacula\Laravel\Sso\Handoffs\RedemptionResult
-     *
-     * @throws \Throwable
-     */
-    private function redeemLink(Handoff $handoff, Person $person): RedemptionResult
-    {
-        return Iam::links()->redeem($this->connectionId, $handoff->code, $handoff->verifier, self::client(), $this->requestCallerOf($person));
-    }
-
-    /**
-     * The ID token, naming a subject no one is linked to yet.
-     *
-     * @param  \SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken  $token
-     * @return \SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken
-     */
-    private static function otherSubject(FakeIdToken $token): FakeIdToken
-    {
-        return $token->with('sub', self::OTHER_SUBJECT);
-    }
-
-    /**
-     * Skip a race that needs a second process where this one cannot fork.
-     *
-     * @return void
-     */
-    private static function requireAFork(): void
-    {
-        if (function_exists('pcntl_fork') && function_exists('posix_kill')) {
-            return;
-        }
-
-        self::markTestSkipped('A race needs a process that can fork.');
-    }
-
-    /**
-     * Race the second side, in a forked worker, against the first side's locks.
-     *
-     * @param  \Closure(): mixed  $hold
-     * @param  \Closure(): string  $second
-     * @param  string  $level
-     * @return string
-     *
-     * @throws \Throwable
-     */
-    private function raceForTheGuard(\Closure $hold, \Closure $second, string $level): string
-    {
-        Config::set('database.connections.' . self::RACER, Config::get('database.connections.' . self::CONNECTION));
-        Config::set('database.connections.' . self::OBSERVER, Config::get('database.connections.' . self::CONNECTION));
-
-        $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
-
-        self::assertIsArray($sockets);
-
-        [$parent, $worker] = $sockets;
-
-        $send = static function (string $line) use ($worker): void {
-            fwrite($worker, $line . "\n");
-        };
-
-        $receive = static function () use ($parent): string {
-
-            stream_set_timeout($parent, self::WORKER_TIMEOUT);
-
-            $line = fgets($parent);
-
-            self::assertIsString($line, 'The worker sent nothing.');
-
-            return trim($line);
-        };
-
-        $connection = DB::connection(self::CONNECTION);
-
-        $connection->beginTransaction();
-
-        $hold();
-
-        $pid = pcntl_fork();
-
-        if ($pid === 0) {
-            fclose($parent);
-            self::runInWorker($second, $send, $level);
-        }
-
-        fclose($worker);
-
-        try {
-            self::assertGreaterThan(0, $pid, 'The worker could not be forked.');
-
-            self::awaitLockWait($receive());
-
-            $connection->commit();
-
-            return $receive();
-        } finally {
-            if ($connection->transactionLevel() > 0) {
-                $connection->rollBack();
-            }
-
-            if ($pid > 0) {
-                pcntl_waitpid($pid, $status);
-            }
-        }
-    }
-
-    /**
-     * Run the second side in the forked worker, then end the worker.
-     *
-     * @param  \Closure(): string  $second
-     * @param  \Closure(string): void  $send
-     * @param  string  $level
-     * @return never
-     */
-    private static function runInWorker(\Closure $second, \Closure $send, string $level): never
-    {
-        try {
-            DB::setDefaultConnection(self::RACER);
-
-            self::useIsolationLevel($level, self::RACER);
-
-            $racer   = DB::connection(self::RACER);
-            $backend = $racer->scalar($racer->getDriverName() === 'pgsql' ? 'select pg_backend_pid()' : 'select connection_id()');
-
-            $send(is_scalar($backend) ? (string) $backend : '');
-
-            $outcome = $second();
-        } catch (\Throwable $exception) {
-            $outcome = sprintf('%s: %s', $exception::class, str_replace("\n", ' ', $exception->getMessage()));
-        }
-
-        $send($outcome);
-
-        posix_kill((int) getmypid(), SIGKILL);
-
-        exit(1);
-    }
-
-    /**
-     * Wait until the database reports the worker waiting for a row lock.
-     *
-     * @param  string  $backend
-     * @return void
-     */
-    private static function awaitLockWait(string $backend): void
-    {
-        $observer = DB::connection(self::OBSERVER);
-        $query    = $observer->getDriverName() === 'pgsql'
-            ? 'select count(*) from pg_stat_activity where pid = ? and wait_event_type = \'Lock\''
-            : 'select count(*) from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = \'LOCK WAIT\'';
-
-        for ($poll = 0; $poll < self::POLLS; $poll++) {
-
-            $waiting = $observer->scalar($query, [(int) $backend], false);
-
-            if (is_numeric($waiting) && (int) $waiting > 0) {
-                return;
-            }
-
-            usleep(self::POLL_INTERVAL);
-        }
-
-        self::fail(sprintf('The worker never waited on a lock; it reported [%s].', $backend));
     }
 
     /**

@@ -21,6 +21,7 @@ use SineMacula\Laravel\Iam\Sso\SsoContextContributor;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Sessions\AuthenticationContext;
+use SineMacula\Laravel\Sso\Sessions\Enums\ContextKey;
 use SineMacula\Laravel\Sso\Sessions\Provenance;
 use SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken;
 use Tests\Concerns\MigratesSso;
@@ -92,8 +93,8 @@ final class SsoContextContributorTest extends TestCase
         $expected = AuthenticationContext::fromStored($this->storedFormOf($session));
         $context  = $this->contextOn($session);
 
-        self::assertCount(count(AuthenticationContext::KEYS), $expected);
-        $keys = array_map(static fn (string $key): string => substr($key, 4), AuthenticationContext::KEYS);
+        self::assertCount(count(array_column(ContextKey::cases(), 'value')), $expected);
+        $keys = array_map(static fn (string $key): string => substr($key, 4), array_column(ContextKey::cases(), 'value'));
 
         self::assertSame($keys, array_keys($context->toArray()[AuthenticationContext::NAMESPACE] ?? []));
 
@@ -150,7 +151,7 @@ final class SsoContextContributorTest extends TestCase
 
         self::assertSame([], $context->toArray()[AuthenticationContext::NAMESPACE] ?? []);
 
-        foreach (AuthenticationContext::KEYS as $key) {
+        foreach (array_column(ContextKey::cases(), 'value') as $key) {
             self::assertFalse($context->has($key), $key);
             self::assertSame('absent', $context->get($key, 'absent'), $key);
         }
