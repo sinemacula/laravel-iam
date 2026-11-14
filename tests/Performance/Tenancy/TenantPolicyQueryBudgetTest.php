@@ -111,10 +111,11 @@ final class TenantPolicyQueryBudgetTest extends PerformanceContractTestCase
         $this->enforce();
 
         // Reads: SSO's six, the identity twice, MFA's three, the policy's two
-        // (rule and connections), the session's three and the guard's two.
+        // (rule and connections), the session's three, the guard's two, and the
+        // check after commit's rule, connections and session connection.
         // Writes: SSO's five and laravel-authentication's four.
         $handoff = $this->handoff();
-        $answer  = $this->assertQueryBudget(18, 9, fn (): RedemptionResult|SignInResult => $this->redeemInTenant($handoff->code, $handoff->verifier), begins: 5, commits: 5);
+        $answer  = $this->assertQueryBudget(21, 9, fn (): RedemptionResult|SignInResult => $this->redeemInTenant($handoff->code, $handoff->verifier), begins: 5, commits: 5);
 
         self::assertInstanceOf(SignInResult::class, $answer);
         self::assertTrue($answer->isSignedIn());

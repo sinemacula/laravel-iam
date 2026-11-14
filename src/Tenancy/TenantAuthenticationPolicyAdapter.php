@@ -40,7 +40,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
      */
     public function __construct(
 
-        /** Resolves SSO's enforcement, its exemption gate and the request's records on each call. */
+        /** Resolves SSO's enforcement, its exemption gate and contract, and the request's records on each call. */
         private Container $container,
 
         /** Asks the application's MFA tenant requirement. */
@@ -75,7 +75,7 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
-     * The exemption gate's answer, or `null` when the rule would not refuse.
+     * Whether the identity is exempt, or `null` when the rule would not refuse.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
      * @param  \SineMacula\Laravel\Authentication\Tenancy\TenantPolicyContext  $context
@@ -102,7 +102,12 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
         $sessionId = self::sessionIdOf($context->session);
         $client    = $this->container->make(AdmittedRedemptions::class)->clientFor($identity, $sessionId) ?? new SsoClient(null, null);
 
-        return $this->container->make(ExemptionGate::class)->admit($policy, $context->application, $identity, $client, $sessionId);
+        $gate = $this->container->make(ExemptionGate::class);
+
+        // Only an admitted call reports its exemption.
+        return $context->rejudging
+            ? $gate->judge($policy, $context->application, $identity)
+            : $gate->admit($policy, $context->application, $identity, $client, $sessionId);
     }
 
     /**
