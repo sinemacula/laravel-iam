@@ -105,9 +105,9 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         $this->linkThroughFlow($this->createPerson());
         $this->signedIn($this->redeemInTenant($this->handoff()));
 
-        $completed = self::versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
+        $completed = $this->versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
         $handoff   = $this->handoff();
-        $judged    = self::versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId, $this->makeConnection()], self::ssoClient()));
+        $judged    = $this->versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId, $this->makeConnection()], self::ssoClient()));
         $answer    = $this->redeemInTenant($handoff);
 
         self::assertNotSame($completed, $judged);
@@ -199,7 +199,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
 
         DB::table('sso_connections')->where('id', $foreign)->update(['has_completed_sign_in' => true]);
 
-        $version = self::versionOf($this->enforcement()->update($tenant, true, [$foreign], self::ssoClient()));
+        $version = $this->versionOf($this->enforcement()->update($tenant, true, [$foreign], self::ssoClient()));
 
         $this->exemptions()->exempt(self::referenceOf($person));
 
@@ -255,7 +255,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
 
         $this->exemptions()->exempt(self::referenceOf($hopper));
 
-        $version = self::versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
+        $version = self::ruleVersionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
 
         Event::assertDispatchedTimes(EnforcementChanged::class, 1);
         Event::assertDispatched(EnforcementChanged::class, static fn (EnforcementChanged $event): bool => $event->enabled && $event->version === $version);
@@ -266,7 +266,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
         Event::assertDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId === self::keyOf($exempt));
         Event::assertNotDispatched(ExemptionUsed::class, static fn (ExemptionUsed $event): bool => $event->context->sessionId !== self::keyOf($exempt));
 
-        self::versionOf($this->enforcement()->update(self::TENANT, false, [], self::ssoClient()));
+        $this->versionOf($this->enforcement()->update(self::TENANT, false, [], self::ssoClient()));
 
         Event::assertDispatchedTimes(EnforcementChanged::class, 2);
         Event::assertDispatched(EnforcementChanged::class, static fn (EnforcementChanged $event): bool => !$event->enabled && $event->previousVersion === $version);
@@ -528,7 +528,7 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
 
         $this->signedIn(Iam::signIns()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, new SignInContext(self::client())));
 
-        return self::versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
+        return $this->versionOf($this->enforcement()->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
     }
 
     /**
@@ -552,12 +552,27 @@ final class EnforcementThroughTenantPolicyTest extends TestCase
     }
 
     /**
-     * The version the enforcement change stored, failing unless it changed.
+     * The policy version after the change, failing unless it changed.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementResult  $result
      * @return ?string
      */
-    private static function versionOf(EnforcementResult $result): ?string
+    private function versionOf(EnforcementResult $result): ?string
+    {
+        self::assertTrue($result->isChanged(), sprintf('The enforcement did not change: [%s].', $result->reason->value ?? $result->status->value));
+
+        $tenantId = $result->enforcement->tenantId ?? self::fail('The change named no enforcement.');
+
+        return $this->app?->make(Enforcement::class)->policy($tenantId, self::GUARD)->version;
+    }
+
+    /**
+     * The changed rule's own version, as SSO's change event names it.
+     *
+     * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementResult  $result
+     * @return ?string
+     */
+    private static function ruleVersionOf(EnforcementResult $result): ?string
     {
         self::assertTrue($result->isChanged(), sprintf('The enforcement did not change: [%s].', $result->reason->value ?? $result->status->value));
 

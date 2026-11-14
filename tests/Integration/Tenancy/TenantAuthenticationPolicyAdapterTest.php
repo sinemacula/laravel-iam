@@ -24,6 +24,7 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Enforcement\DatabaseEnforcement;
+use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Events\ExemptionUsed;
 use Tests\Concerns\CountsLockingReads;
 use Tests\Concerns\MigratesMembers;
@@ -180,6 +181,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
         $this->exemptions()->exempt(self::referenceOf($person));
 
         $requirement = $this->ask($person, $session);
+        $version     = EnforcementPolicy::required(self::SSO_TENANT, self::SSO_TENANT, [self::SSO_CONNECTION], 'enforcement-3')->version;
 
         self::assertNull($requirement->connections);
         Event::assertDispatchedTimes(ExemptionUsed::class, 1);
@@ -189,7 +191,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
             && $event->context->application                                                                                === self::GUARD
             && $event->context->ip                                                                                         === null
             && $event->context->userAgent                                                                                  === null
-            && $event->enforcementVersion                                                                                  === 'enforcement-3');
+            && $event->enforcementVersion                                                                                  === $version);
     }
 
     /**
