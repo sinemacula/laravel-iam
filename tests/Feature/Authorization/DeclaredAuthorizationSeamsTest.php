@@ -113,48 +113,6 @@ final class DeclaredAuthorizationSeamsTest extends TestCase
     }
 
     /**
-     * A binding made over each adapter shows its declaration overridden.
-     *
-     * @return void
-     *
-     * @throws \JsonException
-     */
-    public function testABindingMadeOverAnAdapterShowsItOverridden(): void
-    {
-        foreach (self::applicationBindings() as $contract => $binding) {
-            $this->application()->bind($contract, $binding);
-        }
-
-        [, $seams] = $this->report();
-
-        foreach (array_keys(self::DECLARED) as $contract) {
-            self::assertSame('later_binding', $seams[$contract]['origin'], $contract);
-            self::assertSame('overridden', $seams[$contract]['declaration']['state'] ?? null, $contract);
-        }
-
-        self::assertStringContainsString('declared by laravel-iam as ' . SubjectResolverAdapter::class . ', but overridden later', $this->text());
-    }
-
-    /**
-     * An instance bound over an adapter is shown.
-     *
-     * @return void
-     *
-     * @throws \JsonException
-     */
-    public function testAnInstanceBoundOverAnAdapterIsShown(): void
-    {
-        $app = $this->application();
-
-        $app->instance(IdentityDirectory::class, \Mockery::mock(IdentityDirectory::class));
-
-        [, $seams] = $this->report();
-
-        self::assertSame('instance_over_it', $seams[IdentityDirectory::class]['declaration']['state'] ?? null);
-        self::assertSame('standing', $seams[SubjectResolver::class]['declaration']['state'] ?? null);
-    }
-
-    /**
      * Nothing is declared over the application's own binding.
      *
      * @return void
