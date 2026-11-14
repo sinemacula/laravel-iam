@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Callers\Caller;
 use SineMacula\Laravel\Authentication\Callers\Enums\CallerCredential;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
@@ -34,7 +35,7 @@ final readonly class Callers
         /** Names the caller as SSO names an identity. */
         private IdentityReferences $identities,
 
-        /** Resolves the application to the guard it is, and tells whether a transaction is open. */
+        /** Resolves the application to the guard it is. */
         private CurrentSession $sessions,
     ) {}
 
@@ -56,7 +57,7 @@ final readonly class Callers
         $session  = self::sessionOf($caller);
 
         // A plain read in an older transaction may see a stale snapshot.
-        return $session === null || $this->sessions->isInTransaction()
+        return $session === null || StorageConnection::isInTransaction()
             ? new SsoCaller($identity)
             : new SsoCaller($identity, SignIn::reference($session, $caller->guard));
     }

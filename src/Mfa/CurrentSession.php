@@ -5,13 +5,11 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
-use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\HasSessions;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Session;
-use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Guards\JwtGuard;
 use SineMacula\Laravel\Authentication\Sessions\SessionService;
@@ -35,15 +33,11 @@ final readonly class CurrentSession
      * Constructor.
      *
      * @param  \Illuminate\Contracts\Auth\Factory  $auth
-     * @param  \Illuminate\Database\ConnectionResolverInterface  $database
      */
     public function __construct(
 
         /** Resolves the guards. */
         private AuthFactory $auth,
-
-        /** Resolves `laravel-authentication`'s storage connection. */
-        private ConnectionResolverInterface $database,
     ) {}
 
     /**
@@ -194,18 +188,6 @@ final readonly class CurrentSession
         $this->guard($application);
 
         return Auth::sessions($application);
-    }
-
-    /**
-     * Whether a transaction is open; freshness refuses a current read outside.
-     *
-     * @return bool
-     *
-     * @throws \InvalidArgumentException
-     */
-    public function isInTransaction(): bool
-    {
-        return $this->database->connection(StorageConnection::name())->transactionLevel() > 0;
     }
 
     /**
