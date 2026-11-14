@@ -40,9 +40,10 @@ All rows are transient, replace only their member's default, and are on while `i
   authentication's transaction. A binding whose channel is not the factor's own is `not_found` without asking MFA, so no
   code goes to another number or address.
 - Outcomes: authentication's `invalid` (a wrong or malformed code) is MFA's counted `invalid_code`, since only a counted
-  failure keeps its count when a refusal rolls back. `not_found` stays `not_found`; `used` is `replayed`; `expired` and
-  `exhausted` are `expired`; `locked` and `rate_limited` are `locked`. A send that is `rate_limited` or
-  `deliveries_exhausted` is `sending_capped`. A wrong code that caused a lockout is answered locked until it ends.
+  failure keeps its count when a refusal rolls back. `not_found` stays `not_found` and `replayed` stays `replayed`;
+  `used` (another code at a used challenge, or an ended one) is an uncounted `invalid_code`; `expired` and `exhausted`
+  are `expired`; `locked` and `rate_limited` are `locked`. A send that is `rate_limited` or `deliveries_exhausted` is
+  `sending_capped`. A wrong code that caused a lockout is answered locked until it ends.
 - Delivery: MFA's SMS and email senders forward each `CodeMessage` to the application's `OneTimeCodeSender` as a
   `OneTimeCodeMessage` with purpose `enrollment` or `mfa`. The package composes no text and queues nothing. MFA's boot
   check builds its senders, so boot is refused until a `OneTimeCodeSender` is bound.
@@ -77,8 +78,6 @@ All rows are transient, replace only their member's default, and are on while `i
 
 - `laravel-authentication`: `FactorCodeCounters::admit()` and `report()` receive only the binding, so
   `Mfa\FactorCodeCallers` keeps MFA's caller beside it.
-- `laravel-authentication`: `FactorCodeOutcome::USED` does not say whether the code used the challenge, so any code at
-  a used challenge is `replayed`, and an enrolment counts it.
 - `laravel-authentication`: `OneTimeCodeMessage` has no factor summary or purpose finer than `mfa`, so a sender cannot
   word a step-up's code differently.
 - `laravel-mfa`: `PasskeyGateway::verifyAssertion()` is handed no client, so `verifyFactor()` gets an unknown one.
