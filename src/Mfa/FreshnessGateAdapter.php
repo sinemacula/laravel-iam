@@ -7,6 +7,7 @@ namespace SineMacula\Laravel\Iam\Mfa;
 use Carbon\CarbonImmutable;
 use SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Session;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\FreshnessGate;
@@ -116,7 +117,7 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
         $parts   = $this->parts($callerRequirement);
         $session = $this->session($caller);
 
-        return $session === null ? null : $this->heldUntil($session, $operation, $parts, $this->sessions->isInTransaction());
+        return $session === null ? null : $this->heldUntil($session, $operation, $parts, StorageConnection::isInTransaction());
     }
 
     /**
