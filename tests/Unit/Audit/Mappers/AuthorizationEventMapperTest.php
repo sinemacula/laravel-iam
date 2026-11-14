@@ -23,6 +23,7 @@ use SineMacula\Laravel\AuditLog\Stores\NullAuditStore;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
+use SineMacula\Laravel\Authorization\Enums\MutationOperation;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionEffect;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport;
@@ -33,6 +34,10 @@ use SineMacula\Laravel\Authorization\Events\Guardrail\GuardrailRemoved;
 use SineMacula\Laravel\Authorization\Events\Guardrail\GuardrailSet;
 use SineMacula\Laravel\Authorization\Events\Identity\BoundaryRemoved;
 use SineMacula\Laravel\Authorization\Events\Identity\BoundarySet;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassActivated;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassExpired;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassRevoked;
+use SineMacula\Laravel\Authorization\Events\Identity\BreakGlassSurrendered;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionExpired;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionExpiryChanged;
 use SineMacula\Laravel\Authorization\Events\Identity\PermissionGranted;
@@ -120,6 +125,21 @@ final class AuthorizationEventMapperTest extends TestCase
         $codes    = array_map(static fn (AuthorizationActivity $code): string => $code->value, AuthorizationActivity::cases());
 
         self::assertEqualsCanonicalizing($codes, array_values(array_unique($provided)));
+    }
+
+    /**
+     * Every change operation is provided for, recorded or skipped.
+     *
+     * @return void
+     */
+    public function testEveryOperationIsProvidedFor(): void
+    {
+        $events     = array_column([...iterator_to_array(self::provideEvents(), false), ...iterator_to_array(self::provideSkipped(), false)], 0);
+        $changes    = array_filter($events, static fn (object $event): bool => $event instanceof AuthorizationMutation);
+        $operations = array_map(static fn (AuthorizationMutation $event): string => $event->operation(), $changes);
+        $cases      = array_map(static fn (MutationOperation $operation): string => $operation->value, MutationOperation::cases());
+
+        self::assertSame([], array_values(array_diff($cases, $operations)));
     }
 
     /**
@@ -411,6 +431,19 @@ final class AuthorizationEventMapperTest extends TestCase
         ];
 
         yield 'another of its events' => [new class implements AuthorizationEvent {}];
+
+        $role   = new Reference('role', '3');
+        $scope  = new GrantScope(new Reference('organisation', self::TENANT), 'admin', false);
+        $at     = CarbonImmutable::parse('2026-11-09 12:00:00');
+        $ending = [self::operation(), self::person('7'), $role, 'Responder', $scope, 'activation-1', $at];
+
+        yield 'a break-glass activation' => [new BreakGlassActivated(self::operation(), self::person('7'), $role, 'Responder', $scope, 'activation-1', 'incident', $at)];
+
+        yield 'a break-glass surrender' => [new BreakGlassSurrendered(...$ending)];
+
+        yield 'a break-glass revocation' => [new BreakGlassRevoked(...$ending)];
+
+        yield 'a break-glass expiry' => [new BreakGlassExpired(...$ending)];
 
         yield 'a change with no code' => [\Mockery::mock(AuthorizationMutation::class, ['operation' => 'role.archived'])];
 
@@ -811,7 +844,7 @@ final class AuthorizationEventMapperTest extends TestCase
         $container->instance(AuditStore::class, new NullAuditStore);
 
         $event = \Mockery::mock(AuthorizationMutation::class, [
-            'operation'       => 'role.deleted',
+            'operation'       => MutationOperation::ROLE_DELETED->value,
             'operationId'     => self::OPERATION,
             'isTrusted'       => true,
             'actor'           => null,
