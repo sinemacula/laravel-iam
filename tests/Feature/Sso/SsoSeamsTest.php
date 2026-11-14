@@ -29,7 +29,6 @@ use SineMacula\Laravel\Sso\Applications\ConfiguredApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Contracts\Freshness;
-use SineMacula\Laravel\Sso\Contracts\HandoffIssuer;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Contracts\Linker;
@@ -39,7 +38,6 @@ use SineMacula\Laravel\Sso\Evidence\ConnectionEvidencePolicy;
 use SineMacula\Laravel\Sso\Evidence\InsufficientEvidence;
 use SineMacula\Laravel\Sso\Flows\NoReauthenticationSessions;
 use SineMacula\Laravel\Sso\Freshness\RefusingFreshness;
-use SineMacula\Laravel\Sso\Handoffs\DatabaseHandoffStore;
 use SineMacula\Laravel\Sso\Linking\NoEmailMatches;
 use SineMacula\Laravel\Sso\Linking\RefusingLinkConfirmation;
 use SineMacula\Laravel\Sso\Links\LinkStore;
@@ -100,7 +98,6 @@ final class SsoSeamsTest extends TestCase
         $this->assertResolvesTo([
             ...self::ADAPTERS,
             EvidencePolicy::class => InsufficientEvidence::class,
-            HandoffIssuer::class  => DatabaseHandoffStore::class,
         ]);
     }
 
