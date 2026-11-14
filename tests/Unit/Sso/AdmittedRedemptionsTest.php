@@ -26,8 +26,8 @@ use Tests\Fixtures\Sso\Redemptions;
 final class AdmittedRedemptionsTest extends TestCase
 {
     /**
-     * The redemption answers for exactly its result's connection, issuer and
-     * subject.
+     * The redemption answers for exactly its result's connection, issuer,
+     * subject and NameID format.
      *
      * @return void
      */
@@ -38,7 +38,7 @@ final class AdmittedRedemptionsTest extends TestCase
 
         $admitted->record($redemption, Redemptions::client());
 
-        self::assertSame($redemption, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertSame($redemption, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -137,17 +137,21 @@ final class AdmittedRedemptionsTest extends TestCase
     /**
      * Results differing from the admitted one in one part.
      *
-     * @return iterable<string, array{0: string, 1: string, 2: string}>
+     * @return iterable<string, array{0: string, 1: string, 2: string, 3: ?string}>
      */
     public static function provideOtherResults(): iterable
     {
-        yield 'another connection' => ['connection-2', Redemptions::ISSUER, Redemptions::SUBJECT];
+        yield 'another connection' => ['connection-2', Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT];
 
-        yield 'another issuer' => [Redemptions::CONNECTION, 'https://other.example.test', Redemptions::SUBJECT];
+        yield 'another issuer' => [Redemptions::CONNECTION, 'https://other.example.test', Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT];
 
-        yield 'another subject' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'subject-2'];
+        yield 'another subject' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'subject-2', Redemptions::NAME_ID_FORMAT];
 
-        yield 'a subject in another case' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'SUBJECT-1'];
+        yield 'a subject in another case' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'SUBJECT-1', Redemptions::NAME_ID_FORMAT];
+
+        yield 'another NameID format' => [Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'];
+
+        yield 'no NameID format' => [Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, null];
     }
 
     /**
@@ -157,16 +161,17 @@ final class AdmittedRedemptionsTest extends TestCase
      * @param  string  $connectionId
      * @param  string  $issuer
      * @param  string  $subject
+     * @param  ?string  $nameIdFormat
      * @return void
      */
     #[DataProvider('provideOtherResults')]
-    public function testAnotherResultIsAnsweredByNothing(string $connectionId, string $issuer, string $subject): void
+    public function testAnotherResultIsAnsweredByNothing(string $connectionId, string $issuer, string $subject, ?string $nameIdFormat): void
     {
         $admitted = new AdmittedRedemptions;
 
         $admitted->record(Redemptions::signIn(), Redemptions::client());
 
-        self::assertNull($admitted->matching($connectionId, $issuer, $subject));
+        self::assertNull($admitted->matching($connectionId, $issuer, $subject, $nameIdFormat));
     }
 
     /**
@@ -176,7 +181,7 @@ final class AdmittedRedemptionsTest extends TestCase
      */
     public function testNothingRecordedAnswersNothing(): void
     {
-        self::assertNull((new AdmittedRedemptions)->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull((new AdmittedRedemptions)->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -192,11 +197,11 @@ final class AdmittedRedemptionsTest extends TestCase
         $admitted->record(Redemptions::signIn(), Redemptions::client());
         $admitted->forget();
 
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
 
         $admitted->record($next, Redemptions::client());
 
-        self::assertSame($next, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertSame($next, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -219,7 +224,7 @@ final class AdmittedRedemptionsTest extends TestCase
             self::assertSame('One redemption is admitted at a time: another was recorded while one was held.', $exception->getMessage());
         }
 
-        self::assertSame($first, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertSame($first, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -258,6 +263,6 @@ final class AdmittedRedemptionsTest extends TestCase
             self::assertSame('Only a redemption SSO admitted, with the identity and the link it resolved, is recorded.', $exception->getMessage());
         }
 
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 }

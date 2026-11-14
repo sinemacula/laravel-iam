@@ -48,6 +48,7 @@ final readonly class ExternalResults
             linkId: $redemption->linkId,
             requestReference: $result->requestReference->value,
             providerContext: $provenance === null ? null : new ProviderContext($provenance->toArray()),
+            nameIdFormat: $result->nameIdFormat,
         );
     }
 
@@ -76,6 +77,7 @@ final readonly class ExternalResults
             evidence: self::evidence($renewal->evidence),
             linkId: $redemption->linkId,
             requestReference: $result->requestReference->value,
+            nameIdFormat: $result->nameIdFormat,
         );
     }
 

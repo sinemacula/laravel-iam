@@ -35,6 +35,9 @@ final class Redemptions
     /** @var string The subject every result asserts. */
     public const string SUBJECT = 'subject-1';
 
+    /** @var string The format of the SAML NameID every subject is. */
+    public const string NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent';
+
     /** @var string The tenant the connection belongs to. */
     public const string TENANT = 'tenant-1';
 
@@ -100,10 +103,10 @@ final class Redemptions
         return new VerifiedResult(
             $issuer,
             $subject,
-            null,
+            self::NAME_ID_FORMAT,
             $connectionId,
             self::TENANT,
-            'oidc',
+            'saml2',
             self::APPLICATION,
             $purpose,
             RequestReference::fromString(self::REFERENCE),

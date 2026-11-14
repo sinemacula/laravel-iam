@@ -58,5 +58,3 @@ adapters off the application binds the policy itself.
 
 - `laravel-authentication`'s `TenantPolicyContext` carries no `ClientContext`, so the gate is handed the admitted
   redemption's client where there is one and an empty client otherwise.
-- `laravel-sso`'s `EnforcementPolicy::$version` does not change when a satisfying connection is disabled, and an
-  exemption has no version, so the adapter hashes the whole policy and the gate's outcome.

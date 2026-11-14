@@ -37,9 +37,12 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
 {
     use MigratesMembers, SignsInPeople, SignsInThroughLinks;
 
+    /** @var string A SAML NameID format the admitted result has none of. */
+    private const string NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent';
+
     /**
-     * The admitted link answers for exactly the admitted connection, issuer and
-     * subject.
+     * The admitted link answers for exactly the admitted connection, issuer,
+     * subject and NameID format.
      *
      * @return void
      */
@@ -51,7 +54,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
 
         DB::enableQueryLog();
 
-        $link = $this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person));
+        $link = $this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person), null);
 
         self::assertNotNull($link);
         self::assertInstanceOf(Person::class, $link->identity);
@@ -62,20 +65,22 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[connection, issuer, subject]`, each differing from the admitted
-     * result in one part.
+     * Rows of `[connection, issuer, subject, NameID format]`, each differing
+     * from the admitted result in one part.
      *
-     * @return iterable<string, array{0: string, 1: string, 2: ?string}>
+     * @return iterable<string, array{0: string, 1: string, 2: ?string, 3: ?string}>
      */
     public static function provideOtherResults(): iterable
     {
-        yield 'another connection' => ['connection-2', self::ISSUER, null];
+        yield 'another connection' => ['connection-2', self::ISSUER, null, null];
 
-        yield 'the connection in another case' => ['CONNECTION-1', self::ISSUER, null];
+        yield 'the connection in another case' => ['CONNECTION-1', self::ISSUER, null, null];
 
-        yield 'another issuer' => [self::SSO_CONNECTION, 'https://idp.example.test/', null];
+        yield 'another issuer' => [self::SSO_CONNECTION, 'https://idp.example.test/', null, null];
 
-        yield 'another subject' => [self::SSO_CONNECTION, self::ISSUER, 'subject-0'];
+        yield 'another subject' => [self::SSO_CONNECTION, self::ISSUER, 'subject-0', null];
+
+        yield 'a NameID format' => [self::SSO_CONNECTION, self::ISSUER, null, self::NAME_ID_FORMAT];
     }
 
     /**
@@ -85,16 +90,17 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
      * @param  string  $connectionId
      * @param  string  $issuer
      * @param  ?string  $subject
+     * @param  ?string  $nameIdFormat
      * @return void
      */
     #[DataProvider('provideOtherResults')]
-    public function testAnyOtherResultIsLinkedToNothing(string $connectionId, string $issuer, ?string $subject): void
+    public function testAnyOtherResultIsLinkedToNothing(string $connectionId, string $issuer, ?string $subject, ?string $nameIdFormat): void
     {
         $person = $this->createPerson();
 
         $this->admit($person);
 
-        self::assertNull($this->adapter()->find($connectionId, $issuer, $subject ?? self::subjectOf($person)));
+        self::assertNull($this->adapter()->find($connectionId, $issuer, $subject ?? self::subjectOf($person), $nameIdFormat));
     }
 
     /**
@@ -110,17 +116,17 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
 
         DB::enableQueryLog();
 
-        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject));
+        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject, null));
         self::assertSame([], DB::getQueryLog());
 
         $this->admit($person)->forget();
 
-        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject));
+        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject, null));
 
         $this->admit($person);
         $this->app?->forgetScopedInstances();
 
-        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject));
+        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, $subject, null));
     }
 
     /**
@@ -141,7 +147,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
             admitted: true,
         ));
 
-        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person)));
+        self::assertNull($this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person), null));
     }
 
     /**
@@ -164,7 +170,7 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
         ), new SsoClientContext(null, null));
 
         try {
-            $this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person));
+            $this->adapter()->find(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person), null);
 
             self::fail('An unresolved identity was linked.');
         } catch (UnresolvedReferenceException $exception) {
@@ -194,36 +200,40 @@ final class ExternalIdentityLinksAdapterTest extends TestCase
     }
 
     /**
-     * Rows of `[link, subject, reason]` for results naming another link or
-     * subject.
+     * Rows of `[link, subject, NameID format, reason]` for results naming
+     * another link, subject or NameID format.
      *
-     * @return iterable<string, array{0: string, 1: ?string, 2: \SineMacula\Laravel\Authentication\Events\Enums\FailureReason}>
+     * @return iterable<string, array{0: string, 1: ?string, 2: ?string, 3: \SineMacula\Laravel\Authentication\Events\Enums\FailureReason}>
      */
     public static function provideRefusedResults(): iterable
     {
-        yield 'another link' => ['link-2', null, FailureReason::LINK_MISMATCH];
+        yield 'another link' => ['link-2', null, null, FailureReason::LINK_MISMATCH];
 
-        yield 'another subject' => [self::LINK, 'subject-0', FailureReason::EXTERNAL_RESULT_UNLINKED];
+        yield 'another subject' => [self::LINK, 'subject-0', null, FailureReason::EXTERNAL_RESULT_UNLINKED];
+
+        yield 'a NameID format' => [self::LINK, null, self::NAME_ID_FORMAT, FailureReason::EXTERNAL_RESULT_UNLINKED];
     }
 
     /**
-     * A result naming another link or an unadmitted subject signs nobody in.
+     * A result naming another link, or a subject or NameID format SSO did not
+     * admit, signs nobody in.
      *
      * @param  string  $linkId
      * @param  ?string  $subject
+     * @param  ?string  $nameIdFormat
      * @param  \SineMacula\Laravel\Authentication\Events\Enums\FailureReason  $reason
      * @return void
      *
      * @throws \Throwable
      */
     #[DataProvider('provideRefusedResults')]
-    public function testAnExternalSignInThroughAnyOtherLinkIsRefused(string $linkId, ?string $subject, FailureReason $reason): void
+    public function testAnExternalSignInThroughAnyOtherLinkIsRefused(string $linkId, ?string $subject, ?string $nameIdFormat, FailureReason $reason): void
     {
         $person = $this->createPerson();
 
         $this->admit($person);
 
-        $result = new ExternalResult(self::SSO_CONNECTION, self::ISSUER, $subject ?? self::subjectOf($person), self::SSO_TENANT, linkId: $linkId);
+        $result = new ExternalResult(self::SSO_CONNECTION, self::ISSUER, $subject ?? self::subjectOf($person), self::SSO_TENANT, linkId: $linkId, nameIdFormat: $nameIdFormat);
         $answer = $this->sessions()->signInExternally($result, new SignInContext(self::client()));
 
         self::assertTrue($answer->isFailed());

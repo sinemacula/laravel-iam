@@ -36,6 +36,7 @@ use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\ExternalResults;
 use SineMacula\Laravel\Iam\Sso\SignInRedemption;
 use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
+use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementResult;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
@@ -292,9 +293,9 @@ final class SignInRedemptionTest extends TestCase
         self::assertInstanceOf(SignInResult::class, $this->redeem($this->handoff()));
 
         $enforcement = $this->app?->make(EnforcementService::class) ?? self::fail('The application has not booted.');
-        $completed   = self::versionOf($enforcement->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
+        $completed   = $this->versionOf($enforcement->update(self::TENANT, true, [$this->connectionId], self::ssoClient()));
         $handoff     = $this->handoff();
-        $judged      = self::versionOf($enforcement->update(self::TENANT, true, [$this->connectionId, $this->makeConnection()], self::ssoClient()));
+        $judged      = $this->versionOf($enforcement->update(self::TENANT, true, [$this->connectionId, $this->makeConnection()], self::ssoClient()));
         $answer      = $this->redeem($handoff);
 
         self::assertNotSame($completed, $judged);
@@ -529,8 +530,8 @@ final class SignInRedemptionTest extends TestCase
         $admitted->record(Redemptions::signIn(), Redemptions::client());
 
         self::assertInstanceOf(SignInResult::class, $this->redeem($this->handoff()));
-        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject'));
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject', null));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -612,16 +613,16 @@ final class SignInRedemptionTest extends TestCase
     }
 
     /**
-     * The version the enforcement change stored, failing unless it changed.
+     * The policy version after the change, failing unless it changed.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementResult  $result
      * @return string
      */
-    private static function versionOf(EnforcementResult $result): string
+    private function versionOf(EnforcementResult $result): ?string
     {
         self::assertTrue($result->isChanged(), sprintf('The enforcement did not change: [%s].', $result->reason->value ?? $result->status->value));
 
-        return $result->enforcement->version ?? self::fail('The enforcement has no version.');
+        return $this->app?->make(Enforcement::class)->policy(self::TENANT, self::GUARD)->version;
     }
 
     /**
