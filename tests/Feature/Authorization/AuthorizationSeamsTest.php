@@ -492,7 +492,7 @@ final class AuthorizationSeamsTest extends TestCase
     {
         $catalogue = $this->catalogue();
 
-        foreach (AuthenticationContextKeys::KEYS as $path => $type) {
+        foreach (AuthenticationContextKeys::keys() as $path => $type) {
 
             $key = $catalogue->find($path);
 

@@ -8,6 +8,8 @@ use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\ContextKeyCatalogue;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
+use SineMacula\Laravel\Sso\Sessions\Enums\ContextKey as SsoContextKey;
+use SineMacula\Laravel\Sso\Sessions\Enums\ContextValueType as SsoValueType;
 
 /**
  * Declares the authentication context's keys and their types on
@@ -20,7 +22,7 @@ use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
  */
 final readonly class AuthenticationContextKeys
 {
-    /** @var array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType> Each key declared, by its dot path, with its type. */
+    /** @var array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType> The authentication and MFA keys, by dot path, with their types. */
     public const array KEYS = [
         'authentication.subject_type'          => ContextKeyType::STRING,
         'authentication.identity_type'         => ContextKeyType::STRING,
@@ -48,19 +50,27 @@ final readonly class AuthenticationContextKeys
         'mfa.user_verification'                => ContextKeyType::BOOL,
         'mfa.last_verification_age_seconds'    => ContextKeyType::NUMBER,
         'mfa.has_confirmed_factor'             => ContextKeyType::BOOL,
-        'sso.connection'                       => ContextKeyType::STRING,
-        'sso.tenant'                           => ContextKeyType::STRING,
-        'sso.protocol'                         => ContextKeyType::STRING,
-        'sso.provider_auth_time'               => ContextKeyType::TIME,
-        'sso.provider_amr'                     => ContextKeyType::LIST,
-        'sso.provider_acr'                     => ContextKeyType::STRING,
-        'sso.provider_authn_context_class_ref' => ContextKeyType::STRING,
-        'sso.link'                             => ContextKeyType::STRING,
-        'sso.link_provenance'                  => ContextKeyType::STRING,
-        'sso.provider_session_deadline'        => ContextKeyType::TIME,
-        'sso.session_not_after'                => ContextKeyType::TIME,
-        'sso.enforcement_version'              => ContextKeyType::STRING,
     ];
+
+    /**
+     * Every key declared, by its dot path, with its type; SSO names its own.
+     *
+     * @return array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType>
+     */
+    public static function keys(): array
+    {
+        $keys = self::KEYS;
+
+        foreach (SsoContextKey::cases() as $key) {
+            $keys[$key->value] = match ($key->type()) {
+                SsoValueType::STRING => ContextKeyType::STRING,
+                SsoValueType::LIST   => ContextKeyType::LIST,
+                SsoValueType::TIME   => ContextKeyType::TIME,
+            };
+        }
+
+        return $keys;
+    }
 
     /**
      * Declare the keys once the catalogue is built, while the context is ours.
@@ -103,7 +113,7 @@ final readonly class AuthenticationContextKeys
      */
     private static function declareOn(ContextKeyCatalogue $catalogue): void
     {
-        foreach (self::KEYS as $path => $type) {
+        foreach (self::keys() as $path => $type) {
 
             if ($catalogue->find($path) !== null) {
                 continue;
