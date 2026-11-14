@@ -89,6 +89,10 @@ final class AuthorizationActivityTest extends CodesTestCase
             'authorization.resource_policy_attached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
             'authorization.resource_policy_detached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
             'authorization.system_override_used'     => [$change, self::retained('trusted', 'name', 'protected_operation')],
+            'authorization.break_glass_activated'    => ['security', self::retained(...$scoped, ...['activation', 'justification', 'expires_at'])],
+            'authorization.break_glass_surrendered'  => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],
+            'authorization.break_glass_revoked'      => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],
+            'authorization.break_glass_expired'      => ['security', self::retained(...$scoped, ...['activation', 'expired_at'])],
         ];
     }
 }
