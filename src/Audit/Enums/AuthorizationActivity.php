@@ -106,7 +106,7 @@ enum AuthorizationActivity: string implements ListsProperties
     private const array RETAINED = [
         self::ACCESS_DENIED->value            => self::DECISION,
         self::ACCESS_ALLOWED->value           => self::DECISION,
-        self::BREAK_GLASS_USED->value         => self::DECISION,
+        self::BREAK_GLASS_USED->value         => [...self::DECISION, 'activations'],
         self::ACCESS_PREVIEWED->value         => [...self::DECISION, 'effect', 'reason'],
         self::ROLE_CREATED->value             => [...self::DEFINITION, 'system'],
         self::ROLE_UPDATED->value             => [...self::DEFINITION, 'changes'],

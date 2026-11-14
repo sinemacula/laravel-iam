@@ -247,7 +247,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
 
         self::assertTrue($policy->isRequired());
         self::assertSame(self::REGION, $policy->enforcingTenantId);
-        self::assertSame($version, $policy->version);
+        self::assertSame(EnforcementPolicy::required(self::TENANT, self::REGION, [$this->connections[self::REGION]], $version ?? '')->version, $policy->version);
         self::assertSame([$this->connections[self::REGION]], $policy->connectionIds);
     }
 

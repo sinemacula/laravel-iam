@@ -110,8 +110,8 @@ sessions, on every guard, as a savepoint of SSO's transaction:
 
 ## References and locks
 
-- `IdentityReferences` resolves SSO's reference through the morph map on the write connection with the model's own
-  query, and only when the identity's morph class and key match the reference byte for byte.
+- `IdentityReferences` resolves SSO's reference through `laravel-authentication`'s `IdentityReferences::resolve()`, on
+  the write connection, and only when the identity's morph class and key match the reference byte for byte.
 - Every adapter follows SSO's lock order, with the session's row always last. Nothing locks after
   `reauthenticateExternally()`, and nothing locks a session's row and then calls into SSO.
 
@@ -121,13 +121,8 @@ sessions, on every guard, as a savepoint of SSO's transaction:
   tree.
 - `laravel-sso`: `ReauthenticationSessions::renewAuthentication()` is not handed the result's issuer and subject, so the
   renewal is recorded and written by the redemption.
-- `laravel-authentication`: `ExternalIdentityLinks::find()` is not handed the SAML `NameID` format, so no link is looked
-  up again.
 - `laravel-authentication`: sign-ins judge the tenant policy without a lock, so a sign-in that writes its session after
   `tenantPolicyChanged()`'s second pass stands until its first refresh.
-- `laravel-authentication`: no public identity resolver or key-shape check; `IdentityReferences` reuses
-  `SessionKeyShape::matches()`.
-- `laravel-authentication`: no lookup by verified identifier, so the matcher checks `hasVerifiedIdentifier()` per row.
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
 - `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.

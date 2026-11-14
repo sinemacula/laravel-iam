@@ -354,13 +354,13 @@ final class ReauthenticationRedemptionTest extends TestCase
 
         $handoff = $this->reauthenticationHandoff();
 
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
+        $admitted->record(Redemptions::signIn());
         $recorder->open();
         $recorder->record(Redemptions::identity(), Redemptions::SESSION, now()->toImmutable(), null);
 
         self::assertInstanceOf(AccessTokenResult::class, $this->redeem($handoff));
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
-        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject'));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
+        self::assertNull($admitted->matching($this->connectionId, (string) $this->provider?->issuer, 'fake-subject', null));
         self::assertFalse($recorder->isHolding());
     }
 

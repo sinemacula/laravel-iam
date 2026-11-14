@@ -10,7 +10,6 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Http\ClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use Tests\Fixtures\Sso\Redemptions;
 
@@ -26,8 +25,8 @@ use Tests\Fixtures\Sso\Redemptions;
 final class AdmittedRedemptionsTest extends TestCase
 {
     /**
-     * The redemption answers for exactly its result's connection, issuer and
-     * subject.
+     * The redemption answers for exactly its result's connection, issuer,
+     * subject and NameID format.
      *
      * @return void
      */
@@ -36,71 +35,9 @@ final class AdmittedRedemptionsTest extends TestCase
         $admitted   = new AdmittedRedemptions;
         $redemption = Redemptions::signIn();
 
-        $admitted->record($redemption, Redemptions::client());
+        $admitted->record($redemption);
 
-        self::assertSame($redemption, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
-    }
-
-    /**
-     * A sign-in's client is answered for its identity and no session alone.
-     *
-     * @return void
-     */
-    public function testASignInsClientIsAnsweredForItsIdentityAndNoSessionAlone(): void
-    {
-        $admitted = new AdmittedRedemptions;
-        $identity = Redemptions::identity();
-        $client   = new ClientContext('198.51.100.4', 'sign-in-agent');
-
-        self::assertNull($admitted->clientFor($identity, null));
-
-        $admitted->record(Redemptions::signIn(), $client);
-
-        self::assertSame($client, $admitted->clientFor($identity, null));
-        self::assertNull($admitted->clientFor($identity, Redemptions::SESSION));
-        self::assertNull($admitted->clientFor(new IdentityReference($identity->type, $identity->id . '0'), null));
-        self::assertNull($admitted->clientFor(new IdentityReference('machine', $identity->id), null));
-
-        $admitted->forget();
-
-        self::assertNull($admitted->clientFor($identity, null));
-    }
-
-    /**
-     * A re-authentication's client is answered for its identity and session
-     * alone.
-     *
-     * @return void
-     */
-    public function testAReauthenticationsClientIsAnsweredForItsIdentityAndSessionAlone(): void
-    {
-        $admitted = new AdmittedRedemptions;
-        $identity = Redemptions::identity();
-        $client   = Redemptions::client();
-
-        $admitted->record(Redemptions::reauthentication(), $client);
-
-        self::assertSame($client, $admitted->clientFor($identity, Redemptions::SESSION));
-        self::assertNull($admitted->clientFor($identity, null));
-        self::assertNull($admitted->clientFor($identity, Redemptions::SESSION . '0'));
-        self::assertNull($admitted->clientFor(new IdentityReference($identity->type, $identity->id . '0'), Redemptions::SESSION));
-    }
-
-    /**
-     * The next redemption answers its own client, never the one before's.
-     *
-     * @return void
-     */
-    public function testTheNextRedemptionAnswersItsOwnClient(): void
-    {
-        $admitted = new AdmittedRedemptions;
-        $next     = new ClientContext(null, null);
-
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
-        $admitted->forget();
-        $admitted->record(Redemptions::signIn(), $next);
-
-        self::assertSame($next, $admitted->clientFor(Redemptions::identity(), null));
+        self::assertSame($redemption, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -117,7 +54,7 @@ final class AdmittedRedemptionsTest extends TestCase
 
         self::assertNull($admitted->acceptedEvidence(Redemptions::CONNECTION, $identity));
 
-        $admitted->record($redemption, Redemptions::client());
+        $admitted->record($redemption);
 
         self::assertSame($redemption->evidence, $admitted->acceptedEvidence(Redemptions::CONNECTION, $identity));
         self::assertNull($admitted->acceptedEvidence('connection-2', $identity));
@@ -129,7 +66,7 @@ final class AdmittedRedemptionsTest extends TestCase
 
         self::assertNull($admitted->acceptedEvidence(Redemptions::CONNECTION, $identity));
 
-        $admitted->record(Redemptions::signIn(evidence: false), Redemptions::client());
+        $admitted->record(Redemptions::signIn(evidence: false));
 
         self::assertNull($admitted->acceptedEvidence(Redemptions::CONNECTION, $identity));
     }
@@ -137,17 +74,21 @@ final class AdmittedRedemptionsTest extends TestCase
     /**
      * Results differing from the admitted one in one part.
      *
-     * @return iterable<string, array{0: string, 1: string, 2: string}>
+     * @return iterable<string, array{0: string, 1: string, 2: string, 3: ?string}>
      */
     public static function provideOtherResults(): iterable
     {
-        yield 'another connection' => ['connection-2', Redemptions::ISSUER, Redemptions::SUBJECT];
+        yield 'another connection' => ['connection-2', Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT];
 
-        yield 'another issuer' => [Redemptions::CONNECTION, 'https://other.example.test', Redemptions::SUBJECT];
+        yield 'another issuer' => [Redemptions::CONNECTION, 'https://other.example.test', Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT];
 
-        yield 'another subject' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'subject-2'];
+        yield 'another subject' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'subject-2', Redemptions::NAME_ID_FORMAT];
 
-        yield 'a subject in another case' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'SUBJECT-1'];
+        yield 'a subject in another case' => [Redemptions::CONNECTION, Redemptions::ISSUER, 'SUBJECT-1', Redemptions::NAME_ID_FORMAT];
+
+        yield 'another NameID format' => [Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'];
+
+        yield 'no NameID format' => [Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, null];
     }
 
     /**
@@ -157,16 +98,17 @@ final class AdmittedRedemptionsTest extends TestCase
      * @param  string  $connectionId
      * @param  string  $issuer
      * @param  string  $subject
+     * @param  ?string  $nameIdFormat
      * @return void
      */
     #[DataProvider('provideOtherResults')]
-    public function testAnotherResultIsAnsweredByNothing(string $connectionId, string $issuer, string $subject): void
+    public function testAnotherResultIsAnsweredByNothing(string $connectionId, string $issuer, string $subject, ?string $nameIdFormat): void
     {
         $admitted = new AdmittedRedemptions;
 
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
+        $admitted->record(Redemptions::signIn());
 
-        self::assertNull($admitted->matching($connectionId, $issuer, $subject));
+        self::assertNull($admitted->matching($connectionId, $issuer, $subject, $nameIdFormat));
     }
 
     /**
@@ -176,7 +118,7 @@ final class AdmittedRedemptionsTest extends TestCase
      */
     public function testNothingRecordedAnswersNothing(): void
     {
-        self::assertNull((new AdmittedRedemptions)->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull((new AdmittedRedemptions)->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -189,14 +131,14 @@ final class AdmittedRedemptionsTest extends TestCase
         $admitted = new AdmittedRedemptions;
         $next     = Redemptions::reauthentication();
 
-        $admitted->record(Redemptions::signIn(), Redemptions::client());
+        $admitted->record(Redemptions::signIn());
         $admitted->forget();
 
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
 
-        $admitted->record($next, Redemptions::client());
+        $admitted->record($next);
 
-        self::assertSame($next, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertSame($next, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -209,17 +151,17 @@ final class AdmittedRedemptionsTest extends TestCase
         $admitted = new AdmittedRedemptions;
         $first    = Redemptions::signIn();
 
-        $admitted->record($first, Redemptions::client());
+        $admitted->record($first);
 
         try {
-            $admitted->record(Redemptions::reauthentication(), Redemptions::client());
+            $admitted->record(Redemptions::reauthentication());
 
             self::fail('A second redemption was recorded.');
         } catch (\LogicException $exception) {
             self::assertSame('One redemption is admitted at a time: another was recorded while one was held.', $exception->getMessage());
         }
 
-        self::assertSame($first, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertSame($first, $admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 
     /**
@@ -251,13 +193,13 @@ final class AdmittedRedemptionsTest extends TestCase
         $admitted = new AdmittedRedemptions;
 
         try {
-            $admitted->record($redemption(), Redemptions::client());
+            $admitted->record($redemption());
 
             self::fail('The redemption was recorded.');
         } catch (\LogicException $exception) {
             self::assertSame('Only a redemption SSO admitted, with the identity and the link it resolved, is recorded.', $exception->getMessage());
         }
 
-        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT));
+        self::assertNull($admitted->matching(Redemptions::CONNECTION, Redemptions::ISSUER, Redemptions::SUBJECT, Redemptions::NAME_ID_FORMAT));
     }
 }
