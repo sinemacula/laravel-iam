@@ -309,11 +309,18 @@ FakeGroupMapping::fake()
 
 ## Contract kits
 
-This package ships fakes, not contract kits. A contract of MFA's that you bind yourself in place of one of this
-package's adapters (see [Bindings](bindings.md)) is proved with MFA's own kit for it, under
-`SineMacula\Laravel\Mfa\Testing\Seams\Concerns` ([laravel-mfa: testing][mfa-testing]); this package's own tests run
-those kits against its adapters. `laravel-authentication` and SSO ship no contract kits, so an implementation of one of
-their contracts is proved by tests of your own against that member's guide.
+This package ships fakes, not contract kits. A contract of MFA's or SSO's that you bind yourself in place of one of
+this package's adapters (see [Bindings](bindings.md)) is proved with that member's kit for it, under
+`SineMacula\Laravel\Mfa\Testing\Seams\Concerns` ([laravel-mfa: testing][mfa-testing]) or
+`SineMacula\Laravel\Sso\Testing\Seams\Concerns` ([laravel-sso: testing][sso-testing]).
+
+This package's own tests run MFA's kits against its MFA adapters, and five of SSO's against its SSO adapters:
+`FreshnessContract`, `LinkConfirmationContract`, `LinkEmailMatcherContract`, `SessionRevocationContract` and
+`EnforcementInheritanceContract`. SSO's `ReauthenticationSessionsContract` is not run yet: `laravel-authentication`
+refuses a renewal time before the session's start, where SSO's contract keeps `max(current, provider)`.
+
+`laravel-authentication` ships no contract kits, so an implementation of one of its contracts is proved by tests of
+your own against its guide.
 
 [authentication-testing]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/testing.md
 [mfa-testing]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/testing.md
