@@ -15,7 +15,6 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
-use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 use SineMacula\Laravel\Sso\Enforcement\ExemptionGate;
@@ -103,10 +102,12 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
         $sessionId = self::sessionIdOf($context->session);
         $client    = $this->container->make(AdmittedRedemptions::class)->clientFor($identity, $sessionId) ?? new SsoClient(null, null);
 
-        // Only an admitted call reports its exemption, through the gate.
+        $gate = $this->container->make(ExemptionGate::class);
+
+        // Only an admitted call reports its exemption.
         return $context->rejudging
-            ? $this->container->make(EnforcementExemption::class)->exemption($policy, $context->application, $identity)
-            : $this->container->make(ExemptionGate::class)->admit($policy, $context->application, $identity, $client, $sessionId);
+            ? $gate->judge($policy, $context->application, $identity)
+            : $gate->admit($policy, $context->application, $identity, $client, $sessionId);
     }
 
     /**
