@@ -163,10 +163,12 @@ audit-log's own capture of Laravel's events would record each a second time. So:
   recorded once, through `laravel-authorization`'s own events.
 
 Set both in your `config/audit-log.php`: `iam:install` lists them as owed, and `iam:check` refuses a configuration
-without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too. Two
-consequences of the exclusion: a sign-in made through a `jwt` guard's own `attempt()` or `login()`, rather than the
-session service, dispatches only `Login`, and is recorded by nothing; nor is an `api_key` guard's `logout()`. Sign
-people in through `Auth::sessions()`.
+without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
+
+A sign-in through a guard's own `attempt()` or trusted `login()` is recorded once, as one through `Auth::sessions()`
+is. Calling `start()` after `attempt()` records two sign-ins, so sign in with `Auth::sessions()->signIn()` for one. An
+`api_key` guard's `logout()`, and a `jwt` guard's `logout()` with no session bound, dispatch only `Logout`, so the
+exclusion leaves them recorded by nothing.
 
 ## Authorization decisions
 
@@ -176,7 +178,8 @@ people in through `Auth::sessions()`.
 - a denial, once, as `authorization.access_denied`, denied with `laravel-authorization`'s reason code (`no_match`,
   `tenant_scope`, `explicit_deny` and the rest), whether it came from `can()`, `check()`, `authorize()`, the Gate or
   your own `Gate` checks, since `laravel-authorization` answers the Gate;
-- a check a break-glass grant allowed, as `authorization.break_glass_used`;
+- a check a break-glass grant allowed, as `authorization.break_glass_used`, keeping the activations it came through,
+  whatever `allows` says;
 - an allowed check of an action listed in `authorization.events.decisions.sensitive_actions`, as
   `authorization.access_allowed`;
 - a preview, as `authorization.access_previewed`, by the previewer, about the principal previewed, whatever it decided.

@@ -35,11 +35,13 @@ final readonly class ExternalIdentityLinksAdapter implements ExternalIdentityLin
     ) {}
 
     /**
-     * The link SSO admitted for exactly the connection, issuer and subject.
+     * The link SSO admitted for exactly the connection, issuer, subject and
+     * NameID format.
      *
      * @param  string  $connectionId
      * @param  string  $issuer
      * @param  string  $subject
+     * @param  ?string  $nameIdFormat
      * @return ?\SineMacula\Laravel\Authentication\External\ExternalLink
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -47,10 +49,9 @@ final readonly class ExternalIdentityLinksAdapter implements ExternalIdentityLin
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
-    public function find(string $connectionId, string $issuer, string $subject): ?ExternalLink
+    public function find(string $connectionId, string $issuer, string $subject, ?string $nameIdFormat): ?ExternalLink
     {
-        // find() lacks the SAML NameID format, so no link is looked up again.
-        $redemption = $this->container->make(AdmittedRedemptions::class)->matching($connectionId, $issuer, $subject);
+        $redemption = $this->container->make(AdmittedRedemptions::class)->matching($connectionId, $issuer, $subject, $nameIdFormat);
 
         if ($redemption?->linkedIdentity === null || $redemption->linkId === null) {
             return null;

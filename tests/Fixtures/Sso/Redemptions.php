@@ -9,7 +9,6 @@ use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Flows\RequestReference;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
-use SineMacula\Laravel\Sso\Http\ClientContext;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Results\AuthenticationContext;
@@ -35,6 +34,9 @@ final class Redemptions
     /** @var string The subject every result asserts. */
     public const string SUBJECT = 'subject-1';
 
+    /** @var string The format of the SAML NameID every subject is. */
+    public const string NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent';
+
     /** @var string The tenant the connection belongs to. */
     public const string TENANT = 'tenant-1';
 
@@ -58,16 +60,6 @@ final class Redemptions
 
     /** @var string The session's latest end. */
     public const string NOT_AFTER = '2026-11-01T17:30:00Z';
-
-    /**
-     * The client every redemption is made for, as SSO is handed it.
-     *
-     * @return \SineMacula\Laravel\Sso\Http\ClientContext
-     */
-    public static function client(): ClientContext
-    {
-        return new ClientContext('203.0.113.7', 'redemption-agent');
-    }
 
     /**
      * The identity every result links to.
@@ -100,10 +92,10 @@ final class Redemptions
         return new VerifiedResult(
             $issuer,
             $subject,
-            null,
+            self::NAME_ID_FORMAT,
             $connectionId,
             self::TENANT,
-            'oidc',
+            'saml2',
             self::APPLICATION,
             $purpose,
             RequestReference::fromString(self::REFERENCE),
