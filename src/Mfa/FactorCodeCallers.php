@@ -9,7 +9,7 @@ use SineMacula\Laravel\Mfa\Context\CallerContext;
 
 /**
  * MFA's caller per factor code binding, since `laravel-authentication`'s
- * `FactorCodeCounters` receive only the binding.
+ * `FactorCodeCounters` receive the binding and the client but not the caller.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -423,13 +423,14 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * Any well-formed code at a used challenge is refused as replayed.
+     * Another code at a used challenge is refused as invalid and counted
+     * against nothing.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAnotherCodeAtAUsedChallengeIsRefusedAsReplayed(): void
+    public function testAnotherCodeAtAUsedChallengeIsRefusedAsInvalid(): void
     {
         $challenge = $this->sentChallenge();
         $code      = $this->deliveredCode($challenge);
@@ -438,7 +439,8 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         $again = $this->challengeGateway()->verify($this->challengeCaller(), $this->challengedFactor(), $this->challengeBinding(), $challenge, self::wrong($code));
 
-        self::assertSame(FailureReason::REPLAYED, $again->reason);
+        self::assertSame(FailureReason::INVALID_CODE, $again->reason);
+        self::assertSame(CodeTranslator::USED, $again->detail);
         self::assertFalse($again->counted);
         self::assertSame(0, $this->failures());
     }
@@ -503,11 +505,10 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         self::assertTrue($verified->isVerified(), (string) $verified->reason?->value);
 
-        foreach ([$code, self::wrong($code)] as $again) {
-            $replayed = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $again), Purpose::STEP_UP);
+        $replayed = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::STEP_UP);
+        $used     = Mfa::verify(self::servedCaller(), Submission::challenge($factor->id, (string) $sent->challengeId, self::wrong($code)), Purpose::STEP_UP);
 
-            self::assertSame(FailureReason::REPLAYED, $replayed->reason);
-        }
+        self::assertSame([FailureReason::REPLAYED, FailureReason::INVALID_CODE], [$replayed->reason, $used->reason]);
     }
 
     /**
@@ -595,7 +596,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
 
         $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, self::wrong($messages[0]->code->reveal()));
 
-        self::assertSame(FailureReason::REPLAYED, $confirmation->reason);
+        self::assertSame(FailureReason::INVALID_CODE, $confirmation->reason);
         self::assertSame(1, Enrollment::query()->sole()->attempts);
     }
 

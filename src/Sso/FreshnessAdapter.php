@@ -60,8 +60,8 @@ final readonly class FreshnessAdapter implements Freshness
         $requirement = FreshnessRequirement::within($maxAgeSeconds);
         $session     = $this->session($caller);
 
-        // Asked plainly: a current read would lock the row before SSO's guards.
-        return $session !== null && $this->freshness->freshProof($session, $operation->value, $requirement) !== null
+        // SSO asks inside its transaction only once its own locks are held.
+        return $session !== null && $this->freshness->freshProof($session, $operation->value, $requirement, current: $this->sessions->isInTransaction()) !== null
             ? FreshnessOutcome::FRESH
             : FreshnessOutcome::STALE;
     }
