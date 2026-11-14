@@ -75,6 +75,12 @@ enum AuthorizationActivity: string implements ListsProperties
     // A protected record was changed by a system override
     case SYSTEM_OVERRIDE_USED = 'authorization.system_override_used';
 
+    // A break-glass role was activated, given up, revoked or expired
+    case BREAK_GLASS_ACTIVATED   = 'authorization.break_glass_activated';
+    case BREAK_GLASS_SURRENDERED = 'authorization.break_glass_surrendered';
+    case BREAK_GLASS_REVOKED     = 'authorization.break_glass_revoked';
+    case BREAK_GLASS_EXPIRED     = 'authorization.break_glass_expired';
+
     /** @var string The category of the decisions. */
     private const string SECURITY = 'security';
 
@@ -136,6 +142,10 @@ enum AuthorizationActivity: string implements ListsProperties
         self::RESOURCE_POLICY_ATTACHED->value => [...self::SCOPED, 'resource_type', 'resource_id'],
         self::RESOURCE_POLICY_DETACHED->value => [...self::SCOPED, 'resource_type', 'resource_id'],
         self::SYSTEM_OVERRIDE_USED->value     => [...self::CALL, 'name', 'protected_operation'],
+        self::BREAK_GLASS_ACTIVATED->value    => [...self::SCOPED, 'activation', 'justification', 'expires_at'],
+        self::BREAK_GLASS_SURRENDERED->value  => [...self::SCOPED, 'activation', 'ended_at'],
+        self::BREAK_GLASS_REVOKED->value      => [...self::SCOPED, 'activation', 'ended_at'],
+        self::BREAK_GLASS_EXPIRED->value      => [...self::SCOPED, 'activation', 'expired_at'],
     ];
 
     /**
@@ -173,6 +183,10 @@ enum AuthorizationActivity: string implements ListsProperties
             self::ACCESS_DENIED,
             self::ACCESS_ALLOWED,
             self::BREAK_GLASS_USED,
+            self::BREAK_GLASS_ACTIVATED,
+            self::BREAK_GLASS_SURRENDERED,
+            self::BREAK_GLASS_REVOKED,
+            self::BREAK_GLASS_EXPIRED,
             self::ACCESS_PREVIEWED => self::SECURITY,
             default                => self::ACCESS_MANAGEMENT,
         };
