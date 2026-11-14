@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Fixtures\Sso;
 
 use Illuminate\Auth\GenericUser;
+use Illuminate\Database\Eloquent\Collection;
 use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 
@@ -58,5 +59,18 @@ final class PlainVerifiableIdentity extends GenericUser implements HasVerifiable
     public function markIdentifierAsVerified(string $type, string $identifier): bool
     {
         return false;
+    }
+
+    /**
+     * No identity is stored, so none holds the identifier.
+     *
+     * @param  string  $type
+     * @param  string  $identifier
+     * @return \Illuminate\Database\Eloquent\Collection<int, never>
+     */
+    #[\Override]
+    public static function holdingVerifiedIdentifier(string $type, #[\SensitiveParameter] string $identifier): Collection
+    {
+        return new Collection;
     }
 }

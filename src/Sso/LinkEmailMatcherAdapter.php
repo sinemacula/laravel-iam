@@ -8,9 +8,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
-use SineMacula\Laravel\Authentication\Database\WriteConnection;
 use SineMacula\Laravel\Authentication\Facades\Auth;
-use SineMacula\Laravel\Authentication\Identifiers\IdentifierNormalizers;
 use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Linking\LinkEmailMatch;
 use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
@@ -32,14 +30,10 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Authentication\Identifiers\IdentifierNormalizers  $normalizers
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      */
     public function __construct(
-
-        /** `laravel-authentication`'s identifier normalisers. */
-        private IdentifierNormalizers $normalizers,
 
         /** The configuration the guards' providers are declared in. */
         private Repository $config,
@@ -60,17 +54,11 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     #[\Override]
     public function match(LinkEmailQuery $query): LinkEmailMatch
     {
-        $email = $this->normalizers->get(self::EMAIL)->normalize($query->email());
-
-        if ($email === null) {
-            return LinkEmailMatch::none();
-        }
-
         $matched = [];
 
         foreach ($this->models() as $model) {
-            foreach ($this->verified($model, $email) as $identity) {
-                $matched[] = $identity;
+            foreach ($model::holdingVerifiedIdentifier(self::EMAIL, $query->email()) as $identity) {
+                $matched[] = $this->identities->reference($identity);
             }
         }
 
@@ -82,61 +70,9 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
     }
 
     /**
-     * The model's identities holding the verified email byte for byte.
+     * Each verifiable identity model a guard signs in.
      *
-     * @formatter:off
-     *
-     * @phpcs:disable Generic.Files.LineLength.TooLong
-     *
-     * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers&\SineMacula\Laravel\Authentication\Contracts\Identity  $model
-     * @param  string  $email
-     * @return list<\SineMacula\Laravel\Sso\Identities\IdentityReference>
-     *
-     * @phpcs:enable Generic.Files.LineLength.TooLong
-     *
-     * @formatter:on
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     */
-    private function verified(HasVerifiableIdentifiers&Identity&Model $model, #[\SensitiveParameter] string $email): array
-    {
-        $identities = $this->identities;
-
-        /** @var list<\SineMacula\Laravel\Sso\Identities\IdentityReference> */
-        return WriteConnection::during($model, static function () use ($model, $email, $identities): array {
-
-            $found = [];
-
-            // laravel-authentication has no lookup by verified identifier.
-            foreach (WriteConnection::query($model->newQuery())->where(self::EMAIL, $email)->get() as $candidate) {
-
-                if (!self::holdsVerified($candidate, $email)) {
-                    continue;
-                }
-
-                $found[] = $identities->reference($candidate);
-            }
-
-            return $found;
-        });
-    }
-
-    /**
-     * Whether the identity holds the email, byte for byte and verified.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers  $identity
-     * @param  string  $email
-     * @return bool
-     */
-    private static function holdsVerified(HasVerifiableIdentifiers $identity, #[\SensitiveParameter] string $email): bool
-    {
-        return $identity->getIdentifierForVerification(self::EMAIL) === $email && $identity->hasVerifiedIdentifier(self::EMAIL);
-    }
-
-    /**
-     * A blank instance of each verifiable identity model a guard signs in.
-     *
-     * @return list<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers&\SineMacula\Laravel\Authentication\Contracts\Identity>
+     * @return list<class-string<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\HasVerifiableIdentifiers&\SineMacula\Laravel\Authentication\Contracts\Identity>>
      */
     private function models(): array
     {
@@ -151,7 +87,7 @@ final readonly class LinkEmailMatcherAdapter implements LinkEmailMatcher
                 continue;
             }
 
-            $models[$class] = new $class;
+            $models[$class] = $class;
         }
 
         return array_values($models);
