@@ -35,9 +35,9 @@ adapters off the application binds the policy itself.
   requirement, so it changes whenever anything the answer depends on does.
 - The session's connection is asked of `TenantPolicyContext::connectionId()` only once the rule requires one, so a
   tenant with nothing enforced costs no read of the session's provenance.
-- The gate is handed the client of the redemption this package admitted in the request (`AdmittedRedemptions`), so
-  `ExemptionUsed` carries that request's IP address and user agent. Every other admitted call (a refresh, a switch, a
-  password or passkey sign-in) hands it an empty client.
+- The gate is handed the client of the call that asks (`TenantPolicyContext::$client`), so `ExemptionUsed` carries
+  that request's IP address and user agent. `tenantPolicyChanged()` and a pending session's lookup ask for no client,
+  and hand it an empty one.
 - `ExemptionUsed` is reported once per admitted call. The check after a sign-in, choice or switch commits and both
   passes of `tenantPolicyChanged()` are rejudging, so they report none.
 - `Iam::tenantPolicies()->changed($tenant)` is the application's report of a changed requirement or exemption, made
@@ -56,8 +56,3 @@ adapters off the application binds the policy itself.
   the caller's transaction.
 - Turning a rule off revokes nothing: SSO calls no revocation then, and the policy requires no connection.
 - A requirement that cannot answer throws, and the sign-in, refresh or change fails rather than require nothing.
-
-## Member gaps
-
-- `laravel-authentication`'s `TenantPolicyContext` carries no `ClientContext`, so the gate is handed the admitted
-  redemption's client where there is one and an empty client otherwise.
