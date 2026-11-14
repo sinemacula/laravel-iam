@@ -163,7 +163,7 @@ final class AuthorizationEventMapperTest extends TestCase
         yield 'a break-glass grant used' => [
             self::decision(DecisionEffect::ALLOW, null, breakGlass: true),
             AuthorizationActivity::BREAK_GLASS_USED,
-            ['action' => 'invoices:refund', 'resource' => 'invoice:9', 'application' => 'admin', 'policies' => ['Billing[12]#0']],
+            ['action' => 'invoices:refund', 'resource' => 'invoice:9', 'application' => 'admin', 'policies' => ['Billing[12]#0'], 'activations' => ['activation-1']],
         ];
 
         yield 'a preview' => [
@@ -435,7 +435,7 @@ final class AuthorizationEventMapperTest extends TestCase
         yield 'an allow reported because every allow is' => [self::decision(DecisionEffect::ALLOW, null, report: DecisionReport::ALL_ALLOWS)];
 
         yield 'a hard denial, already recorded' => [
-            new AuthorizationFailed(null, null, null, 'invoices:refund', null, null, null, DecisionEffect::DENY, DecisionReason::NO_MATCH, [], false, []),
+            new AuthorizationFailed(null, null, null, 'invoices:refund', null, null, null, DecisionEffect::DENY, DecisionReason::NO_MATCH, [], false, [], []),
         ];
 
         yield 'another of its events' => [new class implements AuthorizationEvent {}];
@@ -513,7 +513,7 @@ final class AuthorizationEventMapperTest extends TestCase
     public function testAGuestsDenialNamesNoOne(): void
     {
         $record   = new PendingRecord;
-        $event    = new DecisionEvaluated(null, null, null, 'invoices:view', null, null, null, DecisionEffect::DENY, DecisionReason::SUBJECT_UNRESOLVED, [], false, []);
+        $event    = new DecisionEvaluated(null, null, null, 'invoices:view', null, null, null, DecisionEffect::DENY, DecisionReason::SUBJECT_UNRESOLVED, [], false, [], []);
         $snapshot = self::mapper()->map($event, $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
@@ -534,7 +534,7 @@ final class AuthorizationEventMapperTest extends TestCase
     public function testAPrincipalWithNoIdentityIsTheActor(): void
     {
         $machine  = new Reference('machine', '3');
-        $event    = new DecisionEvaluated($machine, null, null, 'invoices:view', null, null, null, DecisionEffect::DENY, DecisionReason::NO_MATCH, [], false, []);
+        $event    = new DecisionEvaluated($machine, null, null, 'invoices:view', null, null, null, DecisionEffect::DENY, DecisionReason::NO_MATCH, [], false, [], []);
         $snapshot = self::snapshotOf($event);
 
         self::assertSame(['type' => 'machine', 'id' => '3'], $snapshot->actor?->toArray());
@@ -569,7 +569,7 @@ final class AuthorizationEventMapperTest extends TestCase
     public function testAPreviewNamingNoPrincipalIsAboutTheIdentity(): void
     {
         $reason   = DecisionReason::NO_MATCH;
-        $event    = new DecisionEvaluated(null, self::person('7'), self::person('1'), 'invoices:view', null, null, null, DecisionEffect::DENY, $reason, [], false, []);
+        $event    = new DecisionEvaluated(null, self::person('7'), self::person('1'), 'invoices:view', null, null, null, DecisionEffect::DENY, $reason, [], false, [], []);
         $snapshot = self::snapshotOf($event);
 
         self::assertSame(AuthorizationActivity::ACCESS_PREVIEWED->value, $snapshot->code?->value);
@@ -752,7 +752,7 @@ final class AuthorizationEventMapperTest extends TestCase
         $tenant   = new Reference(Organisation::TYPE, '7');
         $scope    = new GrantScope($tenant);
         $member   = new Reference('member', '70');
-        $decision = new DecisionEvaluated($member, self::person('7'), null, 'invoices:refund', 'invoice:9', $tenant, 'admin', DecisionEffect::DENY, null, [], false, []);
+        $decision = new DecisionEvaluated($member, self::person('7'), null, 'invoices:refund', 'invoice:9', $tenant, 'admin', DecisionEffect::DENY, null, [], false, [], []);
         $change   = new ResourcePolicyAttached(self::operation(), Person::class, '9', new Reference('policy', '5'), 'Reviewers', $scope);
 
         self::assertNull($mapper->map($decision, new PendingRecord)?->snapshot()->tenant);
@@ -947,6 +947,7 @@ final class AuthorizationEventMapperTest extends TestCase
             $reason,
             [new StatementReference('Billing', 0, '12')],
             $breakGlass,
+            $breakGlass ? ['activation-1'] : [],
             ['subject.id'],
             $report,
         );

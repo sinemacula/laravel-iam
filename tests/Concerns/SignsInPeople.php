@@ -261,7 +261,7 @@ trait SignsInPeople
         \Closure $connectionId,
         string $guard = self::GUARD,
     ): TenantPolicyContext {
-        return new TenantPolicyContext($guard, $identity, $principal, $tenant, $session, $connectionId);
+        return new TenantPolicyContext($guard, $identity, $principal, $tenant, $session, null, $connectionId);
     }
 
     /**

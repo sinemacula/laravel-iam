@@ -138,8 +138,6 @@ final readonly class IamManager
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \InvalidArgumentException
-     * @throws \LogicException
      */
     public function schedule(Schedule $schedule): void
     {

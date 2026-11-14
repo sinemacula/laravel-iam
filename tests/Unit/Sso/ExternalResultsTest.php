@@ -47,6 +47,7 @@ final class ExternalResultsTest extends TestCase
         self::assertSame(Redemptions::ENFORCEMENT, $result->policyVersion);
         self::assertSame(Redemptions::LINK, $result->linkId);
         self::assertSame(Redemptions::REFERENCE, $result->requestReference);
+        self::assertSame(Redemptions::NAME_ID_FORMAT, $result->nameIdFormat);
     }
 
     /**
@@ -114,6 +115,7 @@ final class ExternalResultsTest extends TestCase
         self::assertNull($result->policyVersion);
         self::assertNull($result->evidence);
         self::assertNull($result->providerContext);
+        self::assertNull($result->nameIdFormat);
     }
 
     /**
@@ -137,6 +139,7 @@ final class ExternalResultsTest extends TestCase
         self::assertSame(Redemptions::ENFORCEMENT, $result->policyVersion);
         self::assertSame(Redemptions::LINK, $result->linkId);
         self::assertSame(Redemptions::REFERENCE, $result->requestReference);
+        self::assertSame(Redemptions::NAME_ID_FORMAT, $result->nameIdFormat);
         self::assertSame(['otp'], $result->evidence?->methods);
         self::assertNull($result->evidence->context);
         self::assertNull($result->providerContext);

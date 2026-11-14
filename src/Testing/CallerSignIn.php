@@ -22,7 +22,6 @@ use SineMacula\Laravel\Iam\Mfa\CurrentSession;
 use SineMacula\Laravel\Iam\Sso\AdmittedRedemptions;
 use SineMacula\Laravel\Iam\Sso\ExternalResults;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
-use SineMacula\Laravel\Iam\Sso\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Mfa\Enums\AssuranceLevel;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
@@ -288,7 +287,7 @@ final readonly class CallerSignIn
         $redemption = $this->redemption($identity, $guard, $provenance);
         $admitted   = $this->container->make(AdmittedRedemptions::class);
 
-        $admitted->record($redemption, ClientTranslator::toSso($context->client));
+        $admitted->record($redemption);
 
         try {
             return $sessions->signInExternally(ExternalResults::from($redemption), $context);
