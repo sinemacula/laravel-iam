@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\Capture\Enums\CapturedActivity;
+use SineMacula\Laravel\Authentication\Guards\AbstractGuard;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Iam\Audit\CaptureExclusions;
 use Tests\Concerns\MigratesAuditLog;
@@ -109,24 +110,8 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
-     * Rows of `[isolation level, excluded, records]`: none excluded, once by
-     * audit-log's capture not.
-     *
-     * @return iterable<string, array{0: ?string, 1: bool, 2: int}>
-     */
-    public static function provideAttemptExclusions(): iterable
-    {
-        foreach (self::provideEveryIsolationLevel() as $level => [$isolation]) {
-
-            yield $level . ', excluded' => [$isolation, true, 0];
-
-            yield $level . ', not excluded' => [$isolation, false, 1];
-        }
-    }
-
-    /**
-     * An `attempt()` sign-in is recorded only by audit-log's capture, so not at
-     * all once excluded.
+     * An `attempt()` sign-in is recorded once while the guard is excluded, and
+     * twice while it is not.
      *
      * @param  ?string  $level
      * @param  bool  $excluded
@@ -135,8 +120,8 @@ final class NoDoubleRecordsTest extends TestCase
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideAttemptExclusions')]
-    public function testAnAttemptsSignInIsRecordedOnlyByAuditLogsCapture(?string $level, bool $excluded, int $records): void
+    #[DataProvider('provideExclusions')]
+    public function testAnAttemptsSignInIsRecordedOnce(?string $level, bool $excluded, int $records): void
     {
         self::runAtIsolationLevel($level);
 
@@ -148,7 +133,55 @@ final class NoDoubleRecordsTest extends TestCase
 
         self::assertTrue(Auth::guard(self::GUARD)->attempt(['email' => $person->email, 'password' => self::PASSWORD]));
         self::assertSame($records, $this->recorded(CapturedActivity::SIGNED_IN->value));
-        self::assertSame($records, DB::table(self::ENTRIES)->count());
+        self::assertNoCodeRecordedTwiceWhile($excluded);
+    }
+
+    /**
+     * Rows of `[isolation level, guard, excluded, records]`: once excluded,
+     * twice not, on the `jwt` guard and the `api_key` one.
+     *
+     * @return iterable<string, array{0: ?string, 1: string, 2: bool, 3: int}>
+     */
+    public static function provideLoginExclusions(): iterable
+    {
+        foreach (self::provideExclusions() as $row => [$isolation, $excluded, $records]) {
+            foreach ([self::GUARD, self::API_KEY_GUARD] as $guard) {
+                yield $row . ', ' . $guard => [$isolation, $guard, $excluded, $records];
+            }
+        }
+    }
+
+    /**
+     * A trusted `login()` is recorded once while the guard is excluded, and
+     * twice while it is not.
+     *
+     * @param  ?string  $level
+     * @param  string  $guard
+     * @param  bool  $excluded
+     * @param  int  $records
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideLoginExclusions')]
+    public function testATrustedLoginIsRecordedOnce(?string $level, string $guard, bool $excluded, int $records): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->addApiKeyGuard();
+        $this->exclude($excluded, [self::GUARD, self::API_KEY_GUARD]);
+
+        $person = $this->createPerson();
+        $auth   = Auth::guard($guard);
+
+        self::assertInstanceOf(AbstractGuard::class, $auth);
+
+        DB::table(self::ENTRIES)->delete();
+
+        $auth->login($person, $person);
+
+        self::assertSame($records, $this->recorded(CapturedActivity::SIGNED_IN->value));
+        self::assertNoCodeRecordedTwiceWhile($excluded);
     }
 
     /**
@@ -206,6 +239,22 @@ final class NoDoubleRecordsTest extends TestCase
     }
 
     /**
+     * Rows of `[isolation level, excluded, records]`: none excluded, once by
+     * audit-log's capture not.
+     *
+     * @return iterable<string, array{0: ?string, 1: bool, 2: int}>
+     */
+    public static function provideUncapturedExclusions(): iterable
+    {
+        foreach (self::provideEveryIsolationLevel() as $level => [$isolation]) {
+
+            yield $level . ', excluded' => [$isolation, true, 0];
+
+            yield $level . ', not excluded' => [$isolation, false, 1];
+        }
+    }
+
+    /**
      * An `api_key` guard's sign-out is recorded only by audit-log's capture, so
      * not at all once excluded.
      *
@@ -216,15 +265,12 @@ final class NoDoubleRecordsTest extends TestCase
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideAttemptExclusions')]
+    #[DataProvider('provideUncapturedExclusions')]
     public function testAnApiKeyGuardsSignOutIsRecordedOnlyByAuditLogsCapture(?string $level, bool $excluded, int $records): void
     {
         self::runAtIsolationLevel($level);
 
-        $config = $this->app?->make('config') ?? self::fail('The application has not booted.');
-
-        $config->set('auth.guards.' . self::API_KEY_GUARD, ['driver' => 'api_key', 'provider' => 'people']);
-
+        $this->addApiKeyGuard();
         $this->exclude($excluded, [self::GUARD, self::API_KEY_GUARD]);
 
         $person = $this->createPerson();
@@ -238,6 +284,18 @@ final class NoDoubleRecordsTest extends TestCase
 
         self::assertSame($records, $this->recorded(CapturedActivity::SIGNED_OUT->value));
         self::assertSame($records, DB::table(self::ENTRIES)->count());
+    }
+
+    /**
+     * Configure the `api_key` guard beside the `jwt` one.
+     *
+     * @return void
+     */
+    private function addApiKeyGuard(): void
+    {
+        $config = $this->app?->make('config') ?? self::fail('The application has not booted.');
+
+        $config->set('auth.guards.' . self::API_KEY_GUARD, ['driver' => 'api_key', 'provider' => 'people']);
     }
 
     /**

@@ -130,9 +130,8 @@ final readonly class SignInRedemption
         SignInContext $context,
     ): array {
         $sessions   = $this->sessions->sessions($application);
-        $ssoClient  = ClientTranslator::toSso($context->client);
         $redemption = $this->container->make(HandoffRedemption::class)
-            ->admit(Purpose::SIGN_IN, $application, $connectionId, $code, $verifier, $ssoClient);
+            ->admit(Purpose::SIGN_IN, $application, $connectionId, $code, $verifier, ClientTranslator::toSso($context->client));
 
         if (!$redemption->isRedeemed()) {
             return [$redemption, null];
@@ -142,7 +141,7 @@ final readonly class SignInRedemption
             throw UnlinkedSignInException::forConnection($application, $connectionId);
         }
 
-        $admitted->record($redemption, $ssoClient);
+        $admitted->record($redemption);
 
         $signIn = $sessions->signInExternally(ExternalResults::from($redemption), $context);
 

@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests;
 
 use Illuminate\Config\Repository as ConfigRepository;
-use Illuminate\Support\Str;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\AuditLog\Testing\FakeAuditStore;
@@ -84,29 +83,6 @@ abstract class TestCase extends OrchestraTestCase
 
     /** @var ?list<string> The process's arguments before the test replaced them, restored once its application is destroyed. */
     private ?array $argv = null;
-
-    /**
-     * Boot the application, then bring the process's UUIDv7 generator back to
-     * the present.
-     *
-     * The generator keeps one monotonic state for the whole process, and
-     * audit-log names each record with a UUIDv7 of the time the record says it
-     * occurred, which sets that state to that time, even an earlier one. A test
-     * that moved the clock forward and recorded leaves the state ahead of the
-     * clock, so the next test's ids would follow it, and the first record that
-     * test writes would set it back, so two of `laravel-authentication`'s rows
-     * of one second, whose order falls to their ids, would come in the wrong
-     * order. A UUIDv7 made for the present starts each test from it.
-     *
-     * @return void
-     */
-    #[\Override]
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        Str::uuid7(new \DateTimeImmutable);
-    }
 
     /**
      * Destroy the application, then close its database connections and restore
