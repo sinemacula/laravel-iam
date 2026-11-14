@@ -207,7 +207,7 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
         $person  = $this->createPerson();
         $session = $this->signIn($person)->record;
         $policy  = $this->app?->make(TenantAuthenticationPolicy::class) ?? self::fail('The application has not booted.');
-        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), $session, static fn (): ?string => null, rejudging: true);
+        $context = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(self::SSO_TENANT), $session, null, static fn (): ?string => null, rejudging: true);
 
         $this->exemptions()->exempt(self::referenceOf($person));
 
