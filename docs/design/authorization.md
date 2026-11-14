@@ -115,5 +115,4 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   rethrows it as Laravel's `DeadlockException` with SQLSTATE `40001`.
 - `laravel-mfa`'s `ConfirmedFactors` is `@internal`, so the step-up mapping filters `Mfa::factors()` for a confirmed
   factor.
-- `laravel-authentication`, `laravel-mfa` and `laravel-sso` export no typed schema of their context keys, so
-  `AuthenticationContextKeys` lists them.
+- `laravel-mfa` exports no typed schema of its context keys, so `AuthenticationContextKeys` lists them.

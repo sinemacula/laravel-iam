@@ -110,6 +110,6 @@ final class TenantMfaRequirementsTest extends TestCase
      */
     private static function context(Identity $identity): TenantPolicyContext
     {
-        return new TenantPolicyContext('api', $identity, \Mockery::mock(Principal::class), new ClaimedTenant('tenant-1'), null, static fn (): ?string => null);
+        return new TenantPolicyContext('api', $identity, \Mockery::mock(Principal::class), new ClaimedTenant('tenant-1'), null, null, static fn (): ?string => null);
     }
 }

@@ -59,7 +59,7 @@ final class AuthorizationActivityTest extends CodesTestCase
         return [
             'authorization.access_denied'            => ['security', self::retained(...$decision)],
             'authorization.access_allowed'           => ['security', self::retained(...$decision)],
-            'authorization.break_glass_used'         => ['security', self::retained(...$decision)],
+            'authorization.break_glass_used'         => ['security', self::retained(...$decision, ...['activations'])],
             'authorization.access_previewed'         => ['security', self::retained(...$decision, ...['effect', 'reason'])],
             'authorization.role_created'             => [$change, self::retained(...$definition, ...['system'])],
             'authorization.role_updated'             => [$change, self::retained(...$definition, ...['changes'])],
@@ -89,6 +89,10 @@ final class AuthorizationActivityTest extends CodesTestCase
             'authorization.resource_policy_attached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
             'authorization.resource_policy_detached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
             'authorization.system_override_used'     => [$change, self::retained('trusted', 'name', 'protected_operation')],
+            'authorization.break_glass_activated'    => ['security', self::retained(...$scoped, ...['activation', 'justification', 'expires_at'])],
+            'authorization.break_glass_surrendered'  => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],
+            'authorization.break_glass_revoked'      => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],
+            'authorization.break_glass_expired'      => ['security', self::retained(...$scoped, ...['activation', 'expired_at'])],
         ];
     }
 }
