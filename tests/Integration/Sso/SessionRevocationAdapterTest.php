@@ -11,27 +11,36 @@ use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Events\SessionRevoked;
+use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authentication\Tenancy\TenantRequirement;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
+use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
+use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
+use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Revocation\Enums\RevocationReason;
 use SineMacula\Laravel\Sso\Revocation\Enums\RevocationScopeKind;
 use SineMacula\Laravel\Sso\Revocation\RevocationScope;
-use Tests\Concerns\MigratesMembers;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\SessionRevocationContract;
+use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
+use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Concerns\SignsInThroughLinks;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Tenancy\ExemptsIdentities;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
 
@@ -46,7 +55,11 @@ use Tests\TestCase;
 #[CoversClass(SessionRevocationAdapter::class)]
 final class SessionRevocationAdapterTest extends TestCase
 {
-    use MigratesMembers, RunsAtIsolationLevels, SignsInPeople, SignsInThroughLinks;
+    use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SessionRevocationContract, SignsInPeople, SignsInThroughLinks {
+        SignsInThroughLinks::keyOf insteadof RunsSsoFlows;
+        SignsInThroughLinks::referenceOf insteadof RunsSsoFlows;
+        SignsInThroughLinks::signInMethods insteadof RunsSsoFlows;
+    }
 
     /** @var string A second guard holding sessions of the same people. */
     private const string ADMIN = 'admin';
@@ -68,6 +81,15 @@ final class SessionRevocationAdapterTest extends TestCase
 
     /** @var string The child's own child. */
     private const string GRANDCHILD = 'tenant-1-grandchild';
+
+    /** @var string A tenant apart from the enforcing one's tree. */
+    private const string APART = 'tenant-2';
+
+    /** @var ?array{0: string, 1: string} The connection the enforcing tenant's rule allows, and another, once stored. */
+    private ?array $ruled = null;
+
+    /** @var list<\Tests\Fixtures\Models\Person> A person and an exempt one, once created. */
+    private array $people = [];
 
     /**
      * Rows of `[reason, switch]`: each connection reason and its switch.
@@ -593,33 +615,6 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * A revocation rolls back with the caller's change.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testARevocationRollsBackWithTheCallersChange(): void
-    {
-        $session = $this->signInThrough($this->createPerson());
-
-        try {
-            DB::connection(StorageConnection::name())->transaction(function () use ($session): void {
-
-                $this->adapter()->revoke(RevocationScope::connection(self::SSO_TENANT, self::SSO_CONNECTION, RevocationReason::CONNECTION_DISABLED));
-
-                $this->assertRevoked([$session]);
-
-                throw new \RuntimeException('The change failed.');
-            });
-        } catch (\RuntimeException) {
-            // The caller's change failed after the revocation.
-        }
-
-        $this->assertStanding([$session]);
-    }
-
-    /**
      * Declare a second session guard of the same people.
      *
      * @param  \Illuminate\Foundation\Application  $app
@@ -631,6 +626,97 @@ final class SessionRevocationAdapterTest extends TestCase
         parent::defineEnvironment($app);
 
         Config::set('auth.guards.' . self::ADMIN, ['driver' => 'jwt', 'provider' => 'people', 'application' => ['methods' => ['external_provider']]]);
+    }
+
+    /**
+     * The adapter under SSO's session revocation contract kit.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\SessionRevocation
+     */
+    #[\Override]
+    protected function sessionRevocation(): SessionRevocation
+    {
+        return $this->adapter();
+    }
+
+    /**
+     * The enforcing tenant, one apart from it and its child.
+     *
+     * @return array{0: string, 1: string, 2: string}
+     */
+    #[\Override]
+    protected function revocationTenants(): array
+    {
+        return [self::SSO_TENANT, self::APART, self::CHILD];
+    }
+
+    /**
+     * The enforcing tenant's connections, its rule stored once.
+     *
+     * @return array{0: string, 1: string}
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function revocationConnections(): array
+    {
+        return $this->ruled ??= $this->storeTheRule();
+    }
+
+    /**
+     * A person, and another the application exempts.
+     *
+     * @return array{0: \SineMacula\Laravel\Sso\Identities\IdentityReference, 1: \SineMacula\Laravel\Sso\Identities\IdentityReference}
+     */
+    #[\Override]
+    protected function revocationIdentities(): array
+    {
+        if ($this->people === []) {
+            $this->people = [$this->createPerson(), $this->createPerson()];
+
+            $this->app?->instance(EnforcementExemption::class, (new ExemptsIdentities)->exempt(self::referenceOf($this->people[1])));
+        }
+
+        return [self::referenceOf($this->people[0]), self::referenceOf($this->people[1])];
+    }
+
+    /**
+     * Sign the person in through the connection, or with a password, and move
+     * the session into the tenant.
+     *
+     * @param  string  $tenantId
+     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
+     * @param  ?string  $connectionId
+     * @return array{0: string, 1: ?string}
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function startRevocableSession(string $tenantId, IdentityReference $identity, ?string $connectionId): array
+    {
+        $person = (new IdentityReferences)->identity($identity);
+
+        self::assertInstanceOf(Person::class, $person);
+
+        if ($connectionId === null) {
+            return [self::keyOf($this->inTenant($this->signIn($person)->record, $tenantId)), null];
+        }
+
+        $linkId = 'link-' . self::keyOf($person) . '-' . $connectionId;
+
+        return [self::keyOf($this->inTenant($this->signInThrough($person, $connectionId, $linkId), $tenantId)), $linkId];
+    }
+
+    /**
+     * Whether the session is unrevoked, as stored now.
+     *
+     * @param  string  $sessionId
+     * @return bool
+     */
+    #[\Override]
+    protected function isSessionActive(string $sessionId): bool
+    {
+        return Session::query()->findOrFail($sessionId)->getRevokedAt() === null;
     }
 
     /**
@@ -677,6 +763,37 @@ final class SessionRevocationAdapterTest extends TestCase
         }
 
         $this->app?->instance(TenantTree::class, new StoredTenantTree);
+    }
+
+    /**
+     * Store the enforcing tenant's rule through SSO, allowing its first
+     * connection, with the child below it; the connections.
+     *
+     * @return array{0: string, 1: string}
+     *
+     * @throws \Throwable
+     */
+    private function storeTheRule(): array
+    {
+        $this->arrangeSso();
+
+        Config::set('sso.features.enforcement', true);
+
+        $this->app?->instance(TenantResolver::class, new OpenTenancy);
+        $this->app?->instance(TenantAccess::class, new OpenTenancy);
+
+        $this->placeChain(self::SSO_TENANT, self::CHILD);
+
+        $connections = [$this->connectionId, $this->makeConnection()];
+
+        DB::table('sso_connections')->where('id', $connections[0])->update(['has_completed_sign_in' => true]);
+
+        $service = $this->app?->make(EnforcementService::class) ?? self::fail('The application has not booted.');
+        $result  = $service->update(self::SSO_TENANT, true, [$connections[0]], self::ssoClient());
+
+        self::assertTrue($result->isChanged(), sprintf('The rule was not stored: [%s].', $result->reason->value ?? $result->status->value));
+
+        return $connections;
     }
 
     /**

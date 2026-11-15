@@ -115,6 +115,13 @@ sessions, on every guard, as a savepoint of SSO's transaction:
 - Every adapter follows SSO's lock order, with the session's row always last. Nothing locks after
   `reauthenticateExternally()`, and nothing locks a session's row and then calls into SSO.
 
+## Contract kits
+
+Each adapter's test runs SSO's kit for its seam: `FreshnessContract`, `LinkConfirmationContract`,
+`LinkEmailMatcherContract`, `ReauthenticationSessionsContract`, `SessionRevocationContract` and
+`EnforcementInheritanceContract`. The revocation kit runs over SSO's stored rule, the tenant policy adapter, the
+application's exemptions and its tree.
+
 ## Member gaps
 
 - `laravel-sso`: `RevocationScope::tenant()` names only the enforcing tenant, so inheritors come from the application's
@@ -126,4 +133,3 @@ sessions, on every guard, as a savepoint of SSO's transaction:
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
 - `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.
-- Neither member ships a contract kit for these seams.
