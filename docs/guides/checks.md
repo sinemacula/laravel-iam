@@ -19,6 +19,7 @@ connection's or a model's name may appear in it.
 - [context](#context)
 - [audit](#audit)
 - [configuration](#configuration)
+- [machines](#machines)
 - [schedule](#schedule)
 
 ## Reading the output
@@ -180,6 +181,17 @@ The members' settings agree with each other.
 A provider attribute beyond SSO's standard mapping (`sso.mapping.custom_attributes`) depends on each connection's
 mapping, which lives in the database, so no check can see it; nor can one see your routes. See
 [An example application](example-application.md).
+
+## machines
+
+Always applies.
+
+- *The identity model ... implements ...\MachineIdentity without ...\AuthorizableMachine, so laravel-authorization takes
+  it for a person.*: the user provider of a `jwt` or `api_key` guard names a machine that `laravel-authorization`'s
+  machine rules, break-glass eligibility among them, treat as a person. Implement `AuthorizableMachine` on the model.
+
+A principal model no guard's provider names is not checked: implement `AuthorizableMachine` on any principal acting for
+a machine yourself.
 
 ## schedule
 

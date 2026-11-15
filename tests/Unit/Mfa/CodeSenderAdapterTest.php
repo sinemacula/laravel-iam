@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Unit\Mfa;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -13,6 +14,9 @@ use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\CodeSenderAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Codes\CodeMessage;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
@@ -34,19 +38,19 @@ use Tests\Fixtures\Resolvers\Factorless;
 final class CodeSenderAdapterTest extends TestCase
 {
     /**
-     * Rows of `[MFA's purpose, laravel-authentication's purpose]`.
+     * Rows of `[MFA's purpose, the code's purpose, the proof purpose's value]`.
      *
-     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\Purpose, 1: \SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose}>
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Enums\Purpose, 1: \SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose, 2: string}>
      */
     public static function providePurposes(): iterable
     {
-        yield 'sign-in' => [Purpose::SIGN_IN, CodePurpose::MFA];
+        yield 'sign-in' => [Purpose::SIGN_IN, CodePurpose::MFA, 'sign_in'];
 
-        yield 'step-up' => [Purpose::STEP_UP, CodePurpose::MFA];
+        yield 'step-up' => [Purpose::STEP_UP, CodePurpose::MFA, 'step_up'];
 
-        yield 'reauthentication' => [Purpose::REAUTHENTICATE, CodePurpose::MFA];
+        yield 'reauthentication' => [Purpose::REAUTHENTICATE, CodePurpose::MFA, 'reauthenticate'];
 
-        yield 'enrolment' => [Purpose::ENROLLMENT, CodePurpose::ENROLLMENT];
+        yield 'enrolment' => [Purpose::ENROLLMENT, CodePurpose::ENROLLMENT, 'enrollment'];
     }
 
     /**
@@ -54,18 +58,19 @@ final class CodeSenderAdapterTest extends TestCase
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @param  \SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose  $expected
+     * @param  string  $proofPurpose
      * @return void
      *
      * @throws \Throwable
      */
     #[DataProvider('providePurposes')]
-    public function testTheCodeReachesTheApplicationsSender(Purpose $purpose, CodePurpose $expected): void
+    public function testTheCodeReachesTheApplicationsSender(Purpose $purpose, CodePurpose $expected, string $proofPurpose): void
     {
         $sender    = new FakeOneTimeCodeSender;
         $person    = new Person;
         $expiresAt = CarbonImmutable::now()->addMinutes(10);
 
-        (new CodeSenderAdapter($sender))->send(self::message($purpose, $person, $expiresAt));
+        self::adapter($sender)->send(self::message($purpose, $person, $expiresAt));
 
         $message = $sender->sent()[0] ?? self::fail('Nothing was sent.');
 
@@ -77,6 +82,8 @@ final class CodeSenderAdapterTest extends TestCase
         self::assertSame('123456', $message->code->reveal());
         self::assertSame($expiresAt, $message->expiresAt);
         self::assertSame($person, $message->identity);
+        self::assertSame($proofPurpose, $message->proofPurpose?->value);
+        self::assertSame('factor-1', $message->factor);
     }
 
     /**
@@ -91,7 +98,7 @@ final class CodeSenderAdapterTest extends TestCase
         $sender = new FakeOneTimeCodeSender;
 
         try {
-            (new CodeSenderAdapter($sender))->send(self::message(Purpose::STEP_UP, new Factorless, CarbonImmutable::now()));
+            self::adapter($sender)->send(self::message(Purpose::STEP_UP, new Factorless, CarbonImmutable::now()));
             self::fail('The recipient was accepted.');
         } catch (UnresolvedReferenceException $exception) {
             self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
@@ -99,6 +106,17 @@ final class CodeSenderAdapterTest extends TestCase
         }
 
         self::assertSame(0, $sender->count());
+    }
+
+    /**
+     * The adapter forwarding to the sender.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender  $sender
+     * @return \SineMacula\Laravel\Iam\Mfa\CodeSenderAdapter
+     */
+    private static function adapter(FakeOneTimeCodeSender $sender): CodeSenderAdapter
+    {
+        return new CodeSenderAdapter($sender, new ProofTranslator(new ChannelTranslator, new ConnectionTrust(new Container)));
     }
 
     /**
