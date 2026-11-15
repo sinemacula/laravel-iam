@@ -238,7 +238,7 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
         $thrown = self::thrownBy(fn (): HandoffRedirect => $this->complete());
 
         self::assertInstanceOf(\LogicException::class, $thrown);
-        self::assertStringContainsString('provisioning always creates a new identity', $thrown->getMessage());
+        self::assertSame('The provisioner answered an identity of [' . Person::class . '] it did not create: provisioning always creates a new identity.', $thrown->getMessage());
         self::assertSame([], $fake->memberships());
         self::assertSame(0, Link::query()->count());
         self::assertSame(0, IdentityGuard::query()->count());
