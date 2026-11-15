@@ -131,8 +131,7 @@ every message's wording and template.
   `enrollment`, the type `sms` or `email`, the `proofPurpose` (`sign_in`, `step_up` or `enrollment`) and the `factor`,
   MFA's factor id. A factor of any other channel is refused; rebind MFA's `ChallengeGateway` to send it with MFA's own.
 - MFA's `SmsSender` and `EmailSender` forward to your sender in the same way, so a code MFA sends itself, once you rebind
-  its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction. Its `proofPurpose` can also be
-  `reauthenticate`.
+  its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction.
 - While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.
 
 `laravel-authentication`'s own codes carry the identifier type (`email` or `phone`) and a null `proofPurpose` and

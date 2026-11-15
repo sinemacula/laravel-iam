@@ -8,9 +8,9 @@ use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Codes\OneTimeCodeMessage;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
-use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
 use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Mfa\Codes\CodeMessage;
 use SineMacula\Laravel\Mfa\Contracts\EmailSender;
 use SineMacula\Laravel\Mfa\Contracts\SmsSender;
@@ -31,11 +31,15 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
      * Constructor.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender  $sender
+     * @param  \SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator  $proofs
      */
     public function __construct(
 
         /** The application's sender. */
         private OneTimeCodeSender $sender,
+
+        /** Translates MFA's purpose into the proof purpose. */
+        private ProofTranslator $proofs,
     ) {}
 
     /**
@@ -63,7 +67,7 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
             new Secret($message->code->reveal()),
             $message->expiresAt,
             $recipient,
-            AuthenticationPurpose::from($message->purpose->value),
+            $this->proofs->toAuthenticationPurpose($message->purpose),
             $message->factor->id,
         ));
     }

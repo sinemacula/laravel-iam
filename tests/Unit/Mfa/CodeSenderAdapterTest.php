@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Unit\Mfa;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -13,6 +14,9 @@ use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\CodeSenderAdapter;
+use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Codes\CodeMessage;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
@@ -66,7 +70,7 @@ final class CodeSenderAdapterTest extends TestCase
         $person    = new Person;
         $expiresAt = CarbonImmutable::now()->addMinutes(10);
 
-        (new CodeSenderAdapter($sender))->send(self::message($purpose, $person, $expiresAt));
+        self::adapter($sender)->send(self::message($purpose, $person, $expiresAt));
 
         $message = $sender->sent()[0] ?? self::fail('Nothing was sent.');
 
@@ -94,7 +98,7 @@ final class CodeSenderAdapterTest extends TestCase
         $sender = new FakeOneTimeCodeSender;
 
         try {
-            (new CodeSenderAdapter($sender))->send(self::message(Purpose::STEP_UP, new Factorless, CarbonImmutable::now()));
+            self::adapter($sender)->send(self::message(Purpose::STEP_UP, new Factorless, CarbonImmutable::now()));
             self::fail('The recipient was accepted.');
         } catch (UnresolvedReferenceException $exception) {
             self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
@@ -102,6 +106,17 @@ final class CodeSenderAdapterTest extends TestCase
         }
 
         self::assertSame(0, $sender->count());
+    }
+
+    /**
+     * The adapter forwarding to the sender.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender  $sender
+     * @return \SineMacula\Laravel\Iam\Mfa\CodeSenderAdapter
+     */
+    private static function adapter(FakeOneTimeCodeSender $sender): CodeSenderAdapter
+    {
+        return new CodeSenderAdapter($sender, new ProofTranslator(new ChannelTranslator, new ConnectionTrust(new Container)));
     }
 
     /**
