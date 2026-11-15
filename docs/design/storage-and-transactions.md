@@ -1,11 +1,14 @@
 # Storage and Transactions
 
-Every member's tables live on one connection, so a change that spans members commits as one.
+The tables of `laravel-authentication`, `laravel-authorization`, `laravel-mfa` and `laravel-sso` live on one
+connection, so a change that spans members commits as one.
 
 ## Storage connection
 
-- `iam.storage.connection` is written into each member's unset `storage.connection` key. A member key naming another
-  connection refuses boot with `StorageConnectionMismatchException`.
+- `iam.storage.connection` is written into each of those members' unset connection keys (`authorization.connection`
+  for `laravel-authorization`). A key naming another connection refuses boot with `StorageConnectionMismatchException`.
+- `laravel-audit-log` may keep its own connection; `iam:check` notes that its refusal of a read of the trail inside a
+  change does not cover it.
 - The keys are aligned at registration, again once every provider has registered, and checked once more after boot,
   since a provider's `boot()` can still register a member or change a key.
 - The check is skipped while a configuration command or `iam:check` runs, so a bad value can still be inspected and
