@@ -8,6 +8,7 @@ use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Codes\OneTimeCodeMessage;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\OneTimeCodeSender;
+use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
 use SineMacula\Laravel\Authentication\Secrets\Secret;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Mfa\Codes\CodeMessage;
@@ -62,6 +63,8 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
             new Secret($message->code->reveal()),
             $message->expiresAt,
             $recipient,
+            AuthenticationPurpose::from($message->purpose->value),
+            $message->factor->id,
         ));
     }
 }

@@ -128,14 +128,15 @@ every message's wording and template.
 
 - MFA's challenge gateway sends and checks the code of every factor whose driver delivers by SMS or email through
   `laravel-authentication`'s factor codes. Its queued job hands the code to your sender with the purpose `mfa` or
-  `enrollment`, and the type `sms` or `email`. A factor of any other channel is refused; rebind MFA's
-  `ChallengeGateway` to send it with MFA's own.
+  `enrollment`, the type `sms` or `email`, the `proofPurpose` (`sign_in`, `step_up` or `enrollment`) and the `factor`,
+  MFA's factor id. A factor of any other channel is refused; rebind MFA's `ChallengeGateway` to send it with MFA's own.
 - MFA's `SmsSender` and `EmailSender` forward to your sender in the same way, so a code MFA sends itself, once you rebind
-  its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction.
+  its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction. Its `proofPurpose` can also be
+  `reauthenticate`.
 - While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.
 
-`laravel-authentication`'s own codes carry the identifier type (`email` or `phone`), so route `email` to email and
-`phone` or `sms` to SMS. [Testing](testing.md) shows the fake senders.
+`laravel-authentication`'s own codes carry the identifier type (`email` or `phone`) and a null `proofPurpose` and
+`factor`. Route `email` to email and `phone` or `sms` to SMS. [Testing](testing.md) shows the fake senders.
 
 ## Passkeys
 
