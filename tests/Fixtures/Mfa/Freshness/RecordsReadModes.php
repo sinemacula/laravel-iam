@@ -67,7 +67,6 @@ final class RecordsReadModes implements FreshnessPolicy
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  string  $operation
      * @param  ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $requirement
-     * @param  ?string  $excludingFactor
      * @param  bool  $current
      * @return ?\SineMacula\Laravel\Authentication\Proofs\RecordedProof
      *
@@ -76,16 +75,11 @@ final class RecordsReadModes implements FreshnessPolicy
      * @throws \SineMacula\Laravel\Authentication\Exceptions\InvalidSessionModelConfigurationException
      */
     #[\Override]
-    public function freshProof(
-        Session $session,
-        string $operation,
-        ?FreshnessRequirement $requirement = null,
-        ?string $excludingFactor = null,
-        bool $current = false,
-    ): ?RecordedProof {
+    public function freshProof(Session $session, string $operation, ?FreshnessRequirement $requirement = null, bool $current = false): ?RecordedProof
+    {
         $this->record($operation, $current);
 
-        return $this->policy->freshProof($session, $operation, $requirement, $excludingFactor, $current);
+        return $this->policy->freshProof($session, $operation, $requirement, current: $current);
     }
 
     /**
@@ -94,7 +88,6 @@ final class RecordsReadModes implements FreshnessPolicy
      * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
      * @param  string  $operation
      * @param  ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $requirement
-     * @param  ?string  $excludingFactor
      * @param  bool  $current
      * @return ?\Carbon\CarbonImmutable
      *
@@ -103,16 +96,11 @@ final class RecordsReadModes implements FreshnessPolicy
      * @throws \SineMacula\Laravel\Authentication\Exceptions\InvalidSessionModelConfigurationException
      */
     #[\Override]
-    public function freshUntil(
-        Session $session,
-        string $operation,
-        ?FreshnessRequirement $requirement = null,
-        ?string $excludingFactor = null,
-        bool $current = false,
-    ): ?CarbonImmutable {
+    public function freshUntil(Session $session, string $operation, ?FreshnessRequirement $requirement = null, bool $current = false): ?CarbonImmutable
+    {
         $this->record($operation, $current);
 
-        return $this->policy->freshUntil($session, $operation, $requirement, $excludingFactor, $current);
+        return $this->policy->freshUntil($session, $operation, $requirement, current: $current);
     }
 
     /**
@@ -122,6 +110,7 @@ final class RecordsReadModes implements FreshnessPolicy
      * @param  string  $operation
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @param  bool  $current
+     * @param  ?string  $excludingFactor
      * @return ?\Carbon\CarbonImmutable
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -130,11 +119,11 @@ final class RecordsReadModes implements FreshnessPolicy
      * @throws \SineMacula\Laravel\Authentication\Exceptions\InvalidSessionModelConfigurationException
      */
     #[\Override]
-    public function metUntil(Session $session, string $operation, Requirement $requirement, bool $current = false): ?CarbonImmutable
+    public function metUntil(Session $session, string $operation, Requirement $requirement, bool $current = false, ?string $excludingFactor = null): ?CarbonImmutable
     {
         $this->record($operation, $current);
 
-        return $this->policy->metUntil($session, $operation, $requirement, $current);
+        return $this->policy->metUntil($session, $operation, $requirement, $current, $excludingFactor);
     }
 
     /**

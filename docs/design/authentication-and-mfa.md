@@ -62,8 +62,8 @@ removed factor would leave the identity's other sessions standing.
   level included, by the requirement check or accepted provider evidence, apart from the operation's configured
   freshness, and answers the earlier deadline. A part with no maximum age, or one over a day, throws
   `InvalidArgumentException`.
-- The factor-change gate hands `factorChange()` one `FreshnessRequirement`, which holds no level, so a minimum level
-  there throws `InvalidArgumentException`, and a part with no maximum age is held to a day.
+- The factor-change gate hands `factorChange()` the requirement whole, judged as `metUntil()` judges it without the
+  removed factor's proofs; a part with no maximum age, or one over a day, is held to a day.
 - A reset names no guard, so it goes through `Auth::sessions()`, which picks the `jwt` guard.
 - `MfaContextContributor` fills the `mfa` namespace with MFA's own `contributeFor()`, from the contribution subject's
   session and its newest proofs, so the keys match `Mfa::authenticationContext()` for that session. It is registered
