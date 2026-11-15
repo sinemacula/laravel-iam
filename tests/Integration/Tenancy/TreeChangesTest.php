@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration\Tenancy;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\Attributes\WithConfig;
@@ -26,6 +27,9 @@ use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
 use SineMacula\Laravel\Iam\Tenancy\TreeChanges;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
+use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
+use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
+use SineMacula\Laravel\Sso\Models\TenantEnforcement;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
@@ -119,6 +123,90 @@ final class TreeChangesTest extends TestCase
         }
 
         self::assertNull($this->stored($kept)->getRevokedAt());
+    }
+
+    /**
+     * A move locks the moved tenant's SSO rule before anything else it does.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAMoveLocksTheMovedTenantsRuleFirst(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->enforceRoot();
+
+        /** @var \ArrayObject<int, \Illuminate\Database\Events\QueryExecuted> $queries */
+        $queries = new \ArrayObject;
+
+        DB::transaction(function () use ($queries): void {
+
+            StoredTenantTree::place(self::MOVED, self::ROOT);
+
+            DB::listen(static function (QueryExecuted $query) use ($queries): void {
+                $queries->append($query);
+            });
+
+            $this->changes()->changed(self::MOVED);
+        });
+
+        $first = $queries[0] ?? self::fail('The move ran no query.');
+
+        self::assertStringContainsString('sso_enforcement', $first->sql);
+        self::assertContains(self::MOVED, $first->bindings);
+        self::assertTrue(TenantEnforcement::query()->where('tenant_id', self::MOVED)->exists());
+        self::assertFalse(TenantEnforcement::query()->where('tenant_id', self::CHILD)->exists());
+    }
+
+    /**
+     * A move committed while a sign-in locks its path judges the sign-in again
+     * under the new path.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMoveCommittedWhileASignInLocksItsPathJudgesTheSignInAgain(): void
+    {
+        self::requireIsolationLevels();
+
+        // The tree's plain reads are current only at READ COMMITTED
+        self::useIsolationLevel('read committed');
+
+        StoredTenantTree::place(self::TENANT, self::MOVED);
+
+        $this->linkThroughFlow($this->createPerson());
+
+        $tenantConnection = $this->connectionId;
+
+        $this->enforceRoot();
+
+        $this->connectionId = $tenantConnection;
+
+        $handoff = $this->handoff();
+        $moves   = 0;
+
+        // The tenant's row sorts first, so the moved tenant's stays free
+        DB::listen(function (QueryExecuted $query) use (&$moves): void {
+
+            if ($moves > 0 || $query->connectionName !== self::CONNECTION || $query->connection->transactionLevel() === 0 || !self::locksARule($query)) {
+                return;
+            }
+
+            $moves++;
+
+            $this->moveUnderTheRootElsewhere();
+        });
+
+        $answer = Iam::signIns()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, new SignInContext(self::client()));
+
+        self::assertSame(1, $moves);
+        self::assertInstanceOf(RedemptionResult::class, $answer);
+        self::assertSame(FailureReason::ENFORCEMENT_UNSATISFIED, $answer->reason);
     }
 
     /**
@@ -432,6 +520,45 @@ final class TreeChangesTest extends TestCase
         self::assertInstanceOf(Model::class, $stored);
 
         return $stored;
+    }
+
+    /**
+     * Move the moved tenant under the root and report it, committed on another
+     * connection.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    private function moveUnderTheRootElsewhere(): void
+    {
+        $elsewhere = 'elsewhere';
+        $default   = DB::getDefaultConnection();
+
+        Config::set('database.connections.' . $elsewhere, Config::get('database.connections.' . self::CONNECTION));
+        DB::setDefaultConnection($elsewhere);
+
+        try {
+            DB::transaction(function (): void {
+
+                StoredTenantTree::place(self::MOVED, self::ROOT);
+
+                $this->changes()->changed(self::MOVED);
+            });
+        } finally {
+            DB::setDefaultConnection($default);
+        }
+    }
+
+    /**
+     * Whether the query inserts or keeps an SSO rule's row to lock it.
+     *
+     * @param  \Illuminate\Database\Events\QueryExecuted  $query
+     * @return bool
+     */
+    private static function locksARule(QueryExecuted $query): bool
+    {
+        return str_starts_with(strtolower($query->sql), 'insert into') && str_contains($query->sql, 'sso_enforcement');
     }
 
     /**

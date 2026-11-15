@@ -19,6 +19,7 @@ use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Sso\Config\Enums\Feature;
 use SineMacula\Laravel\Sso\Config\Features;
+use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 
 /**
  * Applies a tenant move, reported after the write inside its transaction, to
@@ -49,7 +50,7 @@ final readonly class TreeChanges
         /** Tells whether the application has a tenant MFA requirement. */
         private TenantMfaRequirements $requirements,
 
-        /** Resolves `laravel-authorization`'s services on every call. */
+        /** Resolves `laravel-authorization`'s and SSO's services on every call. */
         private Container $container,
 
         /** Holds the capabilities' switches. */
@@ -63,7 +64,8 @@ final readonly class TreeChanges
     ) {}
 
     /**
-     * Report the move and answer how many sessions were revoked.
+     * Lock the moved tenant's SSO rule, report the move and answer how many
+     * sessions were revoked.
      *
      * @param  string  $tenantId
      * @return int
@@ -74,6 +76,9 @@ final readonly class TreeChanges
      */
     public function changed(string $tenantId): int
     {
+        // Taken first: an admission on the moved tenant's path waits for it
+        $this->container->make(EnforcementService::class)->lockTenants([$tenantId]);
+
         if (TenancyContracts::hasTree()) {
             $this->reportToAuthorization($tenantId);
         }

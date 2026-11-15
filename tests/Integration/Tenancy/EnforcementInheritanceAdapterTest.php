@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration\Tenancy;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -21,12 +22,14 @@ use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Authorization\Contracts\TenantTree;
 use SineMacula\Laravel\Authorization\Resolvers\FlatTenantTree;
 use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Iam\Facades\Iam;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Tenancy\EnforcementInheritanceAdapter;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
 use SineMacula\Laravel\Sso\Contracts\EnforcementExemption;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
+use SineMacula\Laravel\Sso\Enforcement\EnforcementFinder;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementLock;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
@@ -133,7 +136,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     {
         self::runAtIsolationLevel($level);
 
-        self::assertSame(self::TENANT, $this->enforcing(self::TENANT));
+        self::assertSame(self::ROOT, $this->enforcing(self::TENANT));
 
         $this->rule(self::ROOT, true);
 
@@ -163,6 +166,92 @@ final class EnforcementInheritanceAdapterTest extends TestCase
         $this->rule(self::ROOT, false);
 
         self::assertSame(self::REGION, DB::transaction(fn (): string => $this->enforcing(self::BRANCH)));
+    }
+
+    /**
+     * The path runs from the tenant up to the nearest tenant with a rule.
+     *
+     * @return void
+     */
+    public function testThePathRunsFromTheTenantToTheNearestTenantWithARule(): void
+    {
+        $this->rule(self::REGION, true);
+
+        self::assertSame([self::TENANT, self::BRANCH, self::REGION], $this->path(self::TENANT));
+        self::assertSame([self::REGION], $this->path(self::REGION));
+    }
+
+    /**
+     * With no rule on the way the path runs to the root.
+     *
+     * @return void
+     */
+    public function testWithNoRuleOnTheWayThePathRunsToTheRoot(): void
+    {
+        $this->rule(self::APART, true);
+
+        self::assertSame([self::TENANT, self::BRANCH, self::REGION, self::ROOT], $this->path(self::TENANT));
+        self::assertSame([self::ROOT], $this->path(self::ROOT));
+    }
+
+    /**
+     * The path follows the question it is given, not the stored rules.
+     *
+     * @return void
+     */
+    public function testThePathFollowsTheQuestionGivenNotTheStoredRules(): void
+    {
+        $this->rule(self::TENANT, true);
+
+        $asked = [];
+        $path  = $this->path(self::TENANT, static function (string $tenantId) use (&$asked): bool {
+            $asked[] = $tenantId;
+
+            return $tenantId === self::BRANCH;
+        });
+
+        self::assertSame([self::TENANT, self::BRANCH], $path);
+        self::assertSame([self::TENANT, self::BRANCH], $asked);
+    }
+
+    /**
+     * A path that changes under SSO's locks runs the sign-in again, whole.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAPathThatChangesUnderTheLocksRunsTheSignInAgainWhole(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->linkThroughFlow($this->createPerson());
+
+        $handoff = $this->handoff();
+        $moves   = 0;
+
+        // The first attempt's first lock moves the tenant under another root
+        DB::listen(static function (QueryExecuted $query) use (&$moves): void {
+
+            $locks = str_starts_with(strtolower($query->sql), 'insert into') && str_contains($query->sql, 'sso_enforcement');
+
+            if ($moves > 0 || $query->connection->transactionLevel() === 0 || !$locks) {
+                return;
+            }
+
+            $moves++;
+
+            StoredTenantTree::place(self::TENANT, self::APART);
+        });
+
+        $answer = Iam::signIns()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, new SignInContext(self::client()));
+
+        self::assertSame(1, $moves);
+        self::assertInstanceOf(SignInResult::class, $answer);
+        self::assertTrue($answer->isSignedIn(), (string) $answer->reason?->value);
+        self::assertSame([self::TENANT, self::BRANCH, self::REGION, self::ROOT], $this->path(self::TENANT));
     }
 
     /**
@@ -269,7 +358,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
         StoredTenantTree::place(new Reference(Organisation::TYPE, $organisation));
         StoredTenantTree::place(new Reference(Account::TYPE, $account), new Reference(Organisation::TYPE, $organisation));
 
-        self::assertSame($account, $this->enforcing($account));
+        self::assertSame([$account, $organisation], $this->path($account));
 
         $this->rule($organisation, true);
 
@@ -289,7 +378,7 @@ final class EnforcementInheritanceAdapterTest extends TestCase
 
         $this->app?->instance(TenantTree::class, new FlatTenantTree);
 
-        self::assertSame(self::TENANT, $this->enforcing(self::TENANT));
+        self::assertSame([self::TENANT], $this->path(self::TENANT));
     }
 
     /**
@@ -388,26 +477,26 @@ final class EnforcementInheritanceAdapterTest extends TestCase
     }
 
     /**
-     * The tree with a rule on the region, and each tenant's enforcing tenant.
+     * The tree with a rule on the region, and each tenant's path.
      *
-     * @return array<string, string>
+     * @return array<string, non-empty-list<string>>
      */
     #[\Override]
-    protected function enforcingTenants(): array
+    protected function inheritancePaths(): array
     {
         $this->rule(self::REGION, true);
 
         return [
-            self::ROOT   => self::ROOT,
-            self::REGION => self::REGION,
-            self::BRANCH => self::REGION,
-            self::TENANT => self::REGION,
-            self::APART  => self::APART,
+            self::ROOT   => [self::ROOT],
+            self::REGION => [self::REGION],
+            self::BRANCH => [self::BRANCH, self::REGION],
+            self::TENANT => [self::TENANT, self::BRANCH, self::REGION],
+            self::APART  => [self::APART],
         ];
     }
 
     /**
-     * The tenant SSO's inheritance names for the tenant.
+     * The tenant whose rule SSO's policy applies to the tenant.
      *
      * @param  string  $tenantId
      * @return string
@@ -416,9 +505,24 @@ final class EnforcementInheritanceAdapterTest extends TestCase
      */
     private function enforcing(string $tenantId): string
     {
-        $inheritance = $this->app?->make(EnforcementInheritance::class) ?? self::fail('The application has not booted.');
+        return $this->policy($tenantId)->enforcingTenantId;
+    }
 
-        return $inheritance->enforcingTenant($tenantId, self::GUARD);
+    /**
+     * The adapter's path for the tenant, asking the question given or SSO's
+     * stored rules.
+     *
+     * @param  string  $tenantId
+     * @param  ?\Closure(string): bool  $isConfigured
+     * @return non-empty-list<string>
+     *
+     * @phpstan-impure
+     */
+    private function path(string $tenantId, ?\Closure $isConfigured = null): array
+    {
+        $isConfigured ??= static fn (string $id): bool => (new EnforcementFinder)->find($id) !== null;
+
+        return $this->enforcementInheritance()->enforcementPath($tenantId, self::GUARD, $isConfigured);
     }
 
     /**
