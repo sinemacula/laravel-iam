@@ -520,6 +520,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testAuthenticationsIpLimitBoundsChecksOfAChallengeNotFound(): void
     {
+        // The limit's windows are aligned to the clock
+        $this->freezeSecond();
+
         config()->set('authentication.rate_limits.factor_code.per_ip', ['max' => 1, 'decay_seconds' => 300]);
 
         $factor = $this->challengedFactor();
@@ -547,6 +550,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testAuthenticationsIpLimitBoundsChecksOfAMalformedChallenge(): void
     {
+        // The limit's windows are aligned to the clock
+        $this->freezeSecond();
+
         config()->set('authentication.rate_limits.factor_code.per_ip', ['max' => 1, 'decay_seconds' => 300]);
 
         $factor = $this->challengedFactor();
@@ -706,6 +712,9 @@ final class ChallengeGatewayAdapterTest extends TestCase
      */
     public function testChecksBeyondTheIpAddresssLimitAreRefusedAsLocked(): void
     {
+        // The limit's windows are aligned to the clock
+        $this->freezeSecond();
+
         config()->set('authentication.rate_limits.factor_code.per_ip', ['max' => 1, 'decay_seconds' => 300]);
 
         $challenge = $this->sentChallenge();
