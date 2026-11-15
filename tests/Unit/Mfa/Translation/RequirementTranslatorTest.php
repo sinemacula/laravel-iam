@@ -32,10 +32,6 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 #[CoversClass(RequirementTranslator::class)]
 final class RequirementTranslatorTest extends TestCase
 {
-    /** @var string The refusal of a minimum assurance level asked as one freshness requirement. */
-    private const string NO_MINIMUM_LEVEL = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
-        . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
-
     /**
      * Rows of `[laravel-authentication's requirement, MFA's]`.
      *
@@ -273,55 +269,46 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement, the one freshness requirement holding it]`.
+     * Rows of `[MFA's factor-change requirement, laravel-authentication's]`.
      *
-     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement}>
+     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: \SineMacula\Laravel\Authentication\Requirements\Requirement}>
      */
-    public static function provideFreshness(): iterable
+    public static function provideFactorChangeRequirements(): iterable
     {
-        $additional = [ProofKind::ADDITIONAL_FACTOR, ProofKind::RECOVERY_CODE];
+        yield 'nothing' => [MfaRequirement::none(), new AuthenticationRequirement];
 
-        yield 'nothing' => [MfaRequirement::none(), null];
+        yield 'each part at its own age' => [
+            MfaRequirement::none()->withAdditionalVerification(300)->withMultifactor(600)->withPhishingResistance(900),
+            new AuthenticationRequirement(new AuthenticationRequirementPart(300), new AuthenticationRequirementPart(600), null, new AuthenticationRequirementPart(900)),
+        ];
 
-        yield 'additional verification' => [MfaRequirement::none()->withAdditionalVerification(300), new FreshnessRequirement(300, $additional)];
+        yield 'a minimum level' => [
+            MfaRequirement::none()->withMinimumLevel(MfaLevel::AAL2, 600),
+            new AuthenticationRequirement(minimumLevel: new LevelRequirement(AuthenticationLevel::AAL2, 600)),
+        ];
 
-        yield 'multifactor' => [MfaRequirement::none()->withMultifactor(600), new FreshnessRequirement(600, ProofKind::cases(), true)];
+        yield 'no maximum age' => [
+            MfaRequirement::none()->withMultifactor()->withMinimumLevel(MfaLevel::AAL1),
+            new AuthenticationRequirement(multifactor: new AuthenticationRequirementPart(86400), minimumLevel: new LevelRequirement(AuthenticationLevel::AAL1, 86400)),
+        ];
 
-        yield 'phishing resistance' => [MfaRequirement::none()->withPhishingResistance(900), new FreshnessRequirement(900, ProofKind::cases(), false, true)];
-
-        yield 'no maximum age' => [MfaRequirement::none()->withMultifactor(), new FreshnessRequirement(86400, ProofKind::cases(), true)];
-
-        yield 'longer than a day' => [MfaRequirement::none()->withPhishingResistance(172800), new FreshnessRequirement(86400, ProofKind::cases(), false, true)];
-
-        yield 'every part but a level' => [
-            MfaRequirement::none()->withPhishingResistance(900)->withMultifactor()->withAdditionalVerification(600),
-            new FreshnessRequirement(600, $additional, true, true),
+        yield 'longer than a day' => [
+            MfaRequirement::none()->withPhishingResistance(172800),
+            new AuthenticationRequirement(phishingResistance: new AuthenticationRequirementPart(86400)),
         ];
     }
 
     /**
-     * A whole requirement is one freshness requirement at the shortest age.
+     * A factor change's requirement crosses whole, each part within a day.
      *
-     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @param  ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement  $freshness
+     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $mfa
+     * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $authentication
      * @return void
      */
-    #[DataProvider('provideFreshness')]
-    public function testARequirementAskedAsAWholeIsOneFreshnessRequirement(MfaRequirement $requirement, ?FreshnessRequirement $freshness): void
+    #[DataProvider('provideFactorChangeRequirements')]
+    public function testAFactorChangesRequirementCrossesWholeWithinADay(MfaRequirement $mfa, AuthenticationRequirement $authentication): void
     {
-        self::assertEquals($freshness, (new RequirementTranslator)->toFreshness($requirement));
-    }
-
-    /**
-     * A minimum level asked as a whole is refused.
-     *
-     * @return void
-     */
-    public function testAMinimumLevelAskedAsAWholeIsRefused(): void
-    {
-        $this->expectExceptionObject(new \InvalidArgumentException(self::NO_MINIMUM_LEVEL));
-
-        (new RequirementTranslator)->toFreshness(MfaRequirement::none()->withAdditionalVerification(60)->withMinimumLevel(MfaLevel::AAL1, 60));
+        self::assertEquals($authentication, (new RequirementTranslator)->toFactorChange($mfa));
     }
 
     /**

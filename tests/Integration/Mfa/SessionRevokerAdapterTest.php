@@ -93,7 +93,7 @@ final class SessionRevokerAdapterTest extends TestCase
     {
         $person = $this->revokedPerson();
 
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         $removal = $this->revoker()->factorRemoved($person, 'factor-removed', self::GUARD, $this->currentSessionOf($person))->completion();
 
@@ -398,7 +398,7 @@ final class SessionRevokerAdapterTest extends TestCase
         $this->bindTheFactorChangeAdapters();
         $this->nameTheSignIn($person, $this->currentSession());
         $this->stepUpWith($person, $this->currentSession(), $kept->id);
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         DB::enableQueryLog();
 

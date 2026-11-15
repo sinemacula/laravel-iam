@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use SineMacula\Laravel\Authentication\Contracts\AdditionalFactorPolicy;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\RequirementCheck;
 use SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
@@ -23,6 +24,7 @@ use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
+use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionTransitionAdapter;
 use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
@@ -55,36 +57,39 @@ trait ArrangesFactorChanges
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  string  $factor
+     * @param  bool  $multifactor
      * @return void
      *
      * @throws \Throwable
      */
-    protected function stepUpWith(Person $person, EloquentSession&Model $session, string $factor): void
+    protected function stepUpWith(Person $person, EloquentSession&Model $session, string $factor, bool $multifactor = true): void
     {
-        $result = $this->stepUp($person, $session, $factor);
+        $result = $this->stepUp($person, $session, $factor, $multifactor);
 
         self::assertTrue($result->isIssued(), sprintf('The session was not stepped up: [%s].', $result->reason->value ?? 'none'));
     }
 
     /**
-     * Step the session up with a multifactor TOTP proof of the factor given.
+     * Step the session up with a multifactor TOTP proof of the factor given, or
+     * an email code that is not multifactor.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
      * @param  string  $factor
+     * @param  bool  $multifactor
      * @return \SineMacula\Laravel\Authentication\Sessions\AccessTokenResult
      *
      * @throws \Throwable
      */
-    protected function stepUp(Person $person, EloquentSession&Model $session, string $factor): AccessTokenResult
+    protected function stepUp(Person $person, EloquentSession&Model $session, string $factor, bool $multifactor = true): AccessTokenResult
     {
         return $this->sessions()->stepUp(new ProofResult(
             ProofKind::ADDITIONAL_FACTOR,
-            'totp',
-            new Channel(ChannelKind::AUTHENTICATOR_APP, $factor),
+            $multifactor ? 'totp' : 'email',
+            new Channel($multifactor ? ChannelKind::AUTHENTICATOR_APP : ChannelKind::EMAIL, $factor),
             $factor,
             new ObservedProperties(userPresence: true),
-            new Evaluation(true, true),
+            new Evaluation(true, $multifactor),
             ['otp'],
             CarbonImmutable::now(),
             new ProofBinding($person, self::GUARD, $session->getSessionIdentifier(), Purpose::STEP_UP),
@@ -150,15 +155,16 @@ trait ArrangesFactorChanges
     }
 
     /**
-     * Ask every session for a further factor, so a rejudged one goes pending.
+     * Ask every session for phishing resistance, which no TOTP step-up shows,
+     * so a rejudged one goes pending.
      *
      * @return void
      */
-    protected function requireAFurtherFactor(): void
+    protected function requirePhishingResistance(): void
     {
         $this->app?->instance(AdditionalFactorPolicy::class, new class implements AdditionalFactorPolicy {
             /**
-             * Ask for a further factor of any age.
+             * Ask for phishing resistance of any age.
              *
              * @param  \SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext  $context
              * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
@@ -166,7 +172,7 @@ trait ArrangesFactorChanges
             #[\Override]
             public function requirementFor(AdditionalFactorContext $context): Requirement
             {
-                return new Requirement(additionalVerification: new RequirementPart);
+                return new Requirement(phishingResistance: new RequirementPart);
             }
         });
     }
@@ -178,9 +184,21 @@ trait ArrangesFactorChanges
      */
     protected function bindTheFactorChangeAdapters(): void
     {
+        $this->bindTheRequirementCheck();
+
         $this->app?->bind(FactorChangeGate::class, FactorChangeGateAdapter::class);
         $this->app?->bind(SessionRevoker::class, SessionRevokerAdapter::class);
         $this->app?->bind(SessionTransition::class, SessionTransitionAdapter::class);
+    }
+
+    /**
+     * Bind the requirement check a factor change's requirement is judged by.
+     *
+     * @return void
+     */
+    protected function bindTheRequirementCheck(): void
+    {
+        $this->app?->bind(RequirementCheck::class, RequirementCheckAdapter::class);
     }
 
     /**

@@ -72,14 +72,23 @@ final readonly class RequirementTranslator
      */
     public function toAuthentication(MfaRequirement $requirement): AuthenticationRequirement
     {
-        $level = $requirement->minimumLevel === null ? null : $this->level($requirement->minimumLevel);
+        return $this->translated($requirement, $requirement->maxAge(...));
+    }
 
-        return new AuthenticationRequirement(
-            self::partOf($requirement, MfaRequirementPart::ADDITIONAL_VERIFICATION),
-            self::partOf($requirement, MfaRequirementPart::MULTIFACTOR),
-            $level === null ? null : new LevelRequirement($level, $requirement->maxAge(MfaRequirementPart::MINIMUM_LEVEL)),
-            self::partOf($requirement, MfaRequirementPart::PHISHING_RESISTANCE),
-        );
+    /**
+     * `laravel-authentication`'s requirement for a factor change's, each part
+     * held to a day at most.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
+     * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function toFactorChange(MfaRequirement $requirement): AuthenticationRequirement
+    {
+        $day = FreshnessRequirement::MAX_AGE_SECONDS;
+
+        return $this->translated($requirement, static fn (MfaRequirementPart $part): int => min($requirement->maxAge($part) ?? $day, $day));
     }
 
     /**
@@ -118,40 +127,6 @@ final readonly class RequirementTranslator
     public function evaluation(Evaluation $evaluation): RequirementEvaluation
     {
         return new RequirementEvaluation(array_map($this->kind(...), $evaluation->unmet), $evaluation->metUntil);
-    }
-
-    /**
-     * One freshness requirement holding every part, each held to a day at most.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @return ?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement
-     *
-     * @throws \InvalidArgumentException
-     */
-    public function toFreshness(MfaRequirement $requirement): ?FreshnessRequirement
-    {
-        if ($requirement->isEmpty()) {
-            return null;
-        }
-
-        if ($requirement->asks(MfaRequirementPart::MINIMUM_LEVEL)) {
-            $message = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
-                . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
-
-            throw new \InvalidArgumentException($message);
-        }
-
-        $ages = array_map(
-            static fn (MfaRequirementPart $part): int => $requirement->maxAge($part) ?? FreshnessRequirement::MAX_AGE_SECONDS,
-            $requirement->parts(),
-        );
-
-        return new FreshnessRequirement(
-            min(FreshnessRequirement::MAX_AGE_SECONDS, ...$ages),
-            $requirement->asks(MfaRequirementPart::ADDITIONAL_VERIFICATION) ? self::ADDITIONAL_VERIFICATIONS : ProofKind::cases(),
-            $requirement->asks(MfaRequirementPart::MULTIFACTOR),
-            $requirement->asks(MfaRequirementPart::PHISHING_RESISTANCE),
-        );
     }
 
     /**
@@ -245,16 +220,24 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * `laravel-authentication`'s part, if MFA's requirement asks for it.
+     * `laravel-authentication`'s requirement for MFA's, at the ages given.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @param  \SineMacula\Laravel\Mfa\Enums\RequirementPart  $part
-     * @return ?\SineMacula\Laravel\Authentication\Requirements\RequirementPart
+     * @param  \Closure(\SineMacula\Laravel\Mfa\Enums\RequirementPart): ?int  $maxAge
+     * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
      *
      * @throws \InvalidArgumentException
      */
-    private static function partOf(MfaRequirement $requirement, MfaRequirementPart $part): ?AuthenticationRequirementPart
+    private function translated(MfaRequirement $requirement, \Closure $maxAge): AuthenticationRequirement
     {
-        return $requirement->asks($part) ? new AuthenticationRequirementPart($requirement->maxAge($part)) : null;
+        $part  = static fn (MfaRequirementPart $part): ?AuthenticationRequirementPart => $requirement->asks($part) ? new AuthenticationRequirementPart($maxAge($part)) : null;
+        $level = $requirement->minimumLevel === null ? null : $this->level($requirement->minimumLevel);
+
+        return new AuthenticationRequirement(
+            $part(MfaRequirementPart::ADDITIONAL_VERIFICATION),
+            $part(MfaRequirementPart::MULTIFACTOR),
+            $level === null ? null : new LevelRequirement($level, $maxAge(MfaRequirementPart::MINIMUM_LEVEL)),
+            $part(MfaRequirementPart::PHISHING_RESISTANCE),
+        );
     }
 }

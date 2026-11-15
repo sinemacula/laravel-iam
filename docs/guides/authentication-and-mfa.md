@@ -113,10 +113,9 @@ The gate raises MFA's `InsufficientAuthenticationException`, which you answer in
 
 Adding or removing a factor, and generating recovery codes, takes a fresh step-up, judged by `laravel-authentication`
 under the session's lock; an identity's first additional factor takes a fresh reauthentication instead. Declare MFA's
-freshness operations for each MFA application's guard (see [Installation](installation.md#guards-and-applications)). A
-minimum assurance level in MFA's freshness settings for a factor change is refused with an `InvalidArgumentException`
-when the change is made, since `laravel-authentication`'s factor-change gate holds no level. MFA's freshness gate, which
-`Mfa::isFresh()` and the route gate ask, judges a minimum level within its age.
+freshness operations for each MFA application's guard (see [Installation](installation.md#guards-and-applications)).
+Each part of a factor change's freshness, a minimum level included, is judged within its own age, and a part with no
+maximum age, or one over a day, is held to a day.
 
 Removing a factor ends every other session of the identity and voids the current session's proofs made with it;
 resetting an identity ends all of its sessions. When the current session is returned to pending, the removal's
