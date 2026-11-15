@@ -241,7 +241,8 @@ tenant above counts there, a tenant whose own policies deny the purpose is left 
 grants only where your `TenantAccess` lets it act, elsewhere only its identity's. A grant never shows the whole trail:
 no viewer sees records with no tenant, which may be about any tenant's people, nor a tenant below a grant's own that it
 is no member of. Grants in more tenants than audit-log's scope holds (100) refuse the read rather than show some of
-them.
+them. Each tenant is resolved through your [tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver), so a
+viewer in any tenant needs one bound: under `ResolveNoTenant` the read throws `UnresolvedReferenceException`.
 
 Audit-log tells the policy who is reading and why, never how they signed in or how recently. A requirement on the
 authentication itself, such as a fresh multi-factor check, belongs on the route or action that reads the trail,
