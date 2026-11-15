@@ -108,6 +108,22 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
+     * Each guard's identity model is listed once.
+     *
+     * @return void
+     */
+    public function testIdentityModelsAreListedOnce(): void
+    {
+        $config = $this->config();
+
+        $config->set('auth.providers.elsewhere', ['driver' => 'model', 'model' => IdentityElsewhere::class]);
+        $config->set('auth.guards.again', ['driver' => 'api_key', 'provider' => 'people']);
+        $config->set('auth.guards.elsewhere', ['driver' => 'jwt', 'provider' => 'elsewhere']);
+
+        self::assertSame([Person::class, IdentityElsewhere::class], array_values(StorageCheck::identityModels($config)));
+    }
+
+    /**
      * A guard naming no provider reads the default provider's model.
      *
      * @return void

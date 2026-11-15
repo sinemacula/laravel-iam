@@ -51,6 +51,8 @@ application, since only the root `allow-plugins` counts.
   - `CrossMemberConfigurationCheck`: every MFA application is a `jwt` guard; MFA's and, while SSO is in use, SSO's
     freshness operations are declared; the tenant resolver is bound while a tenant rule, a widening grant or a tenant
     tree needs it. A resource tenant resolver left on its default is a note while the application has memberships.
+  - `MachineMarkerCheck`: each `jwt` or `api_key` guard's user model that implements `MachineIdentity` also implements
+    `AuthorizableMachine`.
   - `SchedulesCheck`: a note for each run `IamSchedule` registers that nothing on the schedule runs. A schedule that
     cannot be built fails.
 - Boot's storage refusal stands aside under `iam:check`, so `StorageCheck` reports it instead.

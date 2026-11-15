@@ -231,6 +231,11 @@ it also implements `laravel-authorization`'s `SineMacula\Laravel\Authorization\C
 `AuthorizableMachine`, and caps any other machine by nothing, so with `iam.adapters.authorization` off, bind a session
 policy source of your own, or name one in `authorization.session.source`.
 
+Every other machine rule of `laravel-authorization`'s, from identity-grant inheritance to break-glass eligibility,
+knows a machine only by `AuthorizableMachine`, so implement it on every machine identity and on any principal acting for
+one. `iam:check` refuses a guard's identity model that implements `MachineIdentity` without it (see
+[Checks](checks.md#machines)).
+
 The scope registry is `laravel-authorization`'s `CatalogueScopeRegistry` unless you bind
 `SineMacula\Laravel\Authorization\Contracts\ScopeRegistry` yourself. It and the session policy source are mandatory
 while any guard accepts `api_key` or `client_credentials`: `iam:check` refuses `laravel-authentication`'s
