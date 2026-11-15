@@ -13,6 +13,7 @@ use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\RequirementCheck as AuthenticationRequirementCheck;
 use SineMacula\Laravel\Authentication\Freshness\Operations;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
@@ -26,6 +27,7 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\FreshnessGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
+use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties as MfaObservedProperties;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
@@ -75,6 +77,19 @@ final class FreshnessGateAdapterTest extends TestCase
 
     /** @var string An operation the application configures in `laravel-authentication` alone. */
     private const string PAYOUTS = 'payouts.change';
+
+    /**
+     * Bind the requirement check freshness judges the caller's requirement by.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app?->bind(AuthenticationRequirementCheck::class, RequirementCheckAdapter::class);
+    }
 
     /**
      * An additional verification is met by a step-up within its age.
@@ -166,6 +181,63 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
+     * A minimum level within an age is met until the step-up ages out.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMinimumLevelWithinAnAgeIsMetUntilTheStepUpAgesOut(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->startOfSecond());
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+        $asked   = Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 300);
+
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, $asked));
+
+        $steppedUp = CarbonImmutable::now();
+
+        $this->stepSessionUp($person, $session);
+
+        self::assertEquals($steppedUp->addSeconds(300), $this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked));
+        self::assertFalse($this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL3, 300)));
+
+        $this->travel(300)->seconds();
+
+        self::assertNull($this->adapter()->freshUntil(self::servedCaller(), self::OPERATION, $asked));
+    }
+
+    /**
+     * The earlier of the setting's deadline and the level's bounds the
+     * freshness.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testTheEarlierOfTheSettingAndTheLevelBoundsTheFreshness(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->startOfSecond());
+
+        $person    = $this->createPerson();
+        $session   = $this->signInAndActOnSession($person);
+        $asked     = Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 300);
+        $steppedUp = CarbonImmutable::now();
+
+        $this->stepSessionUp($person, $session);
+
+        Config::set('authentication.freshness.' . Operations::IDENTIFIER_CHANGE . '.max_age_seconds', 60);
+
+        self::assertEquals($steppedUp->addSeconds(60), $this->adapter()->freshUntil(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $asked));
+
+        Config::set('authentication.freshness.' . Operations::IDENTIFIER_CHANGE . '.max_age_seconds', 600);
+
+        self::assertEquals($steppedUp->addSeconds(300), $this->adapter()->freshUntil(self::servedCaller(), Operations::IDENTIFIER_CHANGE, $asked));
+    }
+
+    /**
      * The application's setting makes the caller's requirement stricter.
      *
      * @return void
@@ -201,13 +273,15 @@ final class FreshnessGateAdapterTest extends TestCase
      */
     public static function provideRequirementsThePolicyCannotJudge(): iterable
     {
-        yield 'a minimum level' => [
-            Requirement::none()->withAdditionalVerification(300)->withMinimumLevel(AssuranceLevel::AAL2, 300),
-            'laravel-authentication\'s freshness cannot hold a session to a minimum assurance level, which its proofs do not record:'
-            . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.',
+        yield 'no maximum age' => [
+            Requirement::none()->withAdditionalVerification(300)->withMinimumLevel(AssuranceLevel::AAL2),
+            'A freshness requirement\'s [minimum_level] part must have a maximum age from 1 to 86400 seconds.',
         ];
 
-        yield 'longer than a day' => [Requirement::none()->withMultifactor(86401), 'A freshness requirement\'s maximum age must be from 1 to 86400 seconds.'];
+        yield 'longer than a day' => [
+            Requirement::none()->withMultifactor(86401),
+            'A freshness requirement\'s [multifactor] part must have a maximum age from 1 to 86400 seconds.',
+        ];
     }
 
     /**
@@ -393,7 +467,7 @@ final class FreshnessGateAdapterTest extends TestCase
 
             VerificationGeneration::advance($person);
 
-            return $this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 300));
+            return $this->adapter()->isFresh(self::servedCaller(), self::OPERATION, Requirement::none()->withMultifactor(86401));
         }));
 
         self::assertSame(0, VerificationGeneration::current($person));
@@ -490,7 +564,6 @@ final class FreshnessGateAdapterTest extends TestCase
         self::assertNotSame([], $locks);
         self::assertStringContainsString($session->getTable(), $locks[0]);
         self::assertSame([], array_filter($locks, static fn (string $sql): bool => !str_contains($sql, 'authentication_')));
-        self::assertSame([], array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'mfa_')));
     }
 
     /**
@@ -629,7 +702,8 @@ final class FreshnessGateAdapterTest extends TestCase
     }
 
     /**
-     * Step the session up with a TOTP proof, failing unless it is recorded.
+     * Step the session up with a TOTP proof, or an email code when it is not
+     * multifactor, failing unless it is recorded.
      *
      * @param  \Tests\Fixtures\Models\Person  $person
      * @param  \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession  $session
@@ -643,8 +717,8 @@ final class FreshnessGateAdapterTest extends TestCase
     {
         $result = $this->sessions()->stepUp(new ProofResult(
             ProofKind::ADDITIONAL_FACTOR,
-            'totp',
-            new Channel(ChannelKind::AUTHENTICATOR_APP, self::FACTOR),
+            $multifactor ? 'totp' : 'email',
+            new Channel($multifactor ? ChannelKind::AUTHENTICATOR_APP : ChannelKind::EMAIL, self::FACTOR),
             self::FACTOR,
             new ObservedProperties(phishingResistant: $phishingResistant),
             new Evaluation(true, $multifactor),

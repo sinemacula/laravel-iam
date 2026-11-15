@@ -49,8 +49,8 @@ All rows are transient, replace only their member's default, and are on while `i
   `sending_capped`. A wrong code that caused a lockout is answered locked until it ends.
 - Delivery: MFA's SMS and email senders forward each `CodeMessage` to the application's `OneTimeCodeSender` as a
   `OneTimeCodeMessage` with purpose `enrollment` or `mfa`, MFA's purpose as the proof purpose and the factor's id. The
-  package composes no text and queues nothing. MFA's boot check builds its senders, so boot is refused until a
-  `OneTimeCodeSender` is bound.
+  package composes no text and queues nothing. MFA's configuration check builds its senders, so a request or a worker
+  is refused, and `iam:check` fails, until a `OneTimeCodeSender` is bound.
 - Passkey ceremonies run through `laravel-authentication`'s `factorOptions()` and `verifyFactor()` on the binding's
   guard. A request allowing none of the identity's passkeys is refused, since the browser would offer any credential it
   holds. `passkey_challenge_used` is `replayed`, `passkey_challenge_expired` and `passkey_challenge_invalid` are
@@ -77,9 +77,3 @@ All rows are transient, replace only their member's default, and are on while `i
 - A passkey registration or removal takes MFA's identity state and factors, and the session row for a transition or a
   revocation, before the passkey row.
 - Each code send and check is handed the caller's client, so authentication's limits and events are the caller's.
-
-## Member gaps
-
-- `laravel-mfa`: `PasskeyGateway::verifyAssertion()` is handed no client, so `verifyFactor()` gets an unknown one.
-- `laravel-mfa`: `PendingSessionResolver::fromRequest()` is not handed the guard, so a pending caller is named after the
-  default guard.

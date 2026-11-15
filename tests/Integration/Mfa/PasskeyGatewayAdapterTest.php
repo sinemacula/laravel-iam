@@ -7,6 +7,7 @@ namespace Tests\Integration\Mfa;
 use Illuminate\Auth\AuthManager as IlluminateAuthManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -22,6 +23,7 @@ use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\PasskeyGatewayAdapter;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
+use SineMacula\Laravel\Mfa\Context\ClientContext;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
@@ -145,17 +147,17 @@ final class PasskeyGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A request bound in the container never reaches the assertion.
+     * The assertion carries the caller's client, never a bound request's.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testABoundRequestNeverReachesTheAssertion(): void
+    public function testTheAssertionCarriesTheCallersClient(): void
     {
         [, , $factor] = $this->passkeyFactor();
 
-        $caller  = self::servedCaller();
+        $caller  = self::servedCaller(Request::create('/', server: ['REMOTE_ADDR' => '203.0.113.9', 'HTTP_USER_AGENT' => 'Caller']));
         $request = Mfa::requestAssertion($caller, $factor->id, Purpose::STEP_UP);
         $used    = [];
 
@@ -171,7 +173,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         self::assertTrue($result->isVerified(), $result->detail ?? '');
         self::assertCount(1, $used);
-        self::assertSame([null, null], [$used[0]->context->client->ip, $used[0]->context->client->userAgent]);
+        self::assertSame(['203.0.113.9', 'Caller'], [$used[0]->context->client->ip, $used[0]->context->client->userAgent]);
     }
 
     /**
@@ -287,7 +289,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         $this->registerPasskey($person, self::OTHER_CREDENTIAL);
 
-        $options = $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session), [self::CREDENTIAL]);
+        $options = $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session), [self::CREDENTIAL], ClientContext::unknown());
 
         self::assertSame(['challenge', 'options', 'expires_at'], array_keys($options));
         self::assertIsArray($options['options']);
@@ -313,7 +315,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
         $challenges = DB::table('passkey_challenges')->count();
 
         foreach ([[self::OTHER_CREDENTIAL], ['dW5rbm93bg'], []] as $credentials) {
-            $refusal = self::refusal(fn (): mixed => $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session), $credentials));
+            $refusal = self::refusal(fn (): mixed => $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session), $credentials, ClientContext::unknown()));
 
             self::assertSame(FailureReason::NOT_FOUND, $refusal->reason);
         }
@@ -334,8 +336,8 @@ final class PasskeyGatewayAdapterTest extends TestCase
 
         $binding  = $this->bindingOf($this->createPerson(), $session);
         $requests = [
-            fn (): mixed => $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]),
-            fn (): mixed => $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], ['challenge' => 'challenge', 'credential' => []]),
+            fn (): mixed => $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown()),
+            fn (): mixed => $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], ['challenge' => 'challenge', 'credential' => []], ClientContext::unknown()),
         ];
 
         foreach ($requests as $request) {
@@ -360,14 +362,14 @@ final class PasskeyGatewayAdapterTest extends TestCase
         [$person, $session] = $this->passkeyFactor();
 
         $binding  = $this->bindingOf($person, $session);
-        $options  = $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]);
+        $options  = $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown());
         $response = $this->respond($options);
 
         $connection = self::storage();
 
         $connection->beginTransaction();
 
-        $assertion = $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response);
+        $assertion = $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, ClientContext::unknown());
 
         $connection->rollBack();
 
@@ -379,8 +381,8 @@ final class PasskeyGatewayAdapterTest extends TestCase
         self::assertTrue($assertion->properties->phishingResistance);
         self::assertNull(Passkey::query()->sole()->getAttribute('last_used_at'));
 
-        self::assertInstanceOf(PasskeyAssertion::class, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
-        self::assertSame(FailureReason::REPLAYED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
+        self::assertInstanceOf(PasskeyAssertion::class, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, ClientContext::unknown()));
+        self::assertSame(FailureReason::REPLAYED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, ClientContext::unknown()));
     }
 
     /**
@@ -395,11 +397,11 @@ final class PasskeyGatewayAdapterTest extends TestCase
         [$person, $session] = $this->passkeyFactor();
 
         $binding  = $this->bindingOf($person, $session);
-        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]));
+        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown()));
 
         $this->travel(301)->seconds();
 
-        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response));
+        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, ClientContext::unknown()));
     }
 
     /**
@@ -411,11 +413,15 @@ final class PasskeyGatewayAdapterTest extends TestCase
      */
     public function testAnAssertionForAnotherPurposeDoesNotVerify(): void
     {
+        $client = ClientContext::unknown();
+
         [$person, $session] = $this->passkeyFactor();
 
-        $options = $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session, Purpose::SIGN_IN), [self::CREDENTIAL]);
+        $options = $this->gateway()->requestAssertion($person, $this->bindingOf($person, $session, Purpose::SIGN_IN), [self::CREDENTIAL], $client);
 
-        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $this->bindingOf($person, $session), [self::CREDENTIAL], $this->respond($options)));
+        $binding = $this->bindingOf($person, $session);
+
+        self::assertSame(FailureReason::EXPIRED, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $this->respond($options), $client));
     }
 
     /**
@@ -430,10 +436,10 @@ final class PasskeyGatewayAdapterTest extends TestCase
         [$person, $session] = $this->passkeyFactor();
 
         $binding  = $this->bindingOf($person, $session);
-        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]));
+        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown()));
 
-        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [], $response));
-        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [self::OTHER_CREDENTIAL], $response));
+        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [], $response, ClientContext::unknown()));
+        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [self::OTHER_CREDENTIAL], $response, ClientContext::unknown()));
     }
 
     /**
@@ -465,10 +471,12 @@ final class PasskeyGatewayAdapterTest extends TestCase
     #[DataProvider('provideMalformedResponses')]
     public function testAMalformedResponseNeverVerifies(array $response): void
     {
+        $client = ClientContext::unknown();
+
         $person  = $this->createPerson();
         $session = $this->signInAndActOnSession($person);
 
-        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $this->bindingOf($person, $session), [self::CREDENTIAL], $response));
+        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $this->bindingOf($person, $session), [self::CREDENTIAL], $response, $client));
     }
 
     /**
@@ -483,7 +491,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
         [$person, $session] = $this->passkeyFactor();
 
         $binding  = $this->bindingOf($person, $session);
-        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]));
+        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown()));
 
         self::assertIsArray($response['credential']);
         self::assertIsArray($response['credential']['response']);
@@ -491,7 +499,7 @@ final class PasskeyGatewayAdapterTest extends TestCase
         $forged                                        = $response;
         $forged['credential']['response']['signature'] = VirtualAuthenticator::encode('forged signature');
 
-        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $forged));
+        self::assertSame(FailureReason::INVALID_CODE, $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $forged, ClientContext::unknown()));
 
         self::assertInstanceOf(PasskeyAssertion::class, $this->assertAgain($person, $binding));
 
@@ -542,6 +550,8 @@ final class PasskeyGatewayAdapterTest extends TestCase
      */
     public function testUnresolvedReferencesThrow(): void
     {
+        $client = ClientContext::unknown();
+
         $person   = $this->createPerson();
         $stranger = new class extends User implements MultiFactorAuthenticatable {
             use HasFactors;
@@ -550,17 +560,19 @@ final class PasskeyGatewayAdapterTest extends TestCase
         $owner   = ProofOwner::of($person);
         $binding = new ProofBinding($owner->type, $owner->key, 'not-a-guard', 'sign-in', Purpose::STEP_UP);
 
-        self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]))->kind);
+        self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], $client))->kind);
         $response = ['challenge' => 'challenge', 'credential' => []];
 
-        self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response))->kind);
-        self::assertSame(ReferenceKind::IDENTITY, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($stranger, $binding, [self::CREDENTIAL]))->kind);
+        $verifying = self::unresolved(fn (): mixed => $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, $client));
+
+        self::assertSame(ReferenceKind::GUARD, $verifying->kind);
+        self::assertSame(ReferenceKind::IDENTITY, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($stranger, $binding, [self::CREDENTIAL], $client))->kind);
 
         $this->app?->instance('auth', new IlluminateAuthManager($this->app));
 
         $signIn = new ProofBinding($owner->type, $owner->key, self::GUARD, 'sign-in', Purpose::STEP_UP);
 
-        self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($person, $signIn, [self::CREDENTIAL]))->kind);
+        self::assertSame(ReferenceKind::GUARD, self::unresolved(fn (): mixed => $this->gateway()->requestAssertion($person, $signIn, [self::CREDENTIAL], $client))->kind);
     }
 
     /**
@@ -690,9 +702,9 @@ final class PasskeyGatewayAdapterTest extends TestCase
      */
     private function assertAgain(Person $person, ProofBinding $binding): FailureReason|PasskeyAssertion
     {
-        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL]));
+        $response = $this->respond($this->gateway()->requestAssertion($person, $binding, [self::CREDENTIAL], ClientContext::unknown()));
 
-        return $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response);
+        return $this->gateway()->verifyAssertion($person, $binding, [self::CREDENTIAL], $response, ClientContext::unknown());
     }
 
     /**

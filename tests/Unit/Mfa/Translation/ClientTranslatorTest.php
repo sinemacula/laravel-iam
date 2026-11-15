@@ -101,20 +101,4 @@ final class ClientTranslatorTest extends TestCase
         self::assertNull($client->schemeAndHost);
         self::assertSame([], $client->nonEmptyHeaders);
     }
-
-    /**
-     * A client MFA hands no client for is one of which nothing is known.
-     *
-     * @return void
-     */
-    public function testAnUnknownClientKnowsNothing(): void
-    {
-        $client = ClientTranslator::unknown();
-
-        self::assertNull($client->ip);
-        self::assertNull($client->userAgent);
-        self::assertNull($client->origin);
-        self::assertNull($client->schemeAndHost);
-        self::assertSame([], $client->nonEmptyHeaders);
-    }
 }

@@ -42,7 +42,8 @@ Nothing reads a request, the default guard or its current session. `Iam::callers
 - The application SSO names is the `jwt` guard of the same name; anything else throws
   `UnresolvedReferenceException` before the code is touched.
 - A sign-in and a re-authentication run in one transaction on the storage connection (`CrossMemberTransaction`),
-  retried whole on a serialisation failure, a deadlock or SSO's `LinkCandidatesChanged`, and only when outermost.
+  retried whole on a serialisation failure (SSO's `EnforcementPathChanged` among them), a deadlock or SSO's
+  `LinkCandidatesChanged`, and only when outermost.
 - A `link` goes through SSO's own `redeem()`, which retries in its own transaction, or runs as a savepoint of the
   caller's. It writes no session and is not retried here.
 - SSO's refusal commits: the code is spent and `FlowFailed` follows the commit. `laravel-authentication`'s refusal rolls
@@ -132,4 +133,3 @@ application's exemptions and its tree.
   `tenantPolicyChanged()`'s second pass stands until its first refresh.
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
-- `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.

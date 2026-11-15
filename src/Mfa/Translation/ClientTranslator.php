@@ -39,14 +39,4 @@ final readonly class ClientTranslator
     {
         return new MfaClient($client->ip, $client->userAgent, $client->origin, $client->schemeAndHost, $client->nonEmptyHeaders);
     }
-
-    /**
-     * A client of which nothing is known.
-     *
-     * @return \SineMacula\Laravel\Authentication\Http\ClientContext
-     */
-    public static function unknown(): AuthenticationClient
-    {
-        return self::toAuthentication(MfaClient::unknown());
-    }
 }

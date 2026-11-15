@@ -10,6 +10,8 @@ use SineMacula\Laravel\Authentication\Context\Enums\ContextKeyType as Authentica
 use SineMacula\Laravel\Authorization\Contracts\AuthenticationContext;
 use SineMacula\Laravel\Authorization\Contracts\ContextKeyCatalogue;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
+use SineMacula\Laravel\Mfa\Enums\ContextKey as MfaContextKey;
+use SineMacula\Laravel\Mfa\Enums\ContextValueType as MfaValueType;
 use SineMacula\Laravel\Sso\Sessions\Enums\ContextKey as SsoContextKey;
 use SineMacula\Laravel\Sso\Sessions\Enums\ContextValueType as SsoValueType;
 
@@ -24,27 +26,14 @@ use SineMacula\Laravel\Sso\Sessions\Enums\ContextValueType as SsoValueType;
  */
 final readonly class AuthenticationContextKeys
 {
-    /** @var array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType> The MFA keys, by dot path, with their types. */
-    public const array KEYS = [
-        'mfa.accepted'                      => ContextKeyType::BOOL,
-        'mfa.multifactor'                   => ContextKeyType::BOOL,
-        'mfa.factor_types'                  => ContextKeyType::LIST,
-        'mfa.level'                         => ContextKeyType::STRING,
-        'mfa.phishing_resistant'            => ContextKeyType::BOOL,
-        'mfa.user_verification'             => ContextKeyType::BOOL,
-        'mfa.last_verification_age_seconds' => ContextKeyType::NUMBER,
-        'mfa.has_confirmed_factor'          => ContextKeyType::BOOL,
-    ];
-
     /**
-     * Every key declared, by its dot path, with its type; authentication and
-     * SSO name their own.
+     * Every key declared, by its dot path, with the type its member gives it.
      *
      * @return array<string, \SineMacula\Laravel\Authorization\Enums\ContextKeyType>
      */
     public static function keys(): array
     {
-        $keys = self::KEYS;
+        $keys = [];
 
         foreach (AuthenticationKey::cases() as $key) {
             $keys[$key->value] = self::authenticationType($key->type());
@@ -52,6 +41,10 @@ final readonly class AuthenticationContextKeys
 
         foreach (SsoContextKey::cases() as $key) {
             $keys[$key->value] = self::ssoType($key->type());
+        }
+
+        foreach (MfaContextKey::cases() as $key) {
+            $keys[$key->value] = self::mfaType($key->type());
         }
 
         return $keys;
@@ -138,6 +131,22 @@ final readonly class AuthenticationContextKeys
             SsoValueType::STRING => ContextKeyType::STRING,
             SsoValueType::LIST   => ContextKeyType::LIST,
             SsoValueType::TIME   => ContextKeyType::TIME,
+        };
+    }
+
+    /**
+     * Authorization's type for a `laravel-mfa` key's type.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Enums\ContextValueType  $type
+     * @return \SineMacula\Laravel\Authorization\Enums\ContextKeyType
+     */
+    private static function mfaType(MfaValueType $type): ContextKeyType
+    {
+        return match ($type) {
+            MfaValueType::BOOL   => ContextKeyType::BOOL,
+            MfaValueType::LIST   => ContextKeyType::LIST,
+            MfaValueType::STRING => ContextKeyType::STRING,
+            MfaValueType::NUMBER => ContextKeyType::NUMBER,
         };
     }
 }

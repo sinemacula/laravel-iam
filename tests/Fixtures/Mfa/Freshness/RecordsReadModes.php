@@ -10,6 +10,7 @@ use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Freshness\ConfiguredFreshness;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Authentication\Requirements\Requirement;
 
 /**
  * Decorates the freshness policy, recording each read mode and asker.
@@ -112,6 +113,28 @@ final class RecordsReadModes implements FreshnessPolicy
         $this->record($operation, $current);
 
         return $this->policy->freshUntil($session, $operation, $requirement, $excludingFactor, $current);
+    }
+
+    /**
+     * Record the read mode, then answer as the policy does in it.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
+     * @param  string  $operation
+     * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
+     * @param  bool  $current
+     * @return ?\Carbon\CarbonImmutable
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \SineMacula\Laravel\Authentication\Exceptions\InvalidSessionModelConfigurationException
+     */
+    #[\Override]
+    public function metUntil(Session $session, string $operation, Requirement $requirement, bool $current = false): ?CarbonImmutable
+    {
+        $this->record($operation, $current);
+
+        return $this->policy->metUntil($session, $operation, $requirement, $current);
     }
 
     /**
