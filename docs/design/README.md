@@ -1,19 +1,18 @@
 # Design Notes
 
-Short notes for maintainers on why each area works as it does. Each has its own sections, covering what the area does,
-its decisions and invariants, and ends with a "Member gaps" list. Test lists and change triggers are left to the code.
+Short notes for maintainers on why each area works as it does. Each covers what the area does, its decisions and its
+invariants. Test lists and change triggers are left to the code.
 
 - `binding-precedence.md`: how adapters are bound over the members' seams without replacing the application's
   bindings.
 - `storage-and-transactions.md`: the one storage connection, cross-member transactions and their retries.
 - `long-running-processes.md`: the worker reset under Octane, the queue and other long-lived processes.
 - `authentication-and-mfa.md`: the seams between `laravel-authentication` and `laravel-mfa`, how an MFA sign-in maps
-  to an authentication session, how proofs and requirements are translated, the `mfa` context namespace, the lock
-  order, and the member gaps.
+  to an authentication session, how proofs and requirements are translated, the `mfa` context namespace, and the lock
+  order.
 
 - `codes-delivery-and-passkeys.md`: MFA's code challenges through `laravel-authentication`'s factor codes, MFA's codes
-  forwarded to the application's `OneTimeCodeSender`, passkeys as MFA factors, the context resolvers, their locks, and
-  the member gaps.
+  forwarded to the application's `OneTimeCodeSender`, passkeys as MFA factors, the context resolvers and their locks.
 - `sso-redemption-and-revocation.md`: the seams between `laravel-authentication` and `laravel-sso`, how SSO's handoff
   codes are redeemed and its revocation scopes end sessions, and how SSO's evidence, freshness and link judgements are
   answered.
@@ -24,7 +23,7 @@ its decisions and invariants, and ends with a "Member gaps" list. Test lists and
   seams answered from the application's memberships and `laravel-authorization`'s tenant tree.
 
 - `audit-mapping.md`: how the members' events are recorded in `laravel-audit-log`: registration, codes, actors and
-  correlation, the guard caller reader, the capture exclusions, the audit access policy, and the member gaps.
+  correlation, the guard caller reader, the capture exclusions and the audit access policy.
 
 - `install-and-check.md`: `iam:install`, `Iam::schedule()` and the checks `iam:check` runs.
 

@@ -109,8 +109,3 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
 - A machine is never uncapped for want of a credential.
 - Every widening is reported to SSO in the grant's own transaction, so a refused grant leaves no suspension.
 - A tenant crosses between `laravel-authorization` and the other members only by a round trip that resolves back.
-
-## Member gaps
-
-- `laravel-authorization`'s `ConflictRetries` does not recognise SSO's `LinkCandidatesChanged`, so the grant hook
-  rethrows it as Laravel's `DeadlockException` with SQLSTATE `40001`.

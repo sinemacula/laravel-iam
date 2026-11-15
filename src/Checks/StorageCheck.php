@@ -94,9 +94,37 @@ final readonly class StorageCheck implements Check
         return [
             fn () => $this->alignment->assertAligned($this->config, $this->app),
             fn () => $this->assertConfigured(),
-            ...array_map(fn (string $model): \Closure => fn () => $this->assertOnStorage($model), $this->identityModels()),
+            ...array_map(fn (string $model): \Closure => fn () => $this->assertOnStorage($model), self::identityModels($this->config)),
             fn (): ?string => $this->auditConnectionNote(),
         ];
+    }
+
+    /**
+     * The models of the user providers `jwt` and `api_key` guards use, once
+     * each.
+     *
+     * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @return array<int, string>
+     */
+    public static function identityModels(Repository $config): array
+    {
+        $guards    = $config->get(self::GUARDS_KEY);
+        $providers = $config->get(self::PROVIDERS_KEY);
+        $default   = $config->get(self::DEFAULT_PROVIDER_KEY);
+        $models    = [];
+
+        foreach (is_array($guards) ? $guards : [] as $guard) {
+
+            $model = self::modelOf($guard, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
+
+            if ($model === null) {
+                continue;
+            }
+
+            $models[] = $model;
+        }
+
+        return array_unique($models);
     }
 
     /**
@@ -159,45 +187,6 @@ final readonly class StorageCheck implements Check
         }
 
         return sprintf(self::AUDIT_ELSEWHERE, self::AUDIT_KEY, StorageConnection::KEY);
-    }
-
-    /**
-     * The models of the user providers `jwt` and `api_key` guards use, once
-     * each.
-     *
-     * @return array<int, string>
-     */
-    private function identityModels(): array
-    {
-        $guards = $this->config->get(self::GUARDS_KEY);
-        $models = [];
-
-        foreach (is_array($guards) ? $guards : [] as $guard) {
-
-            $model = $this->modelOfGuard($guard);
-
-            if ($model === null) {
-                continue;
-            }
-
-            $models[] = $model;
-        }
-
-        return array_unique($models);
-    }
-
-    /**
-     * The model of the user provider the guard uses.
-     *
-     * @param  mixed  $guard
-     * @return ?string
-     */
-    private function modelOfGuard(mixed $guard): ?string
-    {
-        $providers = $this->config->get(self::PROVIDERS_KEY);
-        $default   = $this->config->get(self::DEFAULT_PROVIDER_KEY);
-
-        return self::modelOf($guard, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
     }
 
     /**

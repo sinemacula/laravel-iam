@@ -272,7 +272,7 @@ what has committed there; `iam:check` notes that set-up.
 
 ## Further reading
 
-- [The audit mapping design note](../design/audit-mapping.md): every mapping rule, sequence and gap.
+- [The audit mapping design note](../design/audit-mapping.md): every mapping rule and sequence.
 - [Operations](operations.md#secrets-and-key-rotation): audit-log's keys among the suite's.
 
 [audit-events]: https://github.com/sinemacula/laravel-audit-log/blob/master/docs/guides/events.md
