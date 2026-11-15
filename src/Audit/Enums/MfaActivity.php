@@ -53,6 +53,17 @@ enum MfaActivity: string implements ListsProperties
     /** @var list<string> What an event about a factor keeps of it, beside the application. */
     private const array FACTOR = ['application', 'factor_id', 'factor_type'];
 
+    /** @var array<string, list<string>> What a factor's code keeps beyond the factor, by code. */
+    private const array FACTOR_DETAILS = [
+        self::CODE_SENT->value                => ['purpose'],
+        self::ENROLLMENT_ABANDONED->value     => ['cause'],
+        self::FACTOR_DISABLED->value          => ['purpose'],
+        self::LOCKED_OUT->value               => ['purpose', 'locked_until'],
+        self::PREFERRED_FACTOR_CHANGED->value => ['previous_factor_id'],
+        self::VERIFICATION_FAILED->value      => ['type', 'purpose'],
+        self::VERIFICATION_PASSED->value      => ['type', 'purpose'],
+    ];
+
     /**
      * This case's definition, dropping every property it does not list.
      *
@@ -85,18 +96,12 @@ enum MfaActivity: string implements ListsProperties
     private function retained(): array
     {
         return match ($this) {
-            self::CODE_SENT,
-            self::FACTOR_DISABLED          => [...self::FACTOR, 'purpose'],
-            self::FACTORS_RESET            => ['application', 'reenrollment_required', 'unreadable_factors'],
-            self::LOCKED_OUT               => [...self::FACTOR, 'purpose', 'locked_until'],
-            self::PREFERRED_FACTOR_CHANGED => [...self::FACTOR, 'previous_factor_id'],
+            self::FACTORS_RESET => ['application', 'reenrollment_required', 'unreadable_factors'],
             self::RECOVERY_CODE_USED,
             self::RECOVERY_CODES_LOW       => ['application', 'purpose', 'remaining'],
             self::RECOVERY_CODES_GENERATED => ['application', 'count', 'generation'],
             self::RECOVERY_CODES_REMOVED   => ['application'],
-            self::VERIFICATION_FAILED,
-            self::VERIFICATION_PASSED => [...self::FACTOR, 'type', 'purpose'],
-            default                   => self::FACTOR,
+            default                        => [...self::FACTOR, ...self::FACTOR_DETAILS[$this->value] ?? []],
         };
     }
 }
