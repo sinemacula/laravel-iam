@@ -531,13 +531,14 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * Inside the application's transaction it is a transaction conflict.
+     * A delegated grant whose link candidates changed inside the application's
+     * transaction is a transaction conflict.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testADelegatedGrantWhoseLinkCandidatesChangedInsideATransactionIsATransactionConflict(): void
+    public function testADelegatedGrantWithChangedCandidatesConflictsInATransaction(): void
     {
         $actor = $this->actor();
         $tries = $this->changeLinkCandidatesOnce();
