@@ -30,9 +30,9 @@ in its [assurance guide][mfa-assurance].
    multifactor authentication, an additional verification, a level or phishing resistance.
 
 To trust a provider, rebind MFA's combination policy (see MFA's [assurance guide][mfa-assurance-rebinding]) so it
-classifies a first factor on the `external_provider` channel of that connection. The provider's methods themselves
-never reach MFA, since its proof carries none: a rebound policy trusts a provider by its connection, never by the
-`amr` it sent. A member gap; see the [SSO design note](../design/sso-redemption-and-revocation.md#member-gaps).
+classifies a first factor on the `external_provider` channel of that connection. Such a proof also carries what the
+provider reported (`Proof::$evidence`: its `amr` methods and `acr` context), so a rebound policy may judge those as well
+as the connection.
 
 Trusting the connection in the combination policy does not go around the first gate. Every SSO sign-in records its
 first factor on the connection's `external_provider` channel, whatever SSO accepted, so the package decides, by a rule

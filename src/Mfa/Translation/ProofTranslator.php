@@ -23,6 +23,7 @@ use SineMacula\Laravel\Mfa\Enums\KeyProtection as MfaKeyProtection;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProviderEvidence;
 use SineMacula\Laravel\Mfa\Verification\VerificationResult;
 
 /**
@@ -65,15 +66,21 @@ final readonly class ProofTranslator
      */
     public function toMfa(RecordedProof $proof, SignIn $signIn, ProviderTrust $trust): Proof
     {
+        $channel = $this->channelOf($proof, $signIn->application, $trust);
+
+        // Evidence rides only on a proof naming its trusted connection.
+        $evidence = $channel?->kind === MfaChannelKind::EXTERNAL_PROVIDER && $channel->reference() !== null ? $proof->evidence : null;
+
         return new Proof(
             $this->kind($proof->kind),
             $proof->method,
-            $this->channelOf($proof, $signIn->application, $trust),
+            $channel,
             $proof->factor,
             $this->properties($proof->observed),
             $proof->authenticatedAt,
             $signIn->binding($this->purpose($proof->purpose)),
             $signIn->generation,
+            evidence: $evidence === null ? null : new ProviderEvidence($evidence->methods, $evidence->context),
         );
     }
 

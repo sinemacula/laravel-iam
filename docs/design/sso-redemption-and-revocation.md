@@ -133,4 +133,3 @@ application's exemptions and its tree.
   `tenantPolicyChanged()`'s second pass stands until its first refresh.
 - `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
   enforcement.
-- `laravel-mfa`: `Proof` carries no provider methods, so a rebound policy can trust only a connection.
