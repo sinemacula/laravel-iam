@@ -81,4 +81,3 @@ All rows are transient, replace only their member's default, and are on while `i
 
 - `laravel-authentication`: `OneTimeCodeMessage` has no factor summary or purpose finer than `mfa`, so a sender cannot
   word a step-up's code differently.
-- `laravel-mfa`: `PasskeyGateway::verifyAssertion()` is handed no client, so `verifyFactor()` gets an unknown one.
