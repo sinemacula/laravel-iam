@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBindi
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
+use SineMacula\Laravel\Mfa\Context\ClientContext;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\PasskeyGateway;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
@@ -102,6 +103,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  list<string>  $credentialIds
+     * @param  \SineMacula\Laravel\Mfa\Context\ClientContext  $client
      * @return array<string, mixed>
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -113,7 +115,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
      */
     #[\Override]
-    public function requestAssertion(MultiFactorAuthenticatable $identity, ProofBinding $binding, #[\SensitiveParameter] array $credentialIds): array
+    public function requestAssertion(MultiFactorAuthenticatable $identity, ProofBinding $binding, #[\SensitiveParameter] array $credentialIds, ClientContext $client): array
     {
         $owner   = $this->identity($identity, $binding);
         $options = $this->passkeys($binding->application)->factorOptions($owner, $this->binding($owner, $binding), $credentialIds);
@@ -128,6 +130,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
      * @param  list<string>  $credentialIds
      * @param  array<string, mixed>  $response
+     * @param  \SineMacula\Laravel\Mfa\Context\ClientContext  $client
      * @return \SineMacula\Laravel\Mfa\Enums\FailureReason|\SineMacula\Laravel\Mfa\Passkeys\PasskeyAssertion
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -143,6 +146,7 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
         ProofBinding $binding,
         #[\SensitiveParameter] array $credentialIds,
         #[\SensitiveParameter] array $response,
+        ClientContext $client,
     ): FailureReason|PasskeyAssertion {
         $owner      = $this->identity($identity, $binding);
         $challenge  = $response[self::CHALLENGE]  ?? null;
@@ -152,7 +156,8 @@ final readonly class PasskeyGatewayAdapter implements PasskeyGateway
             return FailureReason::INVALID_CODE;
         }
 
-        $result = $this->passkeys($binding->application)->verifyFactor($owner, $this->binding($owner, $binding), $challenge, $credential, ClientTranslator::unknown());
+        $bound  = $this->binding($owner, $binding);
+        $result = $this->passkeys($binding->application)->verifyFactor($owner, $bound, $challenge, $credential, ClientTranslator::toAuthentication($client));
 
         return $this->assertionOf($result, $credentialIds, $challenge);
     }
