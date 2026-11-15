@@ -296,6 +296,30 @@ final class AuthorizationEventMapperTest extends TestCase
             [...$call, ...$where, 'name' => 'Billing', 'grant' => 'role', 'expired_at' => $stamp],
         ];
 
+        yield 'a break-glass role activated' => [
+            new BreakGlassActivated($operation, $grantee, $role, 'Billing', $scope, 'activation-1', 'incident', $at),
+            AuthorizationActivity::BREAK_GLASS_ACTIVATED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'justification' => 'incident', 'expires_at' => $stamp],
+        ];
+
+        yield 'a break-glass role given up' => [
+            new BreakGlassSurrendered($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_SURRENDERED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'ended_at' => $stamp],
+        ];
+
+        yield 'a break-glass role revoked' => [
+            new BreakGlassRevoked($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_REVOKED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'ended_at' => $stamp],
+        ];
+
+        yield 'a break-glass role expired' => [
+            new BreakGlassExpired($operation, $grantee, $role, 'Billing', $scope, 'activation-1', $at),
+            AuthorizationActivity::BREAK_GLASS_EXPIRED,
+            [...$call, ...$where, 'name' => 'Billing', 'activation' => 'activation-1', 'expired_at' => $stamp],
+        ];
+
         yield 'a role\'s expiry changed' => [
             new RoleExpiryChanged($operation, $grantee, $role, 'Billing', $scope, $at, null),
             AuthorizationActivity::GRANT_EXPIRY_CHANGED,
@@ -431,19 +455,6 @@ final class AuthorizationEventMapperTest extends TestCase
         ];
 
         yield 'another of its events' => [new class implements AuthorizationEvent {}];
-
-        $role   = new Reference('role', '3');
-        $scope  = new GrantScope(new Reference('organisation', self::TENANT), 'admin', false);
-        $at     = CarbonImmutable::parse('2026-11-09 12:00:00');
-        $ending = [self::operation(), self::person('7'), $role, 'Responder', $scope, 'activation-1', $at];
-
-        yield 'a break-glass activation' => [new BreakGlassActivated(self::operation(), self::person('7'), $role, 'Responder', $scope, 'activation-1', 'incident', $at)];
-
-        yield 'a break-glass surrender' => [new BreakGlassSurrendered(...$ending)];
-
-        yield 'a break-glass revocation' => [new BreakGlassRevoked(...$ending)];
-
-        yield 'a break-glass expiry' => [new BreakGlassExpired(...$ending)];
 
         yield 'a change with no code' => [\Mockery::mock(AuthorizationMutation::class, ['operation' => 'role.archived'])];
 

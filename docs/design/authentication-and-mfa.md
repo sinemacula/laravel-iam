@@ -54,8 +54,9 @@ removed factor would leave the identity's other sessions standing.
   sign-in result never reaches a response when MFA's commit fails.
 - The factor-change gate replaces MFA's freshness check with `laravel-authentication`'s `factorChange()`, which judges
   the session's proofs as committed under its row lock; the adapter takes the verdict as it is.
-- The freshness gate and the reauthenticator ask current inside a transaction on the storage connection, locking the
-  session row and reading committed proofs, and plainly outside one, where nothing acts on the answer atomically.
+- The freshness gate and the reauthenticator ask current inside a transaction on the storage connection, as
+  authentication's `StorageConnection::isInTransaction()` reports it, locking the session row and reading committed
+  proofs, and plainly outside one, where nothing acts on the answer atomically.
 - A minimum assurance level cannot be held as freshness, since no stored proof records a level, so asking for one there
   throws `InvalidArgumentException`. A freshness part with no maximum age is refused when asked part by part, and held
   to a day when asked as a whole.
@@ -91,8 +92,6 @@ removed factor would leave the identity's other sessions standing.
   current session.
 - `laravel-mfa`: `PendingSessionResolver::fromRequest()` is not handed the guard, so a pending caller is read on the
   default guard.
-- `laravel-authentication`: `FreshnessPolicy` refuses a current read outside a transaction, so adapters probe
-  `CurrentSession::isInTransaction()`.
 - `laravel-authentication`: `FreshnessRequirement` holds one age and no level, so the freshness gate judges each part
   separately and refuses a minimum level.
 - `laravel-authentication`: no public write of a session's proofs or single-factor void, so the proof store cannot

@@ -38,7 +38,10 @@ All rows are transient, replace only their member's default, and are on while `i
   pending factor's id, since MFA never hands its grant out.
 - `FactorCodeCountersAdapter` answers authentication's counters with MFA's `ChallengeCounters`, inside
   authentication's transaction. A binding whose channel is not the factor's own is `not_found` without asking MFA, so no
-  code goes to another number or address.
+  code goes to another number or address. MFA judges the caller the challenge gateway kept beside the binding; a binding
+  the gateway did not make is judged as its identity, on the client authentication hands the counters.
+- `Mfa\FactorCodeCallers` keeps that caller, since the counters receive the binding and the client but not the caller,
+  and a pending session cannot be read without its credential.
 - Outcomes: authentication's `invalid` (a wrong or malformed code) is MFA's counted `invalid_code`, since only a counted
   failure keeps its count when a refusal rolls back. `not_found` stays `not_found` and `replayed` stays `replayed`;
   `used` (another code at a used challenge, or an ended one) is an uncounted `invalid_code`; `expired` and `exhausted`
@@ -76,8 +79,6 @@ All rows are transient, replace only their member's default, and are on while `i
 
 ## Member gaps
 
-- `laravel-authentication`: `FactorCodeCounters::admit()` and `report()` receive only the binding, so
-  `Mfa\FactorCodeCallers` keeps MFA's caller beside it.
 - `laravel-authentication`: `OneTimeCodeMessage` has no factor summary or purpose finer than `mfa`, so a sender cannot
   word a step-up's code differently.
 - `laravel-mfa`: `PasskeyGateway::verifyAssertion()` is handed no client, so `verifyFactor()` gets an unknown one.

@@ -12,14 +12,21 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Database\StorageConnection;
+use SineMacula\Laravel\Authentication\Models\Session;
+use SineMacula\Laravel\Authentication\Models\SessionProof;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
+use SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
+use SineMacula\Laravel\Iam\Sso\ExternalResults;
+use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Sso\ReauthenticationSessionsAdapter;
 use SineMacula\Laravel\Iam\Sso\RenewalRecorder;
+use SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions;
 use SineMacula\Laravel\Sso\Contracts\SsoConnection;
 use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 use SineMacula\Laravel\Sso\Flows\Enums\SessionStanding;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\ReauthenticationSessionsContract;
 use Tests\Concerns\FindsLockedSessions;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -39,7 +46,7 @@ use Tests\TestCase;
 #[CoversClass(ReauthenticationSessionsAdapter::class)]
 final class ReauthenticationSessionsAdapterTest extends TestCase
 {
-    use FindsLockedSessions, MigratesMembers, RunsAtIsolationLevels, SignsInPeople, SignsInThroughLinks;
+    use FindsLockedSessions, MigratesMembers, ReauthenticationSessionsContract, RunsAtIsolationLevels, SignsInPeople, SignsInThroughLinks;
 
     /** @var string What a renewal asked for while no redemption is open to write it is. */
     private const string NO_REDEMPTION = 'SSO asked for a renewal no redemption would write: a re-authentication is redeemed through Iam::reauthentications().';
@@ -50,20 +57,11 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     /** @var string A statement that writes, or a read that locks. */
     private const string WRITES_OR_LOCKS = '/^\s*(insert|update|delete)|for update|for share|lock in share mode/i';
 
-    /**
-     * A session through the connection, by any link, stands as a flow starts.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testASessionThroughTheConnectionStandsAsAFlowStarts(): void
-    {
-        $person  = $this->createPerson();
-        $session = $this->signInThrough($person);
+    /** @var list<\Tests\Fixtures\Models\Person> The two people the contract kit signs in. */
+    private array $people = [];
 
-        self::assertSame(SessionStanding::SIGNED_IN, $this->adapter()->standing(self::referenceOf($person), self::keyOf($session), self::GUARD, self::connection()));
-    }
+    /** @var array<string, string> The link the contract kit signed each session in through. */
+    private array $linkOf = [];
 
     /**
      * A session stands as a flow starts only for its own application.
@@ -91,10 +89,6 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
         yield 'through another connection' => ['another connection'];
 
         yield 'signed in with a password' => ['password'];
-
-        yield 'another person\'s' => ['another person'];
-
-        yield 'revoked' => ['revoked'];
 
         yield 'unknown' => ['unknown'];
     }
@@ -179,15 +173,11 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
      */
     public static function provideSessionsWithoutLockedStanding(): iterable
     {
-        yield 'through another link' => ['another link'];
-
         yield 'of another application' => ['another application'];
 
         yield 'through another connection' => ['another connection'];
 
         yield 'signed in with a password' => ['password'];
-
-        yield 'another person\'s' => ['another person'];
 
         yield 'revoked' => ['revoked'];
 
@@ -206,7 +196,7 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     public function testASessionWithoutLockedStandingIsNotSignedIn(string $case): void
     {
         $person    = $this->createPerson();
-        $sessionId = $case === 'another link' ? self::keyOf($this->signInThrough($person, linkId: 'link-2')) : $this->sessionWithoutStanding($person, $case);
+        $sessionId = $this->sessionWithoutStanding($person, $case);
 
         DB::connection(StorageConnection::name())->transaction(function () use ($person, $sessionId): void {
 
@@ -408,6 +398,147 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
     }
 
     /**
+     * The adapter as a redemption hands it to SSO, with its recorder open.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\ReauthenticationSessions
+     */
+    #[\Override]
+    protected function reauthenticationSessions(): ReauthenticationSessions
+    {
+        $this->openRecorder();
+
+        return $this->adapter();
+    }
+
+    /**
+     * The tests' connection.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\SsoConnection
+     */
+    #[\Override]
+    protected function reauthenticationConnection(): SsoConnection
+    {
+        return self::connection();
+    }
+
+    /**
+     * The guard the sessions are signed in on.
+     *
+     * @return string
+     */
+    #[\Override]
+    protected function reauthenticationApplication(): string
+    {
+        return self::GUARD;
+    }
+
+    /**
+     * Two people, the same on every call.
+     *
+     * @return array{0: \SineMacula\Laravel\Sso\Identities\IdentityReference, 1: \SineMacula\Laravel\Sso\Identities\IdentityReference}
+     */
+    #[\Override]
+    protected function reauthenticationIdentities(): array
+    {
+        if ($this->people === []) {
+            $this->people = [$this->createPerson(), $this->createPerson()];
+        }
+
+        return [self::referenceOf($this->people[0]), self::referenceOf($this->people[1])];
+    }
+
+    /**
+     * Sign the person in through a new link at the time given.
+     *
+     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $identity
+     * @param  \Carbon\CarbonImmutable  $authenticatedAt
+     * @return array{0: string, 1: string}
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function signInForReauthentication(IdentityReference $identity, CarbonImmutable $authenticatedAt): array
+    {
+        $person = (new IdentityReferences)->identity($identity);
+        $linkId = 'kit-link-' . (count($this->linkOf) + 1);
+        $now    = CarbonImmutable::now();
+
+        self::assertInstanceOf(Person::class, $person);
+
+        $this->travelTo($authenticatedAt);
+
+        $session = $this->signInThrough($person, linkId: $linkId);
+
+        $this->travelTo($now);
+
+        $this->linkOf[self::keyOf($session)] = $linkId;
+
+        return [self::keyOf($session), $linkId];
+    }
+
+    /**
+     * Revoke the session.
+     *
+     * @param  string  $sessionId
+     * @return void
+     */
+    #[\Override]
+    protected function revokeReauthenticationSession(string $sessionId): void
+    {
+        $this->revoked(Session::query()->findOrFail($sessionId));
+    }
+
+    /**
+     * The newest time the session's proofs record.
+     *
+     * @param  string  $sessionId
+     * @return \Carbon\CarbonImmutable
+     */
+    #[\Override]
+    protected function sessionAuthenticatedAt(string $sessionId): CarbonImmutable
+    {
+        $proof = SessionProof::query()->where('session_id', $sessionId)->latest('authenticated_at')->firstOrFail();
+
+        return CarbonImmutable::instance($proof->authenticated_at);
+    }
+
+    /**
+     * Write the renewal recorded, as the redemption writes it.
+     *
+     * @param  string  $sessionId
+     * @return void
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\ExternalReauthenticationRefusedException
+     * @throws \Throwable
+     */
+    protected function completeRenewal(string $sessionId): void
+    {
+        $recorder = $this->app?->make(RenewalRecorder::class);
+
+        self::assertInstanceOf(RenewalRecorder::class, $recorder);
+
+        $renewal = $recorder->take() ?? self::fail('No renewal was recorded.');
+        $person  = (new IdentityReferences)->identity($renewal->identity);
+        $linkId  = $this->linkOf[$sessionId] ?? self::fail('The kit signed no session in under that id.');
+
+        self::assertSame($sessionId, $renewal->sessionId);
+        self::assertInstanceOf(Person::class, $person);
+
+        $records    = $this->admit($person, linkId: $linkId);
+        $redemption = $records->matching(self::SSO_CONNECTION, self::ISSUER, self::subjectOf($person), null) ?? self::fail('No redemption was admitted.');
+
+        try {
+            $token = $this->sessions()->reauthenticateExternally($sessionId, ExternalResults::renewing($redemption, $renewal), self::client());
+        } finally {
+            $records->forget();
+        }
+
+        if ($token->isFailed()) {
+            throw ExternalReauthenticationRefusedException::for($token);
+        }
+    }
+
+    /**
      * Declare a second session guard of the same people.
      *
      * @param  \Illuminate\Foundation\Application  $app
@@ -478,7 +609,6 @@ final class ReauthenticationSessionsAdapterTest extends TestCase
             'another connection'  => $this->signInThrough($person, 'connection-2'),
             'another application' => $this->signInThrough($person, guard: self::ADMIN),
             'password'            => $this->signIn($person)->record,
-            'another person'      => $this->signInThrough($this->createPerson()),
             'revoked'             => $this->revoked($this->signInThrough($person)),
             default               => null,
         };

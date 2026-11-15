@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Contracts\FreshnessPolicy;
+use SineMacula\Laravel\Authentication\Database\StorageConnection;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement;
 use SineMacula\Laravel\Authentication\Freshness\Operations;
@@ -67,7 +68,7 @@ final readonly class ReauthenticatorAdapter implements Reauthenticator
     public function reauthenticate(MultiFactorAuthenticatable $identity, string $application): ?Proof
     {
         $session = $this->current->current($identity, $application);
-        $current = $this->current->isInTransaction();
+        $current = StorageConnection::isInTransaction();
 
         $live  = Auth::sessions($application)->firstFactor($session) !== null;
         $proof = $live ? $this->freshness->freshProof($session, Operations::FIRST_ADDITIONAL_FACTOR, self::reauthentication(), current: $current) : null;

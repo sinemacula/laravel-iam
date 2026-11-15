@@ -26,6 +26,7 @@ use SineMacula\Laravel\Sso\Freshness\FreshnessGate;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
 use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\FreshnessContract;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RecordsFreshnessReadModes;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -48,7 +49,7 @@ use Tests\TestCase;
 #[CoversClass(LinkRedemption::class)]
 final class FreshnessAdapterTest extends TestCase
 {
-    use MigratesSso, RecordsFreshnessReadModes, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use FreshnessContract, MigratesSso, RecordsFreshnessReadModes, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var int The maximum age SSO asks of every operation by default, in seconds. */
     private const int MAX_AGE = 300;
@@ -156,16 +157,6 @@ final class FreshnessAdapterTest extends TestCase
 
         self::assertSame(FreshnessOutcome::STALE, $this->checkAs($person, FreshnessOperation::LINK_REMOVE));
         self::assertSame(FreshnessOutcome::FRESH, $this->checkAs($person, FreshnessOperation::LINK_CREATE));
-    }
-
-    /**
-     * No caller, as in a job or a command, is stale.
-     *
-     * @return void
-     */
-    public function testNoCallerIsStale(): void
-    {
-        self::assertSame(FreshnessOutcome::STALE, $this->adapter()->check(FreshnessOperation::CONNECTION_TRUST, self::MAX_AGE, null));
     }
 
     /**
@@ -449,6 +440,65 @@ final class FreshnessAdapterTest extends TestCase
 
         self::assertSame(FreshnessOutcome::STALE, $gate->check(FreshnessOperation::LINK_CREATE, new SsoCaller(self::referenceOf($person))));
         self::assertSame(FreshnessOutcome::FRESH, $gate->check(FreshnessOperation::LINK_CREATE, $this->namedCallerOf($person)));
+    }
+
+    /**
+     * The adapter under SSO's freshness contract kit.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\Freshness
+     */
+    #[\Override]
+    protected function freshness(): Freshness
+    {
+        return $this->adapter();
+    }
+
+    /**
+     * An operation the policy judges by the caller's sign-in alone.
+     *
+     * @return \SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation
+     */
+    #[\Override]
+    protected function freshnessOperation(): FreshnessOperation
+    {
+        return FreshnessOperation::LINK_CREATE;
+    }
+
+    /**
+     * A new person on a session they signed in to that many seconds ago.
+     *
+     * @param  int  $seconds
+     * @return \SineMacula\Laravel\Sso\Identities\Caller
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function callerAuthenticatedSecondsAgo(int $seconds): SsoCaller
+    {
+        $this->freezeSecond();
+        $this->travel(-$seconds)->seconds();
+
+        $person  = $this->createPerson();
+        $session = $this->signIn($person)->record;
+
+        $this->travel($seconds)->seconds();
+
+        return new SsoCaller(self::referenceOf($person), self::keyOf($session));
+    }
+
+    /**
+     * A new person naming another person's session, signed in just now.
+     *
+     * @return \SineMacula\Laravel\Sso\Identities\Caller
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function otherIdentitysSession(): SsoCaller
+    {
+        $session = $this->signIn($this->createPerson())->record;
+
+        return new SsoCaller(self::referenceOf($this->createPerson()), self::keyOf($session));
     }
 
     /**

@@ -65,6 +65,10 @@ final readonly class AuthorizationEventMapper implements EventMapper
         MutationOperation::GUARDRAIL_REMOVED->value                  => AuthorizationActivity::GUARDRAIL_REMOVED,
         MutationOperation::RESOURCE_POLICY_ATTACHED->value           => AuthorizationActivity::RESOURCE_POLICY_ATTACHED,
         MutationOperation::RESOURCE_POLICY_DETACHED->value           => AuthorizationActivity::RESOURCE_POLICY_DETACHED,
+        MutationOperation::IDENTITY_BREAK_GLASS_ACTIVATED->value     => AuthorizationActivity::BREAK_GLASS_ACTIVATED,
+        MutationOperation::IDENTITY_BREAK_GLASS_SURRENDERED->value   => AuthorizationActivity::BREAK_GLASS_SURRENDERED,
+        MutationOperation::IDENTITY_BREAK_GLASS_REVOKED->value       => AuthorizationActivity::BREAK_GLASS_REVOKED,
+        MutationOperation::IDENTITY_BREAK_GLASS_EXPIRED->value       => AuthorizationActivity::BREAK_GLASS_EXPIRED,
     ];
 
     /** @var array<string, string> The kind of grant each expiry, or change to one, is about. */

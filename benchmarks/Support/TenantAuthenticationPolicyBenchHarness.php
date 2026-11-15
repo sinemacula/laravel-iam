@@ -71,7 +71,7 @@ final readonly class TenantAuthenticationPolicyBenchHarness
 
         $person->forceFill(['id' => 1]);
 
-        $this->signIn = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(Redemptions::TENANT), null, static fn (): string => Redemptions::CONNECTION);
+        $this->signIn = new TenantPolicyContext(self::GUARD, $person, $person, new ClaimedTenant(Redemptions::TENANT), null, null, static fn (): string => Redemptions::CONNECTION);
 
         if ($enforced) {
             $this->enforce();
