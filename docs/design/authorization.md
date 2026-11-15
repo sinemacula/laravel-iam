@@ -113,4 +113,3 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   `laravel-authentication`'s identifier, so `TenantTranslator` equates the two.
 - `laravel-authorization`'s `ConflictRetries` does not recognise SSO's `LinkCandidatesChanged`, so the grant hook
   rethrows it as Laravel's `DeadlockException` with SQLSTATE `40001`.
-- `laravel-mfa` exports no typed schema of its context keys, so `AuthenticationContextKeys` lists them.
