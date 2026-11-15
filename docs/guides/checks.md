@@ -60,6 +60,10 @@ that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 
+`sso:check` reports a missing PHP extension only while `sso.features.saml2` or `sso.features.oidc` is not off, and
+SSO's Composer plugin not installed or its files not linked only while `sso.features.saml2` is not off (see
+[Installation](installation.md#requirements)). A switch set to a value SSO cannot read counts as on.
+
 ## storage
 
 The storage connection is one connection (see [Configuration](configuration.md#storage)). Boot refuses a mismatch,

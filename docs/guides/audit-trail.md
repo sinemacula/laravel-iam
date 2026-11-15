@@ -166,8 +166,9 @@ audit-log's own capture of Laravel's events would record each a second time. So:
 - audit-log's Gate capture stays off (`audit-log.capture.gate.enabled`), so that each authorization decision is
   recorded once, through `laravel-authorization`'s own events.
 
-Set both in your `config/audit-log.php`: `iam:install` lists them as owed, and `iam:check` refuses a configuration
-without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
+Add every `jwt` and `api_key` guard to `except_guards` in your `config/audit-log.php` and leave Gate capture off, its
+default: `iam:install` lists the guard exclusion as owed, and `iam:check` refuses a configuration missing either,
+whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
 
 A sign-in through a guard's own `attempt()` or trusted `login()` is recorded once, as one through `Auth::sessions()`
 is. Calling `start()` after `attempt()` records two sign-ins, so sign in with `Auth::sessions()->signIn()` for one. An
