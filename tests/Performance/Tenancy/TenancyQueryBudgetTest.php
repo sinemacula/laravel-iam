@@ -25,6 +25,7 @@ use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\PrincipalScope;
 use SineMacula\Laravel\Sso\Contracts\TenantMembership;
+use SineMacula\Laravel\Sso\Enforcement\EnforcementFinder;
 use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Linking\Enums\ScopeVerdict;
@@ -124,14 +125,16 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
     public function testAnInheritanceAnswer(): void
     {
         $inheritance = $this->app?->make(EnforcementInheritance::class) ?? self::fail('The application has not booted.');
+        $stored      = static fn (string $tenantId): bool => (new EnforcementFinder)->find($tenantId) !== null;
+        $path        = static fn (): array => $inheritance->enforcementPath(self::TENANT, self::GUARD, $stored);
 
         // The tenant's rule, four tree reads, then three ancestors' rules.
-        self::assertSame(self::TENANT, $this->assertQueryBudget(8, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
+        self::assertSame([self::TENANT, self::BRANCH, self::REGION, self::ROOT], $this->assertQueryBudget(8, 0, $path));
 
         $this->ruleOn(self::BRANCH);
 
         // The tenant's rule, four tree reads, then the branch's, which is on.
-        self::assertSame(self::BRANCH, $this->assertQueryBudget(6, 0, static fn (): string => $inheritance->enforcingTenant(self::TENANT, self::GUARD)));
+        self::assertSame([self::TENANT, self::BRANCH], $this->assertQueryBudget(6, 0, $path));
     }
 
     /**
@@ -159,12 +162,12 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
 
         $move = static fn (): int => DB::transaction(static fn (): int => Iam::treeChanges()->changed('moved'));
 
-        // Reads: the grant report (4), the subtree (4), first passes of 11, 13
-        // and 15 (sessions, person, rule up the path, provenance), second
-        // passes (3) and the subtree again (4). Writes: one revocation per
-        // tenant.
+        // Reads: the moved tenant's rule, locked (1), the grant report (4), the
+        // subtree (4), first passes of 11, 13 and 15 (sessions, person, rule up
+        // the path, provenance), second passes (3) and the subtree again (4).
+        // Writes: the moved tenant's rule row, then one revocation per tenant.
         // Transactions: three savepoints and six of laravel-authentication's.
-        $revoked = $this->assertQueryBudget(54, 3, $move, begins: 9, commits: 9);
+        $revoked = $this->assertQueryBudget(55, 4, $move, begins: 9, commits: 9);
 
         self::assertSame(3, $revoked);
     }

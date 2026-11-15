@@ -83,30 +83,41 @@ final readonly class RequirementTranslator
     }
 
     /**
-     * The parts MFA's evaluation leaves unmet.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Assurance\Evaluation  $evaluation
-     * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
-     */
-    public function evaluation(Evaluation $evaluation): RequirementEvaluation
-    {
-        return new RequirementEvaluation(array_map($this->kind(...), $evaluation->unmet));
-    }
-
-    /**
-     * A freshness requirement per part of MFA's, each needing a maximum age.
+     * `laravel-authentication`'s requirement for MFA's freshness requirement,
+     * each part within a day.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @return list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>
+     * @return \SineMacula\Laravel\Authentication\Requirements\Requirement
      *
      * @throws \InvalidArgumentException
      */
-    public function toFreshnessParts(MfaRequirement $requirement): array
+    public function toBoundedAuthentication(MfaRequirement $requirement): AuthenticationRequirement
     {
-        return array_map(
-            static fn (MfaRequirementPart $part): FreshnessRequirement => self::freshnessOf($part, $requirement->maxAge($part) ?? throw self::unbounded($part)),
-            $requirement->parts(),
-        );
+        foreach ($requirement->parts() as $part) {
+
+            $maxAge = $requirement->maxAge($part);
+
+            if ($maxAge === null || $maxAge > FreshnessRequirement::MAX_AGE_SECONDS) {
+                $message = sprintf('A freshness requirement\'s [%s] part must have a maximum age from 1 to %d seconds.', $part->value, FreshnessRequirement::MAX_AGE_SECONDS);
+
+                throw new \InvalidArgumentException($message);
+            }
+        }
+
+        return $this->toAuthentication($requirement);
+    }
+
+    /**
+     * The parts MFA's evaluation leaves unmet, and until when a met one holds.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Assurance\Evaluation  $evaluation
+     * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function evaluation(Evaluation $evaluation): RequirementEvaluation
+    {
+        return new RequirementEvaluation(array_map($this->kind(...), $evaluation->unmet), $evaluation->metUntil);
     }
 
     /**
@@ -124,7 +135,10 @@ final readonly class RequirementTranslator
         }
 
         if ($requirement->asks(MfaRequirementPart::MINIMUM_LEVEL)) {
-            throw self::noMinimumLevel();
+            $message = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
+                . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
+
+            throw new \InvalidArgumentException($message);
         }
 
         $ages = array_map(
@@ -228,49 +242,6 @@ final readonly class RequirementTranslator
             RequirementKind::MINIMUM_LEVEL           => MfaRequirementPart::MINIMUM_LEVEL,
             RequirementKind::PHISHING_RESISTANCE     => MfaRequirementPart::PHISHING_RESISTANCE,
         };
-    }
-
-    /**
-     * A freshness requirement for one part within the age.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Enums\RequirementPart  $part
-     * @param  int  $maxAge
-     * @return \SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement
-     *
-     * @throws \InvalidArgumentException
-     */
-    private static function freshnessOf(MfaRequirementPart $part, int $maxAge): FreshnessRequirement
-    {
-        return match ($part) {
-            MfaRequirementPart::ADDITIONAL_VERIFICATION => new FreshnessRequirement($maxAge, self::ADDITIONAL_VERIFICATIONS),
-            MfaRequirementPart::MULTIFACTOR             => new FreshnessRequirement($maxAge, ProofKind::cases(), multifactor: true),
-            MfaRequirementPart::PHISHING_RESISTANCE     => new FreshnessRequirement($maxAge, ProofKind::cases(), phishingResistant: true),
-            MfaRequirementPart::MINIMUM_LEVEL           => throw self::noMinimumLevel(),
-        };
-    }
-
-    /**
-     * The refusal of a part asked as freshness with no maximum age.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Enums\RequirementPart  $part
-     * @return \InvalidArgumentException
-     */
-    private static function unbounded(MfaRequirementPart $part): \InvalidArgumentException
-    {
-        return new \InvalidArgumentException(sprintf('A freshness requirement\'s [%s] part must have a maximum age.', $part->value));
-    }
-
-    /**
-     * The refusal of a minimum assurance level asked as freshness.
-     *
-     * @return \InvalidArgumentException
-     */
-    private static function noMinimumLevel(): \InvalidArgumentException
-    {
-        $message = 'laravel-authentication\'s freshness cannot hold a session to a minimum assurance level, which its proofs do not record:'
-            . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.';
-
-        return new \InvalidArgumentException($message);
     }
 
     /**

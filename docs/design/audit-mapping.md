@@ -110,5 +110,4 @@ package only describes. The storage connection is in `storage-and-transactions.m
 
 - `laravel-authentication`: the `api_key` guard's `logout()`, and a `jwt` guard's `logout()` with no session bound,
   dispatch only Laravel's `Logout`, so those sign-outs go unrecorded once the guard is excluded.
-- `laravel-mfa`: `EnrollmentAbandoned` names no cause or operator, so its actor is left to the caller.
 - `laravel-mfa`, `laravel-sso`: event contexts give a tenant id with no type, so tenants share the one type `tenant`.

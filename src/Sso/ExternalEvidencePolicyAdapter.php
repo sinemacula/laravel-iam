@@ -11,12 +11,14 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\External\EvidenceSubject;
 use SineMacula\Laravel\Authentication\External\ExternalEvidence;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
+use SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation;
 use SineMacula\Laravel\Authentication\Sessions\SignInMethodManager;
 use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\RequirementTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
+use SineMacula\Laravel\Mfa\Assurance\Evaluation;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
@@ -81,26 +83,30 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
         $identity = $this->identities->reference($subject->identity);
         $accepted = $this->container->make(AdmittedRedemptions::class)->acceptedEvidence($subject->connectionId, $identity);
 
-        return $accepted !== null && self::isAccepted($evidence, $accepted, $subject) && $this->satisfies($evidence, $requirement, $subject);
+        return $accepted !== null && self::isAccepted($evidence, $accepted, $subject) && $this->evaluation($evidence, $requirement, $subject) !== null;
     }
 
     /**
-     * Whether the evidence meets the requirement, from a trusted connection.
+     * Whether the evidence meets the requirement, from a trusted connection,
+     * and until when.
      *
      * @param  \SineMacula\Laravel\Authentication\External\ExternalEvidence  $evidence
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Authentication\External\EvidenceSubject  $subject
-     * @return bool
+     * @return \SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
-    public function meets(ExternalEvidence $evidence, Requirement $requirement, EvidenceSubject $subject): bool
+    public function meets(ExternalEvidence $evidence, Requirement $requirement, EvidenceSubject $subject): RequirementEvaluation
     {
         $tenant = $subject->tenant;
+        $met    = $this->evaluation($evidence, $requirement, $subject);
 
-        return $this->satisfies($evidence, $requirement, $subject) && ($tenant === null || $this->trusts($tenant, $subject));
+        return $met !== null && ($tenant === null || $this->trusts($tenant, $subject))
+            ? new RequirementEvaluation([], $met->metUntil)
+            : new RequirementEvaluation($requirement->kinds());
     }
 
     /**
@@ -133,26 +139,27 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
     }
 
     /**
-     * Whether MFA's policy finds the evidence meets a non-empty requirement.
+     * MFA's evaluation of the evidence when it meets a non-empty requirement.
      *
      * @param  \SineMacula\Laravel\Authentication\External\ExternalEvidence  $evidence
      * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Authentication\External\EvidenceSubject  $subject
-     * @return bool
+     * @return ?\SineMacula\Laravel\Mfa\Assurance\Evaluation
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
-    private function satisfies(ExternalEvidence $evidence, Requirement $requirement, EvidenceSubject $subject): bool
+    private function evaluation(ExternalEvidence $evidence, Requirement $requirement, EvidenceSubject $subject): ?Evaluation
     {
         // Evidence accepted for an empty requirement would count for anything.
         if ($requirement->isEmpty()) {
-            return false;
+            return null;
         }
 
-        $policy = $this->container->make(CombinationPolicy::class);
+        $policy     = $this->container->make(CombinationPolicy::class);
+        $evaluation = $policy->evaluate($this->requirements->toMfa($requirement), self::firstFactor($evidence, $subject));
 
-        return $policy->evaluate($this->requirements->toMfa($requirement), self::firstFactor($evidence, $subject))->meetsRequirement();
+        return $evaluation->meetsRequirement() ? $evaluation : null;
     }
 
     /**

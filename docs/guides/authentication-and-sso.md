@@ -68,10 +68,10 @@ It throws, and rolls everything back with the code unspent, when:
 - the result is linked to no identity: `UnlinkedSignInException`;
 - the application is no `jwt` guard: `UnresolvedReferenceException`.
 
-A serialisation failure, a deadlock or SSO's own `LinkCandidatesChanged` runs the whole redemption again, up to
-`iam.transactions.attempts`. Send the credential only once the call has returned, with `Cache-Control: no-store`
-(`SecretResponse::json()` sets it). Call it with no transaction of your own open: inside one it joins it, and a
-concurrency failure is rethrown for you to retry. The full route is in
+A serialisation failure (SSO's `EnforcementPathChanged` among them), a deadlock or SSO's own `LinkCandidatesChanged`
+runs the whole redemption again, up to `iam.transactions.attempts`. Send the credential only once the call has
+returned, with `Cache-Control: no-store` (`SecretResponse::json()` sets it). Call it with no transaction of your own
+open: inside one it joins it, and a concurrency failure is rethrown for you to retry. The full route is in
 [An example application](example-application.md#signing-in-through-sso).
 
 ## Re-authenticating

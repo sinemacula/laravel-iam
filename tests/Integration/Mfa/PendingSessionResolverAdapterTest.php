@@ -87,7 +87,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         self::assertNotNull($session);
 
-        $pending = $this->pendingResolver()->fromRequest(self::requestCarrying($credential));
+        $pending = $this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD);
 
         self::assertNotNull($pending);
         self::assertSame($person->getKey(), $pending->identity->getAuthIdentifier());
@@ -158,7 +158,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         $request = Request::create('/mfa/verify', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: (string) json_encode(['pending_credential' => $credential]));
 
-        self::assertNotNull($this->pendingResolver()->fromRequest($request));
+        self::assertNotNull($this->pendingResolver()->fromRequest($request, self::GUARD));
     }
 
     /**
@@ -172,7 +172,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     {
         $credential = $this->signInPending($this->createPerson());
 
-        self::assertNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify?pending_credential=' . urlencode($credential), 'POST')));
+        self::assertNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify?pending_credential=' . urlencode($credential), 'POST'), self::GUARD));
     }
 
     /**
@@ -202,7 +202,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         $request = new Request(request: ['pending_credential' => $credential], server: ['REQUEST_METHOD' => $method]);
 
-        self::assertNull($this->pendingResolver()->fromRequest($request));
+        self::assertNull($this->pendingResolver()->fromRequest($request, self::GUARD));
     }
 
     /**
@@ -218,8 +218,8 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         config()->set('authentication.session.pending_credential_field', 'sign_in_credential');
 
-        self::assertNull($this->pendingResolver()->fromRequest(self::requestCarrying($credential)));
-        self::assertNotNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST', ['sign_in_credential' => $credential])));
+        self::assertNull($this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD));
+        self::assertNotNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST', ['sign_in_credential' => $credential]), self::GUARD));
     }
 
     /**
@@ -369,8 +369,8 @@ final class PendingSessionResolverAdapterTest extends TestCase
         $this->bindStrayRequest([self::CREDENTIAL_FIELD => $this->signInPending($person)]);
 
         self::assertNotNull($own);
-        self::assertSame($this->signInReference($own->session), $this->pendingResolver()->fromRequest(self::requestCarrying($credential))?->sessionId);
-        self::assertNull($this->pendingResolver()->fromRequest(Request::create(self::VERIFY_PATH, 'POST')));
+        self::assertSame($this->signInReference($own->session), $this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD)?->sessionId);
+        self::assertNull($this->pendingResolver()->fromRequest(Request::create(self::VERIFY_PATH, 'POST'), self::GUARD));
     }
 
     /**
@@ -466,7 +466,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('authentication.session.pending_credential_field must be a field name without `.`, spaces or brackets.');
 
-        $this->pendingResolver()->fromRequest(self::requestCarrying('anything'));
+        $this->pendingResolver()->fromRequest(self::requestCarrying('anything'), self::GUARD);
     }
 
     /**
@@ -492,7 +492,9 @@ final class PendingSessionResolverAdapterTest extends TestCase
     #[DataProvider('provideValuesThatAreNoCredential')]
     public function testAValueThatIsNoCredentialIsRefused(mixed $credential): void
     {
-        self::assertUnresolvedCredential(fn (): mixed => $this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST', ['pending_credential' => $credential])));
+        $request = Request::create('/mfa/verify', 'POST', ['pending_credential' => $credential]);
+
+        self::assertUnresolvedCredential(fn (): mixed => $this->pendingResolver()->fromRequest($request, self::GUARD));
     }
 
     /**
@@ -509,7 +511,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
 
         self::assertTrue($this->sessions()->satisfy($credential, $this->authenticationProof($person, $credential, 'factor-1'), self::client())->isSignedIn());
 
-        self::assertUnresolvedCredential(fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential)));
+        self::assertUnresolvedCredential(fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD));
     }
 
     /**
@@ -525,7 +527,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
-     * A default guard that holds no sessions, or names none, is refused.
+     * A guard that holds no sessions, or names none, is refused.
      *
      * @param  string  $guard
      * @return void
@@ -533,14 +535,28 @@ final class PendingSessionResolverAdapterTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideGuardsThatHoldNoSessions')]
-    public function testADefaultGuardThatHoldsNoSessionsIsRefused(string $guard): void
+    public function testAGuardThatHoldsNoSessionsIsRefused(string $guard): void
     {
         $credential = $this->signInPending($this->createPerson());
 
-        config()->set('auth.defaults.guard', $guard);
+        self::assertNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST'), $guard));
+        self::assertUnresolvedGuard($guard, fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential), $guard));
+    }
 
-        self::assertNull($this->pendingResolver()->fromRequest(Request::create('/mfa/verify', 'POST')));
-        self::assertUnresolvedGuard($guard, fn (): mixed => $this->pendingResolver()->fromRequest(self::requestCarrying($credential)));
+    /**
+     * The pending session is read on the guard handed in, not the default.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testThePendingSessionIsReadOnTheGuardHandedIn(): void
+    {
+        $credential = $this->signInPending($this->createPerson());
+
+        config()->set('auth.defaults.guard', 'web');
+
+        self::assertSame(self::GUARD, $this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD)?->application);
     }
 
     /**
@@ -561,10 +577,8 @@ final class PendingSessionResolverAdapterTest extends TestCase
         self::assertTrue($result->isPending());
         self::assertNotNull($result->credential);
 
-        config()->set('auth.defaults.guard', self::STRANGERS);
-
         try {
-            $this->pendingResolver()->fromRequest(self::requestCarrying($result->credential->reveal()));
+            $this->pendingResolver()->fromRequest(self::requestCarrying($result->credential->reveal()), self::STRANGERS);
 
             self::fail('A pending session of an identity without factors was resolved.');
         } catch (UnresolvedReferenceException $exception) {
@@ -595,7 +609,7 @@ final class PendingSessionResolverAdapterTest extends TestCase
         $connection->flushQueryLog();
         $connection->enableQueryLog();
 
-        $connection->transaction(fn (): mixed => $this->pendingResolver()->fromRequest($request));
+        $connection->transaction(fn (): mixed => $this->pendingResolver()->fromRequest($request, self::GUARD));
 
         $statements = array_map(static fn (array $query): string => strtolower($query['query']), $connection->getQueryLog());
 
