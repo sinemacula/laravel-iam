@@ -36,8 +36,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - No code keeps a secret or free text. A factor is kept by id and type, reasons are codes, an identifier change's
   identifiers are pseudonymised, a refused sign-in's identifier is hashed by audit-log (`withIdentifier()`), and an
   MFA reset's free-text reason, a policy document and SSO's provisioning grant are never kept.
-- Six `authorization.*` codes the requirements do not list (role exclusions, expiry changes, resource policies and
-  `system_override_used`) are kept because each is a privilege change.
+- Ten `authorization.*` codes the requirements do not list (role exclusions, expiry changes, resource policies,
+  `system_override_used` and the break-glass lifecycle) are kept because each is a privilege change.
 
 ## Mapping
 

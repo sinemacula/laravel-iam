@@ -31,6 +31,7 @@ use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Sso\Contracts\LinkConfirmation;
+use SineMacula\Laravel\Sso\Contracts\SsoConnection;
 use SineMacula\Laravel\Sso\Events\Enums\FailureReason;
 use SineMacula\Laravel\Sso\Flows\Enums\Purpose;
 use SineMacula\Laravel\Sso\Handoffs\RedemptionResult;
@@ -38,6 +39,7 @@ use SineMacula\Laravel\Sso\Identities\Caller as SsoCaller;
 use SineMacula\Laravel\Sso\Linking\Enums\LinkConfirmationVerdict;
 use SineMacula\Laravel\Sso\Links\Enums\LinkOrigin;
 use SineMacula\Laravel\Sso\Models\Connection;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\LinkConfirmationContract;
 use Tests\Concerns\ChangesSessionsElsewhere;
 use Tests\Concerns\FindsLockedSessions;
 use Tests\Concerns\LinksByVerifiedDomain;
@@ -61,7 +63,8 @@ use Tests\TestCase;
 #[CoversClass(SsoSeams::class)]
 final class LinkConfirmationAdapterTest extends TestCase
 {
-    use ChangesSessionsElsewhere, FindsLockedSessions, LinksByVerifiedDomain, MigratesSso, RegistersPasskeys, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use ChangesSessionsElsewhere, FindsLockedSessions, LinkConfirmationContract, LinksByVerifiedDomain, MigratesSso,
+        RegistersPasskeys, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var string The sign-in method of the application's own recovery in these tests. */
     private const string RECOVERY = 'account_recovery';
@@ -71,6 +74,9 @@ final class LinkConfirmationAdapterTest extends TestCase
 
     /** @var (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null The member's password session, once a test signs them in. */
     private (EloquentSession&Model)|null $passwordSession = null;
+
+    /** @var (\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession)|null The member's session through the domain link, once signed in. */
+    private (EloquentSession&Model)|null $domainSession = null;
 
     /**
      * Arrange SSO with a verified domain and a member holding its email.
@@ -432,6 +438,91 @@ final class LinkConfirmationAdapterTest extends TestCase
     }
 
     /**
+     * The adapter under SSO's link confirmation contract kit.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\LinkConfirmation
+     */
+    #[\Override]
+    protected function linkConfirmation(): LinkConfirmation
+    {
+        $adapter = $this->resolved(LinkConfirmation::class);
+
+        return $adapter instanceof LinkConfirmationAdapter ? $adapter : self::fail('The adapter is not bound.');
+    }
+
+    /**
+     * The tests' connection, which holds the domain.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\SsoConnection
+     */
+    #[\Override]
+    protected function confirmationConnection(): SsoConnection
+    {
+        return $this->ssoConnection();
+    }
+
+    /**
+     * The member on a password session.
+     *
+     * @return \SineMacula\Laravel\Sso\Identities\Caller
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function independentCaller(): SsoCaller
+    {
+        return $this->callerHolding($this->signIn($this->member())->record);
+    }
+
+    /**
+     * The member on the session the domain link signed in.
+     *
+     * @return \SineMacula\Laravel\Sso\Identities\Caller
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function dependentCaller(): SsoCaller
+    {
+        return $this->callerHolding($this->domainSession());
+    }
+
+    /**
+     * Another person's password session.
+     *
+     * @return string
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function otherIdentitysSessionId(): string
+    {
+        return self::keyOf($this->signIn($this->createPerson())->record);
+    }
+
+    /**
+     * The domain links the member holds, once the domain signed them in.
+     *
+     * @return list<string>
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    protected function domainLinkIds(): array
+    {
+        $this->domainSession();
+
+        $ids = DB::table('sso_links')
+            ->where('identity_id', self::keyOf($this->member()))
+            ->where('provenance', LinkOrigin::VERIFIED_DOMAIN->value)
+            ->pluck('id')
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : self::fail('A link has no id.'))
+            ->all();
+
+        return $ids !== [] ? array_values($ids) : self::fail('The domain linked nobody.');
+    }
+
+    /**
      * Bind the application's memberships before the seams are bound.
      *
      * @param  \Illuminate\Foundation\Application  $app
@@ -463,10 +554,6 @@ final class LinkConfirmationAdapterTest extends TestCase
      */
     private static function dependentCallers(): iterable
     {
-        yield 'a caller with no session' => [static fn (self $test): SsoCaller => new SsoCaller(self::referenceOf($test->member()))];
-
-        yield 'another person\'s session' => [static fn (self $test): SsoCaller => $test->callerHolding($test->signIn($test->createPerson())->record)];
-
         yield 'a session that does not exist' => [static fn (self $test): SsoCaller => new SsoCaller(self::referenceOf($test->member()), 'no-such-session')];
 
         yield 'a session of a guard that holds no sessions' => [static function (self $test): SsoCaller {
@@ -484,6 +571,18 @@ final class LinkConfirmationAdapterTest extends TestCase
 
             return $test->callerHolding($session);
         }];
+    }
+
+    /**
+     * The member's session through the domain link, signed in once.
+     *
+     * @return \Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession
+     *
+     * @throws \Throwable
+     */
+    private function domainSession(): EloquentSession&Model
+    {
+        return $this->domainSession ??= $this->signInByDomain()->session->record ?? self::fail('The member did not sign in.');
     }
 
     /**

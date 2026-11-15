@@ -16,6 +16,7 @@ use SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 use SineMacula\Laravel\Sso\Linking\LinkEmailMatch;
 use SineMacula\Laravel\Sso\Linking\LinkEmailQuery;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\LinkEmailMatcherContract;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
@@ -39,7 +40,7 @@ use Tests\TestCase;
 #[CoversClass(LinkEmailMatcherAdapter::class)]
 final class LinkEmailMatcherAdapterTest extends TestCase
 {
-    use MigratesSso, RunsAtIsolationLevels, SignsInPeople;
+    use LinkEmailMatcherContract, MigratesSso, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string The email address the person holds. */
     private const string EMAIL = 'ada@example.test';
@@ -316,6 +317,43 @@ final class LinkEmailMatcherAdapterTest extends TestCase
 
         self::assertNull(ReplicatedMember::query()->first(), 'The replica must lag the primary for this test to prove anything.');
         self::assertTrue($this->match(self::EMAIL)->isSolely((new IdentityReferences)->reference($member)));
+    }
+
+    /**
+     * The adapter under SSO's link email contract kit.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\LinkEmailMatcher
+     */
+    #[\Override]
+    protected function linkEmailMatcher(): LinkEmailMatcher
+    {
+        $matcher = $this->resolved(LinkEmailMatcher::class);
+
+        return $matcher instanceof LinkEmailMatcherAdapter ? $matcher : self::fail('The adapter is not bound.');
+    }
+
+    /**
+     * The tenant the kit matches emails in.
+     *
+     * @return string
+     */
+    #[\Override]
+    protected function linkEmailTenant(): string
+    {
+        return 'tenant-1';
+    }
+
+    /**
+     * A person holding the email, verified or not.
+     *
+     * @param  string  $email
+     * @param  bool  $verified
+     * @return \SineMacula\Laravel\Sso\Identities\IdentityReference
+     */
+    #[\Override]
+    protected function identityWithEmail(string $email, bool $verified): IdentityReference
+    {
+        return self::referenceOf($verified ? $this->createVerifiedPerson($email) : $this->createPerson($email));
     }
 
     /**

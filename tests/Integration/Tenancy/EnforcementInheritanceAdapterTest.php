@@ -33,6 +33,7 @@ use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 use SineMacula\Laravel\Sso\Events\EnforcementChanged;
 use SineMacula\Laravel\Sso\Events\ExemptionUsed;
 use SineMacula\Laravel\Sso\Models\TenantEnforcement;
+use SineMacula\Laravel\Sso\Testing\Seams\Concerns\EnforcementInheritanceContract;
 use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
@@ -60,7 +61,7 @@ use Tests\TestCase;
 #[WithConfig('authorization.tenant_tree', StoredTenantTree::class, defer: false)]
 final class EnforcementInheritanceAdapterTest extends TestCase
 {
-    use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use EnforcementInheritanceContract, MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var string The root of the tree. */
     private const string ROOT = 'root';
@@ -360,6 +361,49 @@ final class EnforcementInheritanceAdapterTest extends TestCase
         }
 
         Event::assertDispatchedTimes(EnforcementChanged::class, 2);
+    }
+
+    /**
+     * The adapter under SSO's enforcement inheritance contract kit.
+     *
+     * @return \SineMacula\Laravel\Sso\Contracts\EnforcementInheritance
+     */
+    #[\Override]
+    protected function enforcementInheritance(): EnforcementInheritance
+    {
+        $inheritance = $this->resolved(EnforcementInheritance::class);
+
+        return $inheritance instanceof EnforcementInheritanceAdapter ? $inheritance : self::fail('The adapter is not bound.');
+    }
+
+    /**
+     * The guard the rules are asked for.
+     *
+     * @return string
+     */
+    #[\Override]
+    protected function inheritanceApplication(): string
+    {
+        return self::GUARD;
+    }
+
+    /**
+     * The tree with a rule on the region, and each tenant's enforcing tenant.
+     *
+     * @return array<string, string>
+     */
+    #[\Override]
+    protected function enforcingTenants(): array
+    {
+        $this->rule(self::REGION, true);
+
+        return [
+            self::ROOT   => self::ROOT,
+            self::REGION => self::REGION,
+            self::BRANCH => self::REGION,
+            self::TENANT => self::REGION,
+            self::APART  => self::APART,
+        ];
     }
 
     /**
