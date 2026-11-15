@@ -75,9 +75,11 @@ removed factor would leave the identity's other sessions standing.
 
 ## Invariants
 
-- Translation is pure. Values both members spell the same cross by value; anything one member would refuse is refused
-  with its own exception, never shortened or dropped. `external_reauthentication` is MFA's first-factor
-  reauthentication on the `external_provider` channel, and MFA's `unclassified` level is no level.
+- Values both members spell the same cross by value; anything one member would refuse is refused with its own
+  exception, never shortened. Two things are left out: a provider proof's connection, unless SSO accepted its evidence
+  from a connection the tenant trusts, and, in `SignInProofs`, a session's proof MFA cannot express.
+  `external_reauthentication` is MFA's first-factor reauthentication on the `external_provider` channel, and MFA's
+  `unclassified` level is no level.
 - Refusals are thrown inside the transaction the member opened, so whatever it changed rolls back: MFA's
   `OperationRefusedException` (`not_accepted` for the step-up and pending completion, `not_fresh` for the factor-change
   gate, with authentication's reason in the detail), `ProofRefusedException` from `record()`, and
