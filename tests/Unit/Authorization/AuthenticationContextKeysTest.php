@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Context\Enums\AuthenticationKey;
 use SineMacula\Laravel\Authorization\Enums\ContextKeyType;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
+use SineMacula\Laravel\Mfa\Enums\ContextKey as MfaContextKey;
 use SineMacula\Laravel\Sso\Sessions\Enums\ContextKey;
 
 /**
@@ -63,18 +64,18 @@ final class AuthenticationContextKeysTest extends TestCase
     }
 
     /**
-     * The MFA keys are declared alongside authentication's and SSO's.
+     * Every MFA key is declared with the type MFA gives it, beside the rest.
      *
      * @return void
      */
-    public function testTheListedKeysAreKept(): void
+    public function testEveryMfaKeyIsDeclaredWithItsType(): void
     {
         $keys = AuthenticationContextKeys::keys();
 
-        foreach (AuthenticationContextKeys::KEYS as $path => $type) {
-            self::assertSame($type, $keys[$path] ?? null, $path);
-        }
-
-        self::assertCount(count(AuthenticationContextKeys::KEYS) + count(AuthenticationKey::cases()) + count(ContextKey::cases()), $keys);
+        self::assertSame(ContextKeyType::BOOL, $keys[MfaContextKey::ACCEPTED->value] ?? null);
+        self::assertSame(ContextKeyType::LIST, $keys[MfaContextKey::FACTOR_TYPES->value] ?? null);
+        self::assertSame(ContextKeyType::STRING, $keys[MfaContextKey::LEVEL->value] ?? null);
+        self::assertSame(ContextKeyType::NUMBER, $keys[MfaContextKey::LAST_VERIFICATION_AGE_SECONDS->value] ?? null);
+        self::assertCount(count(MfaContextKey::cases()) + count(AuthenticationKey::cases()) + count(ContextKey::cases()), $keys);
     }
 }

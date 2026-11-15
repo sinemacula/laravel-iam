@@ -53,7 +53,7 @@ final class MfaActivityTest extends CodesTestCase
         return [
             'mfa.code_sent'                      => ['security', self::retained(...$factor, ...['purpose'])],
             'mfa.enrollment_started'             => ['security', self::retained(...$factor)],
-            'mfa.enrollment_abandoned'           => ['security', self::retained(...$factor)],
+            'mfa.enrollment_abandoned'           => ['security', self::retained(...$factor, ...['cause'])],
             'mfa.enrollment_expired'             => ['security', self::retained(...$factor)],
             'mfa.factor_confirmed'               => ['security', self::retained(...$factor)],
             'mfa.bootstrap_enrollment_completed' => ['security', self::retained(...$factor)],

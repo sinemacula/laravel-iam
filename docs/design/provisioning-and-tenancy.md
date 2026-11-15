@@ -51,7 +51,7 @@ registered, so memberships bound in an application provider's `register()` count
   refuses it.
 - `Memberships::of()` must take the application's membership guard as it answers, and every writer that narrows a
   membership must take it too, because SSO's `TenantMembership` asks for its answer to stay true until the redemption
-  commits and offers no other protection. The adapters take no lock of their own.
+  commits and offers no other protection. The membership adapters take no lock of their own.
 - `TenantMembershipAdapter` and `LinkEligibilityAdapter` answer from the membership of exactly the tenant asked, and
   only an accepted one counts, since a `link` is the person's own act.
 - `PrincipalScopeAdapter` is `outside_tenant` when the memberships or the grants are, `within_tenant` only when both
@@ -59,17 +59,29 @@ registered, so memberships bound in an application provider's `register()` count
   link suspended for good on `outside_tenant`.
 - The grant half is `laravel-authorization`'s `GrantScopeQuery`, read through `GrantScopeAdapter`. With the
   authorization adapters off it is `UnknownGrantScope`, so nobody is `within_tenant`.
-- `EnforcementInheritanceAdapter` answers the nearest tenant up the tree with a stored rule, on or off, or the tenant
-  itself. A rule turned off therefore only loosens what applies below it, which matches SSO revoking nothing then. The
-  reads take no lock, since locking the path would invert SSO's order against an admission.
+- `EnforcementInheritanceAdapter` answers the path from the tenant up to the nearest tenant with a stored rule, on or
+  off, or to the root when none has one. A rule turned off therefore only loosens what applies below it, which matches
+  SSO revoking nothing then. It asks SSO's `$isConfigured` whether a tenant has a rule, never the stored rules, and lets
+  what it throws propagate.
+- SSO locks every tenant on the path, then asks again with `$isConfigured` answered from the locked rows. A changed
+  path throws `EnforcementPathChanged` (SQLSTATE 40001), which the sign-in, re-authentication and provisioning
+  transactions retry whole through `CrossMemberTransaction`. The second answer reads the application's tree, which
+  must read current: a plain read at `READ COMMITTED`, a locking read under `REPEATABLE READ`.
 - An enforcement change and a reported tree move judge the whole subtree through `SubtreePolicyChanges`, each tenant
   with `laravel-authentication`'s `tenantPolicyChanged()`. After the commit it lists the subtree again and judges any
   tenant it has gained, so a tenant moved in while the change was open is not missed. An enforcement change judges
   every descendant, which is broader than needed and never narrower.
-- `TreeChanges::changed()` is called inside the move's transaction, after the write. With a tree it reports every
-  identity granted within the moved tenant to SSO's widening (while the authorization and SSO adapters are both on),
-  then calls `Authorization::treeChanged()`. It judges the subtree only while SSO's enforcement is on or MFA's tenant
-  requirement is bound. A removal is reported as the move of each child, after the restructure is written.
+- `TreeChanges::changed()` is called inside the move's transaction, after the write. It first locks the moved tenant's
+  SSO rule through `EnforcementService::lockTenants()`, so an admission whose path runs through it waits for the move
+  or sees it. The tenants below need no lock of their own: their paths reach the moved tenant before the move can
+  change them. The application's tree write comes before the lock, and the lock before the grantees' identity guards,
+  both against SSO's order; no place in `changed()` keeps that order, since the widening takes guards and connections
+  in one call. So an admission holding an identity guard, or under `REPEATABLE READ` reading the tree with a locking
+  read, can deadlock against the move, and the loser retries.
+- With a tree it then reports every identity granted within the moved tenant to SSO's widening (while the
+  authorization and SSO adapters are both on), then calls `Authorization::treeChanged()`. It judges the subtree only
+  while SSO's enforcement is on or MFA's tenant requirement is bound. A removal is reported as the move of each child,
+  after the restructure is written.
 - A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the identity in the connection's
   tenant, so a connection's groups never grant beyond its tenant. `GroupSettings` finds the bound mapping, or
   `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group.
@@ -93,6 +105,4 @@ registered, so memberships bound in an application provider's `register()` count
   subtree to SSO itself.
 - `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, so `SubtreePolicyChanges` finds the
   inheriting tenants from the tree.
-- `laravel-sso` locks only the enforcing tenant's rule, never the inheritance path, so the inheritance reads take no
-  lock and may answer from a snapshot.
 - `laravel-authentication` has no identity-creation contract, so the provisioner is the application's own.

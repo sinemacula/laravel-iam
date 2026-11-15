@@ -61,10 +61,3 @@ application, since only the root `allow-plugins` counts.
 
 - `authorization:prune` is registered whatever `iam.adapters.authorization` says: grants expire either way.
 - A seam is a member's default only when the member's `isPackageDefault()` says so.
-- A configuration MFA's boot check refuses stops `iam:check` with MFA's message and a non-zero exit, without this
-  package's report.
-
-## Member gaps
-
-- `laravel-mfa`: its boot check stands aside only for `mfa:check` and the configuration commands, not for a composing
-  package's check command.
