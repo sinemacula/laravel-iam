@@ -19,7 +19,3 @@ How the package binds its adapters over the members' seams without replacing a b
 - An application binding made in any `register()` is kept, whatever order the providers register in; one made in a
   `boot()` replaces the adapter.
 - `iam:check` refuses a mandatory seam that is unbound or still holds its member's default.
-
-## Member gaps
-
-None.

@@ -96,6 +96,11 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   runs inside `iam:check`.
 - No resource tenant resolver is bound, since which tenant owns a record is the application's rule; `iam:check` notes
   the default while memberships are bound.
+- `laravel-authorization` knows a machine only by its own `AuthorizableMachine`, so a machine model implements it beside
+  `MachineIdentity`; `iam:check` refuses one that does not, and the session policy source answers `[]` for a machine
+  itself.
+- A tenant's `laravel-authentication` identifier is its `laravel-authorization` key; `TenantTranslator` enforces the
+  round trip.
 
 ## Invariants
 
@@ -107,9 +112,5 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
 
 ## Member gaps
 
-- `laravel-authorization` recognises a machine only by `AuthorizableMachine`, never `laravel-authentication`'s
-  `MachineIdentity`, so the session policy source answers `[]` for a machine itself.
-- `laravel-authorization` names a tenant by morph type and key (`Support\Reference`), never by
-  `laravel-authentication`'s identifier, so `TenantTranslator` equates the two.
 - `laravel-authorization`'s `ConflictRetries` does not recognise SSO's `LinkCandidatesChanged`, so the grant hook
   rethrows it as Laravel's `DeadlockException` with SQLSTATE `40001`.

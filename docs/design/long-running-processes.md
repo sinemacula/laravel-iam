@@ -16,13 +16,11 @@ Nothing one request or job bound may reach the next in an Octane worker, a queue
   the queue worker forgets scoped instances.
 - The Octane listener is registered by event name, so Octane stays optional. Both listeners are on while
   `iam.workers.reset` is; only a clear off value (`false`, `0`, `off`, `no`) turns it off.
+- MFA's default proof store lives in the Laravel session, which `ResetBeforeJob` flushes before each job that is not
+  sync.
 
 ## Invariants
 
 - An adapter holding request state is scoped, never a singleton.
 - A `sync` job keeps its dispatcher's guards and session.
 - Any other long-lived process calls `Iam::resetWorkerState()` between units of work.
-
-## Member gaps
-
-- `laravel-mfa`: no reset of its session-held proofs before a job, so `ResetBeforeJob` flushes the session.

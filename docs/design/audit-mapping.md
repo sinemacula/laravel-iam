@@ -75,6 +75,7 @@ package only describes. The storage connection is in `storage-and-transactions.m
   identifier, and a record with no tenant is shown to no tenant-scoped viewer.
 - A deletion that removed grants covers every grantee beyond its subject through `PendingRecord::covering()`.
 - A denial for `insufficient_authentication` is a plain `access_denied`; the event does not say if a step-up follows.
+- A tenant is one opaque identifier across the members, so every record names it under the one type `tenant`.
 
 ## The caller's context
 
@@ -92,6 +93,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - `Audit\CaptureExclusions` only computes these for `iam:check` and never writes configuration. A malformed
   `except_guards` is refused, naming the key and never the value. `AuditSettings::refusesUnregisteredCodes()` reads
   audit-log's `definitions.require_registered` the same way.
+- An `api_key` guard's `logout()`, or a `jwt` guard's with no session, revokes nothing and changes no stored state,
+  so it is not recorded.
 
 ## Access and administration
 
@@ -105,9 +108,3 @@ package only describes. The storage connection is in `storage-and-transactions.m
   resolved `Subject` in the scope that subject names.
 - Nothing in this package reads the trail. Audit-log refuses a read inside `Iam::transaction()` only while it stores on
   the storage connection. `iam:check` notes a different audit-log connection.
-
-## Member gaps
-
-- `laravel-authentication`: the `api_key` guard's `logout()`, and a `jwt` guard's `logout()` with no session bound,
-  dispatch only Laravel's `Logout`, so those sign-outs go unrecorded once the guard is excluded.
-- `laravel-mfa`, `laravel-sso`: event contexts give a tenant id with no type, so tenants share the one type `tenant`.
