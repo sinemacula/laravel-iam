@@ -61,6 +61,8 @@ Nothing reads a request, the default guard or its current session. `Iam::callers
 - A sign-in re-syncs provider groups only after it commits: scope widening takes the identity's guard, which SSO locks
   before the connection the redemption holds.
 - A concurrency failure the attempts do not outlast reaches the caller as a `DeadlockException` with SQLSTATE 40001.
+- SSO's `renewAuthentication()` returns nothing, and a renewal needs the whole admitted result and must return the
+  token, so the adapter records the renewal and the redemption writes it after `admit()`.
 
 ## Evidence
 
@@ -74,6 +76,8 @@ The provider's evidence passes two gates, and neither is the other.
   its enforcement names (`ConnectionTrust`). A requirement that asks for nothing is never met.
 - Elsewhere the proof translator names the connection to MFA only for evidence SSO accepted from a connection the
   session's tenant trusts (`Mfa\Translation\ProviderTrust`), and never to `laravel-authentication`'s requirement check.
+- Tenant trust is judged here, in the SSO-aware evidence policy, since `laravel-authentication` knows nothing of who
+  owns a connection.
 
 ## SSO's judgements
 
@@ -122,14 +126,3 @@ Each adapter's test runs SSO's kit for its seam: `FreshnessContract`, `LinkConfi
 `LinkEmailMatcherContract`, `ReauthenticationSessionsContract`, `SessionRevocationContract` and
 `EnforcementInheritanceContract`. The revocation kit runs over SSO's stored rule, the tenant policy adapter, the
 application's exemptions and its tree.
-
-## Member gaps
-
-- `laravel-sso`: `RevocationScope::tenant()` names only the enforcing tenant, so inheritors come from the application's
-  tree.
-- `laravel-sso`: `ReauthenticationSessions::renewAuthentication()` is not handed the result's issuer and subject, so the
-  renewal is recorded and written by the redemption.
-- `laravel-authentication`: sign-ins judge the tenant policy without a lock, so a sign-in that writes its session after
-  `tenantPolicyChanged()`'s second pass stands until its first refresh.
-- `laravel-authentication`: `EvidenceSubject` names no tenant trust, so the adapter reads SSO's connection and
-  enforcement.

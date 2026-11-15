@@ -89,6 +89,10 @@ registered, so memberships bound in an application provider's `register()` count
   widening, whose identity guard comes before the locks the redemption holds. A refused re-sync hands out no
   credential. `MappedGroupResync` makes the identity's roles in the tenant exactly the mapping's, and refuses with no
   mapping rather than revoke every role.
+- A tree move is the application's write: `laravel-authorization`'s `treeChanged()` only drops tree state, so
+  `TreeChanges` reports the moved subtree's grantees to SSO.
+- The tenant tree is the application's, so `SubtreePolicyChanges` finds the tenants inheriting a changed rule from it.
+- Creating an identity is the application's, through `Contracts\Provisioner`, which is handed SSO's `VerifiedResult`.
 
 ## Invariants
 
@@ -98,11 +102,3 @@ registered, so memberships bound in an application provider's `register()` count
 - Every tenant crosses to and from `laravel-authorization` through `TenantTranslator`, and one that does not resolve
   back throws `UnresolvedReferenceException`.
 - No adapter reads the current request, user or guard, and none keeps anything between calls.
-
-## Member gaps
-
-- `laravel-authorization`'s `treeChanged()` runs no grant hook, so `TreeChanges` reports the grantees within a moved
-  subtree to SSO itself.
-- `laravel-sso`'s `RevocationScope::tenant()` names only the enforcing tenant, so `SubtreePolicyChanges` finds the
-  inheriting tenants from the tree.
-- `laravel-authentication` has no identity-creation contract, so the provisioner is the application's own.

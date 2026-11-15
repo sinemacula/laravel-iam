@@ -96,6 +96,11 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   runs inside `iam:check`.
 - No resource tenant resolver is bound, since which tenant owns a record is the application's rule; `iam:check` notes
   the default while memberships are bound.
+- `laravel-authorization` knows a machine only by its own `AuthorizableMachine`, so a machine model implements it beside
+  `MachineIdentity`; `iam:check` refuses one that does not, and the session policy source answers `[]` for a machine
+  itself.
+- A tenant's `laravel-authentication` identifier is its `laravel-authorization` key; `TenantTranslator` enforces the
+  round trip.
 
 ## Invariants
 
@@ -104,10 +109,3 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
 - A machine is never uncapped for want of a credential.
 - Every widening is reported to SSO in the grant's own transaction, so a refused grant leaves no suspension.
 - A tenant crosses between `laravel-authorization` and the other members only by a round trip that resolves back.
-
-## Member gaps
-
-- `laravel-authorization` recognises a machine only by `AuthorizableMachine`, never `laravel-authentication`'s
-  `MachineIdentity`, so the session policy source answers `[]` for a machine itself.
-- `laravel-authorization` names a tenant by morph type and key (`Support\Reference`), never by
-  `laravel-authentication`'s identifier, so `TenantTranslator` equates the two.

@@ -68,6 +68,10 @@ removed factor would leave the identity's other sessions standing.
 - `MfaContextContributor` fills the `mfa` namespace with MFA's own `contributeFor()`, from the contribution subject's
   session and its newest proofs, so the keys match `Mfa::authenticationContext()` for that session. It is registered
   only while the switch is on and nothing else holds `mfa`.
+- MFA names a caller's sign-in only through `ProofStore::currentSession()`, so the proof store, the freshness gate and
+  the reauthenticator all answer it from the guard's current session.
+- `laravel-authentication` writes a session's proofs only alongside its own token issuance, under the session's row
+  lock, so the proof store records and forgets nothing.
 
 ## Invariants
 
@@ -91,10 +95,3 @@ removed factor would leave the identity's other sessions standing.
   order by design.
 - In tests, `VerifiedSignInRecorderAdapter` lets MFA's `actingAsVerified()` sign in through authentication; the
   helpers built on it are described in `docs/guides/testing.md`.
-
-## Member gaps
-
-- `laravel-mfa`: `CallerContext` carries no sign-in id, so the freshness gate and reauthenticator read the guard's
-  current session.
-- `laravel-authentication`: no public write of a session's proofs or single-factor void, so the proof store cannot
-  record or forget.
