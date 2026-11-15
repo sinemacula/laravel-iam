@@ -7,8 +7,8 @@ insecure. What each contract means on its own side is in that member's guide; th
 
 Classes are named relative to `SineMacula\Laravel\`: `Mfa\Contracts\StepUp` is
 `SineMacula\Laravel\Mfa\Contracts\StepUp`, and `Iam\Mfa\StepUpAdapter` is this package's
-`SineMacula\Laravel\Iam\Mfa\StepUpAdapter`. Every adapter is internal to this package: bind the contract, never extend
-or call an adapter.
+`SineMacula\Laravel\Iam\Mfa\StepUpAdapter`. Every adapter is internal to this package: bind or extend the contract,
+never subclass or name an adapter.
 
 - [The binding rule](#the-binding-rule)
 - [Replacing a binding](#replacing-a-binding)
@@ -18,6 +18,7 @@ or call an adapter.
 - [Authentication and SSO](#authentication-and-sso)
 - [Tenancy](#tenancy)
 - [Authorization](#authorization)
+- [The audit trail](#the-audit-trail)
 - [Other bindings](#other-bindings)
 - [Seams left on their defaults](#seams-left-on-their-defaults)
 
@@ -190,6 +191,34 @@ over one of its contracts. Grant hooks are listed in `authorization.grant_hooks`
 | `Authorization\Contracts\GrantHook`                        | `Iam\Authorization\GrantHookAdapter`                 | `Authorization\Hooks\GrantHooks`                     | While `sso.features.domain_linking` is on                    | Bound only while `iam.adapters.sso` is on too. Reports a grant that widens a person's scope to SSO's scope widening, in the grant's transaction, after the hooks you list in `authorization.grant_hooks`, which `laravel-authorization` runs first. A hook that skips the widening, or reports it outside the grant's transaction, leaves a person's link by another tenant's verified domain active once a grant takes them beyond that tenant, so that tenant's provider can still sign in as them; `iam:check` refuses the default while linking by a verified domain is on.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `AuditLog\Contracts\AuditAccessPolicy`                     | `Iam\Authorization\AuditAccessPolicyAdapter`, shared | `AuditLog\Access\DenyAllPolicy`                      | No                                                           | Answers what of the trail a viewer may read, count, export or verify from its grants of the catalogue's `audit-log.*` permissions, never wider than any of them: a tenant's viewer never sees records with no tenant. Left on the default, every read is empty. Yours decides who reads every person's trail: a scope too wide (`AccessScope::all()`, or `withTenantless()` for a tenant's viewer) shows one tenant's viewer every tenant's people (see [The audit trail](audit-trail.md#reading-the-trail)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
+## The audit trail
+
+Always bound, shared. Audit-log asks the reader who a guard it cannot read through `GuardHelpers` holds; see
+[The audit trail](audit-trail.md#who-did-it).
+
+| Contract                             | Bound to                              | Replaces                         | Mandatory | Replacing it                                                                                                                                                                                                                                                                       |
+|--------------------------------------|---------------------------------------|----------------------------------|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `AuditLog\Contracts\HeldActorReader` | `Iam\Audit\AuthenticationActorReader` | None: audit-log binds no default | No        | Gives audit-log the caller a `jwt` or `api_key` guard holds as a record's actor, with its principal, tenant and session, and `null` for any other guard. A reader you bind in its place names no actor for a caller of `laravel-authentication`'s guards unless it reads them too. |
+
+To read a guard of your own as well, extend the binding rather than replace it:
+
+```php
+use App\Audit\CustomGuardReader;
+use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
+
+public function register(): void
+{
+    $this->app->extend(
+        HeldActorReader::class,
+        fn (HeldActorReader $reader): HeldActorReader => new CustomGuardReader($reader),
+    );
+}
+```
+
+`CustomGuardReader` answers for its own guard and passes any other to `$reader`, so guards of both kinds name their
+caller. Extended in any `register()`, whatever order the providers register in, it wraps whatever reader is bound: this
+package's, unless you bind one of your own.
+
 ## Other bindings
 
 The package also binds services of its own, which are not members' seams. Most are not yours to replace: replacing one
@@ -206,7 +235,6 @@ of those breaks what the row says it holds. Three keep a binding or registration
 | The `sso` context namespace                                           | `Iam\Sso\SsoContextContributor`       | Registered once booted                                   | Registered only while `iam.adapters.sso` is on and no `sso` contributor is registered, so yours is kept.                                                                                                       | Yours supplies the `sso.*` keys of `Auth::context()` (`sso.connection` and `sso.link_provenance` among them) that anything reading the context relies on, a link confirmation of yours among them. One that answers them from anything but the provenance SSO stored with the session lets a session claim a connection or a link it never had.                                                                                                                  |
 | `Authorization\Diagnostics\Declarations`                              | `laravel-authorization`'s own         | Instance, from `register()`                              | What each package declared of its adapters over `laravel-authorization`'s contracts, read by `authorization:check`; this package declares each adapter it binds there, and `iam:check` as running that check.  | Do not replace it: `authorization:check` would then name adapters from declarations nobody made. Binding over a declared contract is yours to do, and the report then shows the declaration overridden.                                                                                                                                                                                                                                                          |
 | `'iam.audit.registered'` (`Iam\Audit\AuditRegistrations::REGISTERED`) | `true`                                | Instance, once the package has registered with audit-log | Read by the audit check, which reports *The audit mappers are not registered with laravel-audit-log* without it.                                                                                               | Do not bind it: the audit check would then pass an application whose mappers never registered.                                                                                                                                                                                                                                                                                                                                                                   |
-| `AuditLog\Contracts\HeldActorReader`                                  | `Iam\Audit\AuthenticationActorReader` | Shared                                                   | Gives audit-log the caller a `jwt` or `api_key` guard holds as a record's actor, with its principal, tenant and session.                                                                                       | Do not replace it: audit-log then names no actor for a caller of `laravel-authentication`'s guards.                                                                                                                                                                                                                                                                                                                                                              |
 
 The listeners the package registers (the audit mappers, provisioning of an unlinked result, the worker resets and the
 commit listeners) are described in [The audit trail](audit-trail.md),
