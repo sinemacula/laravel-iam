@@ -133,7 +133,8 @@ every message's wording and template.
   `ChallengeGateway` to send it with MFA's own.
 - MFA's `SmsSender` and `EmailSender` forward to your sender in the same way, so a code MFA sends itself, once you rebind
   its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction.
-- While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.
+- While an MFA application offers `sms` or `email`, requests and workers are refused and `iam:check` fails until a
+  `OneTimeCodeSender` is bound.
 
 `laravel-authentication`'s own codes carry the identifier type (`email` or `phone`), so route `email` to email and
 `phone` or `sms` to SMS. [Testing](testing.md) shows the fake senders.

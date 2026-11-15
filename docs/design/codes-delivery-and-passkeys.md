@@ -48,8 +48,9 @@ All rows are transient, replace only their member's default, and are on while `i
   are `expired`; `locked` and `rate_limited` are `locked`. A send that is `rate_limited` or `deliveries_exhausted` is
   `sending_capped`. A wrong code that caused a lockout is answered locked until it ends.
 - Delivery: MFA's SMS and email senders forward each `CodeMessage` to the application's `OneTimeCodeSender` as a
-  `OneTimeCodeMessage` with purpose `enrollment` or `mfa`. The package composes no text and queues nothing. MFA's boot
-  check builds its senders, so boot is refused until a `OneTimeCodeSender` is bound.
+  `OneTimeCodeMessage` with purpose `enrollment` or `mfa`. The package composes no text and queues nothing. MFA's
+  configuration check builds its senders, so a request or a worker is refused, and `iam:check` fails, until a
+  `OneTimeCodeSender` is bound.
 - Passkey ceremonies run through `laravel-authentication`'s `factorOptions()` and `verifyFactor()` on the binding's
   guard. A request allowing none of the identity's passkeys is refused, since the browser would offer any credential it
   holds. `passkey_challenge_used` is `replayed`, `passkey_challenge_expired` and `passkey_challenge_invalid` are

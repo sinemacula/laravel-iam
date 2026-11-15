@@ -5,6 +5,8 @@ declare(strict_types = 1);
 namespace Tests\Feature\Mfa;
 
 use Illuminate\Config\Repository;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Artisan;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -53,7 +55,6 @@ use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Contracts\SmsSender;
 use SineMacula\Laravel\Mfa\Contracts\StepUp;
-use SineMacula\Laravel\Mfa\Exceptions\InvalidConfigurationException;
 use SineMacula\Laravel\Mfa\Http\MiddlewareSessionTransition;
 use SineMacula\Laravel\Mfa\Proofs\GenerationSessionRevoker;
 use SineMacula\Laravel\Mfa\Proofs\ProofStoreCompletion;
@@ -62,6 +63,7 @@ use SineMacula\Laravel\Mfa\Requirements\ConfiguredFactorChangeGate;
 use SineMacula\Laravel\Mfa\Requirements\ConfiguredFreshnessGate;
 use SineMacula\Laravel\Mfa\Seams\RefusingReauthenticator;
 use SineMacula\Laravel\Mfa\Testing\Contracts\VerifiedSignInRecorder;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 /**
@@ -132,24 +134,19 @@ final class MfaSeamsTest extends TestCase
     }
 
     /**
-     * Offering `sms` with no one-time code sender bound refuses to boot.
+     * Offering `sms` with no one-time code sender bound fails `iam:check`.
      *
      * @return void
      */
-    public function testOfferingSmsWithNoOneTimeCodeSenderRefusesToBoot(): void
+    public function testOfferingSmsWithNoOneTimeCodeSenderFailsTheCheck(): void
     {
         $this->types = ['totp', 'sms'];
-
-        $boot = function (): void {
-            $this->reloadApplication();
-        };
-        $thrown = rescue($boot, static fn (\Throwable $exception): \Throwable => $exception, false);
-
-        $this->types = ['totp'];
         $this->reloadApplication();
 
-        self::assertInstanceOf(InvalidConfigurationException::class, $thrown);
-        self::assertStringContainsString(OneTimeCodeSender::class, $thrown->getMessage());
+        $output = new BufferedOutput;
+
+        self::assertSame(Command::FAILURE, Artisan::call('iam:check', [], $output));
+        self::assertStringContainsString(OneTimeCodeSender::class, $output->fetch());
     }
 
     /**
