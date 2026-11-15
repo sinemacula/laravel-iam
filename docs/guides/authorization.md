@@ -300,10 +300,9 @@ on too (see [Bindings](bindings.md#authorization)).
   [The tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver)): a grant to the person always widens, and so
   does a principal's first grant in a tenant, so under the default `ResolveNoTenant` every such grant in a tenant is
   refused, and `iam:check` refuses that default while both adapters are on. When one of the person's links by a
-  verified domain is committed while the grant runs, SSO refuses the widening, and the hook hands the refusal on as a
-  concurrency error (SQLSTATE `40001`): `laravel-authorization` tries a delegated grant again by itself, but never a
-  trusted one, so make a trusted grant inside `Iam::transaction()` (or `DB::transaction()` given attempts) to have it
-  tried again rather than refused.
+  verified domain is committed while the grant runs, SSO refuses the widening as a concurrency error (SQLSTATE
+  `40001`): `laravel-authorization` tries a delegated grant again by itself, but never a trusted one, so make a trusted
+  grant inside `Iam::transaction()` (or `DB::transaction()` given attempts) to have it tried again rather than refused.
 - **The grant half of SSO's principal scope** is answered by `laravel-authorization`'s grant scope query, over the
   principals `laravel-authentication` lists for the identity (its `principals()` relation, global scopes set aside;
   `unknown` for an identity that is neither a principal nor owns principals), and combined with the membership half: a
