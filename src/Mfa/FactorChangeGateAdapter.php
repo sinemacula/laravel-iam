@@ -12,6 +12,7 @@ use SineMacula\Laravel\Mfa\Contracts\FactorChangeGate;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Requirements\FactorChangeRequest;
+use SineMacula\Laravel\Mfa\Requirements\Requirement;
 
 /**
  * MFA's factor-change gate, judged by `laravel-authentication`'s gate on the
@@ -59,7 +60,7 @@ final readonly class FactorChangeGateAdapter implements FactorChangeGate
     public function authorize(FactorChangeRequest $request): CarbonImmutable
     {
         $session     = $this->sessions->named($request->identity, $request->application, $request->session);
-        $requirement = $request->requirement === null ? null : $this->requirements->toFreshness($request->requirement);
+        $requirement = $this->requirements->toFactorChange($request->requirement ?? Requirement::none());
 
         $service = $this->sessions->sessions($request->application);
         $verdict = $service->factorChange($session, $this->changes->factorChange($request->change), $requirement, $request->factorId);

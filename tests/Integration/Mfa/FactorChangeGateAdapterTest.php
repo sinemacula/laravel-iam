@@ -65,6 +65,22 @@ final class FactorChangeGateAdapterTest extends TestCase
     /** @var string The factor a step-up is made with. */
     private const string STEPPED_UP = 'factor-stepped-up';
 
+    /** @var string The factor an email code is sent to. */
+    private const string EMAILED = 'factor-emailed';
+
+    /**
+     * Bind the requirement check the gate judges MFA's requirement by.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->bindTheRequirementCheck();
+    }
+
     /**
      * An allowed change lasts until the session stops being fresh for it.
      *
@@ -107,6 +123,10 @@ final class FactorChangeGateAdapterTest extends TestCase
         yield 'phishing resistance' => [Requirement::none()->withPhishingResistance(600), false];
 
         yield 'an additional verification, and phishing resistance' => [Requirement::none()->withAdditionalVerification(600)->withPhishingResistance(600), false];
+
+        yield 'a level the step-up reaches' => [Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 600), true];
+
+        yield 'a level beyond it' => [Requirement::none()->withMinimumLevel(AssuranceLevel::AAL3, 600), false];
     }
 
     /**
@@ -143,13 +163,43 @@ final class FactorChangeGateAdapterTest extends TestCase
     }
 
     /**
-     * An additional verification takes a further factor or a recovery code.
+     * Each part is held to its own age, by whichever proof meets it.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAnAdditionalVerificationTakesOnlyAFurtherFactorOrARecoveryCode(): void
+    public function testEachPartIsHeldToItsOwnAge(): void
+    {
+        $start = CarbonImmutable::now()->startOfSecond();
+
+        CarbonImmutable::setTestNow($start);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        $this->stepUpWith($person, $session, self::STEPPED_UP);
+
+        CarbonImmutable::setTestNow($start->addSeconds(500));
+
+        $this->stepUpWith($person, $session, self::EMAILED, multifactor: false);
+
+        CarbonImmutable::setTestNow($start->addSeconds(520));
+
+        $change = $this->request($person, $session, FactorChange::ADD_FACTOR, Requirement::none()->withMultifactor(600)->withAdditionalVerification(400));
+
+        // The TOTP step-up meets multifactor, the email code the verification
+        self::assertEquals($start->addSeconds(600), $this->gate()->authorize($change));
+    }
+
+    /**
+     * A password reauthentication is no additional verification.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPasswordReauthenticationIsNoAdditionalVerification(): void
     {
         $person  = $this->createPerson();
         $session = $this->signInAndActOnSession($person);
@@ -158,25 +208,6 @@ final class FactorChangeGateAdapterTest extends TestCase
 
         self::assertTrue($this->isAllowed($this->request($person, $session, FactorChange::ADD_FIRST_ADDITIONAL_FACTOR)));
         self::assertFalse($this->isAllowed($this->request($person, $session, FactorChange::ADD_FIRST_ADDITIONAL_FACTOR, Requirement::none()->withAdditionalVerification(600))));
-    }
-
-    /**
-     * A minimum assurance level is refused as a misconfiguration.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testAMinimumLevelIsRefusedAsAMisconfiguration(): void
-    {
-        $change = $this->steppedUpChange(FactorChange::ADD_FACTOR, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 600));
-
-        $message = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
-            . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
-
-        $this->expectExceptionObject(new \InvalidArgumentException($message));
-
-        $this->gate()->authorize($change);
     }
 
     /**
@@ -233,7 +264,10 @@ final class FactorChangeGateAdapterTest extends TestCase
         });
 
         self::assertTrue($this->isAllowed($change));
-        self::assertCount(1, $reads, implode("\n", $reads));
+
+        // The operation's setting, the first factor, and the further proofs
+        self::assertCount(3, $reads, implode("\n", $reads));
+        self::assertMatchesRegularExpression('/.factor_reference. <> \?/', $reads[2]);
     }
 
     /**

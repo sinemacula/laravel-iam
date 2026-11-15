@@ -97,7 +97,7 @@ final class SessionTransitionAdapterTest extends TestCase
     {
         $change = $this->sessionChange(FactorChangeMade::CONFIRMED);
 
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         $result = $this->transition()->factorChanged($change);
 
@@ -135,7 +135,7 @@ final class SessionTransitionAdapterTest extends TestCase
         $other   = $this->signIn($person)->record;
         $current = $this->signInAndActOnSession($person);
 
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         $change = new SessionChange($person, self::GUARD, $this->signInReference($other), FactorChangeMade::CONFIRMED, self::factorSummary(), null);
 
@@ -156,7 +156,7 @@ final class SessionTransitionAdapterTest extends TestCase
         $change = $this->sessionChange(FactorChangeMade::CONFIRMED);
 
         $this->stopActing(self::GUARD);
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         self::assertTrue($this->transition()->factorChanged($change)->isPending());
         self::assertSame(SessionStatus::PENDING, $this->sessionNamed($change->session)->getStatus());
@@ -180,7 +180,7 @@ final class SessionTransitionAdapterTest extends TestCase
         $stranger = $this->signIn($this->createPerson())->record;
 
         $this->signInAndActOnSession($person);
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         foreach ([$this->signInReference($stranger), '987654'] as $signIn) {
 
@@ -244,7 +244,7 @@ final class SessionTransitionAdapterTest extends TestCase
 
         self::assertNotNull($start->grant);
 
-        $this->requireAFurtherFactor();
+        $this->requirePhishingResistance();
 
         DB::enableQueryLog();
 
