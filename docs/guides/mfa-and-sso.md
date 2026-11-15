@@ -64,6 +64,8 @@ acts in, at sign-in and on every later judgement of the session:
   tenant's trust in a connection is never another's;
 - MFA's route gate counts the same evidence, judged by the combination policy, for the tenant the session acts in, and
   counts nothing of an SSO sign-in whose first factor carries no accepted evidence;
+- MFA's freshness gate counts it toward a caller's requirement, judged for the identity rather than a tenant, so no
+  tenant's trust is asked;
 - a requirement's maximum age is judged from the evidence's time, so stale evidence stops meeting it.
 
 When the evidence does not meet the requirement, the session starts pending and the person verifies a factor of

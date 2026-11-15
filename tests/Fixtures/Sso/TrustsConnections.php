@@ -55,8 +55,8 @@ final class TrustsConnections implements CombinationPolicy
     }
 
     /**
-     * AAL2 multifactor for a trusted provider's newest proof, and the default's
-     * answer otherwise.
+     * AAL2 multifactor for a trusted provider's newest proof, met until its
+     * first bounded part lapses, and the default's answer otherwise.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  ...$proofs
@@ -92,7 +92,10 @@ final class TrustsConnections implements CombinationPolicy
             $unmet[] = $part;
         }
 
-        return new Evaluation(true, true, AssuranceLevel::AAL2, false, false, ['mfa'], $met, $unmet, multifactorAt: $proof->provedAt);
+        $ages  = array_filter(array_map($requirement->maxAge(...), $requirement->parts()), static fn (?int $age): bool => $age !== null);
+        $until = $unmet === [] && $ages !== [] ? $proof->provedAt->addSeconds(min($ages)) : null;
+
+        return new Evaluation(true, true, AssuranceLevel::AAL2, false, false, ['mfa'], $met, $unmet, $until, $proof->provedAt);
     }
 
     /**
