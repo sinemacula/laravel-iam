@@ -22,6 +22,7 @@ use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Events\Reauthenticated;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
@@ -31,6 +32,7 @@ use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
@@ -880,6 +882,16 @@ final class IamServiceProviderTest extends TestCase
         $registered = $this->app?->make(ContextContributors::class)->registered() ?? self::fail('The application has not booted.');
 
         self::assertSame(['mfa' => MfaContextContributor::class, 'sso' => SsoContextContributor::class], $registered);
+    }
+
+    /**
+     * A committed reauthentication has the decisions forgotten.
+     *
+     * @return void
+     */
+    public function testAReauthenticationIsListenedForToForgetTheDecisions(): void
+    {
+        self::assertContains([DecisionCacheInvalidation::class, 'reauthenticated'], self::rawListenersOf(Reauthenticated::class));
     }
 
     /**
