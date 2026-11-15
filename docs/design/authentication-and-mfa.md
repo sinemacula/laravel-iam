@@ -42,8 +42,9 @@ removed factor would leave the identity's other sessions standing.
   `PendingCompletion` back to MFA's `ProofStoreCompletion` refuses every verification: rebind both or neither.
   `begin()`, `forget()` and `forgetFactor()` write nothing, since authentication starts, ends and voids sessions.
 - A recorded proof is accepted, and multifactor only when `VerificationResult::$refreshesMultifactor` says the proof
-  itself refreshes that evidence. Authentication's freshness times multifactor by the newest flagged proof, and MFA's
-  whole-session evaluation would flag a fresh email code because of an authenticator app code proved hours before.
+  itself refreshes that evidence. Authentication's configured freshness times multifactor by the newest flagged proof,
+  and MFA's whole-session evaluation would flag a fresh email code because of an authenticator app code proved hours
+  before.
 - Where authentication names no session (at sign-in, and when it asks for a requirement), every proof is bound to
   `SignIn::UNNAMED`, which no session key can equal. Each proof is stamped with the identity's current verification
   generation.
@@ -57,9 +58,12 @@ removed factor would leave the identity's other sessions standing.
 - The freshness gate and the reauthenticator ask current inside a transaction on the storage connection, as
   authentication's `StorageConnection::isInTransaction()` reports it, locking the session row and reading committed
   proofs, and plainly outside one, where nothing acts on the answer atomically.
-- A minimum assurance level cannot be held as freshness, since no stored proof records a level, so asking for one there
-  throws `InvalidArgumentException`. A freshness part with no maximum age is refused when asked part by part, and held
-  to a day when asked as a whole.
+- The freshness gate hands the caller's requirement whole to authentication's `metUntil()`, which judges it, a minimum
+  level included, by the requirement check or accepted provider evidence, apart from the operation's configured
+  freshness, and answers the earlier deadline. A part with no maximum age, or one over a day, throws
+  `InvalidArgumentException`.
+- The factor-change gate hands `factorChange()` one `FreshnessRequirement`, which holds no level, so a minimum level
+  there throws `InvalidArgumentException`, and a part with no maximum age is held to a day.
 - A reset names no guard, so it goes through `Auth::sessions()`, which picks the `jwt` guard.
 - `MfaContextContributor` fills the `mfa` namespace with MFA's own `contributeFor()`, from the contribution subject's
   session and its newest proofs, so the keys match `Mfa::authenticationContext()` for that session. It is registered
@@ -76,7 +80,9 @@ removed factor would leave the identity's other sessions standing.
   `UnresolvedReferenceException` or `SessionMismatchException` for a guard, session or identity that cannot be resolved.
 - Lock order: MFA's identity state, then its factors, then `laravel-authentication`'s session row, then its proofs. A
   removal then takes the identity's other sessions' rows in `factorRemoved()`. Adapters that only read (the policy, the
-  requirement check, the pending session resolver) take no lock.
+  requirement check, the pending session resolver) take no lock of their own; asked current through the freshness gate,
+  the requirement check reads the session's proofs under authentication's shared locks and MFA's verification generation
+  plainly.
 - MFA opens its own transaction for a verification, a factor change, a removal and a reset, and never retries it, so
   these flows must not run inside `Iam::transaction()` or any transaction the application opens. A concurrency failure
   reaches the caller, who retries the request.
@@ -92,7 +98,5 @@ removed factor would leave the identity's other sessions standing.
   current session.
 - `laravel-mfa`: `PendingSessionResolver::fromRequest()` is not handed the guard, so a pending caller is read on the
   default guard.
-- `laravel-authentication`: `FreshnessRequirement` holds one age and no level, so the freshness gate judges each part
-  separately and refuses a minimum level.
 - `laravel-authentication`: no public write of a session's proofs or single-factor void, so the proof store cannot
   record or forget.

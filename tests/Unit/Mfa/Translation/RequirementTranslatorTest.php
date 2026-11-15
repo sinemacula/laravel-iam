@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Mfa\Translation;
 
+use Carbon\CarbonImmutable;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -31,9 +32,9 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
 #[CoversClass(RequirementTranslator::class)]
 final class RequirementTranslatorTest extends TestCase
 {
-    /** @var string The refusal of a minimum assurance level asked as freshness. */
-    private const string NO_MINIMUM_LEVEL = 'laravel-authentication\'s freshness cannot hold a session to a minimum assurance level, which its proofs do not record:'
-        . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.';
+    /** @var string The refusal of a minimum assurance level asked as one freshness requirement. */
+    private const string NO_MINIMUM_LEVEL = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
+        . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
 
     /**
      * Rows of `[laravel-authentication's requirement, MFA's]`.
@@ -205,43 +206,37 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * Rows of `[MFA's requirement, the freshness requirement for each part]`.
+     * A met evaluation keeps the time it holds until.
      *
-     * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>}>
+     * @return void
      */
-    public static function provideFreshnessParts(): iterable
+    public function testAMetEvaluationKeepsItsDeadline(): void
     {
-        $additional = [ProofKind::ADDITIONAL_FACTOR, ProofKind::RECOVERY_CODE];
+        $until = CarbonImmutable::parse('2026-01-01 12:05:00');
+        $met   = new Evaluation(true, true, MfaLevel::AAL2, false, false, ['mfa'], [MfaRequirementPart::MINIMUM_LEVEL], [], $until);
 
-        yield 'nothing' => [MfaRequirement::none(), []];
+        $evaluation = (new RequirementTranslator)->evaluation($met);
 
-        yield 'additional verification' => [MfaRequirement::none()->withAdditionalVerification(300), [new FreshnessRequirement(300, $additional)]];
-
-        yield 'multifactor' => [MfaRequirement::none()->withMultifactor(60), [new FreshnessRequirement(60, ProofKind::cases(), multifactor: true)]];
-
-        yield 'phishing resistance' => [MfaRequirement::none()->withPhishingResistance(86400), [new FreshnessRequirement(86400, ProofKind::cases(), phishingResistant: true)]];
-
-        yield 'every part but a level' => [
-            MfaRequirement::none()->withPhishingResistance(900)->withAdditionalVerification(300)->withMultifactor(600),
-            [
-                new FreshnessRequirement(300, $additional),
-                new FreshnessRequirement(600, ProofKind::cases(), multifactor: true),
-                new FreshnessRequirement(900, ProofKind::cases(), phishingResistant: true),
-            ],
-        ];
+        self::assertTrue($evaluation->isMet());
+        self::assertSame($until, $evaluation->metUntil);
     }
 
     /**
-     * Each part is a freshness requirement of its own, within its age.
+     * A freshness requirement within a day translates whole, a level included.
      *
-     * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @param  list<\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>  $parts
      * @return void
      */
-    #[DataProvider('provideFreshnessParts')]
-    public function testEachPartIsAFreshnessRequirementOfItsOwn(MfaRequirement $requirement, array $parts): void
+    public function testAFreshnessRequirementWithinADayTranslatesWhole(): void
     {
-        self::assertEquals($parts, (new RequirementTranslator)->toFreshnessParts($requirement));
+        $mfa = MfaRequirement::none()->withMultifactor(86400)->withMinimumLevel(MfaLevel::AAL2, 300);
+
+        $authentication = new AuthenticationRequirement(
+            multifactor: new AuthenticationRequirementPart(86400),
+            minimumLevel: new LevelRequirement(AuthenticationLevel::AAL2, 300),
+        );
+
+        self::assertEquals($authentication, (new RequirementTranslator)->toBoundedAuthentication($mfa));
+        self::assertTrue((new RequirementTranslator)->toBoundedAuthentication(MfaRequirement::none())->isEmpty());
     }
 
     /**
@@ -249,28 +244,32 @@ final class RequirementTranslatorTest extends TestCase
      *
      * @return iterable<string, array{0: \SineMacula\Laravel\Mfa\Requirements\Requirement, 1: string}>
      */
-    public static function provideUnfreshParts(): iterable
+    public static function provideUnboundedFreshness(): iterable
     {
-        yield 'a minimum level' => [MfaRequirement::none()->withMinimumLevel(MfaLevel::AAL2, 300), self::NO_MINIMUM_LEVEL];
+        yield 'a part with no maximum age' => [
+            MfaRequirement::none()->withAdditionalVerification(60)->withMinimumLevel(MfaLevel::AAL2),
+            'A freshness requirement\'s [minimum_level] part must have a maximum age from 1 to 86400 seconds.',
+        ];
 
-        yield 'a part with no maximum age' => [MfaRequirement::none()->withMultifactor(), 'A freshness requirement\'s [multifactor] part must have a maximum age.'];
-
-        yield 'a part longer than a day' => [MfaRequirement::none()->withAdditionalVerification(86401), 'A freshness requirement\'s maximum age must be from 1 to 86400 seconds.'];
+        yield 'a part longer than a day' => [
+            MfaRequirement::none()->withAdditionalVerification(86401),
+            'A freshness requirement\'s [additional_verification] part must have a maximum age from 1 to 86400 seconds.',
+        ];
     }
 
     /**
-     * A part no freshness requirement can hold is refused.
+     * A freshness part with no maximum age, or one over a day, is refused.
      *
      * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
      * @param  string  $message
      * @return void
      */
-    #[DataProvider('provideUnfreshParts')]
-    public function testAPartNoFreshnessCanHoldIsRefused(MfaRequirement $requirement, string $message): void
+    #[DataProvider('provideUnboundedFreshness')]
+    public function testAnUnboundedFreshnessPartIsRefused(MfaRequirement $requirement, string $message): void
     {
         $this->expectExceptionObject(new \InvalidArgumentException($message));
 
-        (new RequirementTranslator)->toFreshnessParts($requirement);
+        (new RequirementTranslator)->toBoundedAuthentication($requirement);
     }
 
     /**
@@ -314,7 +313,7 @@ final class RequirementTranslatorTest extends TestCase
     }
 
     /**
-     * A minimum level asked as a whole is refused, as asked part by part.
+     * A minimum level asked as a whole is refused.
      *
      * @return void
      */

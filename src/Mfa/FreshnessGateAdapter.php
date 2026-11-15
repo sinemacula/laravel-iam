@@ -80,7 +80,7 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
         }
 
         // Translating refuses any part the policy cannot hold a session to.
-        $asked = $this->parts($callerRequirement) === [null] ? null : $callerRequirement;
+        $asked = $callerRequirement === null || $this->requirements->toBoundedAuthentication($callerRequirement)->isEmpty() ? null : $callerRequirement;
 
         $application = $caller->application;
 
@@ -114,10 +114,10 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
             return null;
         }
 
-        $parts   = $this->parts($callerRequirement);
-        $session = $this->session($caller);
+        $requirement = $this->requirements->toBoundedAuthentication($callerRequirement ?? Requirement::none());
+        $session     = $this->session($caller);
 
-        return $session === null ? null : $this->heldUntil($session, $operation, $parts, StorageConnection::isInTransaction());
+        return $session === null ? null : $this->freshness->metUntil($session, $operation, $requirement, StorageConnection::isInTransaction());
     }
 
     /**
@@ -136,49 +136,5 @@ final readonly class FreshnessGateAdapter implements FreshnessGate
         $this->sessions->guard($application);
 
         return $identity === null || $caller->pending !== null ? null : $this->sessions->held($identity, $application);
-    }
-
-    /**
-     * A requirement per part, or `[null]` for the policy's setting alone.
-     *
-     * @param  ?\SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
-     * @return list<?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>
-     *
-     * @throws \InvalidArgumentException
-     */
-    private function parts(?Requirement $requirement): array
-    {
-        if ($requirement === null || $requirement->isEmpty()) {
-            return [null];
-        }
-
-        return $this->requirements->toFreshnessParts($requirement);
-    }
-
-    /**
-     * When the session first stops meeting a part, or `null` if one is unmet.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Session  $session
-     * @param  string  $operation
-     * @param  list<?\SineMacula\Laravel\Authentication\Freshness\FreshnessRequirement>  $parts
-     * @param  bool  $current
-     * @return ?\Carbon\CarbonImmutable
-     */
-    private function heldUntil(Session $session, string $operation, array $parts, bool $current): ?CarbonImmutable
-    {
-        $until = null;
-
-        foreach ($parts as $part) {
-
-            $held = $this->freshness->freshUntil($session, $operation, $part, current: $current);
-
-            if ($held === null) {
-                return null;
-            }
-
-            $until = $until === null || $held->lessThan($until) ? $held : $until;
-        }
-
-        return $until;
     }
 }
