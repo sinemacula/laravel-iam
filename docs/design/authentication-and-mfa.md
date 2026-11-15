@@ -90,8 +90,6 @@ removed factor would leave the identity's other sessions standing.
 
 - `laravel-mfa`: `CallerContext` carries no sign-in id, so the freshness gate and reauthenticator read the guard's
   current session.
-- `laravel-mfa`: `PendingSessionResolver::fromRequest()` is not handed the guard, so a pending caller is read on the
-  default guard.
 - `laravel-authentication`: `FreshnessRequirement` holds one age and no level, so the freshness gate judges each part
   separately and refuses a minimum level.
 - `laravel-authentication`: no public write of a session's proofs or single-factor void, so the proof store cannot
