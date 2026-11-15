@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Authorization;
 
-use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -15,15 +14,17 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant;
-use SineMacula\Laravel\Authorization\Administration\ConflictRetries;
+use SineMacula\Laravel\Authorization\Administration\ActingContext;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
 use SineMacula\Laravel\Authorization\Exceptions\TransactionConflictException;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
 use SineMacula\Laravel\Authorization\Hooks\ListedGrantHooks;
 use SineMacula\Laravel\Authorization\Hooks\ProposedGrant;
+use SineMacula\Laravel\Authorization\Models\Permission;
 use SineMacula\Laravel\Authorization\Models\Role;
 use SineMacula\Laravel\Authorization\Services\GrantService;
 use SineMacula\Laravel\Authorization\Support\Operation;
+use SineMacula\Laravel\Authorization\Support\PackagePermissions;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\GrantHookAdapter;
 use SineMacula\Laravel\Iam\Authorization\IdentityDirectoryAdapter;
@@ -45,6 +46,7 @@ use Tests\Fixtures\Authorization\OrganisationTenancy;
 use Tests\Fixtures\Authorization\PanelAdmin;
 use Tests\Fixtures\Authorization\RecordingGrantHook;
 use Tests\Fixtures\Authorization\RefusingGrantHook;
+use Tests\Fixtures\Authorization\Staff;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
@@ -510,33 +512,47 @@ final class GrantHookAdapterTest extends TestCase
     }
 
     /**
-     * Changed link candidates are handed back as a concurrency error.
+     * A delegated grant whose link candidates changed is tried again.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testLinkCandidatesThatChangedAreAConcurrencyError(): void
+    public function testADelegatedGrantWhoseLinkCandidatesChangedIsTriedAgain(): void
     {
-        $this->changeLinkCandidatesOnce();
+        $actor = $this->actor();
+        $tries = $this->changeLinkCandidatesOnce();
 
-        $hook     = $this->resolved(GrantHook::class);
-        $identity = Reference::of($this->person());
-        $grant    = new ProposedGrant('authorization:role.grant', new Reference('role', '1'), new Reference(self::TENANT_TYPE, self::TENANT), null, false, null);
+        $this->grant(self::TENANT, $actor);
 
-        self::assertInstanceOf(GrantHookAdapter::class, $hook);
+        self::assertCount(2, $tries);
+        self::assertSame(LinkState::SUSPENDED, $this->link()->state);
+        self::assertTrue($this->holdsRole(self::TENANT));
+    }
+
+    /**
+     * Inside the application's transaction it is a transaction conflict.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testADelegatedGrantWhoseLinkCandidatesChangedInsideATransactionIsATransactionConflict(): void
+    {
+        $actor = $this->actor();
+        $tries = $this->changeLinkCandidatesOnce();
 
         try {
-            DB::transaction(static fn () => $hook->beforeWidening(self::widening($identity, [$grant])));
+            DB::transaction(fn () => $this->grant(self::TENANT, $actor));
 
-            self::fail('A widening whose link candidates changed was reported.');
-        } catch (DeadlockException $exception) {
-            self::assertTrue(ConflictRetries::isConcurrencyError($exception));
-            self::assertSame(TransactionConflictException::SERIALIZATION_FAILURE, $exception->getCode());
-            self::assertInstanceOf(LinkCandidatesChanged::class, $exception->getPrevious());
+            self::fail('A grant whose link candidates changed was written.');
+        } catch (TransactionConflictException $exception) {
+            self::assertInstanceOf(LinkCandidatesChanged::class, $exception->getPrevious()?->getPrevious());
         }
 
+        self::assertCount(1, $tries);
         self::assertSame(LinkState::ACTIVE, $this->link()->state);
+        self::assertFalse($this->holdsRole(self::TENANT));
     }
 
     /**
@@ -604,15 +620,35 @@ final class GrantHookAdapterTest extends TestCase
      * Grant the person the role in the tenant given, or platform-wide.
      *
      * @param  ?string  $tenantId
+     * @param  ?\SineMacula\Laravel\Authorization\Administration\ActingContext  $actor
      * @return void
      *
      * @throws \Throwable
      */
-    private function grant(?string $tenantId): void
+    private function grant(?string $tenantId, ?ActingContext $actor = null): void
     {
         $service = $this->app?->make(GrantService::class) ?? self::fail('The application has not booted.');
 
-        $service->grantRole($this->person(), self::ROLE, tenant: $tenantId === null ? null : new Reference(self::TENANT_TYPE, $tenantId), includeSubtree: false);
+        $service->grantRole($this->person(), self::ROLE, actor: $actor, tenant: $tenantId === null ? null : new Reference(self::TENANT_TYPE, $tenantId), includeSubtree: false);
+    }
+
+    /**
+     * An administrator who may grant roles, rank aside, acting for themselves.
+     *
+     * @return \SineMacula\Laravel\Authorization\Administration\ActingContext
+     *
+     * @throws \Throwable
+     */
+    private function actor(): ActingContext
+    {
+        $admin      = Staff::query()->create(['name' => 'Grace Hopper', 'email' => 'grace@example.test']);
+        $permission = Permission::query()->create(['name' => PackagePermissions::ROLE_GRANT]);
+
+        $this->app?->make(GrantService::class)->grantPermission($admin, $permission);
+
+        Config::set('authorization.rank.enabled', false);
+
+        return ActingContext::for($admin);
     }
 
     /**

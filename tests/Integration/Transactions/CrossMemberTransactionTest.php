@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authorization\Exceptions\TransactionConflictException;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use Tests\Concerns\RunsAtIsolationLevels;
@@ -114,6 +115,8 @@ final class CrossMemberTransactionTest extends TestCase
         yield 'link candidates changed' => [LinkCandidatesChanged::retryWhole()];
 
         yield 'a concurrency failure wrapped' => [new \RuntimeException('Redemption failed.', 0, LinkCandidatesChanged::retryWhole())];
+
+        yield 'a nested grant\'s conflict' => [new TransactionConflictException(LinkCandidatesChanged::retryWhole())];
     }
 
     /**

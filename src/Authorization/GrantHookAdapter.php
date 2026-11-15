@@ -4,18 +4,14 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Authorization;
 
-use Illuminate\Database\DeadlockException;
-use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authorization\Contracts\GrantHook;
-use SineMacula\Laravel\Authorization\Exceptions\TransactionConflictException;
 use SineMacula\Laravel\Authorization\Hooks\GrantWidening;
 use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\IdentityReferences;
 use SineMacula\Laravel\Iam\Tenancy\ScopeWidenings;
-use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 use SineMacula\Laravel\Sso\Identities\IdentityReference;
 
 /**
@@ -55,7 +51,6 @@ final readonly class GrantHookAdapter implements GrantHook
      * @return void
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \Illuminate\Database\DeadlockException
      * @throws \InvalidArgumentException
      * @throws \LogicException
      * @throws \Throwable
@@ -85,38 +80,8 @@ final readonly class GrantHookAdapter implements GrantHook
         $client   = new ClientContext($widening->ip, $widening->userAgent);
 
         foreach ($this->tenantsOf($widening) as $tenantId) {
-            $this->widen($identity, $tenantId, $client);
-        }
-    }
-
-    /**
-     * Report the widening for one tenant; a changed candidate is retried.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
-     * @param  ?string  $tenantId
-     * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    private function widen(Identity $identity, ?string $tenantId, ClientContext $client): void
-    {
-        try {
             $this->widenings->widen([$identity], $tenantId, $client);
-        } catch (LinkCandidatesChanged $changed) {
-            throw self::concurrencyError($changed);
         }
-    }
-
-    /**
-     * SSO's refusal as a serialisation failure `laravel-authorization` retries.
-     *
-     * @param  \SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged  $changed
-     * @return \Illuminate\Database\DeadlockException
-     */
-    private static function concurrencyError(LinkCandidatesChanged $changed): DeadlockException
-    {
-        return new DeadlockException($changed->getMessage(), TransactionConflictException::SERIALIZATION_FAILURE, $changed);
     }
 
     /**

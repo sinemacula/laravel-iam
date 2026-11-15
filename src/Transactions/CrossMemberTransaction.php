@@ -9,7 +9,6 @@ use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\DeadlockException;
 use SineMacula\Laravel\Iam\Storage\StorageConnection;
-use SineMacula\Laravel\Sso\Exceptions\LinkCandidatesChanged;
 
 /**
  * Runs a change that spans members in one transaction on the storage
@@ -73,8 +72,7 @@ final readonly class CrossMemberTransaction
     /**
      * Run the work, rethrowing any concurrency failure as SQLSTATE 40001.
      *
-     * Laravel's detector misses SSO's `LinkCandidatesChanged`, and a nested
-     * transaction drops PostgreSQL's string SQLSTATE.
+     * A nested transaction drops PostgreSQL's string SQLSTATE.
      *
      * @template T
      *
@@ -92,7 +90,7 @@ final readonly class CrossMemberTransaction
 
             for ($link = $exception; $link !== null; $link = $link->getPrevious()) {
 
-                if ($link instanceof LinkCandidatesChanged || $this->detector->causedByConcurrencyError($link)) {
+                if ($this->detector->causedByConcurrencyError($link)) {
                     throw new DeadlockException($exception->getMessage(), 40001, $exception);
                 }
             }

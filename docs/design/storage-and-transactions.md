@@ -29,8 +29,3 @@ Every member's tables live on one connection, so a change that spans members com
 Laravel's `afterCommit()` waits on whichever connection opened a transaction last. Work that must wait on the storage
 connection's commit goes through laravel-mfa's `AfterStorageCommit::run()`. `ConnectionTransactions::open()` lists one
 connection's open transactions.
-
-## Member gaps
-
-- `laravel-sso`: `LinkCandidatesChanged` is not a concurrency error Laravel's detector recognises, so it is matched by
-  class.
