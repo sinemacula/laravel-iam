@@ -30,6 +30,7 @@ final readonly class Checker
         ContextNamespacesCheck::class,
         AuditCheck::class,
         CrossMemberConfigurationCheck::class,
+        MachineMarkerCheck::class,
         SchedulesCheck::class,
     ];
 

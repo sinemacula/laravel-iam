@@ -101,6 +101,7 @@ final class CheckerTest extends TestCase
             '[ContextNamespacesCheck] OK',
             '[AuditCheck] OK',
             '[CrossMemberConfigurationCheck] OK',
+            '[MachineMarkerCheck] OK',
             '[SchedulesCheck] OK',
             'Every check passed.',
         ], $output);
