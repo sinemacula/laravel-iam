@@ -286,6 +286,11 @@ enforcement from the nearest tenant, from itself up, with a rule stored, on or o
 sessions of the enforcing tenant and every tenant below it. With `laravel-authorization`'s flat default every tenant
 stands alone.
 
+SSO reads a tenant's ancestors inside a sign-in's transaction, and again once it holds the rules on the way, so
+`ancestors()` must read the tree current: a plain read at `READ COMMITTED`, a locking read (`sharedLock()`) under
+`REPEATABLE READ`. A move that changes the answer meanwhile makes SSO throw `EnforcementPathChanged`, and the sign-in
+runs again.
+
 Report every move of a tenant inside the transaction that writes it, after the write, and a removal as the move of
 each child moved out from under the removed tenant:
 
@@ -299,11 +304,12 @@ Iam::transaction(function () use ($organisation, $parentId): void {
 });
 ```
 
-The report passes the move to `laravel-authorization` (`Authorization::treeChanged()`: do not call it yourself beside
-it). While the authorization and SSO adapters are on, it reports everyone granted in the moved subtree to SSO's
-[scope widening](#scope-widening), since no grant hook runs for a move. While SSO's enforcement is on or MFA's tenant
-requirement is bound, it judges the sessions of the moved subtree, once in the transaction and once more after it
-commits. It resolves each tenant through your [tenant resolver](#the-tenant-resolver).
+The report first locks the moved tenant's SSO enforcement row (`EnforcementService::lockTenants()`), so a sign-in on
+its path waits for the move or sees it. It passes the move to `laravel-authorization` (`Authorization::treeChanged()`:
+do not call it yourself beside it). While the authorization and SSO adapters are on, it reports everyone granted in the
+moved subtree to SSO's [scope widening](#scope-widening), since no grant hook runs for a move. While SSO's enforcement
+is on or MFA's tenant requirement is bound, it judges the sessions of the moved subtree, once in the transaction and
+once more after it commits. It resolves each tenant through your [tenant resolver](#the-tenant-resolver).
 
 ## The tenant MFA requirement
 

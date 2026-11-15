@@ -4,14 +4,12 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Tenancy;
 
-use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
-use SineMacula\Laravel\Sso\Enforcement\EnforcementService;
 
 /**
  * Answers SSO's enforcement inheritance from `laravel-authorization`'s tenant
- * tree: the nearest tenant, from the one asked up, with a stored rule.
+ * tree: the path from the tenant up to the nearest tenant with a stored rule.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -23,14 +21,10 @@ final readonly class EnforcementInheritanceAdapter implements EnforcementInherit
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
      * @param  \SineMacula\Laravel\Iam\Tenancy\TenancyContracts  $contracts
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      */
     public function __construct(
-
-        /** Resolves SSO's reader of the stored rules on every call. */
-        private Container $container,
 
         /** Finds `laravel-authorization`'s tenant tree on every call. */
         private TenancyContracts $contracts,
@@ -40,35 +34,37 @@ final readonly class EnforcementInheritanceAdapter implements EnforcementInherit
     ) {}
 
     /**
-     * The nearest tenant from the tenant up with a rule, else the tenant.
+     * The tenant up to the nearest tenant with a rule, else up to its root.
      *
      * @param  string  $tenantId
      * @param  string  $application
-     * @return string
+     * @param  \Closure(string): bool  $isConfigured
+     * @return non-empty-list<string>
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     #[\Override]
-    public function enforcingTenant(string $tenantId, string $application): string
+    public function enforcementPath(string $tenantId, string $application, \Closure $isConfigured): array
     {
-        $tree  = $this->contracts->tree();
-        $rules = $this->container->make(EnforcementService::class);
+        $tree = $this->contracts->tree();
 
-        if ($tree === null || $rules->get($tenantId)->version !== null) {
-            return $tenantId;
+        if ($tree === null || $isConfigured($tenantId)) {
+            return [$tenantId];
         }
+
+        $path = [$tenantId];
 
         foreach ($tree->ancestors($this->tenants->toReference($tenantId)) as $ancestor) {
 
             $ancestorId = $this->tenants->idOf($ancestor);
+            $path[]     = $ancestorId;
 
-            if ($rules->get($ancestorId)->version !== null) {
-                return $ancestorId;
+            if ($isConfigured($ancestorId)) {
+                break;
             }
         }
 
-        return $tenantId;
+        return $path;
     }
 }
