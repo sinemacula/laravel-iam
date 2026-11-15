@@ -9,6 +9,9 @@ connection, so a change that spans members commits as one.
   for `laravel-authorization`). A key naming another connection refuses boot with `StorageConnectionMismatchException`.
 - `laravel-audit-log` may keep its own connection; `iam:check` notes that its refusal of a read of the trail inside a
   change does not cover it.
+- SSO's attempt counters belong on `sso.rate_limits.connection`, off the storage connection, so a redemption rolled
+  back still counts its attempt. While SSO is in use and its own limiter is bound, `iam:check` notes counters on the
+  storage connection.
 - The keys are aligned at registration, again once every provider has registered, and checked once more after boot,
   since a provider's `boot()` can still register a member or change a key.
 - The check is skipped while a configuration command or `iam:check` runs, so a bad value can still be inspected and

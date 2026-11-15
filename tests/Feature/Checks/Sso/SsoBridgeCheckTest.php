@@ -14,6 +14,7 @@ use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
 use SineMacula\Laravel\Sso\Contracts\Linker;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
 use Tests\Concerns\RunsChecks;
@@ -60,6 +61,7 @@ final class SsoBridgeCheckTest extends TestCase
                 'applications' => ['api' => ['unlinked_handoffs' => false], 'admin' => []],
                 'endpoints'    => ['base_url' => 'https://sso.test'],
                 'storage'      => ['connection' => 'main'],
+                'rate_limits'  => ['connection' => 'counters'],
             ],
         ]);
 
@@ -114,6 +116,60 @@ final class SsoBridgeCheckTest extends TestCase
     public function testAConfigurationThatHoldsPasses(): void
     {
         self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], self::notes($this->check()->checks()));
+    }
+
+    /**
+     * Rows of `[storage connection, counters' connection, noted]`.
+     *
+     * @return iterable<string, array{?string, mixed, bool}>
+     */
+    public static function provideCounterConnections(): iterable
+    {
+        yield 'counters unset' => [null, null, true];
+        yield 'counters empty' => [null, '', true];
+        yield 'counters malformed' => [null, ['main'], false];
+        yield 'counters on the default storage' => [null, 'main', true];
+        yield 'counters on the named storage' => ['shared', 'shared', true];
+        yield 'counters on their own connection' => [null, 'counters', false];
+        yield 'counters on the default beside named storage' => ['shared', 'main', false];
+    }
+
+    /**
+     * SSO's attempt counters on the storage connection are noted.
+     *
+     * @param  ?string  $storage
+     * @param  mixed  $counters
+     * @param  bool  $noted
+     * @return void
+     */
+    #[DataProvider('provideCounterConnections')]
+    public function testCountersOnTheStorageConnectionAreNoted(?string $storage, mixed $counters, bool $noted): void
+    {
+        $this->config->set('iam.storage.connection', $storage);
+        $this->config->set('sso.rate_limits.connection', $counters);
+
+        $note = '`sso.rate_limits.connection` leaves SSO\'s attempt counters on `iam.storage.connection`: a refused redemption'
+            . ' rolls its attempt back; give them a connection of their own and create their table on it.';
+
+        self::assertSame($noted ? [$note] : [], self::notes($this->check()->checks()));
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * A limiter of the application's own is not noted.
+     *
+     * @return void
+     */
+    public function testCountersOfAnotherLimiterAreNotNoted(): void
+    {
+        $this->config->set('sso.rate_limits.connection', null);
+
+        self::assertCount(1, self::notes($this->check()->checks()));
+
+        $this->container->instance(AttemptLimiter::class, \Mockery::mock(AttemptLimiter::class));
+
+        self::assertSame([], self::notes($this->check()->checks()));
     }
 
     /**

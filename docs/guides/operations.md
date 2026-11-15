@@ -214,7 +214,9 @@ Each member's own transaction inside it is a savepoint, so all of it commits or 
 - **SSO's starts and completions** talk to the provider and refuse to run inside a transaction.
 
 The sign-in and re-authentication redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried
-the same way.
+the same way. SSO's attempt counters, on a connection of their own (`sso.rate_limits.connection`, see
+[The storage connection](installation.md#the-storage-connection)), sit outside it: a redemption rolled back keeps its
+attempt, and each retry counts another.
 
 ## Workers and Octane
 

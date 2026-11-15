@@ -113,7 +113,8 @@ A run fails (exit code 1) when a tag it publishes is not registered; the rest is
 ## The storage connection
 
 `laravel-authentication`'s, `laravel-authorization`'s, MFA's and SSO's tables live on one database connection, so a
-change that spans them commits or rolls back as one. Name it once:
+change that spans them commits or rolls back as one. SSO's attempt counters are the one exception (below). Name it
+once:
 
 ```dotenv
 IAM_STORAGE_CONNECTION=mysql
@@ -124,6 +125,21 @@ Leave it unset for the default connection. The package writes it into `authentic
 leave them unset. A member key that names another connection refuses the boot
 (`SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException`): unset it, or set it to the same connection.
 `laravel-audit-log`'s tables follow `audit-log.storage.connection`, the default connection when unset.
+
+SSO's attempt counters need a connection of their own. The package runs each SSO redemption in one transaction on the
+storage connection and rolls it back when the sign-in is refused, so a counter on that connection loses the refused
+attempt. While SSO is in use, name another connection in `sso.rate_limits.connection` before you migrate, since SSO's
+migration creates the counters' table on it. An application that has already migrated has that table on the storage
+connection: create it on the new connection with a migration you perform before you set the key:
+
+```dotenv
+SSO_RATE_LIMITS_CONNECTION=sso_counters
+```
+
+On MySQL and PostgreSQL it can be a second entry in `database.connections` with the same settings as the storage
+connection. On SQLite give it another database file: SQLite takes one writer per file, so a second connection to the
+same file can wait on the storage connection's transaction. `iam:check` notes counters left on the storage connection,
+unless you bind SSO's `AttemptLimiter` yourself.
 
 Your own models belong on that connection too:
 
