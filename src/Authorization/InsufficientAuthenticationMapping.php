@@ -14,10 +14,8 @@ use SineMacula\Laravel\Authorization\Evaluation\RequirementFreshness;
 use SineMacula\Laravel\Authorization\Exceptions\InsufficientAuthenticationException as AuthorizationRefusal;
 use SineMacula\Laravel\Iam\Authorization\Translation\RequirementTranslator;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
-use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Exceptions\InsufficientAuthenticationException as StepUp;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
-use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -90,9 +88,7 @@ final readonly class InsufficientAuthenticationMapping
                 continue;
             }
 
-            $confirmed = array_filter(Mfa::factors($caller), static fn (FactorSummary $factor): bool => $factor->status === FactorStatus::CONFIRMED);
-
-            return new StepUp($requirement, Mfa::offeredFactors($caller), null, $confirmed !== []);
+            return Mfa::stepUpRefusal($caller, $requirement);
         }
 
         return null;
