@@ -22,7 +22,8 @@ and how `iam:check` runs every member's check and this package's own.
 - `Iam::schedule()` registers `mfa:prune` and `authorization:prune` daily, SSO's `OperationsSchedule::register()`, and
   `audit-log:drain --until-empty` every minute while audit-log delivers through its outbox.
 - Audit-log's own seal, sweep, verify and prune are never registered again; it schedules them itself.
-- No task has a cache mutex: every command is safe on several servers, and a stale mutex would suppress maintenance.
+- None of this package's own tasks has a cache mutex: every command is safe on several servers, and a stale mutex
+  would suppress maintenance. SSO's take one only while `sso.operations.cache_mutexes` is on.
 
 ## Platform
 
