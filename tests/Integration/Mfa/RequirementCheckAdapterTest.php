@@ -313,6 +313,25 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
+     * A level met within an age holds until its proof ages out.
+     *
+     * @return void
+     */
+    public function testALevelMetWithinAnAgeHoldsUntilItsProofAgesOut(): void
+    {
+        $now     = CarbonImmutable::now()->startOfSecond();
+        $subject = self::subject($this->createPerson(), $now, [self::further('totp', $now->subSeconds(30))], $now->subSeconds(40));
+
+        $met   = $this->adapter()->evaluate($subject, new Requirement(minimumLevel: new LevelRequirement(AssuranceLevel::AAL2, 300)));
+        $unmet = $this->adapter()->evaluate($subject, new Requirement(minimumLevel: new LevelRequirement(AssuranceLevel::AAL2, 20)));
+
+        self::assertTrue($met->isMet());
+        self::assertEquals($now->addSeconds(270), $met->metUntil);
+        self::assertSame([RequirementKind::MINIMUM_LEVEL], $unmet->unmet);
+        self::assertNull($unmet->metUntil);
+    }
+
+    /**
      * An identity MFA holds no factors for is refused.
      *
      * @return void

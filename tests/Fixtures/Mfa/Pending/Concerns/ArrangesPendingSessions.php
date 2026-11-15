@@ -110,7 +110,7 @@ trait ArrangesPendingSessions
      */
     protected function pendingContextFor(#[\SensitiveParameter] string $credential): PendingContext
     {
-        $pending = $this->pendingResolver()->fromRequest(self::requestCarrying($credential));
+        $pending = $this->pendingResolver()->fromRequest(self::requestCarrying($credential), self::GUARD);
 
         self::assertNotNull($pending);
 

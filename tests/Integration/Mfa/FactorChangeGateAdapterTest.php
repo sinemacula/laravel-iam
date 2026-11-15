@@ -171,8 +171,8 @@ final class FactorChangeGateAdapterTest extends TestCase
     {
         $change = $this->steppedUpChange(FactorChange::ADD_FACTOR, Requirement::none()->withMinimumLevel(AssuranceLevel::AAL2, 600));
 
-        $message = 'laravel-authentication\'s freshness cannot hold a session to a minimum assurance level, which its proofs do not record:'
-            . ' configure the operation\'s freshness without one, or bind a gate of your own that judges it.';
+        $message = 'laravel-authentication\'s factor-change gate cannot hold a session to a minimum assurance level:'
+            . ' configure the change\'s freshness without one, or bind a gate of your own that judges it.';
 
         $this->expectExceptionObject(new \InvalidArgumentException($message));
 

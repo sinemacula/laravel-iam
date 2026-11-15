@@ -19,8 +19,10 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose as AuthenticationPurpose;
 use SineMacula\Laravel\Authentication\Requirements\Enums\AssuranceLevel;
+use SineMacula\Laravel\Authentication\Requirements\Enums\RequirementKind;
 use SineMacula\Laravel\Authentication\Requirements\LevelRequirement;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
+use SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation;
 use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Sessions\AccessTokenResult;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
@@ -508,32 +510,60 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
     {
         $fresh = new Requirement(multifactor: new RequirementPart(600));
 
-        self::assertFalse($this->adapter()->meets($this->evidence(), $fresh, $this->subject()));
+        self::assertSame([RequirementKind::MULTIFACTOR], $this->adapter()->meets($this->evidence(), $fresh, $this->subject())->unmet);
 
         $this->trust([$this->connectionId]);
 
-        self::assertTrue($this->adapter()->meets($this->evidence(), $fresh, $this->subject()));
+        $met = $this->adapter()->meets($this->evidence(), $fresh, $this->subject());
+
+        self::assertTrue($met->isMet());
+        self::assertEquals($this->authenticatedAt->addSeconds(600), $met->metUntil);
+        self::assertNull($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject())->metUntil);
 
         $this->travel(601)->seconds();
 
-        self::assertFalse($this->adapter()->meets($this->evidence(), $fresh, $this->subject()));
-        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject()));
+        self::assertFalse($this->adapter()->meets($this->evidence(), $fresh, $this->subject())->isMet());
+        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject())->isMet());
     }
 
     /**
-     * A requirement that asks for nothing is never met.
+     * A minimum level within an age is met until the evidence ages out.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testARequirementThatAsksForNothingIsNeverMet(): void
+    public function testAMinimumLevelWithinAnAgeIsMetUntilTheEvidenceAgesOut(): void
+    {
+        $level = new Requirement(minimumLevel: new LevelRequirement(AssuranceLevel::AAL2, 600));
+
+        self::assertSame([RequirementKind::MINIMUM_LEVEL], $this->adapter()->meets($this->evidence(), $level, $this->subject())->unmet);
+
+        $this->trust([$this->connectionId]);
+
+        self::assertEquals($this->authenticatedAt->addSeconds(600), $this->adapter()->meets($this->evidence(), $level, $this->subject())->metUntil);
+        self::assertSame([RequirementKind::MINIMUM_LEVEL], $this->adapter()->meets($this->evidence(), $level, $this->subject(tenant: self::OTHER_TENANT))->unmet);
+
+        $this->travel(601)->seconds();
+
+        self::assertFalse($this->adapter()->meets($this->evidence(), $level, $this->subject())->isMet());
+    }
+
+    /**
+     * A requirement that asks for nothing is never accepted, and MFA is not
+     * asked about it.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testARequirementThatAsksForNothingIsNeverAccepted(): void
     {
         $policy = $this->trust([$this->connectionId]);
 
         $this->admitWith($this->accepted());
 
-        self::assertFalse($this->adapter()->meets($this->evidence(), new Requirement, $this->subject()));
+        self::assertEquals(new RequirementEvaluation([]), $this->adapter()->meets($this->evidence(), new Requirement, $this->subject()));
         self::assertFalse($this->adapter()->accepts($this->evidence(), new Requirement, $this->subject()));
         self::assertSame([], $policy->asked);
     }
@@ -555,11 +585,11 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
 
         $this->trust([$this->connectionId, $foreign, 'no-such-connection']);
 
-        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::TENANT)));
-        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT)));
-        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject($foreign, self::OTHER_TENANT)));
-        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject($foreign, self::TENANT)));
-        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject('no-such-connection', self::TENANT)));
+        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::TENANT))->isMet());
+        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT))->isMet());
+        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject($foreign, self::OTHER_TENANT))->isMet());
+        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject($foreign, self::TENANT))->isMet());
+        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject('no-such-connection', self::TENANT))->isMet());
     }
 
     /**
@@ -582,8 +612,8 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
 
         $this->app?->instance(Enforcement::class, $enforcement);
 
-        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT)));
-        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT, application: 'portal')));
+        self::assertTrue($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT))->isMet());
+        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $this->subject(tenant: self::OTHER_TENANT, application: 'portal'))->isMet());
     }
 
     /**
@@ -602,7 +632,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
             $queries++;
         });
 
-        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $subject));
+        self::assertFalse($this->adapter()->meets($this->evidence(), self::multifactor(), $subject)->isMet());
         self::assertSame(0, $queries);
     }
 

@@ -267,7 +267,8 @@ final class ProofTranslatorTest extends TestCase
     }
 
     /**
-     * A provider's proof names its connection only with accepted evidence.
+     * A provider's proof names its connection and evidence only with accepted
+     * evidence.
      *
      * @param  bool  $reauthentication
      * @param  bool  $accepted
@@ -284,7 +285,10 @@ final class ProofTranslatorTest extends TestCase
         $proof   = self::recorded($kind, $purpose, $channel, 'external_provider', evidence: $accepted ? self::evidence() : null);
         $trust   = $counted ? ProviderTrust::accepted(null) : ProviderTrust::withheld();
 
-        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, $connection, self::translator()->toMfa($proof, self::signIn(), $trust)->channel);
+        $translated = self::translator()->toMfa($proof, self::signIn(), $trust);
+
+        self::assertChannel(MfaChannelKind::EXTERNAL_PROVIDER, $connection, $translated->channel);
+        self::assertSame($connection === null ? null : ['pwd', 'mfa'], $translated->evidence?->methods);
     }
 
     /**

@@ -25,7 +25,7 @@ keeps nothing between calls. [Bindings](bindings.md) says, for each, how to repl
 | MFA `StepUp`                                               | `stepUp()` on the session                                                    | a step-up is recorded on the session and returns a new access token                                                               |
 | MFA `ProofStore`, `FirstFactorResolver`                    | the session's own proofs                                                     | proofs live on the authentication session, so a stateless guard works                                                             |
 | Auth's `mfa` context namespace                             | MFA's own contributor, from the session's proofs                             | `Auth::context()` reports MFA's view of the session it was built for, in a request or a queued job                                |
-| MFA `Reauthenticator`, `FreshnessGate`                     | `laravel-authentication`'s freshness policy                                  | freshness is judged once, by the session's proofs                                                                                 |
+| MFA `Reauthenticator`, `FreshnessGate`                     | `laravel-authentication`'s freshness policy                                  | freshness is judged in one place, from the session's proofs and accepted evidence                                                 |
 | MFA `FactorChangeGate`                                     | `factorChange()` under the session's lock                                    | a factor change takes a fresh step-up, judged as committed                                                                        |
 | MFA `SessionRevoker` (mandatory)                           | `factorRemoved()` and `factorReset()`                                        | removing a factor or resetting an identity ends the sessions it should                                                            |
 | MFA `SessionTransition`                                    | `factorChanged()`                                                            | a session short of its requirement after a change returns to pending                                                              |
@@ -114,8 +114,9 @@ The gate raises MFA's `InsufficientAuthenticationException`, which you answer in
 Adding or removing a factor, and generating recovery codes, takes a fresh step-up, judged by `laravel-authentication`
 under the session's lock; an identity's first additional factor takes a fresh reauthentication instead. Declare MFA's
 freshness operations for each MFA application's guard (see [Installation](installation.md#guards-and-applications)). A
-minimum assurance level in MFA's own freshness settings is refused with an `InvalidArgumentException`, since no stored
-proof records a level.
+minimum assurance level in MFA's freshness settings for a factor change is refused with an `InvalidArgumentException`
+when the change is made, since `laravel-authentication`'s factor-change gate holds no level. MFA's freshness gate, which
+`Mfa::isFresh()` and the route gate ask, judges a minimum level within its age.
 
 Removing a factor ends every other session of the identity and voids the current session's proofs made with it;
 resetting an identity ends all of its sessions. When the current session is returned to pending, the removal's
@@ -132,7 +133,8 @@ every message's wording and template.
   `ChallengeGateway` to send it with MFA's own.
 - MFA's `SmsSender` and `EmailSender` forward to your sender in the same way, so a code MFA sends itself, once you rebind
   its `ChallengeGateway`, reaches it too, synchronously inside MFA's transaction.
-- While an MFA application offers `sms` or `email`, the application does not boot until a `OneTimeCodeSender` is bound.
+- While an MFA application offers `sms` or `email`, requests and workers are refused and `iam:check` fails until a
+  `OneTimeCodeSender` is bound.
 
 `laravel-authentication`'s own codes carry the identifier type (`email` or `phone`), so route `email` to email and
 `phone` or `sms` to SMS. [Testing](testing.md) shows the fake senders.

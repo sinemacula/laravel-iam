@@ -111,6 +111,3 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   `MachineIdentity`, so the session policy source answers `[]` for a machine itself.
 - `laravel-authorization` names a tenant by morph type and key (`Support\Reference`), never by
   `laravel-authentication`'s identifier, so `TenantTranslator` equates the two.
-- `laravel-mfa`'s `ConfirmedFactors` is `@internal`, so the step-up mapping filters `Mfa::factors()` for a confirmed
-  factor.
-- `laravel-mfa` exports no typed schema of its context keys, so `AuthenticationContextKeys` lists them.

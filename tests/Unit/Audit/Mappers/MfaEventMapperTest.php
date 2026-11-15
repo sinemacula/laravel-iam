@@ -17,6 +17,7 @@ use SineMacula\Laravel\Iam\Audit\Mappers\MfaEventMapper;
 use SineMacula\Laravel\Iam\Audit\Mappers\Snapshot;
 use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Mfa\Contracts\MfaEvent;
+use SineMacula\Laravel\Mfa\Enums\AbandonmentCause;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
@@ -110,7 +111,9 @@ final class MfaEventMapperTest extends TestCase
 
         yield 'an enrolment started' => [new EnrollmentStarted($context, $factor), MfaActivity::ENROLLMENT_STARTED, $kept];
 
-        yield 'an enrolment abandoned' => [new EnrollmentAbandoned($context, $factor), MfaActivity::ENROLLMENT_ABANDONED, $kept];
+        $abandoned = new EnrollmentAbandoned($context, $factor, AbandonmentCause::CANCELLED);
+
+        yield 'an enrolment abandoned' => [$abandoned, MfaActivity::ENROLLMENT_ABANDONED, [...$kept, 'cause' => 'cancelled']];
 
         yield 'an enrolment expired' => [new EnrollmentExpired($context, $factor), MfaActivity::ENROLLMENT_EXPIRED, $kept];
 
@@ -449,13 +452,13 @@ final class MfaEventMapperTest extends TestCase
     {
         $reset = [...self::context(), 'application' => null, 'session_id' => null];
 
-        yield 'by an operator\'s reset' => [new EnrollmentAbandoned($reset, self::factor())];
+        yield 'by a reset no operator named' => [new EnrollmentAbandoned($reset, self::factor(), AbandonmentCause::RESET)];
 
-        yield 'once its confirmation attempts run out' => [new EnrollmentAbandoned(self::context(), self::factor())];
+        yield 'once its confirmation attempts run out' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::ATTEMPTS_EXHAUSTED)];
 
-        yield 'by its replacement' => [new EnrollmentAbandoned(self::context(), self::factor())];
+        yield 'by its replacement' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::RESTARTED)];
 
-        yield 'by its cancellation' => [new EnrollmentAbandoned(self::context(), self::factor())];
+        yield 'by its cancellation' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::CANCELLED)];
     }
 
     /**
@@ -476,6 +479,22 @@ final class MfaEventMapperTest extends TestCase
         self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->subject?->toArray());
         self::assertNull($snapshot->principal);
         self::assertSame(['type' => References::TENANT_TYPE, 'id' => 'tenant-9'], $snapshot->tenant?->toArray());
+    }
+
+    /**
+     * An enrolment an operator's reset abandoned is the operator's act.
+     *
+     * @return void
+     */
+    public function testAnEnrolmentAnOperatorAbandonedIsTheOperators(): void
+    {
+        $reset    = [...self::context(), 'application' => null, 'session_id' => null];
+        $event    = new EnrollmentAbandoned($reset, self::factor(), AbandonmentCause::RESET, new Actor(Person::class, '1'));
+        $snapshot = self::snapshotOf($event);
+
+        self::assertSame(['type' => Person::class, 'id' => '1'], $snapshot->actor?->toArray());
+        self::assertSame(['type' => Person::class, 'id' => '7'], $snapshot->subject?->toArray());
+        self::assertSame('reset', $snapshot->properties['cause'] ?? null);
     }
 
     /**

@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace SineMacula\Laravel\Iam\Mfa;
 
 use Illuminate\Http\Request;
-use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
@@ -59,9 +58,10 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
     ) {}
 
     /**
-     * The pending sign-in the request's credential names on the default guard.
+     * The pending sign-in the request's credential names on the guard.
      *
      * @param  \Illuminate\Http\Request  $request
+     * @param  string  $guard
      * @return ?\SineMacula\Laravel\Mfa\Context\PendingContext
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -70,9 +70,8 @@ final readonly class PendingSessionResolverAdapter implements PendingSessionReso
      * @throws \Throwable
      */
     #[\Override]
-    public function fromRequest(Request $request): ?PendingContext
+    public function fromRequest(Request $request, string $guard): ?PendingContext
     {
-        $guard      = Auth::getDefaultDriver();
         $credential = PendingCredential::extract($request);
 
         if ($credential === null) {

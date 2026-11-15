@@ -124,8 +124,8 @@ final readonly class MfaEventMapper implements EventMapper
     }
 
     /**
-     * Who the record says acted when the event names no operator; MFA's
-     * `EnrollmentAbandoned` names no cause or operator, so it is the caller's.
+     * Who the record says acted when the event names no operator; an
+     * abandonment no operator caused is the caller's.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MfaEvent  $event
      * @return \SineMacula\Laravel\Iam\Audit\Mappers\Enums\Attribution
@@ -153,6 +153,7 @@ final readonly class MfaEventMapper implements EventMapper
     private static function operator(MfaEvent $event): ?Reference
     {
         $actor = match (true) {
+            $event instanceof EnrollmentAbandoned,
             $event instanceof FactorsReset,
             $event instanceof FactorEnabled,
             $event instanceof FactorRemoved,
@@ -233,6 +234,7 @@ final readonly class MfaEventMapper implements EventMapper
     private static function details(MfaEvent $event): array
     {
         return match (true) {
+            $event instanceof EnrollmentAbandoned    => ['cause' => $event->cause->value],
             $event instanceof FactorsReset           => ['reenrollment_required' => $event->reenrollmentRequired, 'unreadable_factors' => $event->unreadableFactors],
             $event instanceof LockoutApplied         => ['locked_until' => $event->lockedUntil],
             $event instanceof PreferredFactorChanged => ['previous_factor_id' => $event->previous?->id],
