@@ -8,6 +8,7 @@ use SineMacula\Laravel\AuditLog\Contracts\EventMapper;
 use SineMacula\Laravel\AuditLog\Records\PendingRecord;
 use SineMacula\Laravel\AuditLog\Records\Reference;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
+use SineMacula\Laravel\Authorization\Enums\MutationOperation;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport;
 use SineMacula\Laravel\Authorization\Evaluation\StatementReference;
 use SineMacula\Laravel\Authorization\Events\DecisionEvaluated;
@@ -29,57 +30,57 @@ use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
  */
 final readonly class AuthorizationEventMapper implements EventMapper
 {
-    /** @var array<string, \SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity> The code of each change, by its operation identifier. */
+    /** @var array<string, \SineMacula\Laravel\Iam\Audit\Enums\AuthorizationActivity> The code of each change, by its operation. */
     private const array CODES = [
-        'role.created'                       => AuthorizationActivity::ROLE_CREATED,
-        'role.updated'                       => AuthorizationActivity::ROLE_UPDATED,
-        'role.deleted'                       => AuthorizationActivity::ROLE_DELETED,
-        'role.exclusion.declared'            => AuthorizationActivity::ROLE_EXCLUSION_DECLARED,
-        'role.exclusion.removed'             => AuthorizationActivity::ROLE_EXCLUSION_REMOVED,
-        'permission.created'                 => AuthorizationActivity::PERMISSION_CREATED,
-        'permission.updated'                 => AuthorizationActivity::PERMISSION_UPDATED,
-        'permission.deleted'                 => AuthorizationActivity::PERMISSION_DELETED,
-        'policy.created'                     => AuthorizationActivity::POLICY_CREATED,
-        'policy.updated'                     => AuthorizationActivity::POLICY_UPDATED,
-        'policy.deleted'                     => AuthorizationActivity::POLICY_DELETED,
-        'role.permission.granted'            => AuthorizationActivity::PERMISSION_GRANTED,
-        'role.permission.revoked'            => AuthorizationActivity::PERMISSION_REVOKED,
-        'role.permission.expired'            => AuthorizationActivity::GRANT_EXPIRED,
-        'role.permission.expiry_changed'     => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
-        'identity.role.assigned'             => AuthorizationActivity::ROLE_ASSIGNED,
-        'identity.role.revoked'              => AuthorizationActivity::ROLE_UNASSIGNED,
-        'identity.role.expired'              => AuthorizationActivity::GRANT_EXPIRED,
-        'identity.role.expiry_changed'       => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
-        'identity.permission.granted'        => AuthorizationActivity::PERMISSION_ASSIGNED,
-        'identity.permission.revoked'        => AuthorizationActivity::PERMISSION_UNASSIGNED,
-        'identity.permission.expired'        => AuthorizationActivity::GRANT_EXPIRED,
-        'identity.permission.expiry_changed' => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
-        'identity.policy.attached'           => AuthorizationActivity::POLICY_ATTACHED,
-        'identity.policy.detached'           => AuthorizationActivity::POLICY_DETACHED,
-        'identity.policy.expired'            => AuthorizationActivity::GRANT_EXPIRED,
-        'identity.policy.expiry_changed'     => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
-        'identity.boundary.set'              => AuthorizationActivity::BOUNDARY_SET,
-        'identity.boundary.removed'          => AuthorizationActivity::BOUNDARY_REMOVED,
-        'guardrail.set'                      => AuthorizationActivity::GUARDRAIL_SET,
-        'guardrail.removed'                  => AuthorizationActivity::GUARDRAIL_REMOVED,
-        'resource.policy.attached'           => AuthorizationActivity::RESOURCE_POLICY_ATTACHED,
-        'resource.policy.detached'           => AuthorizationActivity::RESOURCE_POLICY_DETACHED,
-        'identity.break_glass.activated'     => AuthorizationActivity::BREAK_GLASS_ACTIVATED,
-        'identity.break_glass.surrendered'   => AuthorizationActivity::BREAK_GLASS_SURRENDERED,
-        'identity.break_glass.revoked'       => AuthorizationActivity::BREAK_GLASS_REVOKED,
-        'identity.break_glass.expired'       => AuthorizationActivity::BREAK_GLASS_EXPIRED,
+        MutationOperation::ROLE_CREATED->value                       => AuthorizationActivity::ROLE_CREATED,
+        MutationOperation::ROLE_UPDATED->value                       => AuthorizationActivity::ROLE_UPDATED,
+        MutationOperation::ROLE_DELETED->value                       => AuthorizationActivity::ROLE_DELETED,
+        MutationOperation::ROLE_EXCLUSION_DECLARED->value            => AuthorizationActivity::ROLE_EXCLUSION_DECLARED,
+        MutationOperation::ROLE_EXCLUSION_REMOVED->value             => AuthorizationActivity::ROLE_EXCLUSION_REMOVED,
+        MutationOperation::PERMISSION_CREATED->value                 => AuthorizationActivity::PERMISSION_CREATED,
+        MutationOperation::PERMISSION_UPDATED->value                 => AuthorizationActivity::PERMISSION_UPDATED,
+        MutationOperation::PERMISSION_DELETED->value                 => AuthorizationActivity::PERMISSION_DELETED,
+        MutationOperation::POLICY_CREATED->value                     => AuthorizationActivity::POLICY_CREATED,
+        MutationOperation::POLICY_UPDATED->value                     => AuthorizationActivity::POLICY_UPDATED,
+        MutationOperation::POLICY_DELETED->value                     => AuthorizationActivity::POLICY_DELETED,
+        MutationOperation::ROLE_PERMISSION_GRANTED->value            => AuthorizationActivity::PERMISSION_GRANTED,
+        MutationOperation::ROLE_PERMISSION_REVOKED->value            => AuthorizationActivity::PERMISSION_REVOKED,
+        MutationOperation::ROLE_PERMISSION_EXPIRED->value            => AuthorizationActivity::GRANT_EXPIRED,
+        MutationOperation::ROLE_PERMISSION_EXPIRY_CHANGED->value     => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
+        MutationOperation::IDENTITY_ROLE_ASSIGNED->value             => AuthorizationActivity::ROLE_ASSIGNED,
+        MutationOperation::IDENTITY_ROLE_REVOKED->value              => AuthorizationActivity::ROLE_UNASSIGNED,
+        MutationOperation::IDENTITY_ROLE_EXPIRED->value              => AuthorizationActivity::GRANT_EXPIRED,
+        MutationOperation::IDENTITY_ROLE_EXPIRY_CHANGED->value       => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
+        MutationOperation::IDENTITY_PERMISSION_GRANTED->value        => AuthorizationActivity::PERMISSION_ASSIGNED,
+        MutationOperation::IDENTITY_PERMISSION_REVOKED->value        => AuthorizationActivity::PERMISSION_UNASSIGNED,
+        MutationOperation::IDENTITY_PERMISSION_EXPIRED->value        => AuthorizationActivity::GRANT_EXPIRED,
+        MutationOperation::IDENTITY_PERMISSION_EXPIRY_CHANGED->value => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
+        MutationOperation::IDENTITY_POLICY_ATTACHED->value           => AuthorizationActivity::POLICY_ATTACHED,
+        MutationOperation::IDENTITY_POLICY_DETACHED->value           => AuthorizationActivity::POLICY_DETACHED,
+        MutationOperation::IDENTITY_POLICY_EXPIRED->value            => AuthorizationActivity::GRANT_EXPIRED,
+        MutationOperation::IDENTITY_POLICY_EXPIRY_CHANGED->value     => AuthorizationActivity::GRANT_EXPIRY_CHANGED,
+        MutationOperation::IDENTITY_BOUNDARY_SET->value              => AuthorizationActivity::BOUNDARY_SET,
+        MutationOperation::IDENTITY_BOUNDARY_REMOVED->value          => AuthorizationActivity::BOUNDARY_REMOVED,
+        MutationOperation::GUARDRAIL_SET->value                      => AuthorizationActivity::GUARDRAIL_SET,
+        MutationOperation::GUARDRAIL_REMOVED->value                  => AuthorizationActivity::GUARDRAIL_REMOVED,
+        MutationOperation::RESOURCE_POLICY_ATTACHED->value           => AuthorizationActivity::RESOURCE_POLICY_ATTACHED,
+        MutationOperation::RESOURCE_POLICY_DETACHED->value           => AuthorizationActivity::RESOURCE_POLICY_DETACHED,
+        MutationOperation::IDENTITY_BREAK_GLASS_ACTIVATED->value     => AuthorizationActivity::BREAK_GLASS_ACTIVATED,
+        MutationOperation::IDENTITY_BREAK_GLASS_SURRENDERED->value   => AuthorizationActivity::BREAK_GLASS_SURRENDERED,
+        MutationOperation::IDENTITY_BREAK_GLASS_REVOKED->value       => AuthorizationActivity::BREAK_GLASS_REVOKED,
+        MutationOperation::IDENTITY_BREAK_GLASS_EXPIRED->value       => AuthorizationActivity::BREAK_GLASS_EXPIRED,
     ];
 
     /** @var array<string, string> The kind of grant each expiry, or change to one, is about. */
     private const array GRANTS = [
-        'identity.role.expired'              => 'role',
-        'identity.role.expiry_changed'       => 'role',
-        'identity.permission.expired'        => 'permission',
-        'identity.permission.expiry_changed' => 'permission',
-        'identity.policy.expired'            => 'policy',
-        'identity.policy.expiry_changed'     => 'policy',
-        'role.permission.expired'            => 'role_permission',
-        'role.permission.expiry_changed'     => 'role_permission',
+        MutationOperation::IDENTITY_ROLE_EXPIRED->value              => 'role',
+        MutationOperation::IDENTITY_ROLE_EXPIRY_CHANGED->value       => 'role',
+        MutationOperation::IDENTITY_PERMISSION_EXPIRED->value        => 'permission',
+        MutationOperation::IDENTITY_PERMISSION_EXPIRY_CHANGED->value => 'permission',
+        MutationOperation::IDENTITY_POLICY_EXPIRED->value            => 'policy',
+        MutationOperation::IDENTITY_POLICY_EXPIRY_CHANGED->value     => 'policy',
+        MutationOperation::ROLE_PERMISSION_EXPIRED->value            => 'role_permission',
+        MutationOperation::ROLE_PERMISSION_EXPIRY_CHANGED->value     => 'role_permission',
     ];
 
     /** @var array<string, string> The details kept under another name, by that name. */

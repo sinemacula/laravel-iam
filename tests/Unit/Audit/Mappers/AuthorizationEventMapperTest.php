@@ -23,6 +23,7 @@ use SineMacula\Laravel\AuditLog\Stores\NullAuditStore;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationEvent;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizationMutation;
+use SineMacula\Laravel\Authorization\Enums\MutationOperation;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionEffect;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReason;
 use SineMacula\Laravel\Authorization\Evaluation\Enums\DecisionReport;
@@ -124,6 +125,21 @@ final class AuthorizationEventMapperTest extends TestCase
         $codes    = array_map(static fn (AuthorizationActivity $code): string => $code->value, AuthorizationActivity::cases());
 
         self::assertEqualsCanonicalizing($codes, array_values(array_unique($provided)));
+    }
+
+    /**
+     * Every change operation is provided for, recorded or skipped.
+     *
+     * @return void
+     */
+    public function testEveryOperationIsProvidedFor(): void
+    {
+        $events     = array_column([...iterator_to_array(self::provideEvents(), false), ...iterator_to_array(self::provideSkipped(), false)], 0);
+        $changes    = array_filter($events, static fn (object $event): bool => $event instanceof AuthorizationMutation);
+        $operations = array_map(static fn (AuthorizationMutation $event): string => $event->operation(), $changes);
+        $cases      = array_map(static fn (MutationOperation $operation): string => $operation->value, MutationOperation::cases());
+
+        self::assertSame([], array_values(array_diff($cases, $operations)));
     }
 
     /**
@@ -839,7 +855,7 @@ final class AuthorizationEventMapperTest extends TestCase
         $container->instance(AuditStore::class, new NullAuditStore);
 
         $event = \Mockery::mock(AuthorizationMutation::class, [
-            'operation'       => 'role.deleted',
+            'operation'       => MutationOperation::ROLE_DELETED->value,
             'operationId'     => self::OPERATION,
             'isTrusted'       => true,
             'actor'           => null,
