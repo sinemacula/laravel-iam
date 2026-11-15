@@ -17,9 +17,11 @@ use SineMacula\Laravel\AuditLog\Records\AuditRecord;
 use SineMacula\Laravel\AuditLog\Records\HeldActor;
 use SineMacula\Laravel\AuditLog\Records\Reference;
 use SineMacula\Laravel\AuditLog\Testing\FakeAuditStore;
+use SineMacula\Laravel\Authentication\Callers\BoundCaller;
+use SineMacula\Laravel\Authentication\Context\Enums\CredentialKind;
+use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Exceptions\TenantUnavailableException;
-use SineMacula\Laravel\Authentication\Guards\AbstractGuard;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Audit\References;
 use Tests\Concerns\MigratesMembers;
@@ -176,9 +178,7 @@ final class AuthenticationActorReaderTest extends TestCase
 
         $person->forceFill(['id' => 41]);
 
-        $guard = self::guardHolding($person);
-
-        $guard->method('tenant')->willThrowException(new TenantUnavailableException('The tenant is gone.'));
+        $guard = self::guardHolding(new BoundCaller($person, null, null, null, null, null, new TenantUnavailableException('The tenant is gone.')));
 
         self::assertEquals(new HeldActor(Reference::of($person->getMorphClass(), '41')), self::reader()->read('fixture', $guard));
     }
@@ -190,7 +190,23 @@ final class AuthenticationActorReaderTest extends TestCase
      */
     public function testAnIdentityWithNoIdentifierIsNoActor(): void
     {
-        self::assertNull(self::reader()->read('fixture', self::guardHolding(new Person)));
+        self::assertNull(self::reader()->read('fixture', self::guardHolding(self::bound(new Person))));
+    }
+
+    /**
+     * The API key the caller authenticated with is named by its id.
+     *
+     * @return void
+     */
+    public function testTheCallersApiKeyIsNamed(): void
+    {
+        $person = new Person;
+
+        $person->forceFill(['id' => 41]);
+
+        $guard = self::guardHolding(new BoundCaller($person, null, null, CredentialKind::API_KEY, 'key-7', null, null));
+
+        self::assertEquals(new HeldActor(Reference::of($person->getMorphClass(), '41'), credentialId: 'key-7'), self::reader()->read('fixture', $guard));
     }
 
     /**
@@ -234,19 +250,29 @@ final class AuthenticationActorReaderTest extends TestCase
     }
 
     /**
-     * A package guard holding the identity alone.
+     * A package guard holding the caller.
      *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
-     * @return \PHPUnit\Framework\MockObject\Stub&\SineMacula\Laravel\Authentication\Guards\AbstractGuard
+     * @param  \SineMacula\Laravel\Authentication\Callers\BoundCaller  $caller
+     * @return \PHPUnit\Framework\MockObject\Stub&\SineMacula\Laravel\Authentication\Contracts\ContextualGuard
      */
-    private static function guardHolding(Identity $identity): AbstractGuard
+    private static function guardHolding(BoundCaller $caller): ContextualGuard
     {
-        $guard = self::createStub(AbstractGuard::class);
+        $guard = self::createStub(ContextualGuard::class);
 
-        $guard->method('hasUser')->willReturn(true);
-        $guard->method('identity')->willReturn($identity);
+        $guard->method('boundCaller')->willReturn($caller);
 
         return $guard;
+    }
+
+    /**
+     * The identity bound alone.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @return \SineMacula\Laravel\Authentication\Callers\BoundCaller
+     */
+    private static function bound(Identity $identity): BoundCaller
+    {
+        return new BoundCaller($identity, null, null, null, null, null, null);
     }
 
     /**
