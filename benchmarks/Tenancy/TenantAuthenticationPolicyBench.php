@@ -10,11 +10,11 @@ use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 
 /**
- * PHPBench suite for the tenant authentication policy this package binds
- * (IAM-4.5), the composite of SSO's enforcement, SSO's exemption gate and the
- * application's tenant MFA requirement: `laravel-authentication` asks it on
- * every sign-in in a tenant, every activation, refresh and switch, sometimes
- * under the session's row lock, so its cost is held while the lock is.
+ * PHPBench suite for the tenant authentication policy this package binds, the
+ * composite of SSO's enforcement, SSO's exemption gate and the application's
+ * tenant MFA requirement: `laravel-authentication` asks it on every sign-in in
+ * a tenant, every activation, refresh and switch, sometimes under the session's
+ * row lock, so its cost is held while the lock is.
  *
  * Answers a sign-in with SSO's enforcement off and no requirement, which reads
  * nothing, and one with a rule through the redemption's connection and a

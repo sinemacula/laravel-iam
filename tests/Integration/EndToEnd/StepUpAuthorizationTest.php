@@ -46,12 +46,12 @@ use Tests\TestCase;
 
 /**
  * End-to-end tests of a policy statement that states an authentication
- * requirement (IAM-6.1 to IAM-6.4), with every adapter of this package's bound:
- * a member whose only grant is an allow requiring multifactor authentication is
- * refused with MFA's step-up until the session steps up through MFA, on one
- * request with its bearer token, and allowed on the next with the same token,
- * through `laravel-authorization`'s manager and Laravel's Gate alike; a member
- * acting in a tenant is listed the action (`permissionsFor()`) in its own scope
+ * requirement, with every adapter of this package's bound: a member whose only
+ * grant is an allow requiring multifactor authentication is refused with MFA's
+ * step-up until the session steps up through MFA, on one request with its
+ * bearer token, and allowed on the next with the same token, through
+ * `laravel-authorization`'s manager and Laravel's Gate alike; a member acting
+ * in a tenant is listed the action (`permissionsFor()`) in its own scope
  * exactly when the check allows it; the member's other session, never stepped
  * up, is still refused; a refusal about a member the caller names, which holds
  * no session, is Laravel's 403, since no step-up by the caller could meet it; a
