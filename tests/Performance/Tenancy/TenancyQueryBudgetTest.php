@@ -163,11 +163,12 @@ final class TenancyQueryBudgetTest extends PerformanceContractTestCase
         $move = static fn (): int => DB::transaction(static fn (): int => Iam::treeChanges()->changed('moved'));
 
         // Reads: the moved tenant's rule, locked (1), the grant report (4), the
-        // subtree (4), first passes of 11, 13 and 15 (sessions, person, rule up
-        // the path, provenance), second passes (3) and the subtree again (4).
+        // spared subtree (4) and new ancestors (2), the subtree (4), first
+        // passes of 11, 13 and 15 (sessions, person, rule up the path,
+        // provenance), second passes (3) and the subtree again (4).
         // Writes: the moved tenant's rule row, then one revocation per tenant.
         // Transactions: three savepoints and six of laravel-authentication's.
-        $revoked = $this->assertQueryBudget(55, 4, $move, begins: 9, commits: 9);
+        $revoked = $this->assertQueryBudget(61, 4, $move, begins: 9, commits: 9);
 
         self::assertSame(3, $revoked);
     }
