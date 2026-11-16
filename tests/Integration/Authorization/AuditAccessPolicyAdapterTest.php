@@ -8,10 +8,13 @@ use Illuminate\Auth\GenericUser;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\AuditLog\Access\AccessScope;
 use SineMacula\Laravel\AuditLog\Access\Enums\ReadPurpose;
 use SineMacula\Laravel\AuditLog\Records\Reference as AuditReference;
+use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
@@ -33,6 +36,7 @@ use Tests\Fixtures\Authorization\GrantedSeat;
 use Tests\Fixtures\Authorization\Organisation;
 use Tests\Fixtures\Authorization\OrganisationTenancy;
 use Tests\Fixtures\Authorization\RecordingGrantHook;
+use Tests\Fixtures\Authorization\ServiceAccount;
 use Tests\Fixtures\Authorization\Staff;
 use Tests\Fixtures\Authorization\UnscopedTenancy;
 use Tests\TestCase;
@@ -287,6 +291,83 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
+     * A machine caller's key scopes cap its grants.
+     *
+     * @return void
+     */
+    public function testAMachineCallersKeyScopesCapItsGrants(): void
+    {
+        $config = $this->app?->make('config');
+
+        $config?->set('auth.guards.keys', ['driver' => 'api_key', 'provider' => 'service-accounts', 'application' => ['methods' => ['api_key']]]);
+        $config?->set('auth.providers.service-accounts', ['driver' => 'model', 'model' => ServiceAccount::class]);
+
+        $account = ServiceAccount::query()->create(['name' => 'Reporting']);
+
+        $account->givePermission('audit-log.export', tenant: new Reference(Organisation::TYPE, self::FIRST));
+        $account->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, self::FIRST));
+
+        $key = Auth::apiKeys('keys')->issue($account, $account, ['audit-log.export'])->key()->reveal();
+
+        Route::middleware('auth:keys')->get('/trail', static fn (): array => [
+            'export' => self::scope($account, ReadPurpose::EXPORT)->toArray()['tenants'],
+            'read'   => self::scope($account)->isDenied(),
+        ]);
+
+        $this->getJson('/trail', ['Authorization' => 'Bearer ' . $key])
+            ->assertOk()
+            ->assertExactJson(['export' => [self::tenant(self::FIRST)], 'read' => true]);
+    }
+
+    /**
+     * A person's scoped credential caps its grants, its identity's among them.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPersonsScopedCredentialCapsItsGrants(): void
+    {
+        $person = $this->viewer();
+        $seat   = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
+        $other  = GrantedSeat::query()->create(['person_id' => $this->viewer()->getKey(), 'tenant_id' => self::FIRST]);
+
+        foreach ([$seat, $other] as $grantee) {
+            $grantee->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, self::FIRST));
+            $grantee->givePermission('audit-log.export', tenant: new Reference(Organisation::TYPE, self::FIRST));
+        }
+
+        $this->grant($person, 'audit-log.read', self::SECOND);
+        $this->grant($person, 'audit-log.export', self::SECOND);
+        $this->callAs($seat, 'audit-log.read');
+
+        self::assertSame([self::tenant(self::FIRST), self::tenant(self::SECOND)], self::tenants(self::scope(AuditReference::to($seat))));
+        self::assertTrue(self::scope(AuditReference::to($seat), ReadPurpose::EXPORT)->isDenied());
+        self::assertTrue(self::scope($person, ReadPurpose::EXPORT)->isDenied());
+        self::assertSame([self::tenant(self::FIRST)], self::tenants(self::scope(AuditReference::to($other), ReadPurpose::EXPORT)));
+    }
+
+    /**
+     * Another seat of the caller's person is not capped as the caller is.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnotherSeatOfTheCallersPersonIsNotCapped(): void
+    {
+        $person  = $this->viewer();
+        $caller  = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::FIRST]);
+        $sibling = GrantedSeat::query()->create(['person_id' => $person->getKey(), 'tenant_id' => self::THIRD]);
+
+        $this->grant($person, 'audit-log.export', self::SECOND);
+        $this->callAs($caller, 'audit-log.read');
+
+        self::assertSame([self::tenant(self::SECOND)], self::tenants(self::scope(AuditReference::to($sibling), ReadPurpose::EXPORT)));
+        self::assertTrue(self::scope(AuditReference::to($caller), ReadPurpose::EXPORT)->isDenied());
+    }
+
+    /**
      * A viewer is the model it names.
      *
      * @return void
@@ -384,6 +465,28 @@ final class AuditAccessPolicyAdapterTest extends TestCase
         foreach ($tenantIds as $tenantId) {
             $this->memberships->grant($viewer, Membership::of($tenantId));
         }
+    }
+
+    /**
+     * Make the seat the request's caller, its credential carrying the scopes.
+     *
+     * @param  \Tests\Fixtures\Authorization\GrantedSeat  $seat
+     * @param  string  ...$scopes
+     * @return void
+     */
+    private function callAs(GrantedSeat $seat, string ...$scopes): void
+    {
+        $guard = self::createStub(ContextualGuard::class);
+
+        $guard->method('hasUser')->willReturn(true);
+        $guard->method('principal')->willReturn($seat);
+        $guard->method('identity')->willReturn($seat->getIdentity());
+        $guard->method('tenant')->willReturn($seat->getTenant());
+        $guard->method('scopes')->willReturn(array_values($scopes));
+
+        Auth::extend('scoped', static fn (): ContextualGuard => $guard);
+        $this->app?->make('config')->set('auth.guards.scoped', ['driver' => 'scoped', 'provider' => 'people']);
+        Auth::shouldUse('scoped');
     }
 
     /**

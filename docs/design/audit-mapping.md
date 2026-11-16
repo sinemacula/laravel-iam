@@ -103,8 +103,9 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - `Authorization\AuditAccessPolicyAdapter` answers audit-log's `AuditAccessPolicy` over `DenyAllPolicy` while
   `iam.adapters.authorization` is on. It decides the viewer's own tenant, its memberships and each tenant a grant
   route starts in, and returns `tenants()` narrowed to the categories every tenant allows, else `onlyAbout()` the
-  viewer in its `.own` tenants, else `none()`. A permission that needs an authentication requirement never counts,
-  since the policy is not told the reader's session.
+  viewer in its `.own` tenants, else `none()`. The viewer is the `SubjectResolver`'s `forUser()` subject, so the
+  request's caller is capped by its credential's scopes. A permission whose decision reads an authentication
+  requirement never counts.
 - `Authorization\PermissionCatalogue` declares `audit-log.{purpose}`, `.{category}` and `.own`, and SSO's and MFA's
   administrative operations, reusing SSO's own names. `Authorization\AdministrativeCheck::authorize()` checks one for a
   resolved `Subject` in the scope that subject names.
