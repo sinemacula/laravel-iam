@@ -91,7 +91,7 @@ enum AuthorizationActivity: string implements ListsProperties
     private const array DECISION = ['action', 'resource', 'application', 'policies'];
 
     /** @var list<string> What every change's code keeps of the call that made it. */
-    private const array CALL = ['trusted'];
+    private const array CALL = ['trusted', 'impersonator_type', 'impersonator_id'];
 
     /** @var list<string> What a code about a role or a permission keeps of it. */
     private const array DEFINITION = [...self::CALL, 'name', 'guard'];

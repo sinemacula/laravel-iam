@@ -134,13 +134,13 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
-     * A sign-in judged before its session exists still signs in.
+     * A sign-in judged before its session exists asks for no active tenant.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testASignInJudgedBeforeItsSessionIsWrittenSignsIn(): void
+    public function testASignInJudgedBeforeItsSessionIsWrittenAsksForNoTenant(): void
     {
         $answers = new RecordsActiveTenants($this->adapter());
 
@@ -149,8 +149,7 @@ final class ActiveTenantResolverAdapterTest extends TestCase
         $result = $this->attemptSignIn($this->createPerson());
 
         self::assertTrue($result->isSignedIn());
-        self::assertNotEmpty($answers->answers);
-        self::assertSame([null], array_values(array_unique($answers->answers)));
+        self::assertSame([], $answers->answers);
     }
 
     /**

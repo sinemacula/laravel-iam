@@ -61,6 +61,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - An actor from the event brings its principal and tenant, explicitly none when the event names none. A record left to
   the caller keeps the principal the event acted on as properties (`session_principal_*`, `scope_principal_*`,
   `key_principal_*`), since the record's principal is the caller's. Its tenant stays the event's.
+- A `laravel-authorization` change made while impersonating, `system_override_used` included, names the impersonated
+  identity as the actor and keeps the impersonator as `impersonator_type` and `impersonator_id`.
 - The record's credential is the one the activity used. A credential being managed (a passkey added or removed, an API
   key issued, revoked or rotated) is a property (`passkey_id`, `key_id`), so a leaked key's trail is not mixed with its
   management.
@@ -101,8 +103,9 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - `Authorization\AuditAccessPolicyAdapter` answers audit-log's `AuditAccessPolicy` over `DenyAllPolicy` while
   `iam.adapters.authorization` is on. It decides the viewer's own tenant, its memberships and each tenant a grant
   route starts in, and returns `tenants()` narrowed to the categories every tenant allows, else `onlyAbout()` the
-  viewer in its `.own` tenants, else `none()`. A permission that needs an authentication requirement never counts,
-  since the policy is not told the reader's session.
+  viewer in its `.own` tenants, else `none()`. The viewer is the `SubjectResolver`'s `forUser()` subject, so the
+  request's caller is capped by its credential's scopes. A permission whose decision reads an authentication
+  requirement never counts.
 - `Authorization\PermissionCatalogue` declares `audit-log.{purpose}`, `.{category}` and `.own`, and SSO's and MFA's
   administrative operations, reusing SSO's own names. `Authorization\AdministrativeCheck::authorize()` checks one for a
   resolved `Subject` in the scope that subject names.
