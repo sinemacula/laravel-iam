@@ -11,19 +11,27 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
+use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\ActiveTenantResolverAdapter;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
+use SineMacula\Laravel\Mfa\Contracts\LastFactorPolicy;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
+use SineMacula\Laravel\Mfa\Enums\FailureReason;
 use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Models\Factor;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
+use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Resolvers\RecordsActiveTenants;
 use Tests\Fixtures\Resolvers\RecordsTenants;
 use Tests\TestCase;
@@ -39,7 +47,7 @@ use Tests\TestCase;
 #[CoversClass(ActiveTenantResolverAdapter::class)]
 final class ActiveTenantResolverAdapterTest extends TestCase
 {
-    use MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use ArrangesFactorChanges, MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
 
     /** @var string The tenant the tests' sessions act in. */
     private const string TENANT = 'tenant-01J9Z3';
@@ -172,6 +180,68 @@ final class ActiveTenantResolverAdapterTest extends TestCase
     }
 
     /**
+     * Rows of `[whether another factor remains, the refusal]` of a removal.
+     *
+     * @return iterable<string, array{0: bool, 1: ?\SineMacula\Laravel\Mfa\Enums\FailureReason}>
+     */
+    public static function provideRemovalsInTheTenant(): iterable
+    {
+        yield 'the last factor' => [false, FailureReason::LAST_FACTOR];
+
+        yield 'another factor remains' => [true, null];
+    }
+
+    /**
+     * A tenant requiring a factor keeps only the last one its session's person
+     * has.
+     *
+     * @param  bool  $another
+     * @param  ?\SineMacula\Laravel\Mfa\Enums\FailureReason  $refusal
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideRemovalsInTheTenant')]
+    public function testTheSessionsTenantKeepsOnlyTheLastFactor(bool $another, ?FailureReason $refusal): void
+    {
+        $this->app?->instance(TenantRequirement::class, new RecordsTenants);
+        $this->app?->instance(TenantResolver::class, new OpenTenancy);
+        $this->app?->instance(TenantAccess::class, new OpenTenancy);
+
+        $person  = $this->createPerson();
+        $session = $this->actInTenant($person, self::TENANT);
+        $removed = $this->confirmedFactor($person);
+        $kept    = $another ? $this->confirmedFactor($person) : $removed;
+
+        $this->stepUpWith($person, $session, $kept->id);
+
+        $result = Mfa::removeFactor(self::servedCaller(), $removed->id);
+
+        self::assertSame($refusal, $result->reason);
+        self::assertSame(!$another, Factor::query()->whereKey($removed->id)->exists());
+    }
+
+    /**
+     * Someone else's last factor is held to no tenant the caller acts in.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnotherIdentitysLastFactorIsHeldToNoTenant(): void
+    {
+        $this->app?->instance(TenantRequirement::class, new RecordsTenants);
+
+        $administrator = $this->createPerson();
+        $person        = $this->createPerson('grace@example.test');
+
+        $this->actInTenant($administrator, self::TENANT);
+
+        self::assertFalse($this->allowsRemovingTheOnlyFactorOf($administrator));
+        self::assertTrue($this->allowsRemovingTheOnlyFactorOf($person));
+    }
+
+    /**
      * Rows of `[application]` that are no session guard.
      *
      * @return iterable<string, array{0: string}>
@@ -295,6 +365,24 @@ final class ActiveTenantResolverAdapterTest extends TestCase
         $this->actingOnSession($session, self::GUARD);
 
         return $session;
+    }
+
+    /**
+     * Whether MFA's bound policy lets the person's one confirmed factor go.
+     *
+     * @param  \Tests\Fixtures\Models\Person  $person
+     * @return bool
+     *
+     * @throws \Throwable
+     */
+    private function allowsRemovingTheOnlyFactorOf(Person $person): bool
+    {
+        $factor = $this->confirmedFactor($person);
+        $model  = Mfa::factorModel();
+
+        $factors = $model::query()->where('authenticatable_id', ProofOwner::of($person)->key)->get();
+
+        return $this->app?->make(LastFactorPolicy::class)->allowsRemoval($person, self::GUARD, $factor, $factors) ?? self::fail('The application has not booted.');
     }
 
     /**

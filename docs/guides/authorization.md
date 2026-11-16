@@ -9,9 +9,8 @@ SSO's principal scope, hands it your tenant tree's changes, forgets the decision
 that decision read changes, answers audit-log's access policy from its grants, offers a catalogue of the members'
 administrative permissions, maps its events into the audit trail, and keeps its tables on the storage connection.
 
-`laravel-authorization` has no separate guides yet; everything below that is its own is in its
-[README][authorization-readme]. How each binding is made, and what replacing it risks, is in
-[Bindings](bindings.md#authorization).
+`laravel-authorization`'s own behaviour is in its [guides][authorization-guides]. How each binding is made, and what
+replacing it risks, is in [Bindings](bindings.md#authorization).
 
 - [What is bound](#what-is-bound)
 - [The subject](#the-subject)
@@ -220,7 +219,8 @@ cannot establish:
 - naming a guard whose caller it is, it is capped by that caller's credential, as the request's own subject is;
 - naming a guard that is not configured, it is allowed nothing;
 - naming no credential, as a job's or a console command's subject, or naming a guard whose caller is someone else, it
-  carries no cap if it is a person and is allowed nothing if it is a machine.
+  carries no cap if it is a person and is allowed nothing if it is a machine or a principal whose identity cannot be
+  read.
 
 Say the scopes yourself (`scopes: CredentialScopes::of([...])` or `CredentialScopes::uncapped()`, from
 `SineMacula\Laravel\Authorization\Support\CredentialScopes`) when you know them.
@@ -332,10 +332,13 @@ reads to explain a refusal, along with the subject and tenant it resolved, its r
 of checks has read ahead. When MFA confirms or removes a factor, registers a passkey, resets a person's factors, passes
 a verification or returns a session to pending, or an SSO reauthentication renews a session, this package calls
 `Authorization::forgetDecisionsFor()`, naming the session and the person, so the rest of the request or job decides
-afresh and never explains a refusal, or an allow, by proofs that no longer hold. It forgets everything the request or
-job remembers, whoever it was about, and never the persistent resolution cache, since no grant changed. A decision made
-in a transaction that rolls back afterwards is forgotten again, including when the change was made in a savepoint of a
-transaction of yours that rolls back once the savepoint has committed.
+afresh and never explains a refusal, or an allow, by proofs that no longer hold. After one of those, a decision made in
+a transaction that rolls back afterwards is forgotten again, including when the change was made in a savepoint of a
+transaction of yours that rolls back once the savepoint has committed. It calls it too, naming the session, once a
+session's reauthentication with its first factor, a password's included, commits. Inside a transaction of yours that is
+when yours commits, so call it yourself before you check again in it, and again if yours rolls back, from
+`DB::afterRollBack()` for example. Each call forgets everything the request or job remembers, whoever it was about, and
+never the persistent resolution cache, since no grant changed.
 
 This package does not call it when a session signs in or out, an SSO sign-in and the sessions SSO or a tenant's
 policy change revokes included, or when a tenant is switched. Where the request or job goes on to check after one of
@@ -430,6 +433,6 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): the principal scope's two halves.
 - [The install and check design note](../design/install-and-check.md#checks): what the checks cover.
 
-[authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
+[authorization-guides]: https://github.com/sinemacula/laravel-authorization/tree/master/docs/guides
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md
 [mfa-middleware-answering]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/middleware.md#answering
