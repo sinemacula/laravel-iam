@@ -36,7 +36,9 @@ enforcement is off.
 
 An SSO application is the `jwt` guard of the same name. Allow `external_provider` among that guard's methods, and leave
 SSO's `unlinked_handoffs` off for it: under this package a sign-in that resolves to no identity is provisioned or
-refused, never handed off (see [Installation](installation.md#guards-and-applications)). `iam:check` refuses either.
+refused, never handed off (see [Installation](installation.md#guards-and-applications)). `iam:check` refuses an
+application that names no `jwt` guard, a guard without `external_provider`, and `unlinked_handoffs` on (see
+[Checks](checks.md#configuration)).
 
 ## Redeeming a sign-in
 

@@ -23,6 +23,7 @@ use SineMacula\Laravel\Iam\Checks\CrossMemberConfigurationCheck;
 use SineMacula\Laravel\Iam\Checks\Sso\SsoBridgeCheck;
 use SineMacula\Laravel\Iam\Checks\StorageCheck;
 use SineMacula\Laravel\Iam\Contracts\Memberships;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
@@ -159,6 +160,54 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $config?->set('auth.guards.machines', ['driver' => 'jwt', 'provider' => 'people']);
 
         self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * A guard offering passkeys only as an MFA factor needs a relying party.
+     *
+     * @return void
+     */
+    public function testAnApplicationOfferingPasskeysNeedsAValidRelyingParty(): void
+    {
+        $config  = $this->app?->make('config');
+        $refusal = 'Passkey relying party `id` for guard [api] must be a lower-case host name, not an IP address:'
+            . ' set `authentication.passkeys.relying_party.id` or the guard\'s `passkeys.id` override.';
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $config?->set('authentication.passkeys.relying_party', ['id' => null, 'name' => 'IAM', 'origins' => []]);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $config?->set('mfa.applications.api.types', ['totp', 'passkey']);
+
+        self::assertSame([$refusal], self::problems($this->check()->checks()));
+
+        $config?->set(MfaSeams::SWITCH, false);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $config?->set(MfaSeams::SWITCH, true);
+        $config?->set('auth.guards.api.passkeys', ['id' => self::RELYING_PARTY, 'origins' => [self::ORIGIN]]);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * Passkeys offered on no `jwt` guard report only the guard.
+     *
+     * @return void
+     */
+    public function testAPasskeyApplicationOnNoGuardReportsTheGuardOnly(): void
+    {
+        $config = $this->app?->make('config');
+
+        $this->declare(array_column(Operation::cases(), 'value'));
+
+        $config?->set('authentication.passkeys.relying_party', ['id' => null, 'name' => 'IAM', 'origins' => []]);
+        $config?->set('mfa.applications.admin', ['types' => ['passkey']]);
+
+        self::assertSame(['`mfa.applications.admin` names no guard in `auth.guards`: MFA\'s application is the guard of the same name.'], self::problems($this->check()->checks()));
     }
 
     /**
@@ -382,6 +431,38 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         self::assertStringStartsWith('SSO\'s freshness operations [sso.connection.trust, ', $problems[0]);
 
         $this->declare([...array_column(Operation::cases(), 'value'), ...array_column(FreshnessOperation::cases(), 'value')]);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+    }
+
+    /**
+     * An SSO application must be a `jwt` guard while SSO is in use.
+     *
+     * @return void
+     */
+    public function testEverySsoApplicationMustBeAJwtGuardWhileSsoIsInUse(): void
+    {
+        $config  = $this->app?->make('config');
+        $noGuard = '`sso.applications.portal` names no guard in `auth.guards`: SSO\'s application is the guard of the same name.';
+        $refusal = '`sso.applications.portal` names a guard in `auth.guards` whose driver is not `jwt`: SSO\'s application is a guard that holds sessions.';
+
+        $this->declare([...array_column(Operation::cases(), 'value'), ...array_column(FreshnessOperation::cases(), 'value')]);
+
+        $config?->set('sso.applications', ['portal' => []]);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+
+        $config?->set('sso.features.saml2', true);
+
+        self::assertSame([$noGuard], self::problems($this->check()->checks()));
+
+        foreach ([['driver' => 'session', 'provider' => 'people'], ['driver' => 'api_key', 'provider' => 'people']] as $guard) {
+            $config?->set('auth.guards.portal', $guard);
+
+            self::assertSame([$refusal], self::problems($this->check()->checks()));
+        }
+
+        $config?->set('auth.guards.portal', ['driver' => 'jwt', 'provider' => 'people']);
 
         self::assertSame([], self::problems($this->check()->checks()));
     }

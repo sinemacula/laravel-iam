@@ -137,12 +137,14 @@ the session.
 - What the event does not say who did (a revocation, a passkey removed) is left to the caller: the package binds
   audit-log's `HeldActorReader`, so audit-log fills the actor, guard, principal, tenant and session from what a `jwt` or
   `api_key` guard already holds, never authenticating anything to find out. A record a mapper already gave that actor
-  gains the principal, tenant and session; a record about someone else gains nothing.
+  gains the principal, tenant and session; a record about someone else gains nothing. A guard of your own is read by a
+  reader of yours wrapping the package's (see [Bindings](bindings.md#the-audit-trail)).
 - An operator the event names (MFA's actor, SSO's acting identity) is the actor.
 - A `laravel-authorization` change is the call's: the identity behind the acting principal, as that principal; the
   reference a trusted console command names; or explicitly no one for system work (a grant the pruner found expired,
-  a write through a model outside its services), never the request's caller. A decision is the subject's it was made
-  about, and a preview the previewer's, about the principal previewed.
+  a write through a model outside its services), never the request's caller. A change made while impersonating keeps
+  the impersonator as the `impersonator_type` and `impersonator_id` properties. A decision is the subject's it was
+  made about, and a preview the previewer's, about the principal previewed.
 
 Your own records get the same: `AuditLog::record('orders.shipped')`, its code defined as [Codes](#codes) shows, on a
 bearer request names the caller the guard holds. Audit-log carries that actor, principal, tenant and session into the
@@ -167,8 +169,9 @@ audit-log's own capture of Laravel's events would record each a second time. So:
 - audit-log's Gate capture stays off (`audit-log.capture.gate.enabled`), so that each authorization decision is
   recorded once, through `laravel-authorization`'s own events.
 
-Set both in your `config/audit-log.php`: `iam:install` lists them as owed, and `iam:check` refuses a configuration
-without either, whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
+Add every `jwt` and `api_key` guard to `except_guards` in your `config/audit-log.php` and leave Gate capture off, its
+default: `iam:install` lists the guard exclusion as owed, and `iam:check` refuses a configuration missing either,
+whatever `iam.audit.mappers` says. Add every guard you declare later to the list too.
 
 A sign-in through a guard's own `attempt()` or trusted `login()` is recorded once, as one through `Auth::sessions()`
 is. Calling `start()` after `attempt()` records two sign-ins, so sign in with `Auth::sessions()->signIn()` for one. An
