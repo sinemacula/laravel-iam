@@ -342,9 +342,13 @@ final readonly class OrganisationRequirements implements TenantRequirement
 $this->app->bind(TenantRequirement::class, OrganisationRequirements::class);
 ```
 
-MFA asks it itself. While `iam.adapters.sso` is on, the package also reads it into `laravel-authentication`'s tenant
-authentication policy, inside `WriteConnection::during()` for the tenant, so the two members never disagree about a
-tenant. The policy's version is a digest of the answer, so it changes whenever the answer does. Once you bind one, an
+MFA asks it itself for its own judgements of a session. The package also reads it into `laravel-authentication`'s
+tenant authentication policy, inside `WriteConnection::during()` for the tenant, so the two members never disagree
+about a tenant, and that policy is the only way it reaches a sign-in, a refresh or a tenant switch. The policy is bound
+while `iam.adapters.sso` or `iam.adapters.mfa` is on; with `iam.adapters.sso` off it carries this requirement alone,
+and with SSO's enforcement on as well you bind a policy of your own that applies both (see
+[Bindings](bindings.md#tenancy)). The policy's version is a digest of the answer, so it changes whenever the answer
+does. Once you bind one, an
 identity that is not `MultiFactorAuthenticatable` acting in a tenant is refused with `UnresolvedReferenceException`.
 It applies no inheritance down the tree, and it is asked under the session's row lock at times: take no lock and write
 nothing. Test it with laravel-mfa's `TenantRequirementTests` kit.

@@ -37,6 +37,11 @@ keeps nothing between calls. [Bindings](bindings.md) says, for each, how to repl
 The whole set is switched by `iam.adapters.mfa` (`IAM_ADAPTERS_MFA`). Leave it on unless you bind every one of these
 seams yourself.
 
+MFA's requirement policy answers for the identity and the application alone. A tenant's MFA requirement reaches a
+sign-in, a refresh or a tenant switch through `laravel-authentication`'s tenant authentication policy, which is bound
+while `iam.adapters.mfa` or `iam.adapters.sso` is on, though not with `iam.adapters.sso` off and SSO's enforcement on
+(see [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)).
+
 ## Applications are guards
 
 An MFA application is the `jwt` guard of the same name, and MFA hands each adapter its caller as plain values: the

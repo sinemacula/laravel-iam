@@ -49,11 +49,12 @@ final class AuthorizationActivityTest extends CodesTestCase
     protected static function expected(): array
     {
         $decision   = ['action', 'resource', 'application', 'policies'];
-        $definition = ['trusted', 'name', 'guard'];
-        $document   = ['trusted', 'name', 'document_version', 'document_digest'];
-        $excluded   = ['trusted', 'role_name', 'excluded_role', 'excluded_role_name'];
-        $granted    = ['trusted', 'role_name', 'permission_name'];
-        $scoped     = ['trusted', 'name', 'application', 'include_subtree'];
+        $call       = ['trusted', 'impersonator_type', 'impersonator_id'];
+        $definition = [...$call, 'name', 'guard'];
+        $document   = [...$call, 'name', 'document_version', 'document_digest'];
+        $excluded   = [...$call, 'role_name', 'excluded_role', 'excluded_role_name'];
+        $granted    = [...$call, 'role_name', 'permission_name'];
+        $scoped     = [...$call, 'name', 'application', 'include_subtree'];
         $change     = 'access_management';
 
         return [
@@ -88,7 +89,7 @@ final class AuthorizationActivityTest extends CodesTestCase
             'authorization.grant_expiry_changed'     => [$change, self::retained(...$scoped, ...['grant', 'role_name', 'permission_name', 'previous_expires_at', 'expires_at'])],
             'authorization.resource_policy_attached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
             'authorization.resource_policy_detached' => [$change, self::retained(...$scoped, ...['resource_type', 'resource_id'])],
-            'authorization.system_override_used'     => [$change, self::retained('trusted', 'name', 'protected_operation')],
+            'authorization.system_override_used'     => [$change, self::retained(...$call, ...['name', 'protected_operation'])],
             'authorization.break_glass_activated'    => ['security', self::retained(...$scoped, ...['activation', 'justification', 'expires_at'])],
             'authorization.break_glass_surrendered'  => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],
             'authorization.break_glass_revoked'      => ['security', self::retained(...$scoped, ...['activation', 'ended_at'])],

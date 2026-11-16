@@ -141,8 +141,9 @@ the session.
 - An operator the event names (MFA's actor, SSO's acting identity) is the actor.
 - A `laravel-authorization` change is the call's: the identity behind the acting principal, as that principal; the
   reference a trusted console command names; or explicitly no one for system work (a grant the pruner found expired,
-  a write through a model outside its services), never the request's caller. A decision is the subject's it was made
-  about, and a preview the previewer's, about the principal previewed.
+  a write through a model outside its services), never the request's caller. A change made while impersonating keeps
+  the impersonator as the `impersonator_type` and `impersonator_id` properties. A decision is the subject's it was
+  made about, and a preview the previewer's, about the principal previewed.
 
 Your own records get the same: `AuditLog::record('orders.shipped')`, its code defined as [Codes](#codes) shows, on a
 bearer request names the caller the guard holds. Audit-log carries that actor, principal, tenant and session into the
