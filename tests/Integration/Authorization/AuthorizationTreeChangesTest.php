@@ -32,6 +32,7 @@ use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Authorization\Account;
 use Tests\Fixtures\Authorization\AccountTenancy;
+use Tests\Fixtures\Authorization\ArchivedSeat;
 use Tests\Fixtures\Authorization\Enums\InvoicePermission;
 use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Authorization\Organisation;
@@ -192,6 +193,51 @@ final class AuthorizationTreeChangesTest extends TestCase
         self::assertSame(LinkState::SUSPENDED, $staffLink->refresh()->state);
         self::assertSame(LinkState::SUSPENDED, $seatLink->refresh()->state);
         self::assertSame(LinkState::ACTIVE, $personLink->refresh()->state);
+    }
+
+    /**
+     * A move reports the identity behind a grantee a global scope hides.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMoveReportsTheIdentityBehindAGranteeAGlobalScopeHides(): void
+    {
+        $this->arrangeSso();
+
+        StoredTenantTree::place(self::tenant(self::MOVED), self::tenant(self::TENANT));
+
+        $person = $this->createPerson();
+        $staff  = Staff::query()->whereKey($person->getKey())->firstOrFail();
+        $seat   = ArchivedSeat::query()->create(['person_id' => $staff->id, 'tenant_id' => self::ACCOUNT]);
+        $link   = Link::query()->findOrFail((string) $this->linkThroughFlow($person)->linkId);
+
+        $link->provenance = LinkOrigin::VERIFIED_DOMAIN;
+
+        $link->save();
+
+        $staffLink = self::copyLink($link, $staff);
+
+        DB::table('authorizable_permissions')->insert([
+            'permission_id'     => Permission::query()->value('id'),
+            'authorizable_type' => $seat->getMorphClass(),
+            'authorizable_id'   => self::keyOf($seat),
+            'tenant_type'       => Account::TYPE,
+            'tenant_id'         => self::ACCOUNT,
+        ]);
+
+        $seat->delete();
+
+        Iam::transaction(static function (): int {
+
+            StoredTenantTree::place(self::tenant(self::MOVED));
+
+            return Iam::treeChanges()->changed(self::MOVED);
+        });
+
+        self::assertSame(LinkState::SUSPENDED, $staffLink->refresh()->state);
+        self::assertSame(LinkState::ACTIVE, $link->refresh()->state);
     }
 
     /**
