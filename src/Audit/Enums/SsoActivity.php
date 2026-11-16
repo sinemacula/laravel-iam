@@ -93,8 +93,11 @@ enum SsoActivity: string implements ListsProperties
     /** @var array<string, list<string>> What each code keeps, by code; a code not listed is a flow's and keeps what a flow's keeps. */
     private const array RETAINED = [
         self::FLOW_FAILED->value             => [...self::FLOW, 'flow'],
-        self::LINK_CREATED->value            => [...self::FLOW, 'origin'],
+        self::LINK_CREATED->value            => [...self::FLOW, 'link_id', 'origin'],
+        self::LINK_REMOVED->value            => [...self::FLOW, 'link_id'],
         self::LINK_ACTIVATED->value          => [...self::FLOW, 'link_id'],
+        self::LINK_CONFIRMED->value          => [...self::FLOW, 'link_id'],
+        self::LINK_SUSPENDED->value          => [...self::FLOW, 'link_id'],
         self::CONNECTION_CREATED->value      => self::CONNECTION,
         self::CONNECTION_UPDATED->value      => [...self::CONNECTION, 'changed_settings'],
         self::CONNECTION_ENABLED->value      => self::CONNECTION,
