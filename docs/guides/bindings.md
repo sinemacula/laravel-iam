@@ -220,7 +220,8 @@ tenants a principal may act in is your application's tenancy, not a grant. This 
 its own tenant only. Bind your own if your principals act in other tenants.
 
 `laravel-authentication`'s `Authentication\Contracts\TenantResolver` is yours to bind too: this package binds nothing
-over it, but `iam:check` refuses its default, `ResolveNoTenant`, wherever a member resolves tenants through it (see
+over it, but `iam:check` refuses its default, `ResolveNoTenant`, wherever a member is known to resolve tenants through
+it, and notes it while the authorization adapter is on otherwise (see [Checks](checks.md#configuration) and
 [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)).
 
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md
