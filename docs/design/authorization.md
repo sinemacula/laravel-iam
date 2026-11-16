@@ -64,7 +64,8 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   caller names was decided on no session, and no step-up could meet it, so it stays a 403.
 - The session policy source answers in the contract's order and fails closed with `[]`: the scopes the subject says;
   `null` for a live session of the named guard owned by the subject's identity; the credential of a guard whose
-  resolved caller is the subject; otherwise `null` for a person and `[]` for a machine.
+  resolved caller is the subject; otherwise `null` for a person and `[]` for a machine or a principal whose identity
+  cannot be read.
 - The scope registry asks `laravel-authorization`'s registry, the application's or the shipped
   `CatalogueScopeRegistry`, on every call, since the shipped one holds a scope map built once per request.
 - Application access asks `laravel-authorization`'s `ApplicationAccess` about the principal in its own tenant, with no
