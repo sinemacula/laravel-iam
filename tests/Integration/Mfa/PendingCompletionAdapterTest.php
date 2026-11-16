@@ -15,13 +15,19 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
 use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
+use SineMacula\Laravel\Authentication\Contracts\RequirementCheck as AuthenticationRequirementCheck;
 use SineMacula\Laravel\Authentication\Events\SignedIn;
+use SineMacula\Laravel\Authentication\Proofs\Channel as AuthenticationChannel;
+use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind as AuthenticationChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind as AuthenticationProofKind;
+use SineMacula\Laravel\Authentication\Proofs\FirstFactor;
+use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
+use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Mfa\Assurance\Channel;
 use SineMacula\Laravel\Mfa\Assurance\ObservedProperties;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
@@ -80,6 +86,9 @@ final class PendingCompletionAdapterTest extends TestCase
 
     /** @var string The user agent of the client a completion is handed, unlike the sign-in's. */
     private const string PENDING_AGENT = 'pending-client';
+
+    /** @var string The sign-in method the application's own account recovery starts sessions through. */
+    private const string RECOVERY = 'account_recovery';
 
     /** @var ?\SineMacula\Laravel\Mfa\Context\PendingContext The pending session MFA's contract kit is given. */
     private ?PendingContext $arranged = null;
@@ -147,11 +156,8 @@ final class PendingCompletionAdapterTest extends TestCase
     {
         $credential = $this->signInPending($this->createPerson());
         $pending    = $this->pendingContextFor($credential);
-        $binding    = $pending->firstFactor->binding;
 
-        $code = new Proof(ProofKind::RECOVERY_CODE, 'recovery_code', null, null, ObservedProperties::none(), CarbonImmutable::now(), $binding, $pending->firstFactor->generation);
-
-        $result = $this->completeInTransaction($pending, $this->verified($pending, $code));
+        $result = $this->completeInTransaction($pending, $this->verified($pending, self::recoveryCode($pending)));
 
         self::assertInstanceOf(SignInResult::class, $result);
         self::assertTrue($result->isSignedIn());
@@ -160,6 +166,39 @@ final class PendingCompletionAdapterTest extends TestCase
             static fn ($proof): AuthenticationProofKind => $proof->kind,
             array_values(array_filter($this->proofsOf($result->session->record), static fn ($proof): bool => $proof->kind !== AuthenticationProofKind::FIRST_FACTOR)),
         ));
+    }
+
+    /**
+     * Rows of `[whether the further proof is a recovery code]`.
+     *
+     * @return iterable<string, array{0: bool}>
+     */
+    public static function provideFurtherProofs(): iterable
+    {
+        yield 'a further factor' => [false];
+
+        yield 'a recovery code' => [true];
+    }
+
+    /**
+     * A recovery session completes with a further factor or a recovery code.
+     *
+     * @param  bool  $recoveryCode
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideFurtherProofs')]
+    public function testARecoverySessionCompletesWithAFurtherProof(bool $recoveryCode): void
+    {
+        $this->app?->bind(AuthenticationRequirementCheck::class, RequirementCheckAdapter::class);
+
+        $factor  = new FirstFactor($this->createPerson(), new AuthenticationChannel(AuthenticationChannelKind::RECOVERY));
+        $started = $this->sessions()->start($factor, null, self::RECOVERY, new SignInContext(self::client()));
+        $pending = $this->pendingContextFor($started->credential?->reveal() ?? self::fail('The recovery session did not start pending.'));
+        $proof   = $recoveryCode ? self::recoveryCode($pending) : $this->factorProof($pending);
+
+        self::assertTrue($this->completeInTransaction($pending, $this->verified($pending, $proof))->isSignedIn());
     }
 
     /**
@@ -757,6 +796,17 @@ final class PendingCompletionAdapterTest extends TestCase
     }
 
     /**
+     * The sign-in methods the guard allows.
+     *
+     * @return list<string>
+     */
+    #[\Override]
+    protected function signInMethods(): array
+    {
+        return ['password', self::RECOVERY];
+    }
+
+    /**
      * The completion under test, called inside a transaction.
      *
      * @return \SineMacula\Laravel\Mfa\Contracts\PendingCompletion
@@ -870,6 +920,19 @@ final class PendingCompletionAdapterTest extends TestCase
         $caller = CallerContext::forPending($pending, self::sameSiteClient());
 
         return DB::transaction(fn (): SignInResult => $this->pendingCompleter()->complete($caller, $result));
+    }
+
+    /**
+     * A recovery code's proof made now on the pending sign-in.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
+     * @return \SineMacula\Laravel\Mfa\Proofs\Proof
+     */
+    private static function recoveryCode(PendingContext $pending): Proof
+    {
+        $first = $pending->firstFactor;
+
+        return new Proof(ProofKind::RECOVERY_CODE, 'recovery_code', null, null, ObservedProperties::none(), CarbonImmutable::now(), $first->binding, $first->generation);
     }
 
     /**
