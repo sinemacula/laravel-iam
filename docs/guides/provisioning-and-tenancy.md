@@ -43,14 +43,16 @@ asking a resolver, so an application that never needed one before needs one now.
 default, `SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant`, each of them throws
 `SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException`, so every such grant, tree move or revocation answers a
 server error. Bind yours in a service provider's `register()`; `iam:check` refuses
-`ResolveNoTenant` while the authorization and SSO adapters are both on, MFA's tenant requirement is bound, SSO's
-enforcement is on or a tenant tree is named (see [Checks](checks.md#configuration)), and `laravel-authentication`'s
+`ResolveNoTenant` while the authorization and SSO adapters are both on, the authorization adapter is on with your
+memberships bound, MFA's tenant requirement is bound, SSO's enforcement is on or a tenant tree is named, and notes it
+while the authorization adapter is on otherwise (see [Checks](checks.md#configuration)). `laravel-authentication`'s
 [extending guide][auth-extending] describes the contract.
 
 While `iam.adapters.authorization` is on, the resolver names your tenants to `laravel-authorization` too: the grant
-hook, the grant half of the [principal scope](#principal-scope), `AdministrativeCheck` for an object in a tenant (see
-[Authorization](authorization.md#administrative-operations-and-the-trail)), the roles your
-[group mapping](#group-mapping) grants and every [tree change](#the-tenant-tree) you report resolve the tenant id
+hook, the grant half of the [principal scope](#principal-scope), the
+[audit access policy](audit-trail.md#reading-the-trail) for every tenant a viewer is decided in, `AdministrativeCheck`
+for an object in a tenant (see [Authorization](authorization.md#administrative-operations-and-the-trail)), the roles
+your [group mapping](#group-mapping) grants and every [tree change](#the-tenant-tree) you report resolve the tenant id
 through it, and hand `laravel-authorization` the tenant it answers. That tenant must be an Eloquent model or
 `laravel-authorization`'s `AuthorizableTenant`, and its key must be its `getTenantIdentifier()`, byte for byte, since
 `laravel-authentication` records a session's tenant by the one and `laravel-authorization` keys a grant by the other;
@@ -340,9 +342,13 @@ final readonly class OrganisationRequirements implements TenantRequirement
 $this->app->bind(TenantRequirement::class, OrganisationRequirements::class);
 ```
 
-MFA asks it itself. While `iam.adapters.sso` is on, the package also reads it into `laravel-authentication`'s tenant
-authentication policy, inside `WriteConnection::during()` for the tenant, so the two members never disagree about a
-tenant. The policy's version is a digest of the answer, so it changes whenever the answer does. Once you bind one, an
+MFA asks it itself for its own judgements of a session. The package also reads it into `laravel-authentication`'s
+tenant authentication policy, inside `WriteConnection::during()` for the tenant, so the two members never disagree
+about a tenant, and that policy is the only way it reaches a sign-in, a refresh or a tenant switch. The policy is bound
+while `iam.adapters.sso` or `iam.adapters.mfa` is on; with `iam.adapters.sso` off it carries this requirement alone,
+and with SSO's enforcement on as well you bind a policy of your own that applies both (see
+[Bindings](bindings.md#tenancy)). The policy's version is a digest of the answer, so it changes whenever the answer
+does. Once you bind one, an
 identity that is not `MultiFactorAuthenticatable` acting in a tenant is refused with `UnresolvedReferenceException`.
 It applies no inheritance down the tree, and it is asked under the session's row lock at times: take no lock and write
 nothing. Test it with laravel-mfa's `TenantRequirementTests` kit.

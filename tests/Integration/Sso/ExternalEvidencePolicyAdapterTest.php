@@ -362,6 +362,7 @@ final class ExternalEvidencePolicyAdapterTest extends TestCase
             $proof->binding->purpose,
         ]);
         self::assertSame(0, $proof->generation);
+        self::assertSame(['methods' => self::METHODS, 'context' => self::ACR], $proof->evidence?->toArray());
     }
 
     /**

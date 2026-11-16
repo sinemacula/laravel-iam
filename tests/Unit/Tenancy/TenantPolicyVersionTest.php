@@ -128,6 +128,24 @@ final class TenantPolicyVersionTest extends TestCase
     }
 
     /**
+     * The requirement alone gives a version of its own that changes with it.
+     *
+     * @return void
+     *
+     * @throws \JsonException
+     */
+    public function testTheRequirementAloneGivesAVersionThatChangesWithIt(): void
+    {
+        $version = TenantPolicyVersion::ofFactor(self::requirement());
+
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $version);
+        self::assertSame($version, TenantPolicyVersion::ofFactor(self::requirement()));
+        self::assertNotSame($version, TenantPolicyVersion::ofFactor(new Requirement(multifactor: new RequirementPart(600))));
+        self::assertNotSame($version, TenantPolicyVersion::ofFactor(new Requirement));
+        self::assertNotSame($version, self::versionOf());
+    }
+
+    /**
      * The version of the given inputs, each defaulting to the base's.
      *
      * @param  ?\SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
