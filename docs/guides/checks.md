@@ -165,16 +165,25 @@ The members' settings agree with each other.
   block. See [laravel-authentication: configuration][authentication-configuration].
 - *SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to
   SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO's enforcement is on, MFA's tenant requirement is
-  bound, laravel-authorization's grants are reported to SSO's scope widening, or laravel-authorization reads the tenant
-  tree: ...*: the tenant policy, a tree's changes and SSO's revocation resolve a session's tenant through
-  `laravel-authentication`'s tenant resolver; while the authorization and SSO adapters are both on (the default), the
-  grant hook resolves the tenant of every grant that widens an identity's scope through it; and while you bind a tenant
-  tree to `laravel-authorization`, the tree's changes and SSO's enforcement inheritance resolve every tenant they name
-  through it. Its default resolves none, so every grant to an identity or a principal's first grant in a tenant, and
-  every move of a tenant, would answer a server error. Bind a resolver that resolves every tenant
-  id to the tenant whose `getTenantIdentifier()` is that id, even if your principals act only in their own tenant (see
+  bound, laravel-authorization's grants are reported to SSO's scope widening, laravel-authorization decides audit reads
+  in your memberships' tenants, or laravel-authorization reads the tenant tree: ...*: the tenant policy, a tree's
+  changes and SSO's revocation resolve a session's tenant through `laravel-authentication`'s tenant resolver; while the
+  authorization and SSO adapters are both on (the default), the grant hook resolves the tenant of every grant that
+  widens an identity's scope through it; while the authorization adapter is on and your memberships are bound, the
+  [audit access policy](audit-trail.md#reading-the-trail) resolves every tenant a viewer belongs to through it; and
+  while you bind a tenant tree to `laravel-authorization`, the tree's changes and SSO's enforcement inheritance resolve
+  every tenant they name through it. Its default resolves none, so every grant to an identity or a principal's first
+  grant in a tenant, every audit read by a member of a tenant, and every move of a tenant, would answer a server error.
+  Bind a resolver that resolves every tenant id to the tenant whose `getTenantIdentifier()` is that id, even if your
+  principals act only in their own tenant (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)). Only `laravel-authentication`'s own
   default is refused, as it says.
+- Note: *SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to
+  SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while `iam.adapters.authorization` is on: ...*: shown
+  while the authorization adapter is on and the refusal above does not apply. The audit access policy and
+  `AdministrativeCheck` for an object in a tenant resolve the tenant through the resolver, so a viewer in any tenant,
+  or an object in one, throws `UnresolvedReferenceException`. Bind a resolver, or leave the default where nothing acts
+  in a tenant.
 - Note: *SineMacula\Laravel\Authorization\Contracts\ResourceTenantResolver is still
   SineMacula\Laravel\Authorization\Resolvers\NoResourceTenant while people act in tenants: ...*: shown while your
   memberships are bound. `laravel-authorization`'s default resolver knows no record's tenant, so a grant in
