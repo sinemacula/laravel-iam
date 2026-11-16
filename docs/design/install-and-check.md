@@ -50,8 +50,9 @@ application, since only the root `allow-plugins` counts.
   - `AuditCheck`: every `jwt` and `api_key` guard excluded from audit-log's capture, Gate capture off and
     `require_registered` on, whatever the mappers switch says.
   - `CrossMemberConfigurationCheck`: every MFA application is a `jwt` guard; MFA's and, while SSO is in use, SSO's
-    freshness operations are declared; the tenant resolver is bound while a tenant rule, a widening grant or a tenant
-    tree needs it. A resource tenant resolver left on its default is a note while the application has memberships.
+    freshness operations are declared; the tenant resolver is bound while a tenant rule, a widening grant, the audit
+    policy over memberships or a tenant tree needs it, and its default is a note while the authorization adapter is on
+    otherwise. A resource tenant resolver left on its default is a note while the application has memberships.
   - `MachineMarkerCheck`: each `jwt` or `api_key` guard's user model that implements `MachineIdentity` also implements
     `AuthorizableMachine`.
   - `SchedulesCheck`: a note for each run `IamSchedule` registers that nothing on the schedule runs. A schedule that
