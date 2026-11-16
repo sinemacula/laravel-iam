@@ -412,6 +412,10 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - `Iam::schedule()` registers `authorization:prune` daily, which removes expired grants and those of grantees and
   records that are gone (see [Operations](operations.md#the-schedule)). An expired grant stops counting at its expiry
   either way.
+- It registers `authorization:usage-prune` daily too and, while `authorization.usage.enabled` is true,
+  `authorization:usage-heartbeat` at least once an `authorization.usage.interval`, so a quiet site's unused grants read
+  `unused` rather than `unknown`. The `RecordGrantUsage` jobs need a queue worker (see
+  [Operations](operations.md#queues)).
 - `iam:check` runs `authorization:check`, which reports `laravel-authorization`'s settings, seams, grant hooks and
   connection, and fails the run when it refuses a setting (exit `1`) or could not complete its report (exit `3`) (see
   [Checks](checks.md#the-members-checks)). The worker reset forgets its request state between units of work (see

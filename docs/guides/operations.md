@@ -29,12 +29,14 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 
 and run Laravel's scheduler. It registers:
 
-| Task                                                                                                       | When                                                        |
-|------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
-| `mfa:prune`                                                                                                | daily                                                       |
-| `authorization:prune`                                                                                      | daily                                                       |
-| SSO's operations schedule: `sso:prune`, `sso:domains:recheck`, `sso:metadata:refresh`, `sso:keys:expiring` | at `sso.operations.cadence.*`, and only while SSO is in use |
-| `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`   |
+| Task                                                                                                       | When                                                                                              |
+|------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `mfa:prune`                                                                                                | daily                                                                                             |
+| `authorization:prune`                                                                                      | daily                                                                                             |
+| `authorization:usage-prune`                                                                                | daily                                                                                             |
+| `authorization:usage-heartbeat`                                                                            | at least once an `authorization.usage.interval`, while `authorization.usage.enabled` is true      |
+| SSO's operations schedule: `sso:prune`, `sso:domains:recheck`, `sso:metadata:refresh`, `sso:keys:expiring` | at `sso.operations.cadence.*`, and only while SSO is in use                                       |
+| `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`                                         |
 
 - Audit-log registers its own sealing, sweep, verification and pruning on the schedule itself, so `Iam::schedule()`
   never registers them again. `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or verification
@@ -51,6 +53,11 @@ and run Laravel's scheduler. It registers:
 - `authorization:prune` removes `laravel-authorization`'s expired grants and those of grantees and records that are
   gone. An expired grant stops counting at its expiry whether or not the prune has run, so it keeps the grant tables
   small rather than making a check correct. It is registered whatever `iam.adapters.authorization` says.
+- `authorization:usage-prune` removes the usage of grants that are gone and the coverage older than
+  `authorization.usage.retention` days, whether or not usage is tracked. While `authorization.usage.enabled` is true,
+  `authorization:usage-heartbeat` extends the coverage on a quiet site, so its unused grants read `unused` rather than
+  `unknown`. It steps through each hour by the interval in whole minutes, or runs hourly for an interval of an hour or
+  more, so no two runs are more than an interval apart.
 - `laravel-authentication`'s expired rows are pruned by Laravel's `model:prune`, which you schedule with its models
   named, as its [operations guide][auth-pruning] shows.
 
@@ -61,7 +68,9 @@ Run a queue worker for:
 - SSO's metadata refresh, on `sso.metadata.queue`;
 - `laravel-authentication`'s delivery of one-time codes, MFA's email and SMS codes among them, on
   `authentication.delivery.queue.connection` and `authentication.delivery.queue.name`. A sender that throws fails the
-  job, and your queue retries it under its own policy.
+  job, and your queue retries it under its own policy;
+- `laravel-authorization`'s grant usage recording, while `authorization.usage.enabled` is true: its `RecordGrantUsage`
+  jobs go to `authorization.usage.connection` and `authorization.usage.queue`.
 
 Audit-log's outbox uses no queue. With `audit-log.delivery.mode` set to `outbox`, records wait in the outbox table until
 `audit-log:drain --until-empty`, which `Iam::schedule()` registers every minute (the table above), delivers them to the

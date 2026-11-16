@@ -48,8 +48,9 @@ use SineMacula\Laravel\Iam\Facades\Iam;
 Run the scheduler, and run a queue worker for `laravel-authentication`'s delivery of one-time codes
 (`authentication.delivery.queue.connection` and `authentication.delivery.queue.name`): every code it sends, MFA's email
 and SMS codes among them, waits on that queue until a worker takes it. While SSO is in use,
-the same worker, or one of its own, runs SSO's metadata refresh on `sso.metadata.queue` (see
-[Operations](operations.md#queues)).
+the same worker, or one of its own, runs SSO's metadata refresh on `sso.metadata.queue`. While
+`authorization.usage.enabled` is true, a worker runs `laravel-authorization`'s grant usage recording on
+`authorization.usage.connection` and `authorization.usage.queue` (see [Operations](operations.md#queues)).
 
 Then check the whole configuration, and do so again on every deploy:
 

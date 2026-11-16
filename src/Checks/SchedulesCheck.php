@@ -36,7 +36,7 @@ final readonly class SchedulesCheck implements Check
         /** The container the schedule is resolved from. */
         private Container $container,
 
-        /** The configuration audit-log's delivery mode is read from. */
+        /** The configuration the conditional runs' switches are read from. */
         private Repository $config,
     ) {}
 
@@ -72,7 +72,11 @@ final readonly class SchedulesCheck implements Check
     {
         return [function (): ?string {
 
-            $runs = [IamSchedule::MFA_PRUNE, IamSchedule::AUTHORIZATION_PRUNE];
+            $runs = [IamSchedule::MFA_PRUNE, IamSchedule::AUTHORIZATION_PRUNE, IamSchedule::USAGE_PRUNE];
+
+            if ($this->config->get(IamSchedule::USAGE_ENABLED) === true) {
+                $runs[] = IamSchedule::USAGE_HEARTBEAT;
+            }
 
             if ($this->config->get(IamSchedule::DELIVERY_MODE) === DeliveryMode::OUTBOX->value) {
                 $runs[] = IamSchedule::AUDIT_DRAIN;

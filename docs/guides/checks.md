@@ -207,7 +207,8 @@ a machine yourself.
 Reports a note only, since something no check can see may start a run.
 
 - Note: *Runs [...] are not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*:
-  `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
+  `mfa:prune`, `authorization:prune` and `authorization:usage-prune`, `authorization:usage-heartbeat` while
+  `authorization.usage.enabled` is true, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
   `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
 
 A malformed `sso.operations.cadence.*` value is named by `sso:check`, which `iam:check` runs; SSO leaves that task
