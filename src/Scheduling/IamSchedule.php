@@ -19,8 +19,9 @@ use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
  * `mfa:prune`, `authorization:prune` and `authorization:usage-prune` run daily,
  * the usage heartbeat runs at least once an interval while usage tracking is
  * on, SSO's operations schedule is registered, and the audit-log drain runs
- * every minute while delivery is `outbox`. No task takes a cache mutex: each
- * command is safe to run on several servers at once.
+ * every minute while delivery is `outbox`. None of this package's own tasks
+ * takes a cache mutex: each is safe to run on several servers at once. SSO's
+ * take one only while `sso.operations.cache_mutexes` is on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
