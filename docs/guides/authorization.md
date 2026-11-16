@@ -314,8 +314,9 @@ on too (see [Bindings](bindings.md#authorization)).
 - **A move reports the people granted below it.** A grant rooted below a tenant counts within it, so moving that
   subtree out from under the tenant takes the person's grant beyond it with no grant written. While both adapters are
   on, `Iam::treeChanges()->changed()` reports everyone holding a live grant in the moved subtree to SSO's scope
-  widening, in the move's transaction, which suspends their links by a verified domain in every other tenant and
-  revokes the sessions established through them (see
+  widening, in the move's transaction. It spares the moved subtree and its new ancestors, so their links by a verified
+  domain there stay active, while SSO suspends those in any other tenant, such as an old ancestor that no longer
+  contains the subtree, and revokes the sessions established through them (see
   [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-tree)). It reports them all in one widening, so SSO
   takes their identity guards first, in its lock order, and a grant, reservation or activation of one of them made at
   the same time waits for the move, or the move for it, and neither is aborted for a deadlock.
