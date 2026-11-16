@@ -84,7 +84,9 @@ registered, so memberships bound in an application provider's `register()` count
   after the restructure is written.
 - A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the identity in the connection's
   tenant, so a connection's groups never grant beyond its tenant. `GroupSettings` finds the bound mapping, or
-  `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group.
+  `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group. `GroupGrants` refuses a role given both
+  reaches before it writes, and re-syncs in one `syncRoles()` of `RoleReach` entries, so a role is written once and a
+  live one keeps its expiry.
 - The re-sync runs after the sign-in's transaction commits, in its own transaction, because its grants report to SSO's
   widening, whose identity guard comes before the locks the redemption holds. A refused re-sync hands out no
   credential. `MappedGroupResync` makes the identity's roles in the tenant exactly the mapping's, and refuses with no
