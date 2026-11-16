@@ -10,7 +10,7 @@ use SineMacula\Laravel\AuditLog\Access\Enums\ReadPurpose;
 use SineMacula\Laravel\Authorization\Support\PermissionDefinition;
 use SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation;
 use SineMacula\Laravel\Iam\Authorization\PermissionCatalogue;
-use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
+use SineMacula\Laravel\Sso\Administration\Enums\AdministrativeOperation as SsoOperation;
 
 /**
  * Unit tests for the catalogue of the members' administrative permissions.
@@ -48,15 +48,20 @@ final class PermissionCatalogueTest extends TestCase
     }
 
     /**
-     * Each operation SSO names itself is declared under SSO's own name.
+     * Every SSO operation is declared under SSO's own name.
      *
      * @return void
      */
-    public function testSsosOwnNamesAreReused(): void
+    public function testEverySsoOperationIsDeclaredUnderSsosName(): void
     {
-        foreach (FreshnessOperation::cases() as $operation) {
-            self::assertNotNull(AdministrativeOperation::tryFrom($operation->value), $operation->value);
-        }
+        $names = array_map(static fn (PermissionDefinition $definition): string => $definition->name, (new PermissionCatalogue)->permissions());
+        $sso   = array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'sso.')));
+        $own   = array_column(SsoOperation::cases(), 'value');
+
+        sort($sso);
+        sort($own);
+
+        self::assertSame($own, $sso);
     }
 
     /**

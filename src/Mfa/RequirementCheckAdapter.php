@@ -6,11 +6,13 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use Carbon\CarbonImmutable;
 use SineMacula\Laravel\Authentication\Contracts\RequirementCheck as AuthenticationRequirementCheck;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\Requirement;
 use SineMacula\Laravel\Authentication\Requirements\RequirementEvaluation;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
+use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
@@ -83,8 +85,9 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
         $reference  = $subject->session === null ? SignIn::UNNAMED : SignIn::reference($subject->session, $subject->application);
         $signIn     = new SignIn(ProofOwner::of($identity), $subject->application, $reference, VerificationGeneration::current($identity));
 
+        $trust   = self::trustFor($subject->tenant);
         $further = array_reverse($subject->proofs(self::since($translated, $subject->now), self::FURTHER_KINDS, RequirementSubject::MAX_LIMIT));
-        $proofs  = array_map(fn (RecordedProof $proof): Proof => $this->proofs->toMfa($proof, $signIn, ProviderTrust::withheld()), [$subject->firstFactor, ...$further]);
+        $proofs  = array_map(fn (RecordedProof $proof): Proof => $this->proofs->toMfa($proof, $signIn, $trust), [$subject->firstFactor, ...$further]);
 
         return $this->requirements->evaluation($this->check->check($translated, ...$proofs));
     }
@@ -112,5 +115,25 @@ final readonly class RequirementCheckAdapter implements AuthenticationRequiremen
         }
 
         return $now->subSeconds($longest);
+    }
+
+    /**
+     * The trust of the tenant judged; withheld for the identity level and
+     * freshness.
+     *
+     * @param  ?\SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @return \SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    private static function trustFor(?Tenant $tenant): ProviderTrust
+    {
+        if ($tenant === null) {
+            return ProviderTrust::withheld();
+        }
+
+        $tenantId = IdentifierCoercion::stringify($tenant->getTenantIdentifier());
+
+        return $tenantId === null || $tenantId === '' ? throw UnresolvedReferenceException::forTenantIdentifier() : ProviderTrust::accepted($tenantId);
     }
 }

@@ -126,6 +126,11 @@ Removing a factor ends every other session of the identity and voids the current
 resetting an identity ends all of its sessions. When the current session is returned to pending, the removal's
 `completion()` carries its new pending credential back to the client. See MFA's [lifecycle guide][mfa-lifecycle].
 
+While the session acts in a tenant whose MFA requirement asks for anything, MFA refuses to remove the person's last
+factor unless another usable one remains, even in an `enrolled` application. The active tenant is only ever the
+caller's own, so MFA's `LastFactorPolicy`, asked about someone else's factors by an administrator flow of your own,
+applies no tenant's requirement.
+
 ## Codes and delivery
 
 Bind `laravel-authentication`'s `OneTimeCodeSender`: it delivers every email and SMS code, MFA's included, and you write
@@ -149,7 +154,9 @@ While an MFA application offers the `passkey` type, MFA's passkey ceremonies run
 passkeys, so a passkey registered with an enrolment binding becomes a confirmed passkey factor. The passkey factor gate
 is bound whatever the types say: removing a passkey through `laravel-authentication` takes its factor and association
 with it, even once `passkey` is no longer offered. Configure `laravel-authentication`'s relying party
-(`authentication.passkeys.relying_party`) before you offer the type.
+(`authentication.passkeys.relying_party`, or the guard's `passkeys` block) before you offer the type: `iam:check` fails
+while an MFA application offers it on a guard whose relying party is invalid, even a guard that signs in with a password
+only.
 
 ## The context MFA reads
 

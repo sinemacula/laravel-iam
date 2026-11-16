@@ -42,10 +42,11 @@ of its own you cannot rebind, when MFA sees that channel name the connection:
   reauthenticator) see the connection only when the session's first factor carries evidence SSO accepted and, for a
   session acting in a tenant, the tenant trusts the connection. Any other SSO first factor reaches MFA naming no
   connection, so the rebound policy counts nothing of it;
-- `laravel-authentication`'s requirement check, and MFA's requirement policy when a sign-in asks it for the identity's
-  own further factor, never see the connection: `laravel-authentication` asks its external evidence policy first, with
-  the tenant whose requirement it is, and that policy counts the accepted evidence through both gates and that tenant's
-  trust.
+- `laravel-authentication` asks its external evidence policy first, with the tenant whose requirement it is, and that
+  policy counts the accepted evidence through both gates and that tenant's trust. Its requirement check, which judges
+  the evidence beside the session's further factors, sees the connection by the same rule for that tenant, and never
+  for the identity's own requirement or freshness; MFA's requirement policy, asked for the identity's own further
+  factor at sign-in, never sees it.
 
 So a password-only sign-in through a trusted connection, or one SSO's evidence policy refused, meets no multifactor
 requirement, and one tenant's trust in a connection never meets another tenant's requirement.
@@ -90,7 +91,8 @@ tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), and is folded
 enforcement. It reaches a sign-in only through that policy, judged with the tenant, never through MFA's requirement
 policy, which answers for the identity alone. A tenant that enforces SSO and requires a further factor is met by a
 session through one of the connections its rule accepts, once both gates accept that session's evidence for the
-requirement or the person has verified a factor of MFA's on it.
+requirement, the person has verified a factor of MFA's on it, or the rebound combination policy credits the two
+together.
 
 ## Further reading
 

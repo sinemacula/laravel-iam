@@ -186,7 +186,7 @@ final class IamManagerTest extends TestCase
         $this->manager()->schedule($schedule);
 
         self::assertSame(
-            [Artisan::formatCommandString(IamSchedule::MFA_PRUNE), Artisan::formatCommandString(IamSchedule::AUTHORIZATION_PRUNE)],
+            array_map(Artisan::formatCommandString(...), [IamSchedule::MFA_PRUNE, IamSchedule::AUTHORIZATION_PRUNE, IamSchedule::USAGE_PRUNE]),
             array_map(static fn (ScheduledEvent $event): ?string => $event->command, $schedule->events()),
         );
     }

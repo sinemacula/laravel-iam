@@ -14,6 +14,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\AdditionalFactorPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\RequirementCheck as AuthenticationRequirementCheck;
+use SineMacula\Laravel\Authentication\Contracts\Tenant;
+use SineMacula\Laravel\Authentication\External\ExternalEvidence;
 use SineMacula\Laravel\Authentication\Models\Session as SessionModel;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
@@ -37,10 +39,14 @@ use SineMacula\Laravel\Iam\Mfa\AdditionalFactorPolicyAdapter;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
+use SineMacula\Laravel\Mfa\Assurance\Channel as MfaChannel;
+use SineMacula\Laravel\Mfa\Assurance\DefaultCombinationPolicy;
 use SineMacula\Laravel\Mfa\Assurance\Evaluation as MfaEvaluation;
+use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Contracts\RequirementCheck;
 use SineMacula\Laravel\Mfa\Contracts\RequirementPolicy;
+use SineMacula\Laravel\Mfa\Enums\AssuranceLevel as MfaLevel;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
@@ -49,10 +55,12 @@ use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\ProofRequirementCheck;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
-use Tests\Concerns\MigratesMembers;
+use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
+use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
+use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\TestCase;
 
 /**
@@ -67,13 +75,16 @@ use Tests\TestCase;
 #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
 final class RequirementCheckAdapterTest extends TestCase
 {
-    use MigratesMembers, RunsAtIsolationLevels, SignsInPeople;
+    use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var string The authenticator app factor the further proofs are made with. */
     private const string FACTOR = 'factor-authenticator-app';
 
     /** @var string The passkey factor the phishing-resistant proofs are made with. */
     private const string PASSKEY = 'factor-passkey';
+
+    /** @var string A tenant that owns no connection. */
+    private const string OTHER_TENANT = 'tenant-2';
 
     /** @var int How long the judging side waits for a lock before giving up, in seconds. */
     private const int LOCK_WAIT_SECONDS = 2;
@@ -332,6 +343,92 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
+     * Rows of `[the tenant judged, the session's tenant or null for no session, the parts left unmet]`.
+     *
+     * @return iterable<string, array{0: ?string, 1: ?string, 2: list<\SineMacula\Laravel\Authentication\Requirements\Enums\RequirementKind>}>
+     */
+    public static function provideTenantsJudged(): iterable
+    {
+        yield 'the tenant that owns the connection' => [self::TENANT, null, []];
+
+        yield 'a tenant that does not trust it' => [self::OTHER_TENANT, null, [RequirementKind::MULTIFACTOR]];
+
+        yield 'no tenant' => [null, null, [RequirementKind::MULTIFACTOR]];
+
+        yield 'another tenant, from the trusting tenant\'s session' => [self::OTHER_TENANT, self::TENANT, [RequirementKind::MULTIFACTOR]];
+
+        yield 'the trusting tenant, from another tenant\'s session' => [self::TENANT, self::OTHER_TENANT, []];
+    }
+
+    /**
+     * Provider evidence and a local factor meet only a trusting tenant's
+     * requirement.
+     *
+     * @param  ?string  $tenant
+     * @param  ?string  $sessionTenant
+     * @param  list<\SineMacula\Laravel\Authentication\Requirements\Enums\RequirementKind>  $unmet
+     * @return void
+     */
+    #[DataProvider('provideTenantsJudged')]
+    public function testProviderEvidenceAndALocalFactorMeetOnlyATrustingTenantsRequirement(?string $tenant, ?string $sessionTenant, array $unmet): void
+    {
+        $this->arrangeSso();
+        $this->creditProviderEvidenceWithALocalFactor();
+
+        $now     = CarbonImmutable::now()->startOfSecond();
+        $further = [self::further('totp', $now)];
+        $subject = new RequirementSubject(
+            $this->createPerson(),
+            self::GUARD,
+            $sessionTenant === null ? null : (new SessionModel)->forceFill(['id' => 'session-1', 'tenant_id' => $sessionTenant]),
+            $this->providerFirstFactor($now),
+            $now,
+            static fn (): array => $further,
+            $tenant === null ? null : new ClaimedTenant($tenant),
+        );
+
+        self::assertSame($unmet, $this->adapter()->evaluate($subject, new Requirement(multifactor: new RequirementPart(null)))->unmet);
+    }
+
+    /**
+     * Rows of a tenant whose identifier names nothing.
+     *
+     * @return iterable<string, array{\SineMacula\Laravel\Authentication\Contracts\Tenant}>
+     */
+    public static function provideUnnamedTenants(): iterable
+    {
+        yield 'an empty identifier' => [new ClaimedTenant('')];
+
+        yield 'no identifier' => [new class implements Tenant {
+            /**
+             * No identifier.
+             *
+             * @return null
+             */
+            #[\Override]
+            public function getTenantIdentifier(): null
+            {
+                return null;
+            }
+        }];
+    }
+
+    /**
+     * A tenant whose identifier names nothing is refused.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @return void
+     */
+    #[DataProvider('provideUnnamedTenants')]
+    public function testATenantWhoseIdentifierNamesNothingIsRefused(Tenant $tenant): void
+    {
+        $now     = CarbonImmutable::now();
+        $subject = new RequirementSubject($this->createPerson(), self::GUARD, null, self::firstFactor($now), $now, static fn (): array => [], $tenant);
+
+        self::assertUnresolved(ReferenceKind::TENANT, fn (): mixed => $this->adapter()->evaluate($subject, self::additionalVerification()));
+    }
+
+    /**
      * An identity MFA holds no factors for is refused.
      *
      * @return void
@@ -545,6 +642,69 @@ final class RequirementCheckAdapterTest extends TestCase
     }
 
     /**
+     * Have MFA credit a provider first factor naming the connection and
+     * carrying its evidence, beside a local factor, with every part asked.
+     *
+     * @return void
+     */
+    private function creditProviderEvidenceWithALocalFactor(): void
+    {
+        $this->app?->instance(CombinationPolicy::class, new readonly class ($this->connectionId) implements CombinationPolicy {
+            /**
+             * Constructor.
+             *
+             * @param  string  $connectionId
+             */
+            public function __construct(
+
+                /** The connection whose provider's evidence is credited. */
+                private string $connectionId,
+            ) {}
+
+            /**
+             * As the default answers.
+             *
+             * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  $firstFactor
+             * @param  \SineMacula\Laravel\Mfa\Assurance\Channel  $factor
+             * @return bool
+             */
+            #[\Override]
+            public function accepts(Proof $firstFactor, MfaChannel $factor): bool
+            {
+                return (new DefaultCombinationPolicy)->accepts($firstFactor, $factor);
+            }
+
+            /**
+             * Every part met when the credited evidence and a local factor are
+             * both held, else none.
+             *
+             * @param  \SineMacula\Laravel\Mfa\Requirements\Requirement  $requirement
+             * @param  \SineMacula\Laravel\Mfa\Proofs\Proof  ...$proofs
+             * @return \SineMacula\Laravel\Mfa\Assurance\Evaluation
+             *
+             * @throws \InvalidArgumentException
+             */
+            #[\Override]
+            public function evaluate(MfaRequirement $requirement, Proof ...$proofs): MfaEvaluation
+            {
+                $credited = false;
+                $local    = false;
+
+                foreach ($proofs as $proof) {
+                    $credited = $credited || ($proof->channel?->reference() === $this->connectionId && $proof->evidence !== null);
+                    $local    = $local    || $proof->kind === MfaProofKind::ADDITIONAL_FACTOR;
+                }
+
+                $parts = $requirement->parts();
+
+                return $credited && $local
+                    ? new MfaEvaluation(true, true, MfaLevel::AAL2, false, false, ['mfa'], $parts, [])
+                    : new MfaEvaluation(false, false, MfaLevel::AAL1, false, false, [], [], $parts);
+            }
+        });
+    }
+
+    /**
      * Have MFA's requirement check judge as the closure does.
      *
      * @param  \Closure(\SineMacula\Laravel\Mfa\Requirements\Requirement, list<\SineMacula\Laravel\Mfa\Proofs\Proof>): \SineMacula\Laravel\Mfa\Assurance\Evaluation  $judge
@@ -629,6 +789,33 @@ final class RequirementCheckAdapterTest extends TestCase
         $channel = new Channel(ChannelKind::PASSWORD);
 
         return new RecordedProof('proof-first', ProofKind::FIRST_FACTOR, Purpose::SIGN_IN, 'password', $channel, null, new ObservedProperties, null, ['pwd'], $at);
+    }
+
+    /**
+     * A first factor through the connection at the time given, carrying the
+     * provider's accepted evidence.
+     *
+     * @param  \Carbon\CarbonImmutable  $at
+     * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof
+     */
+    private function providerFirstFactor(CarbonImmutable $at): RecordedProof
+    {
+        $channel  = new Channel(ChannelKind::EXTERNAL_PROVIDER, $this->connectionId);
+        $evidence = new ExternalEvidence(['pwd', 'mfa'], null, $at);
+
+        return new RecordedProof(
+            'proof-first',
+            ProofKind::FIRST_FACTOR,
+            Purpose::SIGN_IN,
+            'external_provider',
+            $channel,
+            null,
+            new ObservedProperties,
+            null,
+            $evidence->methods,
+            $at,
+            $evidence,
+        );
     }
 
     /**

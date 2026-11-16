@@ -24,8 +24,9 @@ and what the package leaves to your application.
 }
 ```
 
-`iam:check` reports a missing extension, and a plugin that is not installed or whose files are not linked (allow it,
-then run `composer install` again). See [Checks](checks.md).
+`iam:check` reports, through `sso:check`, a missing extension while `sso.features.saml2` or `sso.features.oidc` is not
+off, and a plugin that is not installed or whose files are not linked while `sso.features.saml2` is not off (allow it,
+then run `composer install` again). See [Checks](checks.md#the-members-checks).
 
 ## Installing
 
@@ -100,7 +101,7 @@ cannot do these for you:
 | Bind your provisioner                                                                                                                                                                                                                                                             | [Provisioning and tenancy](provisioning-and-tenancy.md#provisioning)        |
 | Add the routes, following laravel-iam's example application guide: redeem SSO's handoffs through `Iam::signIns()`, `Iam::reauthentications()` and `Iam::links()`, never `HandoffRedemption` directly                                                                              | [An example application](example-application.md)                            |
 | Call `Iam::schedule()` and run the scheduler                                                                                                                                                                                                                                      | [Operations](operations.md#the-schedule)                                    |
-| Run a queue worker for `laravel-authentication`'s code delivery and, while SSO is in use, SSO's metadata refresh                                                                                                                                                                  | [Operations](operations.md#queues)                                          |
+| Run a queue worker for `laravel-authentication`'s code delivery, SSO's metadata refresh while SSO is in use, and `laravel-authorization`'s usage recording while usage is tracked                                                                                                 | [Operations](operations.md#queues)                                          |
 | Allow SSO's Composer plugin                                                                                                                                                                                                                                                       | [Requirements](#requirements)                                               |
 | Map each application to its permission in `authorization.application_access`, and bind `TenantAccess` if your principals act beyond their own tenant                                                                                                                              | [Authorization](authorization.md#access-contracts)                          |
 | Declare MFA's and SSO's freshness operations for their guards                                                                                                                                                                                                                     | [Guards and applications](#guards-and-applications)                         |
@@ -113,7 +114,8 @@ A run fails (exit code 1) when a tag it publishes is not registered; the rest is
 ## The storage connection
 
 `laravel-authentication`'s, `laravel-authorization`'s, MFA's and SSO's tables live on one database connection, so a
-change that spans them commits or rolls back as one. Name it once:
+change that spans them commits or rolls back as one. SSO's attempt counters are the one exception (below). Name it
+once:
 
 ```dotenv
 IAM_STORAGE_CONNECTION=mysql
@@ -124,6 +126,21 @@ Leave it unset for the default connection. The package writes it into `authentic
 leave them unset. A member key that names another connection refuses the boot
 (`SineMacula\Laravel\Iam\Exceptions\StorageConnectionMismatchException`): unset it, or set it to the same connection.
 `laravel-audit-log`'s tables follow `audit-log.storage.connection`, the default connection when unset.
+
+SSO's attempt counters need a connection of their own. The package runs each SSO redemption in one transaction on the
+storage connection and rolls it back when the sign-in is refused, so a counter on that connection loses the refused
+attempt. While SSO is in use, name another connection in `sso.rate_limits.connection` before you migrate, since SSO's
+migration creates the counters' table on it. An application that has already migrated has that table on the storage
+connection: create it on the new connection with a migration you perform before you set the key:
+
+```dotenv
+SSO_RATE_LIMITS_CONNECTION=sso_counters
+```
+
+On MySQL and PostgreSQL it can be a second entry in `database.connections` with the same settings as the storage
+connection. On SQLite give it another database file: SQLite takes one writer per file, so a second connection to the
+same file can wait on the storage connection's transaction. `iam:check` notes counters left on the storage connection,
+unless you bind SSO's `AttemptLimiter` yourself.
 
 Your own models belong on that connection too:
 
@@ -172,6 +189,10 @@ name:
 ```
 
 - An MFA application whose name is no guard in `auth.guards` is refused by `iam:check`.
+- While `iam.adapters.mfa` is on, every identity model a `jwt` guard's provider names must implement laravel-mfa's
+  `SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable`, with the `HasFactors` trait supplying its methods,
+  unless it is a `MachineIdentity`. MFA is asked on every sign-in, whether or not a further factor is owed, and a
+  sign-in for any other identity throws `UnresolvedReferenceException`. `iam:check` refuses such a model.
 - An SSO application's guard must allow `external_provider` among its methods: that, not SSO's own
   `external_sign_in` setting, decides whether people may sign in through a provider. Leave
   `sso.applications.*.unlinked_handoffs` off: under this package an unlinked sign-in is provisioned or refused, never

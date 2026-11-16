@@ -8,16 +8,20 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use SineMacula\Laravel\AuditLog\Delivery\Enums\DeliveryMode;
 use SineMacula\Laravel\Authorization\Console\PruneGrantsCommand;
+use SineMacula\Laravel\Authorization\Console\UsageHeartbeatCommand;
+use SineMacula\Laravel\Authorization\Console\UsagePruneCommand;
 use SineMacula\Laravel\Mfa\Console\PruneCommand;
 use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
 
 /**
  * Registers the members' scheduled work on the application's schedule.
  *
- * `mfa:prune` and `authorization:prune` run daily, SSO's operations schedule is
- * registered, and the audit-log drain runs every minute while delivery is
- * `outbox`. No task takes a cache mutex: each command is safe to run on several
- * servers at once.
+ * `mfa:prune`, `authorization:prune` and `authorization:usage-prune` run daily,
+ * the usage heartbeat runs at least once an interval while usage tracking is
+ * on, SSO's operations schedule is registered, and the audit-log drain runs
+ * every minute while delivery is `outbox`. None of this package's own tasks
+ * takes a cache mutex: each is safe to run on several servers at once. SSO's
+ * take one only while `sso.operations.cache_mutexes` is on.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -32,11 +36,23 @@ final readonly class IamSchedule
     /** @var string laravel-authorization's pruning of grants that no longer count. */
     public const string AUTHORIZATION_PRUNE = PruneGrantsCommand::NAME;
 
+    /** @var string laravel-authorization's pruning of grant usage and coverage. */
+    public const string USAGE_PRUNE = UsagePruneCommand::NAME;
+
+    /** @var string laravel-authorization's extension of usage coverage to now. */
+    public const string USAGE_HEARTBEAT = UsageHeartbeatCommand::NAME;
+
+    /** @var string The key of laravel-authorization's usage tracking switch. */
+    public const string USAGE_ENABLED = 'authorization.usage.enabled';
+
     /** @var string Audit-log's outbox delivery, until the outbox is empty. */
     public const string AUDIT_DRAIN = 'audit-log:drain --until-empty';
 
     /** @var string The key of audit-log's delivery mode. */
     public const string DELIVERY_MODE = 'audit-log.delivery.mode';
+
+    /** @var string The key of laravel-authorization's usage interval, in seconds. */
+    private const string USAGE_INTERVAL = 'authorization.usage.interval';
 
     /**
      * Constructor.
@@ -63,6 +79,11 @@ final readonly class IamSchedule
     {
         $schedule->command(self::MFA_PRUNE)->daily();
         $schedule->command(self::AUTHORIZATION_PRUNE)->daily();
+        $schedule->command(self::USAGE_PRUNE)->daily();
+
+        if ($this->config->get(self::USAGE_ENABLED) === true) {
+            $schedule->command(self::USAGE_HEARTBEAT)->cron($this->heartbeatCadence());
+        }
 
         $this->operations->register($schedule);
 
@@ -71,6 +92,22 @@ final readonly class IamSchedule
         }
 
         $schedule->command(self::AUDIT_DRAIN)->everyMinute();
+    }
+
+    /**
+     * The heartbeat's cron: a step of the interval's whole minutes, or hourly.
+     *
+     * @return string
+     */
+    private function heartbeatCadence(): string
+    {
+        $interval = $this->config->get(self::USAGE_INTERVAL);
+
+        if (!is_numeric($interval) || $interval >= 3600) {
+            return '0 * * * *';
+        }
+
+        return '*/' . intdiv((int) $interval, 60) . ' * * * *';
     }
 
     /**
