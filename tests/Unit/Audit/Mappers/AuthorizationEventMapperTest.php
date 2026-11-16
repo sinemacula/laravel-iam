@@ -739,6 +739,30 @@ final class AuthorizationEventMapperTest extends TestCase
     }
 
     /**
+     * An impersonated change and override keep the impersonator.
+     *
+     * @return void
+     */
+    public function testAnImpersonatedChangeKeepsItsImpersonator(): void
+    {
+        Relation::morphMap(['person' => Person::class]);
+
+        $operation = new Operation(self::OPERATION, new Reference('member', '70'), CarbonImmutable::now(), false, self::person('7'), self::person('5'));
+        $scope     = new GrantScope(new Reference('organisation', self::TENANT));
+        $changes   = [
+            self::snapshotOf(new RoleAssigned($operation, self::person('9'), new Reference('role', '3'), 'Billing', $scope, null)),
+            self::snapshotOf(new SystemOverrideUsed($operation, new Reference('role', '3'), 'Administrator', null, 'rename')),
+        ];
+
+        foreach ($changes as $snapshot) {
+            self::assertSame(['type' => 'person', 'id' => '7'], $snapshot->actor?->toArray());
+            self::assertSame(['type' => 'member', 'id' => '70'], $snapshot->principal?->toArray());
+            self::assertSame('person', $snapshot->properties['impersonator_type'] ?? null);
+            self::assertSame('5', $snapshot->properties['impersonator_id'] ?? null);
+        }
+    }
+
+    /**
      * References are read through the morph map, the tenant by its key.
      *
      * @return void
@@ -860,6 +884,7 @@ final class AuthorizationEventMapperTest extends TestCase
             'isTrusted'       => true,
             'actor'           => null,
             'actorIdentity'   => null,
+            'impersonator'    => null,
             'subject'         => null,
             'tenant'          => null,
             'application'     => null,
