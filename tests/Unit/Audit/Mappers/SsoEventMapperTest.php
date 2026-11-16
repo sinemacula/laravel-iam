@@ -170,15 +170,19 @@ final class SsoEventMapperTest extends TestCase
 
         yield 'an unsolicited response reinitiated' => [new UnsolicitedResponseReinitiated($flow), SsoActivity::UNSOLICITED_RESPONSE_REINITIATED, $flowed];
 
-        yield 'a link created' => [new LinkCreated($flow, LinkOrigin::VERIFIED_DOMAIN), SsoActivity::LINK_CREATED, [...$flowed, 'origin' => 'verified_domain']];
+        yield 'a link created' => [
+            new LinkCreated('link-1', $flow, LinkOrigin::VERIFIED_DOMAIN),
+            SsoActivity::LINK_CREATED,
+            [...$flowed, 'link_id' => 'link-1', 'origin' => 'verified_domain'],
+        ];
 
-        yield 'a link removed' => [new LinkRemoved($flow), SsoActivity::LINK_REMOVED, $flowed];
+        yield 'a link removed' => [new LinkRemoved('link-1', $flow), SsoActivity::LINK_REMOVED, [...$flowed, 'link_id' => 'link-1']];
 
         yield 'a link activated' => [new LinkActivated('link-1', $flow), SsoActivity::LINK_ACTIVATED, [...$flowed, 'link_id' => 'link-1']];
 
-        yield 'a link confirmed' => [new LinkConfirmed($flow), SsoActivity::LINK_CONFIRMED, $flowed];
+        yield 'a link confirmed' => [new LinkConfirmed('link-1', $flow), SsoActivity::LINK_CONFIRMED, [...$flowed, 'link_id' => 'link-1']];
 
-        yield 'a link suspended' => [new LinkSuspended($flow), SsoActivity::LINK_SUSPENDED, $flowed];
+        yield 'a link suspended' => [new LinkSuspended('link-1', $flow), SsoActivity::LINK_SUSPENDED, [...$flowed, 'link_id' => 'link-1']];
 
         yield 'a connection created' => [new ConnectionCreated($admin), SsoActivity::CONNECTION_CREATED, []];
 
@@ -470,7 +474,7 @@ final class SsoEventMapperTest extends TestCase
 
         yield 'a refusal' => [new FlowFailed(self::flowContext(), Flow::ASSERTION, FailureReason::SIGNATURE_INVALID)];
 
-        yield 'a link suspended' => [new LinkSuspended(self::flowContext())];
+        yield 'a link suspended' => [new LinkSuspended('link-1', self::flowContext())];
 
         yield 'a recheck failed' => [new DomainRecheckFailed(self::flowContext(), self::DOMAIN, 'example.test', RecheckFailure::RECORD_CHANGED, null)];
 
@@ -516,7 +520,7 @@ final class SsoEventMapperTest extends TestCase
         $admin = self::adminContext();
         $noon  = CarbonImmutable::parse(self::NOON);
 
-        yield 'a link removed' => [new LinkRemoved(self::flowContext())];
+        yield 'a link removed' => [new LinkRemoved('link-1', self::flowContext())];
 
         yield 'a connection created' => [new ConnectionCreated($admin)];
 
@@ -570,7 +574,7 @@ final class SsoEventMapperTest extends TestCase
     public function testAMigrationsLinkWithNoActingIdentityIsTheCallers(): void
     {
         $record   = new PendingRecord;
-        $snapshot = (new SsoEventMapper)->map(new LinkCreated(self::migrationContext(), LinkOrigin::MIGRATION), $record)?->snapshot();
+        $snapshot = (new SsoEventMapper)->map(new LinkCreated('link-1', self::migrationContext(), LinkOrigin::MIGRATION), $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertFalse($record->isActorSettled());
@@ -588,7 +592,7 @@ final class SsoEventMapperTest extends TestCase
     public function testAMigrationsLinkWithAnActingIdentityIsTheOperators(): void
     {
         $record   = new PendingRecord;
-        $snapshot = (new SsoEventMapper)->map(new LinkCreated(self::migrationContext(Person::class, '1'), LinkOrigin::MIGRATION), $record)?->snapshot();
+        $snapshot = (new SsoEventMapper)->map(new LinkCreated('link-1', self::migrationContext(Person::class, '1'), LinkOrigin::MIGRATION), $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertTrue($record->isActorSettled());
@@ -624,7 +628,7 @@ final class SsoEventMapperTest extends TestCase
     public function testALinkAFlowMadeIsTheIdentitys(LinkOrigin $origin): void
     {
         $record   = new PendingRecord;
-        $snapshot = (new SsoEventMapper)->map(new LinkCreated(self::flowContext(), $origin), $record)?->snapshot();
+        $snapshot = (new SsoEventMapper)->map(new LinkCreated('link-1', self::flowContext(), $origin), $record)?->snapshot();
 
         self::assertInstanceOf(PendingSnapshot::class, $snapshot);
         self::assertTrue($record->isActorSettled());
