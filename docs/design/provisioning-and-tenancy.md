@@ -47,8 +47,8 @@ registered, so memberships bound in an application provider's `register()` count
 - The identity must be an Eloquent model with `wasRecentlyCreated` set, since SSO's grant proves the authority to
   provision, not that the identity is new.
 - `ScopeWidenings::widen()` is the one call an application makes, first inside the transaction that gives people a
-  principal in a tenant (or the platform, `null`). It runs SSO's `widened()` in a savepoint; outside a transaction SSO
-  refuses it.
+  principal, sparing the principal's tenant (none for the platform, `[]`). It runs SSO's `widened()` in a savepoint;
+  outside a transaction SSO refuses it.
 - `Memberships::of()` must take the application's membership guard as it answers, and every writer that narrows a
   membership must take it too, because SSO's `TenantMembership` asks for its answer to stay true until the redemption
   commits and offers no other protection. The membership adapters take no lock of their own.
@@ -78,10 +78,11 @@ registered, so memberships bound in an application provider's `register()` count
   both against SSO's order; no place in `changed()` keeps that order, since the widening takes guards and connections
   in one call. So an admission holding an identity guard, or under `REPEATABLE READ` reading the tree with a locking
   read, can deadlock against the move, and the loser retries.
-- With a tree it then reports every identity granted within the moved tenant to SSO's widening (while the
-  authorization and SSO adapters are both on), then calls `Authorization::treeChanged()`. It judges the subtree only
-  while SSO's enforcement is on or MFA's tenant requirement is bound. A removal is reported as the move of each child,
-  after the restructure is written.
+- With a tree it then reports every identity granted within the moved tenant to SSO's widening (while the authorization
+  and SSO adapters are both on), sparing the moved subtree and its new ancestors as the tree answers them after the
+  write, so links stay active there and are suspended in every other tenant, an old ancestor included. Then it calls
+  `Authorization::treeChanged()`. It judges the subtree only while SSO's enforcement is on or MFA's tenant requirement
+  is bound. A removal is reported as the move of each child, after the restructure is written.
 - A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the identity in the connection's
   tenant, so a connection's groups never grant beyond its tenant. `GroupSettings` finds the bound mapping, or
   `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group.
