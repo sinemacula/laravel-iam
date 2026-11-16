@@ -134,12 +134,13 @@ start:
 
 Each role is granted to the new identity itself, which holds across every principal of it, in the tenant of the
 connection the groups came through, reaching that tenant alone, in every application and never expiring. The grants are
-made through `laravel-authorization`'s grant service, as trusted system work, in the provisioning's one transaction,
-once SSO's helper has made the link: a role that does not exist, a mapping that throws, a grant hook that refuses, a
-role answered with both reaches (`InvalidArgumentException`), or roles that would leave the identity holding both of a
-mutually exclusive pair (`RoleExclusionConflictException`, naming both roles) roll the identity, its membership and its
-link back with it, and the completion ends as a server error. Groups are compared byte for byte, a group the map does
-not name grants nothing, and a connection that reports no groups grants nothing.
+made through `laravel-authorization`'s grant service, as one operation of trusted system work, in the provisioning's one
+transaction, once SSO's helper has made the link: a role that does not exist, a mapping that throws, a grant hook that
+refuses, a role answered with both reaches (`InvalidArgumentException`, under two names a case-insensitive collation
+folds to one role too), or roles that would leave the identity holding both of a mutually exclusive pair
+(`RoleExclusionConflictException`, naming both roles) roll the identity, its membership and its link back with it, and
+the completion ends as a server error. Groups are compared byte for byte, a group the map does not name grants nothing,
+and a connection that reports no groups grants nothing.
 
 A mapping that tells one connection's groups from another's, or grants a role across the tenant's subtree, is a class of
 yours, bound in the container as `SineMacula\Laravel\Iam\Contracts\GroupMapping` (which wins over the map):
