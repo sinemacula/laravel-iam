@@ -75,6 +75,21 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
     }
 
     /**
+     * The tenant's identifier as SSO and MFA name it.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
+     * @return string
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     */
+    public static function tenantIdOf(Tenant $tenant): string
+    {
+        $tenantId = IdentifierCoercion::stringify($tenant->getTenantIdentifier());
+
+        return $tenantId === null || $tenantId === '' ? throw UnresolvedReferenceException::forTenantIdentifier() : $tenantId;
+    }
+
+    /**
      * Whether the identity is exempt, or `null` when the rule would not refuse.
      *
      * @param  \SineMacula\Laravel\Sso\Enforcement\EnforcementPolicy  $policy
@@ -108,21 +123,6 @@ final readonly class TenantAuthenticationPolicyAdapter implements TenantAuthenti
         return $context->rejudging
             ? $gate->judge($policy, $context->application, $identity)
             : $gate->admit($policy, $context->application, $identity, $client, $sessionId);
-    }
-
-    /**
-     * The tenant's identifier as SSO and MFA name it.
-     *
-     * @param  \SineMacula\Laravel\Authentication\Contracts\Tenant  $tenant
-     * @return string
-     *
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     */
-    private static function tenantIdOf(Tenant $tenant): string
-    {
-        $tenantId = IdentifierCoercion::stringify($tenant->getTenantIdentifier());
-
-        return $tenantId === null || $tenantId === '' ? throw UnresolvedReferenceException::forTenantIdentifier() : $tenantId;
     }
 
     /**
