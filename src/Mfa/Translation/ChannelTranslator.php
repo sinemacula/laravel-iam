@@ -30,7 +30,7 @@ final readonly class ChannelTranslator
      */
     public function toMfa(AuthenticationChannel $channel): MfaChannel
     {
-        $kind = $channel->kind === AuthenticationChannelKind::RECOVERY ? MfaChannelKind::UNKNOWN : MfaChannelKind::from($channel->kind->value);
+        $kind = MfaChannelKind::from($channel->kind->value);
 
         return new MfaChannel($kind, $kind->takesReference() ? $channel->reference : null);
     }
