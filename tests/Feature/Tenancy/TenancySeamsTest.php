@@ -25,6 +25,7 @@ use SineMacula\Laravel\Iam\Tenancy\PrincipalScopeAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenancyContracts;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
+use SineMacula\Laravel\Iam\Tenancy\TenantFactorPolicyAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantMembershipAdapter;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
@@ -67,7 +68,7 @@ final class TenancySeamsTest extends TestCase
     }
 
     /**
-     * With SSO's switch off nothing is bound.
+     * With SSO's switch off only MFA's factor policy is bound.
      *
      * @return void
      *
@@ -75,13 +76,64 @@ final class TenancySeamsTest extends TestCase
      */
     #[WithConfig(MfaSeams::SWITCH, true, defer: false)]
     #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
-    public function testTheSsoSwitchOffBindsNothing(): void
+    public function testTheSsoSwitchOffBindsOnlyTheFactorPolicy(): void
     {
         ScriptedTenantRequirement::bind($this->app);
 
-        self::assertInstanceOf(RequireNothingOfTenants::class, $this->resolved(TenantAuthenticationPolicy::class));
+        self::assertInstanceOf(TenantFactorPolicyAdapter::class, $this->resolved(TenantAuthenticationPolicy::class));
         self::assertInstanceOf(NoTenantMembership::class, $this->resolved(TenantMembership::class));
         self::assertInstanceOf(OwnTenantInheritance::class, $this->resolved(EnforcementInheritance::class));
+    }
+
+    /**
+     * With both switches off no tenant policy is bound.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[WithConfig(MfaSeams::SWITCH, false, defer: false)]
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    public function testBothSwitchesOffBindNoPolicy(): void
+    {
+        self::assertInstanceOf(RequireNothingOfTenants::class, $this->resolved(TenantAuthenticationPolicy::class));
+    }
+
+    /**
+     * Rows of `[sso, mfa, enforcement, the policy bound, its adapter]`.
+     *
+     * @return iterable<string, array{0: bool, 1: bool, 2: bool, 3: bool, 4: class-string}>
+     */
+    public static function providePolicyRows(): iterable
+    {
+        yield 'sso on' => [true, false, false, true, TenantAuthenticationPolicyAdapter::class];
+
+        yield 'sso on, enforcing' => [true, true, true, true, TenantAuthenticationPolicyAdapter::class];
+
+        yield 'sso off, mfa on' => [false, true, false, true, TenantFactorPolicyAdapter::class];
+
+        yield 'sso and mfa off' => [false, false, false, false, TenantFactorPolicyAdapter::class];
+
+        yield 'sso off, enforcing' => [false, true, true, false, TenantAuthenticationPolicyAdapter::class];
+    }
+
+    /**
+     * The policy row follows both switches and SSO's enforcement.
+     *
+     * @param  bool  $sso
+     * @param  bool  $mfa
+     * @param  bool  $enforced
+     * @param  bool  $on
+     * @param  class-string  $adapter
+     * @return void
+     */
+    #[DataProvider('providePolicyRows')]
+    public function testThePolicyRowFollowsTheSwitchesAndEnforcement(bool $sso, bool $mfa, bool $enforced, bool $on, string $adapter): void
+    {
+        $config  = new Repository(['iam' => ['adapters' => ['sso' => $sso, 'mfa' => $mfa]], 'sso' => ['features' => ['enforcement' => $enforced]]]);
+        $binding = (new TenancySeams($this->container()))->seams($config)[0];
+
+        self::assertSame([$on, $adapter], [$binding->on, $binding->adapter]);
     }
 
     /**
@@ -247,7 +299,6 @@ final class TenancySeamsTest extends TestCase
         }
 
         self::assertSame($inheritanceOn, $bindings[4]->on);
-        self::assertSame($inheritanceOn, $bindings[0]->on);
     }
 
     /**
