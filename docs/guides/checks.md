@@ -155,6 +155,10 @@ The members' settings agree with each other.
   that holds sessions.*: an MFA application is a `jwt` guard of `laravel-authentication`'s, the one driver that holds
   sessions, and every MFA call for one on another driver (`api_key` or `session`, say) is refused at runtime. Name the
   MFA application after a `jwt` guard, or remove it.
+- *`sso.applications.<name>` names no guard in `auth.guards`: SSO's application is the guard of the same name.* and
+  *`sso.applications.<name>` names a guard in `auth.guards` whose driver is not `jwt`: SSO's application is a guard
+  that holds sessions.*: checked while SSO is in use. An SSO application is a `jwt` guard too, and every redemption for
+  one that is not is refused at runtime. Name the SSO application after a `jwt` guard, or remove it.
 - *...'s freshness operations [...] are not declared for guard [...] under `authentication.freshness` or the guard's
   `freshness`.*: declare MFA's `mfa.*` operations for every MFA application's guard, and, while SSO is in use, SSO's
   `sso.*` operations for every SSO application's guard, under `authentication.freshness` or the guard's own `freshness`
