@@ -46,6 +46,8 @@ final class ChannelTranslatorTest extends TestCase
 
         yield 'external provider' => [AuthenticationChannelKind::EXTERNAL_PROVIDER, MfaChannelKind::EXTERNAL_PROVIDER, true];
 
+        yield 'recovery' => [AuthenticationChannelKind::RECOVERY, MfaChannelKind::RECOVERY, false];
+
         yield 'unknown' => [AuthenticationChannelKind::UNKNOWN, MfaChannelKind::UNKNOWN, false];
     }
 
@@ -65,21 +67,6 @@ final class ChannelTranslatorTest extends TestCase
         self::assertSame($mfa, $translated->kind);
         self::assertSame($crosses ? self::REFERENCE : null, $translated->reference());
         self::assertNull((new ChannelTranslator)->toMfa(new AuthenticationChannel($authentication))->reference());
-    }
-
-    /**
-     * The application's `recovery` channel is MFA's `unknown`.
-     *
-     * @return void
-     */
-    public function testARecoveryChannelIsMfasUnknown(): void
-    {
-        $translator = new ChannelTranslator;
-        $translated = $translator->toMfa(new AuthenticationChannel(AuthenticationChannelKind::RECOVERY, self::REFERENCE));
-
-        self::assertSame(MfaChannelKind::UNKNOWN, $translated->kind);
-        self::assertNull($translated->reference());
-        self::assertSame(['kind' => 'unknown', 'reference' => null], $translator->toArray(new AuthenticationChannel(AuthenticationChannelKind::RECOVERY)));
     }
 
     /**
