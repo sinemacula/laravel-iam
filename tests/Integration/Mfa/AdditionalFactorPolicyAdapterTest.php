@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\AdditionalFactorPolicy;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\External\ExternalEvidence;
 use SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
@@ -163,6 +164,45 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
             $firstFactor->binding->sessionId,
             $firstFactor->binding->purpose,
         ]);
+    }
+
+    /**
+     * A provider's first factor reaches MFA naming no connection or evidence.
+     *
+     * @return void
+     */
+    public function testAProvidersFirstFactorReachesMfaNamingNoConnection(): void
+    {
+        $asked = [];
+
+        $this->answerRequirementsWith(static function (MultiFactorAuthenticatable $identity, string $application, Proof $firstFactor) use (&$asked): MfaRequirement {
+
+            $asked[] = $firstFactor;
+
+            return MfaRequirement::none();
+        });
+
+        $now         = CarbonImmutable::now()->startOfSecond();
+        $firstFactor = new RecordedProof(
+            'proof-first',
+            ProofKind::FIRST_FACTOR,
+            Purpose::SIGN_IN,
+            'external_provider',
+            new Channel(ChannelKind::EXTERNAL_PROVIDER, 'connection-1'),
+            null,
+            new ObservedProperties,
+            null,
+            ['pwd', 'mfa'],
+            $now,
+            new ExternalEvidence(['pwd', 'mfa'], null, $now),
+        );
+
+        $this->adapter()->requirementFor(self::context($this->createPerson(), $firstFactor));
+
+        self::assertCount(1, $asked);
+        self::assertSame(MfaChannelKind::EXTERNAL_PROVIDER, $asked[0]->channel?->kind);
+        self::assertNull($asked[0]->channel->reference());
+        self::assertNull($asked[0]->evidence);
     }
 
     /**
@@ -398,16 +438,18 @@ final class AdditionalFactorPolicyAdapterTest extends TestCase
     }
 
     /**
-     * The context of the identity's password sign-in on the application.
+     * The context of the identity's sign-in on the application, with a password
+     * unless another first factor is given.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+     * @param  ?\SineMacula\Laravel\Authentication\Proofs\RecordedProof  $firstFactor
      * @return \SineMacula\Laravel\Authentication\Factors\AdditionalFactorContext
      */
-    private static function context(Identity $identity): AdditionalFactorContext
+    private static function context(Identity $identity, ?RecordedProof $firstFactor = null): AdditionalFactorContext
     {
-        $channel     = new Channel(ChannelKind::PASSWORD);
-        $proved      = CarbonImmutable::now();
-        $firstFactor = new RecordedProof('proof-first', ProofKind::FIRST_FACTOR, Purpose::SIGN_IN, 'password', $channel, null, new ObservedProperties, null, ['pwd'], $proved);
+        $channel = new Channel(ChannelKind::PASSWORD);
+        $proved  = CarbonImmutable::now();
+        $firstFactor ??= new RecordedProof('proof-first', ProofKind::FIRST_FACTOR, Purpose::SIGN_IN, 'password', $channel, null, new ObservedProperties, null, ['pwd'], $proved);
 
         return new AdditionalFactorContext(self::GUARD, $identity, $firstFactor, new ClientContext('127.0.0.1', 'tests'), null, null, null);
     }
