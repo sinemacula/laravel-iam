@@ -42,8 +42,6 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
      *
      * @param  \SineMacula\Laravel\Authorization\Subject  $subject
      * @return list<string>|null
-     *
-     * @throws \LogicException
      */
     #[\Override]
     public function scopesFor(Subject $subject): ?array
@@ -60,18 +58,20 @@ final readonly class SessionPolicySourceAdapter implements SessionPolicySource
     }
 
     /**
-     * Without a credential: no scopes for a machine, no cap for anyone else.
+     * Without a credential: `[]` for a machine or unread identity, else no cap.
      *
      * @param  object  $subject
      * @param  ?object  $identity
      * @return \SineMacula\Laravel\Authorization\Support\CredentialScopes
-     *
-     * @throws \LogicException
      */
     public static function withoutCredential(object $subject, ?object $identity = null): CredentialScopes
     {
-        // `MachineIdentity` does not carry the `AuthorizableMachine` marker.
-        return self::isMachine($subject, $identity) ? CredentialScopes::of([]) : CredentialScopes::uncapped();
+        try {
+            // `MachineIdentity` lacks the `AuthorizableMachine` marker.
+            return self::isMachine($subject, $identity) ? CredentialScopes::of([]) : CredentialScopes::uncapped();
+        } catch (\Exception) {
+            return CredentialScopes::of([]);
+        }
     }
 
     /**
