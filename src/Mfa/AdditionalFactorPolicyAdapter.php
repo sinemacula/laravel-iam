@@ -65,8 +65,10 @@ final readonly class AdditionalFactorPolicyAdapter implements AdditionalFactorPo
             throw UnresolvedReferenceException::forMfaIdentity($identity::class);
         }
 
-        $signIn      = new SignIn(ProofOwner::of($identity), $context->application, SignIn::UNNAMED, VerificationGeneration::current($identity));
-        $firstFactor = $this->proofs->toMfa($context->firstFactor, $signIn, ProviderTrust::accepted($context->provenSession?->getTenantId()));
+        $signIn = new SignIn(ProofOwner::of($identity), $context->application, SignIn::UNNAMED, VerificationGeneration::current($identity));
+
+        // No tenant's trust counts toward the identity's own requirement.
+        $firstFactor = $this->proofs->toMfa($context->firstFactor, $signIn, ProviderTrust::withheld());
 
         return $this->requirements->toAuthentication($this->policy->requirementFor($identity, $context->application, $firstFactor));
     }

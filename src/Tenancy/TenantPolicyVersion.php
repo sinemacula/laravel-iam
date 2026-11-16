@@ -11,7 +11,7 @@ use SineMacula\Laravel\Sso\Enforcement\Enums\ExemptionOutcome;
 
 /**
  * The tenant policy's version: a digest of SSO's policy, the exemption and the
- * MFA tenant requirement.
+ * MFA tenant requirement, or of the requirement alone.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -42,6 +42,19 @@ final readonly class TenantPolicyVersion
         ];
 
         return hash(self::ALGORITHM, json_encode($inputs, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * The version of the requirement alone, for a policy without SSO.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Requirements\Requirement  $requirement
+     * @return string
+     *
+     * @throws \JsonException
+     */
+    public static function ofFactor(Requirement $requirement): string
+    {
+        return hash(self::ALGORITHM, json_encode(['mfa' => self::requirement($requirement)], JSON_THROW_ON_ERROR));
     }
 
     /**
