@@ -80,7 +80,10 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   is retried; a trusted grant outside one is not retried, so the guide puts it inside `Iam::transaction()`.
 - `TenantTranslator` takes `laravel-authorization`'s tenant key for `laravel-authentication`'s identifier only when the
   round trip resolves to the same tenant, and throws `UnresolvedReferenceException` otherwise. So `iam:check` refuses
-  `ResolveNoTenant` while the authorization and SSO adapters are both on, or a tree is bound.
+  `ResolveNoTenant` while the authorization and SSO adapters are both on, the authorization adapter is on with
+  memberships bound, or a tree is bound, and notes it while the authorization adapter is on otherwise: the audit access
+  policy resolves the viewer's own tenant, its memberships' and its grants' through it, and `AdministrativeCheck` an
+  object's tenant, so either throws for a tenant viewer or object under the default.
 - The identity directory lists the identity's `principals()` on the write connection with global scopes set aside, so
   a soft-deleted principal's grants still count. A principal that owns no principals is complete and empty; a relation
   that is no Eloquent query, or an identity that cannot be resolved, is incomplete.
