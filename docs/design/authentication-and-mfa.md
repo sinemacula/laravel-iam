@@ -48,9 +48,10 @@ removed factor would leave the identity's other sessions standing.
 - Where authentication names no session (at sign-in, and when it asks for a requirement), every proof is bound to
   `SignIn::UNNAMED`, which no session key can equal. Each proof is stamped with the identity's current verification
   generation.
-- The requirement check hands MFA an external provider's first factor naming no connection
-  (`ProviderTrust::withheld()`): authentication has already asked its external evidence policy for the tenant. MFA's own
-  session judgements name the connection only for evidence SSO accepted, from a connection the tenant trusts.
+- The requirement check names an external provider's connection to MFA as MFA's own session judgements do: only for
+  evidence SSO accepted, from a connection the tenant judged (`RequirementSubject::$tenant`) trusts. A plain requirement
+  names no tenant, so for the identity level, even with an active tenant's requirement MFA folds in, and for freshness
+  it names none (`ProviderTrust::withheld()`).
 - The pending completion is the last write of MFA's transaction, and `satisfy()` binds the guard only on commit, so a
   sign-in result never reaches a response when MFA's commit fails.
 - The factor-change gate replaces MFA's freshness check with `laravel-authentication`'s `factorChange()`, which judges
