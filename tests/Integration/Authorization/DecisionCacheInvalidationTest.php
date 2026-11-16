@@ -12,6 +12,7 @@ use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
+use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authorization\Facades\Authorization;
@@ -105,6 +106,30 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
+     * A password reauthentication forgets the refusal that read the proofs
+     * before it.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAPasswordReauthenticationForgetsTheRefusalThatReadTheProofsBeforeIt(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $member = $this->member(['assurance_level' => ['min' => 'aal1', 'max_age' => self::MAX_AGE]]);
+        $token  = $this->signIn($member);
+
+        $this->travel(self::MAX_AGE + 60)->seconds();
+
+        $this->request('POST', '/reauthenticate', $token, ['email' => $member->email, 'password' => self::PASSWORD])
+            ->assertOk()
+            ->assertExactJson(['before' => false, 'kept' => true, 'changed' => true, 'last' => null, 'after' => true]);
+    }
+
+    /**
      * Define routes that check, change through MFA, and check again.
      *
      * @param  mixed  $router
@@ -121,6 +146,9 @@ final class DecisionCacheInvalidationTest extends TestCase
         $router->post('remove', static fn (Request $request): JsonResponse => self::checkAround(
             static fn (): bool => Mfa::removeFactor(CallerContext::fromRequest($request), $request->string('factor')->toString())->wasMade(),
         ))->middleware('auth:' . self::GUARD);
+
+        $router->post('reauthenticate', static fn (Request $request): JsonResponse => self::checkAround(static fn (): bool => self::isReauthenticated($request)))
+            ->middleware('auth:' . self::GUARD);
 
         $router->post('step-up', static fn (Request $request): JsonResponse => self::checkAround(static fn (): bool => self::isSteppedUp($request)))
             ->middleware('auth:' . self::GUARD);
@@ -157,6 +185,28 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
+     * Reauthenticate the caller's session with its password, answering whether
+     * it was issued.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return bool
+     *
+     * @throws \Throwable
+     */
+    private static function isReauthenticated(Request $request): bool
+    {
+        $auth  = app('auth');
+        $guard = $auth->guard(self::GUARD);
+
+        self::assertInstanceOf(ContextualGuard::class, $guard);
+
+        $session = $guard->session() ?? self::fail('The guard holds no session.');
+        $input   = ['email' => $request->string('email')->toString(), 'password' => $request->string('password')->toString()];
+
+        return $auth->sessions(self::GUARD)->reauthenticate($session, 'password', $input, new ClientContext('192.0.2.10', 'iam-tests'))->isIssued();
+    }
+
+    /**
      * Check, change, then report the decisions before and after.
      *
      * @param  \Closure(): bool  $change
@@ -179,23 +229,24 @@ final class DecisionCacheInvalidationTest extends TestCase
     }
 
     /**
-     * A member allowed a refund only after a recent multifactor step-up.
+     * A member allowed a refund only under the authentication requirement.
      *
+     * @param  array<string, array<string, int|string>>  $requirement
      * @return \Tests\Fixtures\Authorization\Member
      */
-    private function member(): Member
+    private function member(array $requirement = ['multifactor' => ['max_age' => self::MAX_AGE]]): Member
     {
         $member = Member::query()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.test', 'password' => self::PASSWORD]);
 
         $member->attachPolicy(Policy::query()->create([
-            'name'     => 'refunds-after-step-up',
+            'name'     => 'refunds-under-requirement',
             'document' => [
                 'statements' => [
                     [
-                        'sid'        => 'refund-after-step-up',
+                        'sid'        => 'refund-under-requirement',
                         'effect'     => 'allow',
                         'actions'    => [self::REFUND],
-                        'conditions' => ['authentication_requirement' => ['authentication' => ['multifactor' => ['max_age' => self::MAX_AGE]]]],
+                        'conditions' => ['authentication_requirement' => ['authentication' => $requirement]],
                     ],
                 ],
             ],

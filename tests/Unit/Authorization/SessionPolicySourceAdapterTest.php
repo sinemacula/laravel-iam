@@ -116,6 +116,20 @@ final class SessionPolicySourceAdapterTest extends TestCase
     }
 
     /**
+     * A principal whose identity cannot be read is allowed nothing.
+     *
+     * @return void
+     */
+    public function testAPrincipalWithNoIdentityIsAllowedNothing(): void
+    {
+        $principal = self::createStub(Principal::class);
+        $principal->method('getIdentity')->willThrowException(new \LogicException('No identity.'));
+
+        self::assertSame([], (new SessionPolicySourceAdapter($this->unread()))->scopesFor(new Subject($principal, $principal)));
+        self::assertSame([], SessionPolicySourceAdapter::withoutCredential($principal)->scopes());
+    }
+
+    /**
      * Rows of `[subject naming a session, auth factory]`, all unestablished.
      *
      * @return iterable<string, array{0: \Closure(self): \SineMacula\Laravel\Authorization\Subject, 1: \Closure(self): \Illuminate\Contracts\Auth\Factory}>

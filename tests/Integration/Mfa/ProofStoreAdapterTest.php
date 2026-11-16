@@ -9,6 +9,7 @@ use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Auth\User;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,6 +27,7 @@ use SineMacula\Laravel\Authentication\Proofs\Evaluation;
 use SineMacula\Laravel\Authentication\Proofs\ObservedProperties as AuthenticationProperties;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding as AuthenticationBinding;
 use SineMacula\Laravel\Authentication\Proofs\ProofResult;
+use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\MfaSeams;
@@ -107,13 +109,60 @@ final class ProofStoreAdapterTest extends TestCase
         CarbonImmutable::setTestNow(CarbonImmutable::now()->addMinute()->startOfSecond());
 
         try {
+            $this->stepUp($person, $record, AuthenticationProofKind::RECOVERY_CODE);
             $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $second->id);
             $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $first->id);
         } finally {
             CarbonImmutable::setTestNow();
         }
 
-        self::assertSame([null, $second->id, $first->id], self::references(self::storedProofs($store, $person, self::GUARD)));
+        $proofs = self::storedProofs($store, $person, self::GUARD);
+
+        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::RECOVERY_CODE, ProofKind::ADDITIONAL_FACTOR, ProofKind::ADDITIONAL_FACTOR], self::kinds($proofs));
+        self::assertSame([null, null, $second->id, $first->id], self::references($proofs));
+    }
+
+    /**
+     * More proofs of one kind than a read takes crowd out none of another.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testMoreProofsOfOneKindThanAReadTakesCrowdOutNoneOfAnother(): void
+    {
+        [$store, $person] = [$this->proofStore(), $this->createPerson()];
+
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->startOfSecond());
+
+        $signIn = CarbonImmutable::now();
+        $record = $this->signInAndActOnSession($person);
+
+        $this->stepUp($person, $record, AuthenticationProofKind::ADDITIONAL_FACTOR, $this->factorOf($person)->id);
+
+        $firstFactor     = DB::table('authentication_proofs')->where('kind', 'first_factor')->first() ?? self::fail('No first factor was recorded.');
+        $reauthenticated = [];
+
+        for ($copy = 1; $copy <= RequirementSubject::MAX_LIMIT; $copy++) {
+            $reauthenticated[] = [
+                ...Arr::except((array) $firstFactor, 'sequence'),
+                'id'               => (string) Str::uuid(),
+                'kind'             => 'first_factor_reauthentication',
+                'purpose'          => 'reauthenticate',
+                'authenticated_at' => $signIn->addSeconds($copy),
+            ];
+        }
+
+        DB::table('authentication_proofs')->insert($reauthenticated);
+
+        CarbonImmutable::setTestNow($signIn->addSeconds(RequirementSubject::MAX_LIMIT));
+
+        $proofs = self::storedProofs($store, $person, self::GUARD);
+        $times  = array_map(static fn (int $copy): CarbonImmutable => $signIn->addSeconds($copy), range(1, RequirementSubject::MAX_LIMIT));
+        $later  = array_fill(0, RequirementSubject::MAX_LIMIT, ProofKind::FIRST_FACTOR_REAUTHENTICATION);
+
+        self::assertSame([ProofKind::FIRST_FACTOR, ProofKind::ADDITIONAL_FACTOR, ...$later], self::kinds($proofs));
+        self::assertEquals([$signIn, $signIn, ...$times], array_map(static fn (Proof $proof): CarbonImmutable => $proof->provedAt, $proofs));
     }
 
     /**
