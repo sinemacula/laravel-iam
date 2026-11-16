@@ -6,11 +6,9 @@ namespace Tests\Integration\Sso;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
-use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Sso\Connections\ConnectionLifecycle;
 use SineMacula\Laravel\Sso\Connections\ConnectionResult;
@@ -135,31 +133,27 @@ final class RevocationThroughSsoTest extends TestCase
     }
 
     /**
-     * A link whose identity no longer resolves throws on removal, and SSO keeps
-     * the link.
+     * Removing the link of an identity no longer stored ends its sessions.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testARevocationThatThrowsRollsSsosChangeBack(): void
+    public function testRemovingADeletedIdentitysLinkEndsItsSessions(): void
     {
         $this->arrangeSso();
 
         $person    = $this->createPerson();
         $reference = self::referenceOf($person);
         $linkId    = (string) $this->linkThroughFlow($person)->linkId;
+        $session   = $this->signInThrough($person, $this->connectionId, $linkId);
 
         $person->newQuery()->whereKey($person->getKey())->delete();
 
-        try {
-            $this->app?->make(LinkService::class)->remove($reference, $linkId, self::ssoClient());
+        self::assertTrue($this->app?->make(LinkService::class)->remove($reference, $linkId, self::ssoClient())->isRemoved());
 
-            self::fail('A link of an unresolved identity was removed.');
-        } catch (UnresolvedReferenceException) {
-            self::assertTrue(Link::query()->whereKey($linkId)->exists());
-            self::assertSame(0, DB::connection()->transactionLevel());
-        }
+        self::assertNotNull($this->stored($session)->getRevokedAt());
+        self::assertFalse(Link::query()->whereKey($linkId)->exists());
     }
 
     /**

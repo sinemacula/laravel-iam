@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Sso;
 
-use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges;
 use SineMacula\Laravel\Sso\Contracts\SessionRevocation;
@@ -26,13 +25,9 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
     /**
      * Constructor.
      *
-     * @param  \SineMacula\Laravel\Iam\Sso\IdentityReferences  $identities
      * @param  \SineMacula\Laravel\Iam\Tenancy\SubtreePolicyChanges  $policyChanges
      */
     public function __construct(
-
-        /** Resolves the identity an identity scope names. */
-        private IdentityReferences $identities,
 
         /** Judges the enforcing tenant's subtree in SSO's transaction, and once more once it commits. */
         private SubtreePolicyChanges $policyChanges,
@@ -56,8 +51,8 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
         match ($scope->kind) {
             RevocationScopeKind::TENANT              => $this->policyChanges->changed($scope->tenantId),
             RevocationScopeKind::CONNECTION          => $this->connection($scope),
-            RevocationScopeKind::IDENTITY_CONNECTION => Auth::sessions()->linkRemoved($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
-            RevocationScopeKind::IDENTITY_LINK       => Auth::sessions()->linkScopeWidened($this->identity($scope), self::connectionOf($scope), self::linkOf($scope)),
+            RevocationScopeKind::IDENTITY_CONNECTION => Auth::sessions()->linkRemovedByReference(...self::identityLink($scope)),
+            RevocationScopeKind::IDENTITY_LINK       => Auth::sessions()->linkScopeWidenedByReference(...self::identityLink($scope)),
         };
     }
 
@@ -81,17 +76,18 @@ final readonly class SessionRevocationAdapter implements SessionRevocation
     }
 
     /**
-     * The identity an identity scope names.
+     * The identity's type and id, connection and link an identity scope names.
      *
      * @param  \SineMacula\Laravel\Sso\Revocation\RevocationScope  $scope
-     * @return \SineMacula\Laravel\Authentication\Contracts\Identity
+     * @return array{0: string, 1: string, 2: string, 3: string}
      *
      * @throws \LogicException
-     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function identity(RevocationScope $scope): Identity
+    private static function identityLink(RevocationScope $scope): array
     {
-        return $this->identities->identity($scope->identity ?? throw self::incomplete($scope, 'identity'));
+        $identity = $scope->identity ?? throw self::incomplete($scope, 'identity');
+
+        return [$identity->type, $identity->id, self::connectionOf($scope), self::linkOf($scope)];
     }
 
     /**
