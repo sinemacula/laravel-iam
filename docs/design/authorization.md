@@ -71,9 +71,10 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   session caps, since a principal being admitted holds no session yet. An application the map leaves out is open to
   everyone.
 - The grant hook runs inside the grant's transaction before `laravel-authorization` takes its locks, after the hooks
-  `authorization.grant_hooks` lists. It calls `ScopeWidenings::widen()` once per distinct tenant of the widening
-  (`null` for a platform grant), with the widening's client. A grantee that is not a `laravel-authentication` identity
-  is passed over, since SSO never links one. Anything thrown refuses the grant and rolls the call back whole.
+  `authorization.grant_hooks` lists. It calls `ScopeWidenings::widen()` once per distinct tenant of the widening,
+  sparing that tenant (none for a platform grant), with the widening's client. A grantee that is not a
+  `laravel-authentication` identity is passed over, since SSO never links one. Anything thrown refuses the grant and
+  rolls the call back whole.
 - A grant therefore takes SSO's locks first (the identity's guard, then its links), then `laravel-authorization`'s.
   Inside the application's transaction a conflict surfaces as `TransactionConflictException` and the whole transaction
   is retried; a trusted grant outside one is not retried, so the guide puts it inside `Iam::transaction()`.
