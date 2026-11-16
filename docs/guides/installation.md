@@ -188,6 +188,10 @@ name:
 ```
 
 - An MFA application whose name is no guard in `auth.guards` is refused by `iam:check`.
+- While `iam.adapters.mfa` is on, every identity model a `jwt` guard's provider names must implement laravel-mfa's
+  `SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable`, with the `HasFactors` trait supplying its methods,
+  unless it is a `MachineIdentity`. MFA is asked on every sign-in, whether or not a further factor is owed, and a
+  sign-in for any other identity throws `UnresolvedReferenceException`. `iam:check` refuses such a model.
 - An SSO application's guard must allow `external_provider` among its methods: that, not SSO's own
   `external_sign_in` setting, decides whether people may sign in through a provider. Leave
   `sso.applications.*.unlinked_handoffs` off: under this package an unlinked sign-in is provisioned or refused, never
