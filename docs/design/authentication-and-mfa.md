@@ -54,9 +54,9 @@ removed factor would leave the identity's other sessions standing.
 - The additional-factor policy asks MFA's `RequirementPolicy`, which answers for the identity and the application and
   leaves every tenant's requirement to the tenant policy (`tenant-authentication-policy.md`). It hands MFA the first
   factor with `ProviderTrust::withheld()`, since no tenant's trust counts toward the identity's own requirement.
-- The requirement check hands MFA an external provider's first factor naming no connection
-  (`ProviderTrust::withheld()`): authentication has already asked its external evidence policy for the tenant. MFA's own
-  session judgements name the connection only for evidence SSO accepted, from a connection the tenant trusts.
+- The requirement check names an external provider's connection to MFA as MFA's own session judgements do: only for
+  evidence SSO accepted, from a connection the tenant judged (`RequirementSubject::$tenant`) trusts. A plain requirement
+  names no tenant, so for the identity level and for freshness it names none (`ProviderTrust::withheld()`).
 - The pending completion is the last write of MFA's transaction, and `satisfy()` binds the guard only on commit, so a
   sign-in result never reaches a response when MFA's commit fails.
 - The factor-change gate replaces MFA's freshness check with `laravel-authentication`'s `factorChange()`, which judges

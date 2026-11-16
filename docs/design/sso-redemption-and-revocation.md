@@ -75,7 +75,8 @@ The provider's evidence passes two gates, and neither is the other.
   linked. `meets()` also requires a tenant's requirement to come from a connection the tenant trusts: its own, or one
   its enforcement names (`ConnectionTrust`). A requirement that asks for nothing is never met.
 - Elsewhere the proof translator names the connection to MFA only for evidence SSO accepted from a connection the
-  session's tenant trusts (`Mfa\Translation\ProviderTrust`), and never to `laravel-authentication`'s requirement check.
+  tenant trusts (`Mfa\Translation\ProviderTrust`): the session's, or for `laravel-authentication`'s requirement check
+  the tenant whose requirement it judges, and none for the identity level or freshness.
 - Tenant trust is judged here, in the SSO-aware evidence policy, since `laravel-authentication` knows nothing of who
   owns a connection.
 
