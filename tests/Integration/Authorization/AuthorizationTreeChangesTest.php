@@ -64,6 +64,12 @@ final class AuthorizationTreeChangesTest extends TestCase
     /** @var string The account below the moved organisation. */
     private const string ACCOUNT = Account::PREFIX . '1';
 
+    /** @var string The organisation below the root that the moved one leaves. */
+    private const string OLD_PARENT = 'organisation-3';
+
+    /** @var string The organisation below the root that the moved one joins. */
+    private const string NEW_PARENT = 'organisation-4';
+
     /**
      * Arrange the tree and declare the invoice permissions.
      *
@@ -186,6 +192,107 @@ final class AuthorizationTreeChangesTest extends TestCase
         self::assertSame(LinkState::SUSPENDED, $staffLink->refresh()->state);
         self::assertSame(LinkState::SUSPENDED, $seatLink->refresh()->state);
         self::assertSame(LinkState::ACTIVE, $personLink->refresh()->state);
+    }
+
+    /**
+     * A move suspends links only in the old ancestors that lose the subtree.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAMoveSuspendsLinksOnlyInTheOldAncestorsThatLoseTheSubtree(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->arrangeSso();
+
+        StoredTenantTree::place(self::tenant(self::OLD_PARENT), self::tenant(self::ROOT));
+        StoredTenantTree::place(self::tenant(self::NEW_PARENT), self::tenant(self::ROOT));
+        StoredTenantTree::place(self::tenant(self::MOVED), self::tenant(self::OLD_PARENT));
+
+        $person = $this->createPerson();
+        $link   = Link::query()->findOrFail((string) $this->linkThroughFlow($person)->linkId);
+        $links  = [];
+
+        foreach ([self::ACCOUNT, self::MOVED, self::NEW_PARENT, self::ROOT, self::OLD_PARENT] as $tenantId) {
+            $copy                = $link->replicate();
+            $copy->connection_id = $this->makeConnection($tenantId);
+            $copy->provenance    = LinkOrigin::VERIFIED_DOMAIN;
+
+            $copy->save();
+
+            $links[$tenantId] = $copy;
+        }
+
+        DB::table('authorizable_permissions')->insert([
+            'permission_id'     => Permission::query()->value('id'),
+            'authorizable_type' => $person->getMorphClass(),
+            'authorizable_id'   => self::keyOf($person),
+            'tenant_type'       => Account::TYPE,
+            'tenant_id'         => self::ACCOUNT,
+        ]);
+
+        Iam::transaction(static function (): int {
+
+            StoredTenantTree::place(self::tenant(self::MOVED), self::tenant(self::NEW_PARENT));
+
+            return Iam::treeChanges()->changed(self::MOVED);
+        });
+
+        $states = array_map(static fn (Link $copy): LinkState => $copy->refresh()->state, $links);
+
+        self::assertSame([
+            self::ACCOUNT    => LinkState::ACTIVE,
+            self::MOVED      => LinkState::ACTIVE,
+            self::NEW_PARENT => LinkState::ACTIVE,
+            self::ROOT       => LinkState::ACTIVE,
+            self::OLD_PARENT => LinkState::SUSPENDED,
+        ], $states);
+    }
+
+    /**
+     * A move under a tenant that does not resolve back is refused.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAMoveUnderATenantThatDoesNotResolveBackIsRefused(): void
+    {
+        $this->arrangeSso();
+
+        $person = $this->createPerson();
+        $link   = Link::query()->findOrFail((string) $this->linkThroughFlow($person)->linkId);
+
+        $link->provenance = LinkOrigin::VERIFIED_DOMAIN;
+
+        $link->save();
+
+        DB::table('authorizable_permissions')->insert([
+            'permission_id'     => Permission::query()->value('id'),
+            'authorizable_type' => $person->getMorphClass(),
+            'authorizable_id'   => self::keyOf($person),
+            'tenant_type'       => Account::TYPE,
+            'tenant_id'         => self::ACCOUNT,
+        ]);
+
+        try {
+            Iam::transaction(static function (): int {
+
+                StoredTenantTree::place(self::tenant(self::MOVED), new Reference(Organisation::TYPE, Account::PREFIX . '2'));
+
+                return Iam::treeChanges()->changed(self::MOVED);
+            });
+
+            self::fail('A move under a tenant that does not resolve back was reported.');
+        } catch (UnresolvedReferenceException $exception) {
+            self::assertStringContainsString('[' . Account::PREFIX . '2]', $exception->getMessage());
+        }
+
+        self::assertSame(LinkState::ACTIVE, $link->refresh()->state);
     }
 
     /**
