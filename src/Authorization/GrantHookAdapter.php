@@ -79,8 +79,8 @@ final readonly class GrantHookAdapter implements GrantHook
         $identity = $this->identities->identity(new IdentityReference($widening->identity->type, $widening->identity->id));
         $client   = new ClientContext($widening->ip, $widening->userAgent);
 
-        foreach ($this->tenantsOf($widening) as $tenantId) {
-            $this->widenings->widen([$identity], $tenantId, $client);
+        foreach ($this->sparedOf($widening) as $spared) {
+            $this->widenings->widen([$identity], $spared, $client);
         }
     }
 
@@ -102,28 +102,29 @@ final readonly class GrantHookAdapter implements GrantHook
     }
 
     /**
-     * The distinct tenant ids the grants hold in, `null` for platform-wide.
+     * The distinct tenants the grants hold in, each spared alone; none spared
+     * for platform-wide.
      *
      * @param  \SineMacula\Laravel\Authorization\Hooks\GrantWidening  $widening
-     * @return list<?string>
+     * @return list<list<string>>
      *
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
-    private function tenantsOf(GrantWidening $widening): array
+    private function sparedOf(GrantWidening $widening): array
     {
-        $tenants = [];
+        $spared = [];
 
         foreach ($widening->changes as $change) {
 
-            $tenantId = $change->tenant === null ? null : $this->idOf($change->tenant);
+            $tenantIds = $change->tenant === null ? [] : [$this->idOf($change->tenant)];
 
-            if (in_array($tenantId, $tenants, true)) {
+            if (in_array($tenantIds, $spared, true)) {
                 continue;
             }
 
-            $tenants[] = $tenantId;
+            $spared[] = $tenantIds;
         }
 
-        return $tenants;
+        return $spared;
     }
 }

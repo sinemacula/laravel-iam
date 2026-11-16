@@ -15,6 +15,7 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
 use SineMacula\Laravel\Authorization\Services\GrantScopeQuery;
 use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Authorization\Support\TenantChain;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Sso\Config\Enums\Feature;
@@ -41,6 +42,7 @@ final readonly class TreeChanges
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator  $tenants
      * @param  \SineMacula\Laravel\Iam\Tenancy\ScopeWidenings  $widenings
+     * @param  \SineMacula\Laravel\Iam\Tenancy\TenancyContracts  $contracts
      */
     public function __construct(
 
@@ -56,11 +58,14 @@ final readonly class TreeChanges
         /** Holds the capabilities' switches. */
         private Repository $config,
 
-        /** Names the moved tenant as `laravel-authorization` names it. */
+        /** Names the moved tenant to `laravel-authorization`, and the spared tenants back. */
         private TenantTranslator $tenants,
 
         /** Reports each identity granted in the moved subtree to SSO's scope widening. */
         private ScopeWidenings $widenings,
+
+        /** Reads the moved subtree from the application's tenant tree. */
+        private TenancyContracts $contracts,
     ) {}
 
     /**
@@ -72,6 +77,7 @@ final readonly class TreeChanges
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \UnexpectedValueException
      * @throws \Throwable
      */
     public function changed(string $tenantId): int
@@ -98,6 +104,7 @@ final readonly class TreeChanges
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \UnexpectedValueException
      * @throws \Throwable
      */
     private function reportToAuthorization(string $tenantId): void
@@ -120,10 +127,27 @@ final readonly class TreeChanges
                 $identities[] = $identity;
             }
 
-            $this->widenings->widen($identities, $tenantId, new ClientContext(null, null));
+            $this->widenings->widen($identities, $this->spared($tenant), new ClientContext(null, null));
         }
 
         $this->container->make(AuthorizationManager::class)->treeChanged($tenant);
+    }
+
+    /**
+     * The tenants that still contain the moved subtree: the subtree itself and
+     * its new ancestors.
+     *
+     * @param  \SineMacula\Laravel\Authorization\Support\Reference  $tenant
+     * @return list<string>
+     *
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \UnexpectedValueException
+     */
+    private function spared(Reference $tenant): array
+    {
+        $kept = [...$this->contracts->subtree($tenant), ...TenantChain::tree()->ancestors($tenant)];
+
+        return array_map($this->tenants->idOf(...), $kept);
     }
 
     /**
