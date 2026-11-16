@@ -158,6 +158,8 @@ final class TreeMoveWideningTest extends TestCase
         try {
             Iam::transaction(function () use ($rollback): never {
 
+                StoredTenantTree::place(self::organisation(self::GRANTED));
+
                 Iam::treeChanges()->changed(self::GRANTED);
 
                 self::assertSame(LinkState::SUSPENDED, $this->link()->state);
