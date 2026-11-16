@@ -62,7 +62,7 @@ Everything else has a code of its own, under its member's prefix, defined by the
   removed, renamed and reset, the preferred factor changed, lockouts, recovery codes, and every verification passed or
   failed. A factor enabled again (`mfa.factor_enabled`) is recorded as the act of whoever `Mfa::enableFactor()` names,
   on the person, keeping the factor's id and type as a lockout lifted (`mfa.lockout_lifted`) does. An enrolment
-  abandoned (`mfa.enrollment_abandoned`) keeps its `cause` (`restarted`, `cancelled`, `attempts_exhausted` or `reset`),
+  abandoned (`mfa.enrollment_abandoned`) keeps its `cause` (`restarted`, `canceled`, `attempts_exhausted` or `reset`),
   and one an operator's reset abandoned is recorded as that operator's act.
 - **`sso.*`** (34 codes): a flow's stages and its failure (`sso.flow_failed`, keeping its flow), links, connections,
   domains, enforcement and exemptions, keys, and metadata and key set refreshes.

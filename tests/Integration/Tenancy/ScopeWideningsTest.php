@@ -110,14 +110,14 @@ final class ScopeWideningsTest extends TestCase
         $person  = $this->person();
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, self::client())));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [self::TENANT], self::client())));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         self::assertNotNull($this->stored($session)->getRevokedAt());
         $this->assertSuspendedFor(self::CLIENT_IP, self::CLIENT_AGENT);
 
         $revokedAt = $this->stored($session)->getRevokedAt();
 
-        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, self::client())));
+        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [self::TENANT], self::client())));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         self::assertEquals($revokedAt, $this->stored($session)->getRevokedAt());
         self::assertCount(1, $this->suspended);
@@ -140,7 +140,7 @@ final class ScopeWideningsTest extends TestCase
         $second = $this->createPerson();
         $linkId = $this->linkInOtherTenant($second);
 
-        self::assertSame(2, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$second, $person], self::TENANT, self::client())));
+        self::assertSame(2, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$second, $person], [self::TENANT], self::client())));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         self::assertSame(LinkState::SUSPENDED, Link::query()->findOrFail($linkId)->state);
     }
@@ -161,7 +161,7 @@ final class ScopeWideningsTest extends TestCase
         $person = $this->person();
         $client = new ClientContext('198.51.100.7', 'platform-console');
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], null, $client)));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [], $client)));
         self::assertSame(LinkState::SUSPENDED, $this->link()->state);
         $this->assertSuspendedFor('198.51.100.7', 'platform-console');
     }
@@ -181,7 +181,7 @@ final class ScopeWideningsTest extends TestCase
 
         $person = $this->person();
 
-        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::TENANT, new ClientContext(null, null))));
+        self::assertSame(1, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [self::TENANT], new ClientContext(null, null))));
         $this->assertSuspendedFor(null, null);
     }
 
@@ -201,9 +201,24 @@ final class ScopeWideningsTest extends TestCase
         $person  = $this->person();
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
-        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], self::OTHER_TENANT, self::client())));
+        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [self::OTHER_TENANT], self::client())));
         self::assertSame(LinkState::ACTIVE, $this->link()->state);
         self::assertNull($this->stored($session)->getRevokedAt());
+    }
+
+    /**
+     * A link in any of the tenants spared is left alone.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testALinkInAnyOfTheTenantsSparedIsLeftAlone(): void
+    {
+        $person = $this->person();
+
+        self::assertSame(0, Iam::transaction(fn (): int => Iam::scopeWidenings()->widen([$person], [self::TENANT, self::OTHER_TENANT], self::client())));
+        self::assertSame(LinkState::ACTIVE, $this->link()->state);
     }
 
     /**
@@ -219,7 +234,7 @@ final class ScopeWideningsTest extends TestCase
         $session = $this->signInThrough($person, $this->otherConnectionId, $this->linkId);
 
         try {
-            Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
+            Iam::scopeWidenings()->widen([$person], [self::TENANT], self::client());
 
             self::fail('A widened scope was reported outside a transaction.');
         } catch (\LogicException $exception) {
@@ -250,7 +265,7 @@ final class ScopeWideningsTest extends TestCase
 
         try {
             Iam::transaction(function () use ($person, $rollback): never {
-                Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
+                Iam::scopeWidenings()->widen([$person], [self::TENANT], self::client());
 
                 throw $rollback;
             });
@@ -309,7 +324,7 @@ final class ScopeWideningsTest extends TestCase
         $person = $this->person();
         $caught = Iam::transaction(static function () use ($person): ?\Throwable {
             try {
-                Iam::scopeWidenings()->widen([$person], self::TENANT, self::client());
+                Iam::scopeWidenings()->widen([$person], [self::TENANT], self::client());
             } catch (\RuntimeException $exception) {
                 return $exception;
             }
@@ -333,7 +348,7 @@ final class ScopeWideningsTest extends TestCase
     {
         $this->expectException(UnresolvedReferenceException::class);
 
-        Iam::transaction(static fn (): int => Iam::scopeWidenings()->widen([new PlainIdentity(['id' => 1])], self::TENANT, self::client()));
+        Iam::transaction(static fn (): int => Iam::scopeWidenings()->widen([new PlainIdentity(['id' => 1])], [self::TENANT], self::client()));
     }
 
     /**
