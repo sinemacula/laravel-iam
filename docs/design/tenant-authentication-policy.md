@@ -4,18 +4,23 @@
 
 The package answers `laravel-authentication`'s `TenantAuthenticationPolicy` from SSO's enforcement, SSO's exemption
 gate and the application's implementation of laravel-mfa's `TenantRequirement`, and versions the answer so a change to
-any of them reaches existing sessions. The redemptions are in `sso-redemption-and-revocation.md` and the subtree
-judging in `provisioning-and-tenancy.md`.
+any of them reaches existing sessions. It is the only way a tenant's MFA requirement reaches sign-in, refresh, a
+switch or an admission recheck: MFA's `RequirementPolicy`, which the additional-factor policy asks, leaves every
+tenant's requirement out. The redemptions are in `sso-redemption-and-revocation.md` and the subtree judging in
+`provisioning-and-tenancy.md`.
 
 ## Seam
 
 | Member seam                       | Adapter                                     | Default replaced          | Lifetime  |
 | --------------------------------- | ------------------------------------------- | ------------------------- | --------- |
 | AUTH `TenantAuthenticationPolicy` | `Tenancy\TenantAuthenticationPolicyAdapter` | `RequireNothingOfTenants` | transient |
+| AUTH `TenantAuthenticationPolicy` | `Tenancy\TenantFactorPolicyAdapter`         | `RequireNothingOfTenants` | transient |
 
-The row is in `Tenancy\TenancySeams` and bound while `iam.adapters.sso` is on, whatever `iam.adapters.mfa` says. It
-is mandatory while `sso.features.enforcement` is on or MFA's tenant requirement is bound off its default. With the SSO
-adapters off the application binds the policy itself.
+The row is in `Tenancy\TenancySeams`. While `iam.adapters.sso` is on it binds `TenantAuthenticationPolicyAdapter`.
+While it is off and `iam.adapters.mfa` is on it binds `TenantFactorPolicyAdapter`, which answers MFA's tenant
+requirement alone, unless `sso.features.enforcement` is on: that policy cannot enforce SSO, so the application binds
+its own. The row is mandatory while `sso.features.enforcement` is on or MFA's tenant requirement is bound off its
+default, and `iam:check` names the adapter the switches would bind.
 
 ## Decisions
 
@@ -32,7 +37,9 @@ adapters off the application binds the policy itself.
   `MultiFactorAuthenticatable` throws rather than answer nothing.
 - The requirement answers for exactly the tenant asked; the package applies no inheritance of it down the tree.
 - The version (`TenantPolicyVersion::of()`) is the SHA-256 of SSO's serialised policy, the gate's outcome and the
-  requirement, so it changes whenever anything the answer depends on does.
+  requirement, so it changes whenever anything the answer depends on does. Without SSO, `TenantFactorPolicyAdapter`
+  requires no connection and versions the requirement alone (`TenantPolicyVersion::ofFactor()`).
+  Where a tenant requires nothing it decides as `RequireNothingOfTenants` would; sessions only record its version.
 - The session's connection is asked of `TenantPolicyContext::connectionId()` only once the rule requires one, so a
   tenant with nothing enforced costs no read of the session's provenance.
 - The gate is handed the client of the call that asks (`TenantPolicyContext::$client`), so `ExemptionUsed` carries

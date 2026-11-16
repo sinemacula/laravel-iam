@@ -28,7 +28,9 @@ specification the adapters are written to. This guide covers what you call, and 
 
 SSO's handoff codes stay SSO's own: the package never binds a handoff issuer. The membership and tree seams are in
 [Provisioning and tenancy](provisioning-and-tenancy.md). The whole set is switched by `iam.adapters.sso`
-(`IAM_ADAPTERS_SSO`); see [Bindings](bindings.md) for replacing each and what that risks.
+(`IAM_ADAPTERS_SSO`); see [Bindings](bindings.md) for replacing each and what that risks. With it off, the tenant
+policy still carries your MFA tenant requirement, and nothing of SSO's, while `iam.adapters.mfa` is on and SSO's
+enforcement is off.
 
 ## Applications and guards
 
