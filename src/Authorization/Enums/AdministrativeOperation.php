@@ -6,7 +6,7 @@ namespace SineMacula\Laravel\Iam\Authorization\Enums;
 
 /**
  * The SSO and MFA administrative operations the permission catalogue declares;
- * SSO's freshness-gated operations keep SSO's own names.
+ * every `sso.*` name is SSO's own, only the `mfa.*` names are this package's.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -26,6 +26,7 @@ enum AdministrativeOperation: string
     case SSO_CONNECTION_DELETE           = 'sso.connection.delete';
     case SSO_CONNECTION_IDP_INITIATED    = 'sso.connection.idp_initiated';
     case SSO_CONNECTION_MIGRATE_SUBJECTS = 'sso.connection.migrate_subjects';
+    case SSO_CONNECTION_REFRESH_METADATA = 'sso.connection.refresh_metadata';
     case SSO_KEYS_ROTATE                 = 'sso.keys.rotate';
     case SSO_KEYS_TRUST_CERTIFICATE      = 'sso.keys.trust_certificate';
     case SSO_KEYS_DISTRUST_CERTIFICATE   = 'sso.keys.distrust_certificate';

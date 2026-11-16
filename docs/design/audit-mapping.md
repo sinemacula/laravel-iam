@@ -61,6 +61,8 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - An actor from the event brings its principal and tenant, explicitly none when the event names none. A record left to
   the caller keeps the principal the event acted on as properties (`session_principal_*`, `scope_principal_*`,
   `key_principal_*`), since the record's principal is the caller's. Its tenant stays the event's.
+- A `laravel-authorization` change made while impersonating, `system_override_used` included, names the impersonated
+  identity as the actor and keeps the impersonator as `impersonator_type` and `impersonator_id`.
 - The record's credential is the one the activity used. A credential being managed (a passkey added or removed, an API
   key issued, revoked or rotated) is a property (`passkey_id`, `key_id`), so a leaked key's trail is not mixed with its
   management.
@@ -76,6 +78,12 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - A deletion that removed grants covers every grantee beyond its subject through `PendingRecord::covering()`.
 - A denial for `insufficient_authentication` is a plain `access_denied`; the event does not say if a step-up follows.
 - A tenant is one opaque identifier across the members, so every record names it under the one type `tenant`.
+
+## Operational alerts
+
+- The package sends no alerts and has no configuration for alerting: the application listens to `AuditWriteFailed`,
+  `AuditCaptureFailed`, `IntegrityCheckFailed` and SSO's `KeyNearingExpiry` itself, since only it knows where an alert
+  goes, and an alert must not depend on the audit log that failed.
 
 ## The caller's context
 
