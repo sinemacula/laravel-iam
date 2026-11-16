@@ -53,6 +53,8 @@ application, since only the root `allow-plugins` counts.
     tree needs it. A resource tenant resolver left on its default is a note while the application has memberships.
   - `MachineMarkerCheck`: each `jwt` or `api_key` guard's user model that implements `MachineIdentity` also implements
     `AuthorizableMachine`.
+  - `MfaIdentityCheck`: while `iam.adapters.mfa` is on, each `jwt` guard's user model that is no `MachineIdentity`
+    implements `MultiFactorAuthenticatable`, which MFA's additional-factor policy requires of every sign-in.
   - `SchedulesCheck`: a note for each run `IamSchedule` registers that nothing on the schedule runs. A schedule that
     cannot be built fails.
 - Boot's storage refusal stands aside under `iam:check`, so `StorageCheck` reports it instead.
