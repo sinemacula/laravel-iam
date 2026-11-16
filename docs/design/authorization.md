@@ -94,7 +94,9 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
 - `DecisionCacheInvalidation::authenticationChanged()` has `laravel-authorization` forget the request's decisions
   (`forgetDecisionsFor()`) after an MFA factor change, a pending completion, a step-up or an SSO re-authentication. It
   forgets again if any transaction open on the storage connection rolls back, because Laravel 12 does not tell a
-  committed savepoint of its enclosing transaction's rollback.
+  committed savepoint of its enclosing transaction's rollback. Its listener for `laravel-authentication`'s
+  `Reauthenticated` forgets them once any reauthentication, a password's included, commits; the event carries no
+  identity model, so it names only the session.
 - `authorization.connection` is aligned with the storage connection like every member's, so a grant commits with a
   change that spans members and SSO's widening finds its transaction open.
 - `authorization:prune` is scheduled daily by `Iam::schedule()` whatever the switch says, and `authorization:check`

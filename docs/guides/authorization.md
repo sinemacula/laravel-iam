@@ -333,10 +333,13 @@ reads to explain a refusal, along with the subject and tenant it resolved, its r
 of checks has read ahead. When MFA confirms or removes a factor, registers a passkey, resets a person's factors, passes
 a verification or returns a session to pending, or an SSO reauthentication renews a session, this package calls
 `Authorization::forgetDecisionsFor()`, naming the session and the person, so the rest of the request or job decides
-afresh and never explains a refusal, or an allow, by proofs that no longer hold. It forgets everything the request or
-job remembers, whoever it was about, and never the persistent resolution cache, since no grant changed. A decision made
-in a transaction that rolls back afterwards is forgotten again, including when the change was made in a savepoint of a
-transaction of yours that rolls back once the savepoint has committed.
+afresh and never explains a refusal, or an allow, by proofs that no longer hold. After one of those, a decision made in
+a transaction that rolls back afterwards is forgotten again, including when the change was made in a savepoint of a
+transaction of yours that rolls back once the savepoint has committed. It calls it too, naming the session, once a
+session's reauthentication with its first factor, a password's included, commits. Inside a transaction of yours that is
+when yours commits, so call it yourself before you check again in it, and again if yours rolls back, from
+`DB::afterRollBack()` for example. Each call forgets everything the request or job remembers, whoever it was about, and
+never the persistent resolution cache, since no grant changed.
 
 This package does not call it when a session signs in or out, an SSO sign-in and the sessions SSO or a tenant's
 policy change revokes included, or when a tenant is switched. Where the request or job goes on to check after one of
