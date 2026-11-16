@@ -29,6 +29,7 @@ use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
+use SineMacula\Laravel\Iam\Audit\AuditSeams;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
@@ -1010,7 +1011,7 @@ final class IamServiceProviderTest extends TestCase
     public function testEveryCapabilitysSeamsAreProvided(): void
     {
         self::assertSame(
-            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class],
+            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class, AuditSeams::class],
             IamServiceProvider::seamProviders(),
         );
     }
