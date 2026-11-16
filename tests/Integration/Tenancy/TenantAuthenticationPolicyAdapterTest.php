@@ -480,6 +480,33 @@ final class TenantAuthenticationPolicyAdapterTest extends TestCase
     }
 
     /**
+     * A tenant is named by its identifier as a string.
+     *
+     * @return void
+     */
+    public function testATenantIsNamedByItsIdentifierAsAString(): void
+    {
+        $tenant = \Mockery::mock(Tenant::class);
+
+        $tenant->allows('getTenantIdentifier')->andReturn(42);
+
+        self::assertSame(self::SSO_TENANT, TenantAuthenticationPolicyAdapter::tenantIdOf(new ClaimedTenant(self::SSO_TENANT)));
+        self::assertSame('42', TenantAuthenticationPolicyAdapter::tenantIdOf($tenant));
+    }
+
+    /**
+     * A tenant whose identifier is empty is refused.
+     *
+     * @return void
+     */
+    public function testATenantWhoseIdentifierIsEmptyIsRefused(): void
+    {
+        $this->expectException(UnresolvedReferenceException::class);
+
+        TenantAuthenticationPolicyAdapter::tenantIdOf(new ClaimedTenant(''));
+    }
+
+    /**
      * A tenant that cannot be named throws.
      *
      * @return void
