@@ -8,6 +8,7 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authorization\Services\GrantService;
+use SineMacula\Laravel\Authorization\Support\RoleReach;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Sso\Results\VerifiedResult;
@@ -49,6 +50,7 @@ final readonly class GroupGrants
      * @param  list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>  $instructions
      * @return void
      *
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
@@ -58,38 +60,36 @@ final readonly class GroupGrants
             return;
         }
 
+        $reaches = self::reaches($instructions);
         $grantee = self::grantee($identity);
         $tenant  = $this->tenants->toReference($tenantId);
         $service = $this->container->make(GrantService::class);
 
-        foreach ($instructions as $instruction) {
-            $service->grantRole($grantee, $instruction->role, tenant: $tenant, includeSubtree: $instruction->includeSubtree);
+        foreach ($reaches as $reach) {
+            $service->grantRole($grantee, $reach->role, tenant: $tenant, includeSubtree: $reach->includeSubtree);
         }
     }
 
     /**
-     * Make the identity's own roles in the tenant exactly the instructions'.
+     * Make the identity's own roles in the tenant exactly the instructions', a
+     * role held live keeping its expiry.
      *
      * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
      * @param  string  $tenantId
      * @param  list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>  $instructions
      * @return void
      *
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      * @throws \Throwable
      */
     public function sync(Identity $identity, string $tenantId, array $instructions): void
     {
+        $reaches = self::reaches($instructions);
         $grantee = self::grantee($identity);
         $tenant  = $this->tenants->toReference($tenantId);
-        $service = $this->container->make(GrantService::class);
-        $roles   = array_map(static fn (GrantInstruction $instruction): string => $instruction->role, $instructions);
 
-        $service->syncRoles($grantee, $roles, tenant: $tenant, includeSubtree: false);
-
-        foreach ($instructions as $instruction) {
-            $service->grantRole($grantee, $instruction->role, tenant: $tenant, includeSubtree: $instruction->includeSubtree);
-        }
+        $this->container->make(GrantService::class)->syncRoles($grantee, $reaches, tenant: $tenant);
     }
 
     /**
@@ -103,6 +103,27 @@ final readonly class GroupGrants
         $groups = $result->attributes[self::GROUPS] ?? [];
 
         return is_string($groups) ? [$groups] : $groups;
+    }
+
+    /**
+     * Each instruction's role with its reach, refusing a role given both.
+     *
+     * @param  list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>  $instructions
+     * @return list<\SineMacula\Laravel\Authorization\Support\RoleReach>
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function reaches(array $instructions): array
+    {
+        $seen = [];
+
+        foreach ($instructions as $instruction) {
+            if (($seen[$instruction->role] ??= $instruction->includeSubtree) !== $instruction->includeSubtree) {
+                throw new \InvalidArgumentException(sprintf('The groups grant the role [%s] with both reaches.', $instruction->role));
+            }
+        }
+
+        return array_map(static fn (GrantInstruction $instruction): RoleReach => RoleReach::of($instruction->role, $instruction->includeSubtree), $instructions);
     }
 
     /**

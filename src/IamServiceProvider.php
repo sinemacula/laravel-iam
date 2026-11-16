@@ -9,13 +9,14 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
-use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
+use SineMacula\Laravel\Authentication\Events\Reauthenticated;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
 use SineMacula\Laravel\Iam\Audit\AuditRegistrations;
-use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
+use SineMacula\Laravel\Iam\Audit\AuditSeams;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextKeys;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Authorization\InsufficientAuthenticationMapping;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
@@ -107,8 +108,6 @@ final class IamServiceProvider extends ServiceProvider
         $this->registerFactorCodeCallers();
         $this->registerRedemptionRecords();
 
-        $this->app->singleton(HeldActorReader::class, AuthenticationActorReader::class);
-
         $this->written = $this->alignStorage($this->app->make(ConnectionAlignment::class), $this->app->make(ConfigRepository::class), $this->app);
 
         AuthenticationContextKeys::register($this->app);
@@ -135,6 +134,7 @@ final class IamServiceProvider extends ServiceProvider
         AuditRegistrations::register($this->app, !self::isRunningUncheckedCommand($this->app));
         $this->registerContextContributors();
         ProvisionOnUnlinkedResult::listen();
+        Event::listen(Reauthenticated::class, [DecisionCacheInvalidation::class, 'reauthenticated']);
         InsufficientAuthenticationMapping::register($this->app, $this->authorizationOn && $this->mfaOn);
         $this->registerListeners();
         $this->registerConsole();
@@ -156,6 +156,7 @@ final class IamServiceProvider extends ServiceProvider
             SsoSeams::class,
             TenancySeams::class,
             AuthorizationSeams::class,
+            AuditSeams::class,
         ];
     }
 

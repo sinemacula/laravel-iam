@@ -20,6 +20,7 @@ connection's or a model's name may appear in it.
 - [audit](#audit)
 - [configuration](#configuration)
 - [machines](#machines)
+- [identities](#identities)
 - [schedule](#schedule)
 
 ## Reading the output
@@ -201,6 +202,16 @@ Always applies.
 
 A principal model no guard's provider names is not checked: implement `AuthorizableMachine` on any principal acting for
 a machine yourself.
+
+## identities
+
+Applies while `iam.adapters.mfa` is on.
+
+- *The identity model ... of a `jwt` guard does not implement ...\MultiFactorAuthenticatable, so each of its sign-ins
+  throws while `iam.adapters.mfa` is on.*: MFA is asked on every sign-in on a `jwt` guard, and can answer only for a
+  `MultiFactorAuthenticatable` identity. Declare `implements MultiFactorAuthenticatable` on the model, with the
+  `HasFactors` trait supplying its methods. A `MachineIdentity` is refused before MFA is asked, so it is not checked,
+  nor is a model only `api_key` guards use.
 
 ## schedule
 
