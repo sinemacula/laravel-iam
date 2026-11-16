@@ -218,10 +218,11 @@ Applies while `iam.adapters.mfa` is on.
 Reports a note only, since something no check can see may start a run.
 
 - Note: *Runs [...] are not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*:
-  `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
-  `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
+  `mfa:prune` and `authorization:prune`, each SSO task whose `sso.operations.cadence.*` is set while SSO is in use,
+  and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is `outbox`, are not on the schedule. Register
+  the scheduled work ([Operations](operations.md)).
 
 A malformed `sso.operations.cadence.*` value is named by `sso:check`, which `iam:check` runs; SSO leaves that task
-off the schedule.
+off the schedule and this check does not note it.
 
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md
