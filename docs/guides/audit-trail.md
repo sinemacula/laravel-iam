@@ -141,8 +141,9 @@ the session.
 - An operator the event names (MFA's actor, SSO's acting identity) is the actor.
 - A `laravel-authorization` change is the call's: the identity behind the acting principal, as that principal; the
   reference a trusted console command names; or explicitly no one for system work (a grant the pruner found expired,
-  a write through a model outside its services), never the request's caller. A decision is the subject's it was made
-  about, and a preview the previewer's, about the principal previewed.
+  a write through a model outside its services), never the request's caller. A change made while impersonating keeps
+  the impersonator as the `impersonator_type` and `impersonator_id` properties. A decision is the subject's it was
+  made about, and a preview the previewer's, about the principal previewed.
 
 Your own records get the same: `AuditLog::record('orders.shipped')`, its code defined as [Codes](#codes) shows, on a
 bearer request names the caller the guard holds. Audit-log carries that actor, principal, tenant and session into the
@@ -242,14 +243,19 @@ tenant above counts there, a tenant whose own policies deny the purpose is left 
 grants only where your `TenantAccess` lets it act, elsewhere only its identity's. A grant never shows the whole trail:
 no viewer sees records with no tenant, which may be about any tenant's people, nor a tenant below a grant's own that it
 is no member of. Grants in more tenants than audit-log's scope holds (100) refuse the read rather than show some of
-them.
+them. Each tenant is resolved through your [tenant resolver](provisioning-and-tenancy.md#the-tenant-resolver), so a
+viewer in any tenant needs one bound: under `ResolveNoTenant` the read throws `UnresolvedReferenceException`.
 
-Audit-log tells the policy who is reading and why, never how they signed in or how recently. A requirement on the
-authentication itself, such as a fresh multi-factor check, belongs on the route or action that reads the trail,
-enforced before `visibleTo()` is called, with MFA's route gate (`mfa:level=aal2`, see
-[Authorization](authorization.md)) for instance. The policy cannot tell whether such a requirement is met, so a
-permission whose decision reads one, on an allow or a deny, is not held in that tenant: put freshness on the route,
-never on the `audit-log.*` grants.
+The viewer is decided as the Gate decides it. When the viewer is the request's caller, its credential's scopes cap
+its grants as they cap a check, so an API key scoped to `audit-log.export` exports where its account holds that grant
+and reads nothing. A viewer that is not the caller, such as one a job names or another seat of the caller's person,
+carries no credential: a machine then holds nothing and a person is not capped.
+
+A requirement on the authentication itself, such as a fresh multi-factor check, belongs on the route or action that
+reads the trail, enforced before `visibleTo()` is called, with MFA's route gate (`mfa:level=aal2`, see
+[Authorization](authorization.md)) for instance. The policy never counts such a requirement as met, so a permission
+whose decision reads one, on an allow or a deny, is not held in that tenant: put freshness on the route, never on the
+`audit-log.*` grants.
 
 Bind your own policy in a service provider's `register()` to decide otherwise, as reading the whole platform's trail
 needs; it is kept ([laravel-audit-log: reading][audit-reading]).
