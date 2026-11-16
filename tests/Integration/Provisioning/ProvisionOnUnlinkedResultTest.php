@@ -220,6 +220,36 @@ final class ProvisionOnUnlinkedResultTest extends TestCase
     }
 
     /**
+     * A link in the connection's own tenant stays active.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testALinkInTheConnectionsOwnTenantStaysActive(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $own = $this->makeConnection(self::TENANT);
+
+        $this->provisionPeople(static function (string $step, Person $person) use ($own): void {
+
+            if ($step !== 'identity') {
+                return;
+            }
+
+            self::linkByDomain($person, $own);
+        });
+
+        $this->handoff();
+
+        self::assertSame([], $this->reportedOf(LinkSuspended::class));
+        self::assertSame(LinkState::ACTIVE, Link::query()->where('connection_id', $own)->sole()->state);
+    }
+
+    /**
      * An existing identity is never provisioned.
      *
      * @param  ?string  $level
