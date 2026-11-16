@@ -392,10 +392,10 @@ those, call `Authorization::forgetDecisionsFor($sessionId, $user)` yourself once
   `access_management` and `audit`, and `audit-log.{purpose}.own` for the viewer's own activity. The scope is never
   wider than the grants allow and sees only the tenants the viewer belongs to or holds those permissions in, never the
   whole platform's trail (see
-  [The audit trail](audit-trail.md#reading-the-trail)). Freshness for reading the trail belongs on the route that
-  reads it: the policy is never told how the reader signed in, so a permission an authentication requirement guards,
-  on its allow or on a deny, is not held there. Your own binding of the policy
-  is kept, and a policy that replaces this package's decides who reads every person's trail, so a scope too wide
+  [The audit trail](audit-trail.md#reading-the-trail)). A caller's credential scopes cap its grants as they cap a
+  check. Freshness for reading the trail belongs on the route that reads it: the policy never counts an authentication
+  requirement as met, so a permission one guards, on its allow or on a deny, is not held there. Your own binding of the
+  policy is kept, and a policy that replaces this package's decides who reads every person's trail, so a scope too wide
   (`AccessScope::all()`, or `withTenantless()` for a tenant's viewer) shows one tenant's viewer every tenant's people.
 - **Its events in the audit trail.** `laravel-authorization`'s events are mapped to the `authorization.*` codes (see
   [The audit trail](audit-trail.md)), so audit-log's own Gate capture stays off.
