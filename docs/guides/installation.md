@@ -24,8 +24,9 @@ and what the package leaves to your application.
 }
 ```
 
-`iam:check` reports a missing extension, and a plugin that is not installed or whose files are not linked (allow it,
-then run `composer install` again). See [Checks](checks.md).
+`iam:check` reports, through `sso:check`, a missing extension while `sso.features.saml2` or `sso.features.oidc` is not
+off, and a plugin that is not installed or whose files are not linked while `sso.features.saml2` is not off (allow it,
+then run `composer install` again). See [Checks](checks.md#the-members-checks).
 
 ## Installing
 

@@ -2,7 +2,8 @@
 
 Who your people are, which tenants they belong to and how your tenants nest are your application's own data. The
 members need answers from that data in several places, and must never disagree about a person or a tenant, so the
-package asks you for each answer once, through a contract of its own, and routes it to every member that needs it.
+package asks you for each answer once, through one contract (this package's or a member's), and routes it to every
+member that needs it.
 
 | Contract                                                     | Answers                                                                                                                                                                   |
 |--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
