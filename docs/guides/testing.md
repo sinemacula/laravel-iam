@@ -272,7 +272,8 @@ FakeMemberships::fake()->grant($user, Membership::of('tenant-1', CarbonImmutable
 The tenant tree is `laravel-authorization`'s. In tests, bind its in-memory
 `SineMacula\Laravel\Authorization\Testing\FakeTenantTree`: each tenant with its parent, or null for one at the top,
 every parent before its children. Name each tenant by the morph type and key of the model your tenant resolver
-returns for its id.
+returns for its id. Its subtree query runs on the default connection unless given one, so pass `iam.storage.connection`
+when that names another.
 Prove a tree of your own with `laravel-authorization`'s
 `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract` (see
 [laravel-authorization: grants][authorization-fake-tree]).
@@ -285,7 +286,7 @@ use SineMacula\Laravel\Authorization\Testing\FakeTenantTree;
 $this->app->instance(TenantTree::class, FakeTenantTree::of([
     [new Reference('organisation', '1'), null],
     [new Reference('team', '1'), new Reference('organisation', '1')],
-]));
+], config('iam.storage.connection')));
 ```
 
 The tenant MFA requirement is laravel-mfa's `TenantRequirement`: bind your own, or one a test scripts, and prove yours
