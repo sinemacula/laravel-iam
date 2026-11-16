@@ -100,13 +100,13 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The models of the user providers `jwt` and `api_key` guards use, once
-     * each.
+     * The models of the user providers the drivers' guards use, once each.
      *
      * @param  \Illuminate\Contracts\Config\Repository  $config
+     * @param  list<string>  $drivers
      * @return array<int, string>
      */
-    public static function identityModels(Repository $config): array
+    public static function identityModels(Repository $config, array $drivers = CaptureExclusions::DRIVERS): array
     {
         $guards    = $config->get(self::GUARDS_KEY);
         $providers = $config->get(self::PROVIDERS_KEY);
@@ -115,7 +115,7 @@ final readonly class StorageCheck implements Check
 
         foreach (is_array($guards) ? $guards : [] as $guard) {
 
-            $model = self::modelOf($guard, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
+            $model = self::modelOf($guard, $drivers, is_array($providers) ? $providers : [], is_string($default) ? $default : null);
 
             if ($model === null) {
                 continue;
@@ -190,17 +190,18 @@ final readonly class StorageCheck implements Check
     }
 
     /**
-     * The model of a `jwt` or `api_key` guard's provider, or of the default
-     * provider when it names none.
+     * The model of the guard's provider, or of the default provider when it
+     * names none, for a guard of one of the drivers.
      *
      * @param  mixed  $guard
+     * @param  list<string>  $drivers
      * @param  array<array-key, mixed>  $providers
      * @param  ?string  $default
      * @return ?string
      */
-    private static function modelOf(mixed $guard, array $providers, ?string $default): ?string
+    private static function modelOf(mixed $guard, array $drivers, array $providers, ?string $default): ?string
     {
-        if (!is_array($guard) || !in_array($guard['driver'] ?? null, CaptureExclusions::DRIVERS, true)) {
+        if (!is_array($guard) || !in_array($guard['driver'] ?? null, $drivers, true)) {
             return null;
         }
 
