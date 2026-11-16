@@ -51,6 +51,9 @@ removed factor would leave the identity's other sessions standing.
 - Where authentication names no session (at sign-in, and when it asks for a requirement), every proof is bound to
   `SignIn::UNNAMED`, which no session key can equal. Each proof is stamped with the identity's current verification
   generation.
+- The additional-factor policy asks MFA's `RequirementPolicy`, which answers for the identity and the application and
+  leaves every tenant's requirement to the tenant policy (`tenant-authentication-policy.md`). It hands MFA the first
+  factor with `ProviderTrust::withheld()`, since no tenant's trust counts toward the identity's own requirement.
 - The requirement check hands MFA an external provider's first factor naming no connection
   (`ProviderTrust::withheld()`): authentication has already asked its external evidence policy for the tenant. MFA's own
   session judgements name the connection only for evidence SSO accepted, from a connection the tenant trusts.
