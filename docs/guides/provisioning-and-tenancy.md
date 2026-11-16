@@ -198,17 +198,18 @@ use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Facades\Iam;
 
 Iam::transaction(function () use ($identity, $tenantId, $request): void {
-    Iam::scopeWidenings()->widen([$identity], $tenantId, ClientContext::fromRequest($request));
+    Iam::scopeWidenings()->widen([$identity], [$tenantId], ClientContext::fromRequest($request));
 
     // ...take your own guard of the person's principals, then write the membership
 });
 ```
 
-Pass `null` as the tenant for a platform principal, and `new ClientContext(null, null)` from a console command or a job.
-A change that gives several people a principal in the same tenant passes them together, so SSO takes their guards in its
-order. SSO suspends the person's links by a verified domain in every other tenant's connection, and revokes the sessions
-established through each, in the same transaction. Called with no transaction open it is SSO's `LogicException`, with
-nothing written. See SSO's [linking by domain guide][sso-linking-by-domain].
+The second argument lists the tenants whose connections are spared: the new principal's tenant, or `[]` for a platform
+principal. Pass `new ClientContext(null, null)` from a console command or a job. A change that gives several people a
+principal in the same tenant passes them together, so SSO takes their guards in its order; the tenants spared apply to
+every person given. SSO suspends the person's links by a verified domain in every connection of a tenant not spared, and
+revokes the sessions established through each, in the same transaction. Called with no transaction open it is SSO's
+`LogicException`, with nothing written. See SSO's [linking by domain guide][sso-linking-by-domain].
 
 ## Memberships
 
@@ -305,12 +306,15 @@ Iam::transaction(function () use ($organisation, $parentId): void {
 });
 ```
 
-The report first locks the moved tenant's SSO enforcement row (`EnforcementService::lockTenants()`), so a sign-in on
-its path waits for the move or sees it. It passes the move to `laravel-authorization` (`Authorization::treeChanged()`:
-do not call it yourself beside it). While the authorization and SSO adapters are on, it reports everyone granted in the
-moved subtree to SSO's [scope widening](#scope-widening), since no grant hook runs for a move. While SSO's enforcement
-is on or MFA's tenant requirement is bound, it judges the sessions of the moved subtree, once in the transaction and
-once more after it commits. It resolves each tenant through your [tenant resolver](#the-tenant-resolver).
+The report first locks the moved tenant's SSO enforcement row (`EnforcementService::lockTenants()`), so a sign-in on its
+path waits for the move or sees it. It passes the move to `laravel-authorization` (`Authorization::treeChanged()`: do
+not call it yourself beside it). While the authorization and SSO adapters are on, it reports everyone granted in the
+moved subtree to SSO's [scope widening](#scope-widening), since no grant hook runs for a move. It spares the moved
+subtree and its new ancestors, as your tree answers them after the write: a link by a verified domain in the subtree or
+in any of its new ancestors stays active, and one in any other tenant, such as an old ancestor that no longer contains
+the subtree, is suspended. While SSO's enforcement is on or MFA's tenant requirement is bound, it judges the sessions of
+the moved subtree, once in the transaction and once more after it commits. It resolves each tenant through your
+[tenant resolver](#the-tenant-resolver).
 
 ## The tenant MFA requirement
 
