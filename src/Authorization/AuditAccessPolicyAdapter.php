@@ -18,6 +18,7 @@ use SineMacula\Laravel\Authentication\Contracts\Tenant;
 use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
 use SineMacula\Laravel\Authentication\Support\IdentifierCoercion;
 use SineMacula\Laravel\Authorization\AuthorizationManager;
+use SineMacula\Laravel\Authorization\Contracts\SubjectResolver;
 use SineMacula\Laravel\Authorization\Evaluation\HeldPermission;
 use SineMacula\Laravel\Authorization\Reviews\AccessReview;
 use SineMacula\Laravel\Authorization\Reviews\ReviewQuery;
@@ -66,7 +67,7 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
         }
 
         $container  = Container::getInstance();
-        $subject    = self::subjectOf($viewer);
+        $subject    = $container->make(SubjectResolver::class)->forUser($viewer);
         $whole      = PermissionCatalogue::audit($purpose);
         $own        = PermissionCatalogue::auditOwn($purpose);
         $byCategory = array_map(static fn (string $category): string => PermissionCatalogue::auditCategory($purpose, $category), PermissionCatalogue::CATEGORIES);
@@ -180,27 +181,17 @@ final readonly class AuditAccessPolicyAdapter implements AuditAccessPolicy
     {
         $principal = $subject->subject;
 
-        // Where the principal cannot act, only its identity's grants count.
+        // Where it cannot act, only its identity's grants count, under its cap.
         if ($principal instanceof Principal && !$container->make(TenantAccess::class)->mayActIn($principal, $container->make(TenantReferences::class)->tenant($tenant->id))) {
-            $subject = new Subject($principal->getIdentity(), $principal->getIdentity());
+            $identity = $principal->getIdentity();
+            $subject  = new Subject($identity, $identity, scopes: $subject->scopes ?? SessionPolicySourceAdapter::withoutCredential($principal, $identity));
         }
 
-        // With no session, a permission needing authentication is not held.
+        // A permission whose decision reads a requirement is not held.
         $held = $container->make(AuthorizationManager::class)->heldPermissionsFor($subject, AuthorizationScope::tenant($tenant));
         $held = array_filter($held, static fn (HeldPermission $permission): bool => $permission->isUnconditional());
 
         return array_map(static fn (HeldPermission $permission): string => $permission->action, $held);
-    }
-
-    /**
-     * The viewer as a subject, a principal in its own tenant.
-     *
-     * @param  \Illuminate\Database\Eloquent\Model  $viewer
-     * @return \SineMacula\Laravel\Authorization\Subject
-     */
-    private static function subjectOf(Model $viewer): Subject
-    {
-        return $viewer instanceof Principal ? new Subject($viewer, $viewer->getIdentity(), $viewer->getTenant()) : new Subject($viewer, $viewer);
     }
 
     /**
