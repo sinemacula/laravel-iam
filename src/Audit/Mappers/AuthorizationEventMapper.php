@@ -257,7 +257,7 @@ final readonly class AuthorizationEventMapper implements EventMapper
         return self::present([
             ...$details,
             ...$renamed,
-            'trusted'          => $event->isTrusted(),
+            ...self::call($event->isTrusted(), $event->impersonator()),
             'application'      => $event->application(),
             'grant'            => self::GRANTS[$event->operation()] ?? null,
             'changes'          => self::changedFields($details),
@@ -282,15 +282,35 @@ final readonly class AuthorizationEventMapper implements EventMapper
     {
         $call = $event->operation;
 
-        Snapshot::describe($record, AuthorizationActivity::SYSTEM_OVERRIDE_USED, [
-            'trusted'             => $call->isTrusted,
+        Snapshot::describe($record, AuthorizationActivity::SYSTEM_OVERRIDE_USED, self::present([
+            ...self::call($call->isTrusted, $call->impersonator),
             'name'                => $event->name,
             'protected_operation' => $event->protectedOperation,
-        ]);
+        ]));
 
         self::attribute($record, $call->id, $call->actor, $call->identity);
 
         return $this->place($record, self::reference($event->record), $event->tenant);
+    }
+
+    /**
+     * What a change keeps of its call, null where it names no impersonator.
+     *
+     * @param  bool  $trusted
+     * @param  ?\SineMacula\Laravel\Authorization\Support\Reference  $impersonator
+     * @return array{trusted: bool, impersonator_type: ?string, impersonator_id: ?string}
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function call(bool $trusted, ?AuthorizationReference $impersonator): array
+    {
+        $impersonator = self::reference($impersonator);
+
+        return [
+            'trusted'           => $trusted,
+            'impersonator_type' => $impersonator?->type,
+            'impersonator_id'   => $impersonator?->id,
+        ];
     }
 
     /**

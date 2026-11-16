@@ -31,6 +31,7 @@ final readonly class Checker
         AuditCheck::class,
         CrossMemberConfigurationCheck::class,
         MachineMarkerCheck::class,
+        MfaIdentityCheck::class,
         SchedulesCheck::class,
     ];
 

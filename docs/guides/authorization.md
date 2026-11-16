@@ -220,7 +220,8 @@ cannot establish:
 - naming a guard whose caller it is, it is capped by that caller's credential, as the request's own subject is;
 - naming a guard that is not configured, it is allowed nothing;
 - naming no credential, as a job's or a console command's subject, or naming a guard whose caller is someone else, it
-  carries no cap if it is a person and is allowed nothing if it is a machine.
+  carries no cap if it is a person and is allowed nothing if it is a machine or a principal whose identity cannot be
+  read.
 
 Say the scopes yourself (`scopes: CredentialScopes::of([...])` or `CredentialScopes::uncapped()`, from
 `SineMacula\Laravel\Authorization\Support\CredentialScopes`) when you know them.
