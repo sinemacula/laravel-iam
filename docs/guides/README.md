@@ -89,17 +89,17 @@ It runs every member's own check and this package's, and exits non-zero on any f
 
 ## The members' own guides
 
-| Member                              | Guides                                                         |
-|-------------------------------------|----------------------------------------------------------------|
-| `sinemacula/laravel-authentication` | [docs/guides][authentication-guides]                           |
-| `sinemacula/laravel-mfa`            | [docs/guides][mfa-guides]                                      |
-| `sinemacula/laravel-sso`            | [docs/guides][sso-guides], [its index][sso-index]              |
-| `sinemacula/laravel-audit-log`      | [docs/guides][audit-log-guides]                                |
-| `sinemacula/laravel-authorization`  | [README][authorization-readme] (it has no separate guides yet) |
+| Member                              | Guides                                            |
+|-------------------------------------|---------------------------------------------------|
+| `sinemacula/laravel-authentication` | [docs/guides][authentication-guides]              |
+| `sinemacula/laravel-mfa`            | [docs/guides][mfa-guides]                         |
+| `sinemacula/laravel-sso`            | [docs/guides][sso-guides], [its index][sso-index] |
+| `sinemacula/laravel-audit-log`      | [docs/guides][audit-log-guides]                   |
+| `sinemacula/laravel-authorization`  | [docs/guides][authorization-guides]               |
 
 [authentication-guides]: https://github.com/sinemacula/laravel-authentication/tree/master/docs/guides
 [mfa-guides]: https://github.com/sinemacula/laravel-mfa/tree/master/docs/guides
 [sso-guides]: https://github.com/sinemacula/laravel-sso/tree/master/docs/guides
 [sso-index]: https://github.com/sinemacula/laravel-sso/blob/master/docs/guides/README.md
 [audit-log-guides]: https://github.com/sinemacula/laravel-audit-log/tree/master/docs/guides
-[authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
+[authorization-guides]: https://github.com/sinemacula/laravel-authorization/tree/master/docs/guides
