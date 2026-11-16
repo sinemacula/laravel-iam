@@ -28,7 +28,9 @@ The connection is written into `authentication.storage.connection`, `mfa.storage
 wherever a member leaves its own key unset, so a change that spans members, a grant made with a provisioned membership
 among them, runs in one transaction. A member key that names another connection refuses boot with
 `StorageConnectionMismatchException`: unset the member's key, or set it to the same connection. `laravel-audit-log` may
-keep its own connection; `iam:check` notes it.
+keep its own connection; `iam:check` notes it. SSO's attempt counters need a connection of their own,
+`sso.rate_limits.connection`, so a refused redemption's rollback does not take back its attempt (see
+[The storage connection](installation.md#the-storage-connection)).
 
 Your identity models, and every principal model your guards resolve, must live on this connection too, or a sign-in
 and the session it writes cannot commit together. `iam:check` checks the identity models of every `jwt` and `api_key`

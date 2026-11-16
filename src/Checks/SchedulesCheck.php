@@ -11,6 +11,9 @@ use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\AuditLog\Delivery\Enums\DeliveryMode;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Scheduling\IamSchedule;
+use SineMacula\Laravel\Sso\Config\Features;
+use SineMacula\Laravel\Sso\Operations\OperationsSchedule;
+use SineMacula\Laravel\Sso\Operations\OperationsSettings;
 
 /**
  * Notes each run `Iam::schedule()` registers that is missing from the schedule.
@@ -36,7 +39,7 @@ final readonly class SchedulesCheck implements Check
         /** The container the schedule is resolved from. */
         private Container $container,
 
-        /** The configuration audit-log's delivery mode is read from. */
+        /** The configuration audit-log's delivery mode and SSO's cadences are read from. */
         private Repository $config,
     ) {}
 
@@ -72,7 +75,7 @@ final readonly class SchedulesCheck implements Check
     {
         return [function (): ?string {
 
-            $runs = [IamSchedule::MFA_PRUNE, IamSchedule::AUTHORIZATION_PRUNE];
+            $runs = [IamSchedule::MFA_PRUNE, IamSchedule::AUTHORIZATION_PRUNE, ...$this->ssoRuns()];
 
             if ($this->config->get(IamSchedule::DELIVERY_MODE) === DeliveryMode::OUTBOX->value) {
                 $runs[] = IamSchedule::AUDIT_DRAIN;
@@ -83,5 +86,38 @@ final readonly class SchedulesCheck implements Check
 
             return $missing === [] ? null : sprintf(self::MISSING, implode(', ', $missing));
         }];
+    }
+
+    /**
+     * SSO's runs that have a cadence while SSO is in use; a malformed cadence
+     * is left to `sso:check`.
+     *
+     * @return list<string>
+     */
+    private function ssoRuns(): array
+    {
+        if (!Features::isInUse($this->config)) {
+            return [];
+        }
+
+        $settings = new OperationsSettings($this->config);
+        $runs     = [];
+
+        foreach (OperationsSchedule::COMMANDS as $task => $command) {
+
+            try {
+                $cadence = $settings->cadence($task);
+            } catch (\InvalidArgumentException) {
+                continue;
+            }
+
+            if ($cadence === null) {
+                continue;
+            }
+
+            $runs[] = $command;
+        }
+
+        return $runs;
     }
 }

@@ -20,6 +20,7 @@ connection's or a model's name may appear in it.
 - [audit](#audit)
 - [configuration](#configuration)
 - [machines](#machines)
+- [identities](#identities)
 - [schedule](#schedule)
 
 ## Reading the output
@@ -59,6 +60,10 @@ reported by `authorization:check` and fails the run rather than stopping the app
 that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
+
+`sso:check` reports a missing PHP extension only while `sso.features.saml2` or `sso.features.oidc` is not off, and
+SSO's Composer plugin not installed or its files not linked only while `sso.features.saml2` is not off (see
+[Installation](installation.md#requirements)). A switch set to a value SSO cannot read counts as on.
 
 ## storage
 
@@ -117,6 +122,11 @@ Applies only while SSO is in use (`sso.features.saml2` or `sso.features.oidc` on
   refused, never handed off.*: set it to `false`, and bind a provisioner instead
   ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 - Every mandatory seam of SSO and tenancy, with the messages under [seams](#seams).
+- Note: *`sso.rate_limits.connection` leaves SSO's attempt counters on `iam.storage.connection`: ...*: a redemption
+  refused inside the package's transaction rolls its attempt back, so the attempt is never counted. Name a connection
+  of their own and create the counters' table on it (see
+  [The storage connection](installation.md#the-storage-connection)). Not noted while you bind SSO's `AttemptLimiter`
+  yourself.
 
 ## context
 
@@ -202,15 +212,26 @@ Always applies.
 A principal model no guard's provider names is not checked: implement `AuthorizableMachine` on any principal acting for
 a machine yourself.
 
+## identities
+
+Applies while `iam.adapters.mfa` is on.
+
+- *The identity model ... of a `jwt` guard does not implement ...\MultiFactorAuthenticatable, so each of its sign-ins
+  throws while `iam.adapters.mfa` is on.*: MFA is asked on every sign-in on a `jwt` guard, and can answer only for a
+  `MultiFactorAuthenticatable` identity. Declare `implements MultiFactorAuthenticatable` on the model, with the
+  `HasFactors` trait supplying its methods. A `MachineIdentity` is refused before MFA is asked, so it is not checked,
+  nor is a model only `api_key` guards use.
+
 ## schedule
 
 Reports a note only, since something no check can see may start a run.
 
 - Note: *Runs [...] are not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*:
-  `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
-  `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
+  `mfa:prune` and `authorization:prune`, each SSO task whose `sso.operations.cadence.*` is set while SSO is in use,
+  and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is `outbox`, are not on the schedule. Register
+  the scheduled work ([Operations](operations.md)).
 
 A malformed `sso.operations.cadence.*` value is named by `sso:check`, which `iam:check` runs; SSO leaves that task
-off the schedule.
+off the schedule and this check does not note it.
 
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md

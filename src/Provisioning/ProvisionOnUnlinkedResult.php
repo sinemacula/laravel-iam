@@ -119,7 +119,7 @@ final readonly class ProvisionOnUnlinkedResult
         $identity = $provisioner->createIdentity($result);
 
         if (!$identity instanceof Model || !$identity->wasRecentlyCreated) {
-            $message = 'The provisioner answered an identity of [%s] it did not create: provisioning always creates a new identity (IAM-7.1).';
+            $message = 'The provisioner answered an identity of [%s] it did not create: provisioning always creates a new identity.';
 
             throw new \LogicException(sprintf($message, $identity::class));
         }
