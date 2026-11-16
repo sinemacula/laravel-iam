@@ -6,6 +6,7 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Facades\Auth;
+use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind as AuthenticationProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Exceptions\SessionMismatchException;
@@ -113,7 +114,7 @@ final readonly class ProofStoreAdapter implements ProofStore
     }
 
     /**
-     * The current sign-in's newest proofs, oldest first.
+     * The sign-in's proofs, oldest first, at most `MAX_LIMIT` of each kind.
      *
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
      * @param  string  $application
@@ -132,7 +133,19 @@ final readonly class ProofStoreAdapter implements ProofStore
             return [];
         }
 
-        $recorded = Auth::sessions($application)->proofs($session, limit: RequirementSubject::MAX_LIMIT);
+        $sessions = Auth::sessions($application);
+        $recorded = $sessions->proofs($session, limit: RequirementSubject::MAX_LIMIT);
+
+        // Kinds run last to first so same-instant proofs read in kind order.
+        if (count($recorded) === RequirementSubject::MAX_LIMIT) {
+            $recorded = [];
+
+            foreach (array_reverse(AuthenticationProofKind::cases()) as $kind) {
+                $recorded = [...$recorded, ...$sessions->proofs($session, kinds: [$kind], limit: RequirementSubject::MAX_LIMIT)];
+            }
+
+            usort($recorded, static fn (RecordedProof $left, RecordedProof $right): int => $right->authenticatedAt <=> $left->authenticatedAt);
+        }
 
         return $this->proofs->of($identity, $application, $session, array_reverse($recorded));
     }
