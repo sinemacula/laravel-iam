@@ -28,6 +28,9 @@ final class IamScheduleTest extends TestCase
     /** @var list<string> Audit-log's own scheduled commands, which this package never registers. */
     private const array AUDIT_LOG_OWN = ['audit-log:seal', 'audit-log:seal --sweep', 'audit-log:verify --strict --sweep-first', 'audit-log:prune'];
 
+    /** @var list<array{string, string}> The prunes scheduled daily whatever the configuration. */
+    private const array PRUNES = [['mfa:prune', '0 0 * * *'], ['authorization:prune', '0 0 * * *'], ['authorization:usage-prune', '0 0 * * *']];
+
     /**
      * Without SSO and with sync delivery, only the daily prunes are scheduled.
      *
@@ -35,7 +38,56 @@ final class IamScheduleTest extends TestCase
      */
     public function testOnlyThePrunesAreScheduledWhileSsoIsNotInUseAndDeliveryIsSync(): void
     {
-        self::assertSame([['mfa:prune', '0 0 * * *'], ['authorization:prune', '0 0 * * *']], $this->scheduled());
+        self::assertSame(self::PRUNES, $this->scheduled());
+    }
+
+    /**
+     * Provide usage intervals and the heartbeat cadence each schedules.
+     *
+     * @return iterable<string, array{mixed, string}>
+     */
+    public static function usageIntervals(): iterable
+    {
+        yield 'unset' => [null, '0 * * * *'];
+        yield 'a minute' => [60, '*/1 * * * *'];
+        yield 'part minutes' => ['479', '*/7 * * * *'];
+        yield 'under an hour' => [3599, '*/59 * * * *'];
+        yield 'an hour' => [3600, '0 * * * *'];
+        yield 'a day' => [86400, '0 * * * *'];
+        yield 'not a number' => ['often', '0 * * * *'];
+    }
+
+    /**
+     * While usage tracking is on, the heartbeat runs at least once an interval.
+     *
+     * @param  mixed  $interval
+     * @param  string  $cadence
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    #[DataProvider('usageIntervals')]
+    public function testTheHeartbeatRunsAtLeastOnceAnIntervalWhileUsageIsTracked(mixed $interval, string $cadence): void
+    {
+        $this->config()->set('authorization.usage', array_filter(['enabled' => true, 'interval' => $interval], static fn (mixed $value): bool => $value !== null));
+
+        self::assertSame([...self::PRUNES, ['authorization:usage-heartbeat', $cadence]], $this->scheduled());
+    }
+
+    /**
+     * A usage switch that is not exactly true schedules no heartbeat.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testNoHeartbeatIsScheduledUnlessUsageTrackingIsOn(): void
+    {
+        foreach ([false, 'true', 1, null] as $enabled) {
+            $this->config()->set('authorization.usage.enabled', $enabled);
+
+            self::assertSame(self::PRUNES, $this->scheduled());
+        }
     }
 
     /**
@@ -51,8 +103,7 @@ final class IamScheduleTest extends TestCase
         $this->config()->set('sso.operations.cadence.prune', '7 * * * *');
 
         self::assertSame([
-            ['mfa:prune', '0 0 * * *'],
-            ['authorization:prune', '0 0 * * *'],
+            ...self::PRUNES,
             ['sso:prune', '7 * * * *'],
             ['sso:domains:recheck', '0 * * * *'],
             ['sso:metadata:refresh', '*/5 * * * *'],
@@ -72,8 +123,31 @@ final class IamScheduleTest extends TestCase
         $this->config()->set('audit-log.delivery.mode', 'outbox');
 
         self::assertSame([
-            ['mfa:prune', '0 0 * * *'],
-            ['authorization:prune', '0 0 * * *'],
+            ...self::PRUNES,
+            ['audit-log:drain --until-empty', '* * * * *'],
+        ], $this->scheduled());
+    }
+
+    /**
+     * With every option on, each task is scheduled once in order.
+     *
+     * @return void
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function testEveryTaskIsScheduledInOrderWhileEveryOptionIsOn(): void
+    {
+        $this->config()->set('authorization.usage.enabled', true);
+        $this->config()->set('sso.features.saml2', true);
+        $this->config()->set('audit-log.delivery.mode', 'outbox');
+
+        self::assertSame([
+            ...self::PRUNES,
+            ['authorization:usage-heartbeat', '0 * * * *'],
+            ['sso:prune', '0 * * * *'],
+            ['sso:domains:recheck', '0 * * * *'],
+            ['sso:metadata:refresh', '*/5 * * * *'],
+            ['sso:keys:expiring', '0 0 * * *'],
             ['audit-log:drain --until-empty', '* * * * *'],
         ], $this->scheduled());
     }
@@ -105,7 +179,7 @@ final class IamScheduleTest extends TestCase
     {
         $this->config()->set('audit-log.delivery.mode', $mode);
 
-        self::assertSame([['mfa:prune', '0 0 * * *'], ['authorization:prune', '0 0 * * *']], $this->scheduled());
+        self::assertSame(self::PRUNES, $this->scheduled());
     }
 
     /**
@@ -154,8 +228,7 @@ final class IamScheduleTest extends TestCase
         $this->config()->set('sso.operations.cadence.prune', 'whenever');
 
         self::assertSame([
-            ['mfa:prune', '0 0 * * *'],
-            ['authorization:prune', '0 0 * * *'],
+            ...self::PRUNES,
             ['sso:domains:recheck', '0 * * * *'],
             ['sso:metadata:refresh', '*/5 * * * *'],
             ['sso:keys:expiring', '0 0 * * *'],
