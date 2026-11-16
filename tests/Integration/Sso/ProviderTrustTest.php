@@ -7,12 +7,16 @@ namespace Tests\Integration\Sso;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Contracts\RequirementCheck;
+use SineMacula\Laravel\Authentication\Contracts\TenantAccess;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\External\ExternalEvidence;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
@@ -27,7 +31,9 @@ use SineMacula\Laravel\Authentication\Requirements\RequirementPart;
 use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
+use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Facades\Iam;
+use SineMacula\Laravel\Iam\Mfa\AdditionalFactorPolicyAdapter;
 use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\RequirementCheckAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
@@ -35,11 +41,17 @@ use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
+use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
+use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Contracts\CombinationPolicy;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind as MfaChannelKind;
 use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
+use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
+use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
+use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
+use SineMacula\Laravel\Mfa\Verification\Submission;
 use SineMacula\Laravel\Sso\Contracts\EvidencePolicy;
 use SineMacula\Laravel\Sso\Testing\Oidc\FakeIdToken;
 use Tests\Concerns\MigratesSso;
@@ -47,8 +59,10 @@ use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Models\Person;
+use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\Fixtures\Sso\AcceptsTheProvidersContext;
 use Tests\Fixtures\Sso\TrustsConnections;
+use Tests\Fixtures\Tenancy\ScriptedTenantRequirement;
 use Tests\TestCase;
 
 /**
@@ -66,6 +80,8 @@ use Tests\TestCase;
 #[CoversClass(ProofStoreAdapter::class)]
 #[CoversClass(SignInProofs::class)]
 #[CoversClass(RequirementCheckAdapter::class)]
+#[CoversClass(AdditionalFactorPolicyAdapter::class)]
+#[CoversClass(TenantAuthenticationPolicyAdapter::class)]
 final class ProviderTrustTest extends TestCase
 {
     use MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
@@ -195,6 +211,43 @@ final class ProviderTrustTest extends TestCase
     }
 
     /**
+     * Only a tenant that trusts the connection credits its provider's evidence;
+     * another tenant's sign-in completes once a factor of MFA's is verified.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testOnlyATenantThatTrustsTheConnectionCreditsItsEvidence(): void
+    {
+        $this->app?->instance(EvidencePolicy::class, new AcceptsTheProvidersContext);
+        $this->app?->instance(TenantResolver::class, new OpenTenancy);
+        $this->app?->instance(TenantAccess::class, new OpenTenancy);
+
+        Config::set('mfa.applications.' . self::GUARD . '.requirement', 'never');
+
+        $verification = MfaRequirement::none()->withAdditionalVerification();
+
+        ScriptedTenantRequirement::bind($this->app)->require(self::TENANT, $verification)->require(self::OTHER_TENANT, $verification);
+
+        $this->linkThroughFlow($this->person);
+
+        $factor = $this->confirmedFactor();
+
+        self::assertTrue($this->redeemIn(self::TENANT)->isSignedIn());
+
+        $pending    = $this->redeemIn(self::OTHER_TENANT);
+        $credential = $pending->credential?->reveal() ?? self::fail('The sign-in is not pending.');
+        $request    = Request::create('/', 'POST', ['pending_credential' => $credential]);
+        $completion = Mfa::verify(CallerContext::fromRequest($request), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)))->completion();
+
+        self::assertEquals(new Requirement(new RequirementPart), $pending->pending?->requirement);
+        self::assertInstanceOf(SignInResult::class, $completion);
+        self::assertTrue($completion->isSignedIn(), (string) $completion->reason?->value);
+        self::assertSame(self::OTHER_TENANT, $completion->session?->record->getTenantId());
+    }
+
+    /**
      * Define the route MFA's gate holds to AAL2, on the stateless guard.
      *
      * @param  mixed  $router
@@ -228,6 +281,43 @@ final class ProviderTrustTest extends TestCase
         self::assertInstanceOf(SignInResult::class, $answer);
 
         return $answer->session->record ?? self::fail('The sign-in established no session.');
+    }
+
+    /**
+     * Redeem a handoff of the linked person's, reporting `pwd` and `mfa`, into
+     * the tenant.
+     *
+     * @param  string  $tenant
+     * @return \SineMacula\Laravel\Authentication\Sessions\SignInResult
+     *
+     * @throws \Throwable
+     */
+    private function redeemIn(string $tenant): SignInResult
+    {
+        $handoff = $this->handoff(tailor: static fn (FakeIdToken $token): FakeIdToken => $token->with('amr', ['pwd', 'mfa']));
+        $context = new SignInContext(self::client(), tenant: TenantSelection::of($tenant));
+        $answer  = Iam::signIns()->redeem(self::GUARD, $this->connectionId, $handoff->code, $handoff->verifier, $context);
+
+        self::assertInstanceOf(SignInResult::class, $answer);
+
+        return $answer;
+    }
+
+    /**
+     * A confirmed TOTP factor of the person's on the application.
+     *
+     * @return \SineMacula\Laravel\Mfa\Models\Factor
+     */
+    private function confirmedFactor(): Factor
+    {
+        return Factor::query()->create([
+            ...AuthenticatorApp::FACTOR,
+            'authenticatable_type' => $this->person->getMorphClass(),
+            'authenticatable_id'   => ProofOwner::of($this->person)->key,
+            'status'               => 'confirmed',
+            'confirmed_at'         => CarbonImmutable::now(),
+            'application'          => self::GUARD,
+        ]);
     }
 
     /**
