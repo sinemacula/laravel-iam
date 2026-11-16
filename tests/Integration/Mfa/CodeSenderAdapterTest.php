@@ -2,13 +2,13 @@
 
 declare(strict_types = 1);
 
-namespace Tests\Unit\Mfa;
+namespace Tests\Integration\Mfa;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Container\Container as ContainerContract;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Iam\Exceptions\Enums\ReferenceKind;
@@ -18,16 +18,21 @@ use SineMacula\Laravel\Iam\Mfa\Translation\ChannelTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Sso\ConnectionTrust;
 use SineMacula\Laravel\Mfa\Codes\CodeMessage;
+use SineMacula\Laravel\Mfa\Contracts\FactorDriver;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
+use SineMacula\Laravel\Mfa\Drivers\EmailDriver;
+use SineMacula\Laravel\Mfa\Drivers\SmsDriver;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use SineMacula\Laravel\Mfa\Secrets\RevealedSecret;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\Factorless;
+use Tests\TestCase;
 
 /**
- * Unit tests for MFA's senders forwarding to the application's sender.
+ * Integration tests for MFA's senders forwarding to the application's sender.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -66,7 +71,7 @@ final class CodeSenderAdapterTest extends TestCase
     #[DataProvider('providePurposes')]
     public function testTheCodeReachesTheApplicationsSender(Purpose $purpose, CodePurpose $expected, string $proofPurpose): void
     {
-        $sender    = new FakeOneTimeCodeSender;
+        $sender    = FakeOneTimeCodeSender::fake();
         $person    = new Person;
         $expiresAt = CarbonImmutable::now()->addMinutes(10);
 
@@ -87,6 +92,40 @@ final class CodeSenderAdapterTest extends TestCase
     }
 
     /**
+     * Rows of `[the factor type, the driver it is registered on, the channel kind's value]`.
+     *
+     * @return iterable<string, array{0: string, 1: class-string<\SineMacula\Laravel\Mfa\Drivers\AbstractCodeDriver>, 2: string}>
+     */
+    public static function provideCustomTypes(): iterable
+    {
+        yield 'email driver' => ['work_email', EmailDriver::class, 'email'];
+
+        yield 'sms driver' => ['mobile', SmsDriver::class, 'sms'];
+    }
+
+    /**
+     * A custom-named type is sent under its driver's channel kind.
+     *
+     * @param  string  $type
+     * @param  class-string<\SineMacula\Laravel\Mfa\Drivers\AbstractCodeDriver>  $driver
+     * @param  string  $kind
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideCustomTypes')]
+    public function testACustomNamedTypeIsSentUnderItsDriversChannelKind(string $type, string $driver, string $kind): void
+    {
+        Mfa::extend($type, static fn (ContainerContract $app): FactorDriver => $app->make($driver));
+
+        $sender = FakeOneTimeCodeSender::fake();
+
+        self::adapter($sender)->send(self::message(Purpose::SIGN_IN, new Person, CarbonImmutable::now(), $type));
+
+        self::assertSame($kind, ($sender->sent()[0] ?? self::fail('Nothing was sent.'))->type);
+    }
+
+    /**
      * A recipient that is no identity is refused and nothing is sent.
      *
      * @return void
@@ -95,7 +134,7 @@ final class CodeSenderAdapterTest extends TestCase
      */
     public function testARecipientThatIsNoIdentityThrows(): void
     {
-        $sender = new FakeOneTimeCodeSender;
+        $sender = FakeOneTimeCodeSender::fake();
 
         try {
             self::adapter($sender)->send(self::message(Purpose::STEP_UP, new Factorless, CarbonImmutable::now()));
@@ -120,17 +159,18 @@ final class CodeSenderAdapterTest extends TestCase
     }
 
     /**
-     * An SMS code of MFA's for the recipient.
+     * A code of MFA's for the recipient, on a factor of the type.
      *
      * @param  \SineMacula\Laravel\Mfa\Enums\Purpose  $purpose
      * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $recipient
      * @param  \Carbon\CarbonImmutable  $expiresAt
+     * @param  string  $type
      * @return \SineMacula\Laravel\Mfa\Codes\CodeMessage
      */
-    private static function message(Purpose $purpose, MultiFactorAuthenticatable $recipient, CarbonImmutable $expiresAt): CodeMessage
+    private static function message(Purpose $purpose, MultiFactorAuthenticatable $recipient, CarbonImmutable $expiresAt, string $type = 'sms'): CodeMessage
     {
-        $factor = new FactorSummary('factor-1', 'sms', 'Phone', '+44*******123', FactorStatus::CONFIRMED, true, null);
+        $factor = new FactorSummary('factor-1', $type, 'Phone', '+44*******123', FactorStatus::CONFIRMED, true, null);
 
-        return new CodeMessage('api', $purpose, 'sms', '+447700900123', new RevealedSecret('123456'), $expiresAt, $recipient, $factor);
+        return new CodeMessage('api', $purpose, $type, '+447700900123', new RevealedSecret('123456'), $expiresAt, $recipient, $factor);
     }
 }

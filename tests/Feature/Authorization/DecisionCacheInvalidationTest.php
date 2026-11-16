@@ -9,6 +9,9 @@ use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SineMacula\Laravel\Authentication\Events\EventContext;
+use SineMacula\Laravel\Authentication\Events\Reauthenticated;
+use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Transactions\ConnectionTransactions;
 use Tests\Concerns\RecordsRequirementDecisions;
@@ -63,6 +66,22 @@ final class DecisionCacheInvalidationTest extends TestCase
         $this->recordDecision();
 
         $this->invalidation()->authenticationChanged($aModel ? self::identity(7) : new \stdClass, $session);
+
+        self::assertNull($this->lastDecision());
+    }
+
+    /**
+     * A committed reauthentication forgets the request's last decision.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAReauthenticationForgetsTheRequestsDecisions(): void
+    {
+        $this->recordDecision();
+
+        $this->invalidation()->reauthenticated(new Reauthenticated(new EventContext('api', new ClientContext('192.0.2.10', 'iam-tests'), sessionId: self::SESSION)));
 
         self::assertNull($this->lastDecision());
     }

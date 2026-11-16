@@ -124,6 +124,22 @@ final class StorageCheckTest extends TestCase
     }
 
     /**
+     * Only the guards of the drivers named are read.
+     *
+     * @return void
+     */
+    public function testIdentityModelsFollowTheDriversNamed(): void
+    {
+        $config = $this->config();
+
+        $config->set('auth.providers.elsewhere', ['driver' => 'model', 'model' => IdentityElsewhere::class]);
+        $config->set('auth.guards.elsewhere', ['driver' => 'api_key', 'provider' => 'elsewhere']);
+
+        self::assertSame([Person::class], array_values(StorageCheck::identityModels($config, ['jwt'])));
+        self::assertSame([IdentityElsewhere::class], array_values(StorageCheck::identityModels($config, ['api_key'])));
+    }
+
+    /**
      * A guard naming no provider reads the default provider's model.
      *
      * @return void

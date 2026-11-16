@@ -15,10 +15,11 @@ use SineMacula\Laravel\Mfa\Codes\CodeMessage;
 use SineMacula\Laravel\Mfa\Contracts\EmailSender;
 use SineMacula\Laravel\Mfa\Contracts\SmsSender;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
+use SineMacula\Laravel\Mfa\Facades\Mfa;
 
 /**
  * MFA's SMS and email senders, forwarding each code to the application's
- * `OneTimeCodeSender`.
+ * `OneTimeCodeSender` under its driver's channel kind.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -48,6 +49,7 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
      * @param  \SineMacula\Laravel\Mfa\Codes\CodeMessage  $message
      * @return void
      *
+     * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
      */
     #[\Override]
@@ -62,7 +64,7 @@ final readonly class CodeSenderAdapter implements EmailSender, SmsSender
         $this->sender->send(new OneTimeCodeMessage(
             $message->application,
             $message->purpose === Purpose::ENROLLMENT ? CodePurpose::ENROLLMENT : CodePurpose::MFA,
-            $message->type,
+            Mfa::driver($message->type)->channelKind()->value,
             $message->destination(),
             new Secret($message->code->reveal()),
             $message->expiresAt,

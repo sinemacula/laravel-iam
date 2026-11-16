@@ -22,15 +22,18 @@ use SineMacula\Laravel\AuditLog\Contracts\HeldActorReader;
 use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Authentication\Context\ContextContributors;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Events\Reauthenticated;
 use SineMacula\Laravel\Authentication\Proofs\Channel;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ChannelKind;
 use SineMacula\Laravel\Authentication\Proofs\Enums\Purpose;
 use SineMacula\Laravel\Authentication\Proofs\ProofBinding;
 use SineMacula\Laravel\Authentication\Testing\FakeOneTimeCodeSender;
 use SineMacula\Laravel\Authorization\Diagnostics\Declarations;
+use SineMacula\Laravel\Iam\Audit\AuditSeams;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
 use SineMacula\Laravel\Iam\Authorization\AuthenticationContextAdapter;
 use SineMacula\Laravel\Iam\Authorization\AuthorizationSeams;
+use SineMacula\Laravel\Iam\Authorization\DecisionCacheInvalidation;
 use SineMacula\Laravel\Iam\Authorization\GrantScopeAdapter;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Console\CheckCommand;
@@ -883,6 +886,16 @@ final class IamServiceProviderTest extends TestCase
     }
 
     /**
+     * A committed reauthentication has the decisions forgotten.
+     *
+     * @return void
+     */
+    public function testAReauthenticationIsListenedForToForgetTheDecisions(): void
+    {
+        self::assertContains([DecisionCacheInvalidation::class, 'reauthenticated'], self::rawListenersOf(Reauthenticated::class));
+    }
+
+    /**
      * The worker reset listeners are registered for Octane and the queue.
      *
      * @return void
@@ -998,7 +1011,7 @@ final class IamServiceProviderTest extends TestCase
     public function testEveryCapabilitysSeamsAreProvided(): void
     {
         self::assertSame(
-            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class],
+            [MfaSeams::class, PasskeySeams::class, ContextSeams::class, SsoSeams::class, TenancySeams::class, AuthorizationSeams::class, AuditSeams::class],
             IamServiceProvider::seamProviders(),
         );
     }
