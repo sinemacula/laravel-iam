@@ -53,10 +53,11 @@ application, since only the root `allow-plugins` counts.
   - `ContextNamespacesCheck`: the `mfa` namespace has a contributor, and `sso` too while SSO is in use.
   - `AuditCheck`: every `jwt` and `api_key` guard excluded from audit-log's capture, Gate capture off and
     `require_registered` on, whatever the mappers switch says.
-  - `CrossMemberConfigurationCheck`: every MFA application is a `jwt` guard; MFA's and, while SSO is in use, SSO's
-    freshness operations are declared; the tenant resolver is bound while a tenant rule, a widening grant, the audit
-    policy over memberships or a tenant tree needs it, and its default is a note while the authorization adapter is on
-    otherwise. A resource tenant resolver left on its default is a note while the application has memberships.
+  - `CrossMemberConfigurationCheck`: every MFA application, and while SSO is in use every SSO application, is a `jwt`
+    guard; MFA's and, while SSO is in use, SSO's freshness operations are declared; the tenant resolver is bound while
+    a tenant rule, a widening grant, the audit policy over memberships or a tenant tree needs it, and its default is a
+    note while the authorization adapter is on otherwise. A resource tenant resolver left on its default is a note
+    while the application has memberships.
   - `MachineMarkerCheck`: each `jwt` or `api_key` guard's user model that implements `MachineIdentity` also implements
     `AuthorizableMachine`.
   - `MfaIdentityCheck`: while `iam.adapters.mfa` is on, each `jwt` guard's user model that is no `MachineIdentity`
