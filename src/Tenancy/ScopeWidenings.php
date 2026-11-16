@@ -14,8 +14,8 @@ use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
 use SineMacula\Laravel\Sso\Linking\ScopeWidening;
 
 /**
- * Reports to SSO's scope widening that identities come to hold a principal in a
- * tenant, or on the platform.
+ * Reports to SSO's scope widening that identities come to hold a principal
+ * outside the tenants it spares.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -52,10 +52,11 @@ final readonly class ScopeWidenings
     ) {}
 
     /**
-     * Report the widening and answer how many links SSO suspended.
+     * Report the widening, sparing the tenants' connections for every identity,
+     * and answer how many links SSO suspended.
      *
      * @param  list<\SineMacula\Laravel\Authentication\Contracts\Identity>  $identities
-     * @param  ?string  $tenantId
+     * @param  list<string>  $sparedTenantIds
      * @param  \SineMacula\Laravel\Authentication\Http\ClientContext  $client
      * @return int
      *
@@ -63,16 +64,16 @@ final readonly class ScopeWidenings
      * @throws \LogicException
      * @throws \Throwable
      */
-    public function widen(array $identities, ?string $tenantId, ClientContext $client): int
+    public function widen(array $identities, array $sparedTenantIds, ClientContext $client): int
     {
         $references = array_map($this->identities->reference(...), $identities);
         $widening   = $this->container->make(ScopeWidening::class);
         $sso        = ClientTranslator::toSso($client);
 
         if ($this->database->connection($this->storage->name())->transactionLevel() === 0) {
-            return $widening->widened($references, $tenantId, $sso);
+            return $widening->widened($references, $sparedTenantIds, $sso);
         }
 
-        return $this->transaction->run(static fn (): int => $widening->widened($references, $tenantId, $sso));
+        return $this->transaction->run(static fn (): int => $widening->widened($references, $sparedTenantIds, $sso));
     }
 }
