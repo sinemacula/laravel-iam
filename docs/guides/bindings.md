@@ -29,7 +29,9 @@ never subclass or name an adapter.
   replaces the adapter. The order the service providers register in changes nothing.
 - The rule runs once every provider has registered, before any boots. Three switches turn whole groups of bindings
   off: `iam.adapters.mfa` (authentication and MFA, passkeys, MFA's context), `iam.adapters.sso` (authentication and
-  SSO, tenancy) and `iam.adapters.authorization` (authorization). See [Configuration](configuration.md).
+  SSO, tenancy) and `iam.adapters.authorization` (authorization). The tenant authentication policy stays bound
+  while either of the first two is on, unless only MFA's is and SSO's enforcement is on (see [Tenancy](#tenancy)). See
+  [Configuration](configuration.md).
 - Adapters are transient unless their row says otherwise: each reads what it needs afresh on every call. An adapter
   that keeps request state is bound scoped, under a key of this package's own (`iam.scoped:` followed by the seam),
   with the seam itself bound to a closure that resolves that key. Laravel's queue worker and Octane forget scoped
@@ -152,12 +154,14 @@ off ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 
 ## Tenancy
 
-Bound while `iam.adapters.sso` is on. With it off, bind `laravel-authentication`'s tenant authentication policy
-yourself. The membership rows are bound while `Iam\Contracts\Memberships` is bound when the seams are bound, in the
-booting phase: memberships you bind in any provider's `register()` get them, and memberships bound only from a `boot()`
-leave SSO's defaults in place. The inheritance row reads `laravel-authorization`'s tenant tree. All are transient. SSO's
-own defaults for the membership rows refuse, so leaving them unbound is never open. See [Provisioning and
-tenancy](provisioning-and-tenancy.md).
+Bound while `iam.adapters.sso` is on. The tenant authentication policy is bound while `iam.adapters.mfa` is on too: with
+`iam.adapters.sso` off it is `Iam\Tenancy\TenantFactorPolicyAdapter`, which answers your MFA tenant requirement alone
+and requires no connection. It cannot enforce SSO, so with `iam.adapters.sso` off and `sso.features.enforcement` on, or
+with both switches off, bind the policy yourself. The membership rows are bound while `Iam\Contracts\Memberships` is
+bound when the seams are bound, in the booting phase: memberships you bind in any provider's `register()` get them, and
+memberships bound only from a `boot()` leave SSO's defaults in place. The inheritance row reads
+`laravel-authorization`'s tenant tree. All are transient. SSO's own defaults for the membership rows refuse, so leaving
+them unbound is never open. See [Provisioning and tenancy](provisioning-and-tenancy.md).
 
 | Contract                                              | Bound to                                        | Replaces                                         | Mandatory                                                          | Replacing it                                                                                                                                                                         |
 |-------------------------------------------------------|-------------------------------------------------|--------------------------------------------------|--------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -248,7 +252,8 @@ tenants a principal may act in is your application's tenancy, not a grant. This 
 its own tenant only. Bind your own if your principals act in other tenants.
 
 `laravel-authentication`'s `Authentication\Contracts\TenantResolver` is yours to bind too: this package binds nothing
-over it, but `iam:check` refuses its default, `ResolveNoTenant`, wherever a member resolves tenants through it (see
+over it, but `iam:check` refuses its default, `ResolveNoTenant`, wherever a member is known to resolve tenants through
+it, and notes it while the authorization adapter is on otherwise (see [Checks](checks.md#configuration) and
 [Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-resolver)).
 
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md
