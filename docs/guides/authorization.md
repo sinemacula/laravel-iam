@@ -9,9 +9,8 @@ SSO's principal scope, hands it your tenant tree's changes, forgets the decision
 that decision read changes, answers audit-log's access policy from its grants, offers a catalogue of the members'
 administrative permissions, maps its events into the audit trail, and keeps its tables on the storage connection.
 
-`laravel-authorization` has no separate guides yet; everything below that is its own is in its
-[README][authorization-readme]. How each binding is made, and what replacing it risks, is in
-[Bindings](bindings.md#authorization).
+`laravel-authorization`'s own behaviour is in its [guides][authorization-guides]. How each binding is made, and what
+replacing it risks, is in [Bindings](bindings.md#authorization).
 
 - [What is bound](#what-is-bound)
 - [The subject](#the-subject)
@@ -438,6 +437,6 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): the principal scope's two halves.
 - [The install and check design note](../design/install-and-check.md#checks): what the checks cover.
 
-[authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
+[authorization-guides]: https://github.com/sinemacula/laravel-authorization/tree/master/docs/guides
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md
 [mfa-middleware-answering]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/middleware.md#answering

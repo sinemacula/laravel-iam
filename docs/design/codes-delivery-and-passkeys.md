@@ -62,8 +62,8 @@ All rows are transient, replace only their member's default, and are on while `i
 - Context resolvers read what MFA hands them, or the guard's validated session, never `Auth::caller()`, a request or a
   claim:
   - the application is the guard MFA names, else the default guard;
-  - the active tenant is the validated session's `tenant_id`, and none before the session exists, since authentication
-    asks MFA's requirement during sign-in;
+  - the active tenant is the validated session's `tenant_id`, only for the identity that session serves, and none
+    before the session exists, since authentication asks MFA's requirement during sign-in;
   - an event's context names the session, principal and tenant only when the sign-in MFA names is the identity's on
     that guard, and never throws;
   - a `MachineIdentity` is never a person;

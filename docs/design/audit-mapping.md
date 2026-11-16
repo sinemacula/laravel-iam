@@ -79,6 +79,12 @@ package only describes. The storage connection is in `storage-and-transactions.m
 - A denial for `insufficient_authentication` is a plain `access_denied`; the event does not say if a step-up follows.
 - A tenant is one opaque identifier across the members, so every record names it under the one type `tenant`.
 
+## Operational alerts
+
+- The package sends no alerts and has no configuration for alerting: the application listens to `AuditWriteFailed`,
+  `AuditCaptureFailed`, `IntegrityCheckFailed` and SSO's `KeyNearingExpiry` itself, since only it knows where an alert
+  goes, and an alert must not depend on the audit log that failed.
+
 ## The caller's context
 
 - `Audit\AuthenticationActorReader` is audit-log's `HeldActorReader`. Audit-log's guard walk asks it about a guard it

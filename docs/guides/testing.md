@@ -259,9 +259,7 @@ tests that read one.
 | `FakeMemberships` | `SineMacula\Laravel\Iam\Contracts\Memberships` | `grant($identity, $membership)`, `revoke($identity, $tenantId)`, `incomplete($identity)`, `failFor($identity)` |
 
 It keeps what it was asked (`asked()`). Call `fake()` before the application boots (in `defineEnvironment()`, say):
-bound only once it has booted, it is the one asked, but no SSO adapter is bound over SSO's defaults for it. The tenant
-tree is `laravel-authorization`'s: bind your own tree, or a small one a test seeds, and prove yours with
-`laravel-authorization`'s `SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract`.
+bound only once it has booted, it is the one asked, but no SSO adapter is bound over SSO's defaults for it.
 
 ```php
 use Carbon\CarbonImmutable;
@@ -269,6 +267,26 @@ use SineMacula\Laravel\Iam\Tenancy\Membership;
 use SineMacula\Laravel\Iam\Testing\FakeMemberships;
 
 FakeMemberships::fake()->grant($user, Membership::of('tenant-1', CarbonImmutable::now()->subDay()));
+```
+
+The tenant tree is `laravel-authorization`'s. In tests, bind its in-memory
+`SineMacula\Laravel\Authorization\Testing\FakeTenantTree`: each tenant with its parent, or null for one at the top,
+every parent before its children. Name each tenant by the morph type and key of the model your tenant resolver
+returns for its id. Its subtree query runs on the default connection unless given one, so pass `iam.storage.connection`
+when that names another.
+Prove a tree of your own with `laravel-authorization`'s
+`SineMacula\Laravel\Authorization\Testing\Concerns\TenantTreeContract` (see
+[laravel-authorization: grants][authorization-fake-tree]).
+
+```php
+use SineMacula\Laravel\Authorization\Contracts\TenantTree;
+use SineMacula\Laravel\Authorization\Support\Reference;
+use SineMacula\Laravel\Authorization\Testing\FakeTenantTree;
+
+$this->app->instance(TenantTree::class, FakeTenantTree::of([
+    [new Reference('organisation', '1'), null],
+    [new Reference('team', '1'), new Reference('organisation', '1')],
+], config('iam.storage.connection')));
 ```
 
 The tenant MFA requirement is laravel-mfa's `TenantRequirement`: bind your own, or one a test scripts, and prove yours
@@ -322,6 +340,7 @@ This package's own tests run MFA's kits against its MFA adapters, and SSO's agai
 your own against its guide.
 
 [authentication-testing]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/testing.md
+[authorization-fake-tree]: https://github.com/sinemacula/laravel-authorization/blob/master/docs/guides/grants.md#managing-roles-permissions-and-grants
 [mfa-testing]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/testing.md
 [sso-provenance]: https://github.com/sinemacula/laravel-sso/blob/master/docs/guides/session-provenance.md
 [sso-testing]: https://github.com/sinemacula/laravel-sso/blob/master/docs/guides/testing.md

@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Iam\Transactions\CrossMemberTransaction;
@@ -393,29 +394,34 @@ final class CrossMemberTransactionTest extends TestCase
         }
 
         $observer = self::otherConnection();
-        $other    = (int) self::awaitSignal($signal . '.locked');
         $attempts = 0;
 
-        $work = static function () use (&$attempts, $signal, $observer, $other): void {
-
-            $attempts++;
-
-            if ($attempts > 1) {
-                self::awaitSignal($signal . '.done');
-            }
-
-            DB::table(self::TABLE)->where('id', 1)->increment('value', 10);
-
-            if ($attempts === 1) {
-                touch($signal . '.cross');
-                self::awaitLockWait($observer, $other);
-            }
-
-            DB::table(self::TABLE)->where('id', 2)->increment('value', 10);
-        };
-
         try {
+            $other = (int) self::awaitSignal($signal . '.locked');
+
+            $work = static function () use (&$attempts, $signal, $observer, $other): void {
+
+                $attempts++;
+
+                if ($attempts > 1) {
+                    self::awaitSignal($signal . '.done');
+                }
+
+                DB::table(self::TABLE)->where('id', 1)->increment('value', 10);
+
+                if ($attempts === 1) {
+                    touch($signal . '.cross');
+                    self::awaitSignal($signal . '.crossing');
+                    self::awaitLockWait($observer, $other);
+                }
+
+                DB::table(self::TABLE)->where('id', 2)->increment('value', 10);
+            };
+
             $this->transaction()->run($nested ? static fn () => DB::transaction($work) : $work);
+        } catch (AssertionFailedError $failure) {
+            // Outside the retry, so the output cannot pass for a deadlock.
+            self::fail($failure->getMessage() . self::otherSide($pid, $signal));
         } finally {
             pcntl_waitpid($pid, $status);
             array_map(static fn (string $file): bool => unlink($file), glob($signal . '.*') ?: []);
@@ -489,14 +495,19 @@ final class CrossMemberTransactionTest extends TestCase
             $statement = $other->query($pgsql ? 'select pg_backend_pid()' : 'select connection_id()');
             $session   = $statement === false ? null : $statement->fetchColumn();
 
-            file_put_contents($signal . '.locked', is_int($session) || is_string($session) ? (string) $session : '');
+            // Renamed into place so the work never reads it empty.
+            file_put_contents($signal . '.pid', is_int($session) || is_string($session) ? (string) $session : '');
+            rename($signal . '.pid', $signal . '.locked');
 
             self::awaitSignal($signal . '.cross');
+            touch($signal . '.crossing');
 
             $other->exec('update ' . self::TABLE . ' set value = value + 1 where id = 1');
             $other->commit();
 
             touch($signal . '.done');
+        } catch (\Throwable $exception) {
+            file_put_contents($signal . '.failed', (string) $exception);
         } finally {
             posix_kill(posix_getpid(), SIGKILL);
         }
@@ -568,6 +579,23 @@ final class CrossMemberTransactionTest extends TestCase
         }
 
         return (string) file_get_contents($file);
+    }
+
+    /**
+     * Wait for the other side to end; answer its exit status and output.
+     *
+     * @param  int  $pid
+     * @param  string  $signal
+     * @return string
+     */
+    private static function otherSide(int $pid, string $signal): string
+    {
+        pcntl_waitpid($pid, $status);
+
+        $ended  = pcntl_wifsignaled($status) ? 'was killed by signal ' . pcntl_wtermsig($status) : 'exited with status ' . pcntl_wexitstatus($status);
+        $output = is_file($signal . '.failed') ? (string) file_get_contents($signal . '.failed') : '';
+
+        return ' The other side ' . $ended . ($output === '' ? ' and wrote no output.' : ' after failing with: ' . $output);
     }
 
     /**
