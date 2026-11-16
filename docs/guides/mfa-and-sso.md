@@ -38,13 +38,14 @@ Trusting the connection in the combination policy does not go around the first g
 first factor on the connection's `external_provider` channel, whatever SSO accepted, so the package decides, by a rule
 of its own you cannot rebind, when MFA sees that channel name the connection:
 
-- MFA's own judgements of a session (its route gate, `mfa` and `mfa:level=...`, the further factor it asks for at
-  sign-in, a pending sign-in's completion and its reauthenticator) see the connection only when the session's first
-  factor carries evidence SSO accepted and, for a session acting in a tenant, the tenant trusts the connection. Any other
-  SSO first factor reaches MFA naming no connection, so the rebound policy counts nothing of it;
-- `laravel-authentication`'s requirement check never sees the connection: `laravel-authentication` asks its external
-  evidence policy first, with the tenant whose requirement it is, and that policy counts the accepted evidence through
-  both gates and that tenant's trust.
+- MFA's own judgements of a session (its route gate, `mfa` and `mfa:level=...`, a pending sign-in's completion and its
+  reauthenticator) see the connection only when the session's first factor carries evidence SSO accepted and, for a
+  session acting in a tenant, the tenant trusts the connection. Any other SSO first factor reaches MFA naming no
+  connection, so the rebound policy counts nothing of it;
+- `laravel-authentication`'s requirement check, and MFA's requirement policy when a sign-in asks it for the identity's
+  own further factor, never see the connection: `laravel-authentication` asks its external evidence policy first, with
+  the tenant whose requirement it is, and that policy counts the accepted evidence through both gates and that tenant's
+  trust.
 
 So a password-only sign-in through a trusted connection, or one SSO's evidence policy refused, meets no multifactor
 requirement, and one tenant's trust in a connection never meets another tenant's requirement.
@@ -84,11 +85,12 @@ so a policy statement's `max_age` is renewed by it wherever a route's is (see
 
 ## Tenants that require a factor
 
-A tenant's requirement comes from your implementation of laravel-mfa's `TenantRequirement` (see
-[Provisioning and tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), and is folded into the tenant
-policy with SSO's enforcement. A tenant that enforces SSO and requires a further factor is met by a session through one
-of the connections its rule accepts, once both gates accept that session's evidence for the requirement or the person
-has verified a factor of MFA's on it.
+A tenant's requirement comes from your implementation of laravel-mfa's `TenantRequirement` (see [Provisioning and
+tenancy](provisioning-and-tenancy.md#the-tenant-mfa-requirement)), and is folded into the tenant policy with SSO's
+enforcement. It reaches a sign-in only through that policy, judged with the tenant, never through MFA's requirement
+policy, which answers for the identity alone. A tenant that enforces SSO and requires a further factor is met by a
+session through one of the connections its rule accepts, once both gates accept that session's evidence for the
+requirement or the person has verified a factor of MFA's on it.
 
 ## Further reading
 
