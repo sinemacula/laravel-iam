@@ -38,8 +38,8 @@ and run Laravel's scheduler. It registers:
 
 - Audit-log registers its own sealing, sweep, verification and pruning on the schedule itself, so `Iam::schedule()`
   never registers them again. In production, `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or
-  verification schedule switched off. Nothing notes a switched-off `audit-log.retention.schedule`; while retention
-  can delete records (a custom policy, or anything kept for less than forever), schedule `audit-log:prune` yourself.
+  verification schedule switched off, and a switched-off `audit-log.retention.schedule` while retention can delete
+  records (a custom policy, or anything kept for less than forever); schedule `audit-log:prune` yourself then.
 - `sso:prune` is registered only through SSO's own schedule, so it runs once. With `sso.operations.cadence.prune`
   switched off, schedule `sso:prune` yourself.
 - None of this package's tasks takes a cache mutex. SSO's take one only while `sso.operations.cache_mutexes` is on
