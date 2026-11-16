@@ -273,9 +273,12 @@ final readonly class SsoEventMapper implements EventMapper
     private static function details(SsoEvent $event): array
     {
         return match (true) {
-            $event instanceof FlowFailed         => ['flow' => $event->flow],
-            $event instanceof LinkCreated        => ['origin' => $event->origin],
-            $event instanceof LinkActivated      => ['link_id' => $event->linkId],
+            $event instanceof FlowFailed  => ['flow' => $event->flow],
+            $event instanceof LinkCreated => ['link_id' => $event->linkId, 'origin' => $event->origin],
+            $event instanceof LinkRemoved,
+            $event instanceof LinkActivated,
+            $event instanceof LinkConfirmed,
+            $event instanceof LinkSuspended      => ['link_id' => $event->linkId],
             $event instanceof ConnectionUpdated  => ['changed_settings' => $event->changedSettings],
             $event instanceof EnforcementChanged => [
                 'enabled'          => $event->enabled,
