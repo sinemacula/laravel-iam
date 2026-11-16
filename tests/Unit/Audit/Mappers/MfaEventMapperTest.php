@@ -111,9 +111,9 @@ final class MfaEventMapperTest extends TestCase
 
         yield 'an enrolment started' => [new EnrollmentStarted($context, $factor), MfaActivity::ENROLLMENT_STARTED, $kept];
 
-        $abandoned = new EnrollmentAbandoned($context, $factor, AbandonmentCause::CANCELLED);
+        $abandoned = new EnrollmentAbandoned($context, $factor, AbandonmentCause::CANCELED);
 
-        yield 'an enrolment abandoned' => [$abandoned, MfaActivity::ENROLLMENT_ABANDONED, [...$kept, 'cause' => 'cancelled']];
+        yield 'an enrolment abandoned' => [$abandoned, MfaActivity::ENROLLMENT_ABANDONED, [...$kept, 'cause' => 'canceled']];
 
         yield 'an enrolment expired' => [new EnrollmentExpired($context, $factor), MfaActivity::ENROLLMENT_EXPIRED, $kept];
 
@@ -458,7 +458,7 @@ final class MfaEventMapperTest extends TestCase
 
         yield 'by its replacement' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::RESTARTED)];
 
-        yield 'by its cancellation' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::CANCELLED)];
+        yield 'by its cancellation' => [new EnrollmentAbandoned(self::context(), self::factor(), AbandonmentCause::CANCELED)];
     }
 
     /**
