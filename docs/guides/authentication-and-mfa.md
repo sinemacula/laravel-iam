@@ -126,6 +126,11 @@ Removing a factor ends every other session of the identity and voids the current
 resetting an identity ends all of its sessions. When the current session is returned to pending, the removal's
 `completion()` carries its new pending credential back to the client. See MFA's [lifecycle guide][mfa-lifecycle].
 
+While the session acts in a tenant whose MFA requirement asks for anything, MFA refuses to remove the person's last
+factor unless another usable one remains, even in an `enrolled` application. The active tenant is only ever the
+caller's own, so MFA's `LastFactorPolicy`, asked about someone else's factors by an administrator flow of your own,
+applies no tenant's requirement.
+
 ## Codes and delivery
 
 Bind `laravel-authentication`'s `OneTimeCodeSender`: it delivers every email and SMS code, MFA's included, and you write
