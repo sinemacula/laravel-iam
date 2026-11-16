@@ -10,6 +10,7 @@ use SineMacula\Laravel\Authentication\Contracts\TenantAuthenticationPolicy;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Bindings\SeamBinding;
 use SineMacula\Laravel\Iam\Contracts\Memberships;
+use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Sso\Contracts\EnforcementInheritance;
 use SineMacula\Laravel\Sso\Contracts\LinkEligibility;
@@ -18,7 +19,8 @@ use SineMacula\Laravel\Sso\Contracts\TenantMembership;
 
 /**
  * The seams SSO and `laravel-authentication` answer from the application's
- * tenancy, switched by `iam.adapters.sso`.
+ * tenancy, switched by `iam.adapters.sso`; the tenant policy also by
+ * `iam.adapters.mfa`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,12 +53,15 @@ final readonly class TenancySeams implements ProvidesSeams
     public function seams(Repository $config): array
     {
         $on          = SsoSeams::isOn($config);
+        $factorOnly  = !$on && !self::isEnforced($config);
+        $policy      = $factorOnly ? TenantFactorPolicyAdapter::class : TenantAuthenticationPolicyAdapter::class;
         $memberships = $on && $this->container->bound(Memberships::class);
         $mandatory   = fn (): bool => self::isEnforcedOrRequired($config, $this->container);
         $inherited   = fn (): bool => self::isEnforced($config) && TenancyContracts::hasTree();
 
         return [
-            new SeamBinding(TenantAuthenticationPolicy::class, TenantAuthenticationPolicyAdapter::class, $on, mandatory: $mandatory),
+            // A factor-only policy cannot apply SSO's enforcement.
+            new SeamBinding(TenantAuthenticationPolicy::class, $policy, $on || ($factorOnly && MfaSeams::isOn($config)), mandatory: $mandatory),
             new SeamBinding(TenantMembership::class, TenantMembershipAdapter::class, $memberships),
             new SeamBinding(LinkEligibility::class, LinkEligibilityAdapter::class, $memberships),
             new SeamBinding(PrincipalScope::class, PrincipalScopeAdapter::class, $memberships),
