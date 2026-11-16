@@ -56,9 +56,15 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     /** @var string Why a tenant resolver still on `laravel-authentication`'s default is refused. */
     private const string NO_TENANT_RESOLVER = 'SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to'
         . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while SSO\'s enforcement is on, MFA\'s tenant requirement is bound,'
-        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
+        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, laravel-authorization decides audit reads in your memberships\' tenants,'
+        . ' or laravel-authorization reads the tenant tree:'
         . ' bind a resolver that resolves every tenant id'
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
+
+    /** @var string Why a tenant resolver still on its default is noted while authorization is on. */
+    private const string TENANTS_UNRESOLVED = 'SineMacula\Laravel\Authentication\Contracts\TenantResolver is still bound to'
+        . ' SineMacula\Laravel\Authentication\Tenancy\ResolveNoTenant while `iam.adapters.authorization` is on:'
+        . ' the audit access policy and AdministrativeCheck throw for every tenant they name; bind a resolver unless nothing acts in a tenant.';
 
     /**
      * Turn authorization off so only each test's own rule needs a resolver.
@@ -185,6 +191,12 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         yield 'grants reported to SSO\'s scope widening' => [static function (Application $app): void {
             $app->make('config')->set(AuthorizationSeams::SWITCH, true);
         }];
+
+        yield 'audit reads decided in memberships\' tenants' => [static function (Application $app): void {
+            $app->make('config')->set(AuthorizationSeams::SWITCH, true);
+            $app->make('config')->set(SsoSeams::SWITCH, false);
+            $app->bind(Memberships::class, FakeMemberships::class);
+        }];
     }
 
     /**
@@ -205,6 +217,7 @@ final class CrossMemberConfigurationCheckTest extends TestCase
         $rule($app);
 
         self::assertSame([self::NO_TENANT_RESOLVER], self::problems($this->check()->checks()));
+        self::assertNotContains(self::TENANTS_UNRESOLVED, self::notes($this->check()->checks()));
 
         $app->make(TenantResolver::class);
 
@@ -228,20 +241,30 @@ final class CrossMemberConfigurationCheckTest extends TestCase
     }
 
     /**
-     * With SSO off, grants need no tenant resolver.
+     * With SSO off, grants need no tenant resolver, but the default is noted.
      *
      * @return void
      */
-    public function testGrantsNeedNoResolverWhileSsoIsOff(): void
+    public function testTheDefaultTenantResolverIsNotedWhileAuthorizationIsOnAndSsoIsOff(): void
     {
-        $config = $this->app?->make('config');
+        $app    = $this->app ?? self::fail('The application has not booted.');
+        $config = $app->make('config');
 
         $this->declare(array_column(Operation::cases(), 'value'));
 
-        $config?->set(AuthorizationSeams::SWITCH, true);
-        $config?->set(SsoSeams::SWITCH, false);
+        $config->set(SsoSeams::SWITCH, false);
+
+        self::assertSame([], self::notes($this->check()->checks()));
+
+        $config->set(AuthorizationSeams::SWITCH, true);
 
         self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([self::TENANTS_UNRESOLVED], self::notes($this->check()->checks()));
+
+        $app->instance(TenantResolver::class, new OpenTenancy);
+
+        self::assertSame([], self::problems($this->check()->checks()));
+        self::assertSame([], self::notes($this->check()->checks()));
     }
 
     /**
