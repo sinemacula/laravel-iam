@@ -94,8 +94,8 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   (`forgetDecisionsFor()`) after an MFA factor change, a pending completion, a step-up or an SSO re-authentication. It
   forgets again if any transaction open on the storage connection rolls back, because Laravel 12 does not tell a
   committed savepoint of its enclosing transaction's rollback.
-- `authorization.connection` is aligned with the storage connection like every member's, so a grant commits with a
-  change that spans members and SSO's widening finds its transaction open.
+- `authorization.connection` is aligned with the storage connection like authentication's, MFA's and SSO's, so a
+  grant commits with a change that spans members and SSO's widening finds its transaction open.
 - `authorization:prune` is scheduled daily by `Iam::schedule()` whatever the switch says, and `authorization:check`
   runs inside `iam:check`.
 - No resource tenant resolver is bound, since which tenant owns a record is the application's rule; `iam:check` notes
