@@ -58,7 +58,8 @@ composer require sinemacula/laravel-iam
 
 ## Quick Start
 
-Publish every package's configuration and migrations, then migrate:
+Publish every package's configuration and migrations, then set the connections under
+[The storage connection](docs/guides/installation.md#the-storage-connection) and migrate:
 
 ```bash
 php artisan iam:install

@@ -26,7 +26,8 @@ and how `iam:check` runs every member's check and this package's own.
 - The heartbeat steps through each hour by the interval in whole minutes, or runs hourly for an hour or more, so no
   two runs are more than an interval apart. `authorization:usage-prune` runs whether or not usage is tracked.
 - Audit-log's own seal, sweep, verify and prune are never registered again; it schedules them itself.
-- No task has a cache mutex: every command is safe on several servers, and a stale mutex would suppress maintenance.
+- None of this package's own tasks has a cache mutex: every command is safe on several servers, and a stale mutex
+  would suppress maintenance. SSO's take one only while `sso.operations.cache_mutexes` is on.
 
 ## Platform
 
@@ -58,6 +59,8 @@ application, since only the root `allow-plugins` counts.
     otherwise. A resource tenant resolver left on its default is a note while the application has memberships.
   - `MachineMarkerCheck`: each `jwt` or `api_key` guard's user model that implements `MachineIdentity` also implements
     `AuthorizableMachine`.
+  - `MfaIdentityCheck`: while `iam.adapters.mfa` is on, each `jwt` guard's user model that is no `MachineIdentity`
+    implements `MultiFactorAuthenticatable`, which MFA's additional-factor policy requires of every sign-in.
   - `SchedulesCheck`: a note for each run `IamSchedule` registers that nothing on the schedule runs. A schedule that
     cannot be built fails.
 - Boot's storage refusal stands aside under `iam:check`, so `StorageCheck` reports it instead.

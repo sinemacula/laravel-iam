@@ -39,8 +39,9 @@ and run Laravel's scheduler. It registers:
 | `audit-log:drain --until-empty`                                                                            | every minute, while `audit-log.delivery.mode` is `outbox`                                         |
 
 - Audit-log registers its own sealing, sweep, verification and pruning on the schedule itself, so `Iam::schedule()`
-  never registers them again. `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or verification
-  schedule switched off.
+  never registers them again. In production, `audit-log:check`, which `iam:check` runs, notes a sealing, sweep or
+  verification schedule switched off, and a switched-off `audit-log.retention.schedule` while retention can delete
+  records (a custom policy, or anything kept for less than forever); schedule `audit-log:prune` yourself then.
 - `sso:prune` is registered only through SSO's own schedule, so it runs once. With `sso.operations.cadence.prune`
   switched off, schedule `sso:prune` yourself.
 - None of this package's tasks takes a cache mutex. SSO's take one only while `sso.operations.cache_mutexes` is on
@@ -223,7 +224,9 @@ Each member's own transaction inside it is a savepoint, so all of it commits or 
 - **SSO's starts and completions** talk to the provider and refuse to run inside a transaction.
 
 The sign-in and re-authentication redemptions (`Iam::signIns()`, `Iam::reauthentications()`) open their own, retried
-the same way.
+the same way. SSO's attempt counters, on a connection of their own (`sso.rate_limits.connection`, see
+[The storage connection](installation.md#the-storage-connection)), sit outside it: a redemption rolled back keeps its
+attempt, and each retry counts another.
 
 ## Workers and Octane
 

@@ -92,6 +92,45 @@ final class SchedulesCheckTest extends TestCase
     }
 
     /**
+     * SSO's runs are noted while SSO is in use.
+     *
+     * @return void
+     */
+    public function testSsoRunsAreNotedWhileSsoIsInUse(): void
+    {
+        $this->app?->make('config')->set('sso.features.oidc', true);
+
+        $runs = self::PRUNES . ', sso:prune, sso:domains:recheck, sso:metadata:refresh, sso:keys:expiring';
+
+        self::assertSame([sprintf(self::MISSING, $runs)], self::notes($this->check()->checks()));
+
+        $this->schedulePackage();
+
+        self::assertSame([], self::notes($this->check()->checks()));
+    }
+
+    /**
+     * An SSO run with no cadence or a malformed one is not noted.
+     *
+     * @return void
+     */
+    public function testSsoRunsWithoutAValidCadenceAreNotNoted(): void
+    {
+        $config = $this->app?->make('config');
+
+        $config?->set('sso.features.saml2', true);
+        $config?->set('sso.operations.cadence.prune', null);
+        $config?->set('sso.operations.cadence.domain_recheck', '');
+        $config?->set('sso.operations.cadence.metadata_refresh', 'hourly');
+
+        self::assertSame([sprintf(self::MISSING, self::PRUNES . ', sso:keys:expiring')], self::notes($this->check()->checks()));
+
+        $this->schedulePackage();
+
+        self::assertSame([], self::notes($this->check()->checks()));
+    }
+
+    /**
      * Register what `Iam::schedule()` registers on the application's schedule.
      *
      * @return void
