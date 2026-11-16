@@ -22,6 +22,7 @@ use SineMacula\Laravel\Iam\Mfa\MfaSeams;
 use SineMacula\Laravel\Iam\Sso\SessionRevocationAdapter;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Mfa\Contracts\ActiveTenantResolver;
 use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\TenantRequirement;
@@ -219,6 +220,36 @@ final class MandatorySeamsCheckTest extends TestCase
         $refused = array_values(array_filter(self::problems($this->mandates()), static fn (string $problem): bool => self::names($problem, $seams)));
 
         self::assertCount(3, $refused);
+    }
+
+    /**
+     * Without SSO's adapters MFA's factor policy meets a bound requirement.
+     *
+     * @return void
+     */
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    public function testWithoutSsoTheFactorPolicyMeetsABoundRequirement(): void
+    {
+        $this->app?->bind(TenantRequirement::class, ScriptedTenantRequirement::class);
+
+        $policy = static fn (string $problem): bool => self::names($problem, [TenantAuthenticationPolicy::class]);
+
+        self::assertSame([], array_values(array_filter(self::problems($this->mandates()), $policy)));
+    }
+
+    /**
+     * Without SSO's adapters SSO's enforcement still needs a policy bound.
+     *
+     * @return void
+     */
+    #[WithConfig(SsoSeams::SWITCH, false, defer: false)]
+    #[WithConfig(TenancySeams::ENFORCEMENT, true, defer: false)]
+    public function testWithoutSsoEnforcementStillNeedsAPolicy(): void
+    {
+        $problem = TenantAuthenticationPolicy::class . ' is still bound to its member\'s permissive or inert default; bind '
+            . TenantAuthenticationPolicyAdapter::class . ', or an implementation of your own, to it.';
+
+        self::assertContains($problem, self::problems($this->mandates()));
     }
 
     /**
