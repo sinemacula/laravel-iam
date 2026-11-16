@@ -99,8 +99,9 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   identity model, so it names only the session.
 - `authorization.connection` is aligned with the storage connection like every member's, so a grant commits with a
   change that spans members and SSO's widening finds its transaction open.
-- `authorization:prune` is scheduled daily by `Iam::schedule()` whatever the switch says, and `authorization:check`
-  runs inside `iam:check`.
+- `authorization:prune` and `authorization:usage-prune` are scheduled daily by `Iam::schedule()` whatever the switch
+  says, `authorization:usage-heartbeat` while `authorization.usage.enabled` is true, and `authorization:check` runs
+  inside `iam:check`.
 - No resource tenant resolver is bound, since which tenant owns a record is the application's rule; `iam:check` notes
   the default while memberships are bound.
 - `laravel-authorization` knows a machine only by its own `AuthorizableMachine`, so a machine model implements it beside
