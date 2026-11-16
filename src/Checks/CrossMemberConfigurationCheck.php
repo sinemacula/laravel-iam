@@ -28,8 +28,9 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  *
  * Every MFA application is a `jwt` guard; MFA's and SSO's operations are
  * declared in each guard's freshness; the tenant resolver is bound off its
- * default wherever a member resolves tenants; and a default resource tenant
- * resolver is noted while people act in tenants.
+ * default wherever a member resolves tenants, and noted while authorization
+ * may; and a default resource tenant resolver is noted while people act in
+ * tenants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -58,9 +59,14 @@ final readonly class CrossMemberConfigurationCheck implements Check
 
     /** @var string The failure for a tenant resolver still on its default. */
     private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on, MFA\'s tenant requirement is bound,'
-        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, or laravel-authorization reads the tenant tree:'
+        . ' laravel-authorization\'s grants are reported to SSO\'s scope widening, laravel-authorization decides audit reads in your memberships\' tenants,'
+        . ' or laravel-authorization reads the tenant tree:'
         . ' bind a resolver that resolves every tenant id'
         . ' to the tenant whose `getTenantIdentifier()` is that id.';
+
+    /** @var string The note for a tenant resolver still on its default while authorization is on. */
+    private const string TENANTS_UNRESOLVED = '%s is still bound to %s while `%s` is on: the audit access policy and AdministrativeCheck throw for every tenant they name;'
+        . ' bind a resolver unless nothing acts in a tenant.';
 
     /** @var string The key naming laravel-authorization's resource tenant resolver. */
     private const string RESOURCE_TENANTS = 'authorization.resource_tenant_resolver';
@@ -118,7 +124,13 @@ final readonly class CrossMemberConfigurationCheck implements Check
     #[\Override]
     public function checks(): array
     {
-        $checks = $this->resolvesTenants() ? [fn () => $this->assertTenantsResolve()] : [];
+        $checks = [];
+
+        if ($this->resolvesTenants()) {
+            $checks[] = fn () => $this->assertTenantsResolve();
+        } elseif (AuthorizationSeams::isOn($this->config)) {
+            $checks[] = fn (): ?string => $this->tenantsUnresolvedNote();
+        }
 
         if ($this->container->bound(Memberships::class)) {
             $checks[] = fn (): ?string => $this->resourceTenantsNote();
@@ -148,6 +160,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
     {
         return TenancySeams::isEnforcedOrRequired($this->config, $this->container)
             || AuthorizationSeams::reportsWidenings($this->config)
+            || (AuthorizationSeams::isOn($this->config) && $this->container->bound(Memberships::class))
             || TenancyContracts::hasTree();
     }
 
@@ -165,6 +178,20 @@ final readonly class CrossMemberConfigurationCheck implements Check
         }
 
         throw new \LogicException(sprintf(self::NO_TENANT_RESOLVER, TenantResolver::class, ResolveNoTenant::class));
+    }
+
+    /**
+     * A note while the tenant resolver is still on its default.
+     *
+     * @return ?string
+     */
+    private function tenantsUnresolvedNote(): ?string
+    {
+        if (!AuthenticationServiceProvider::isPackageDefault($this->container, TenantResolver::class)) {
+            return null;
+        }
+
+        return sprintf(self::TENANTS_UNRESOLVED, TenantResolver::class, ResolveNoTenant::class, AuthorizationSeams::SWITCH);
     }
 
     /**

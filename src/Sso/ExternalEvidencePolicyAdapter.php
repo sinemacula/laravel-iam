@@ -27,6 +27,7 @@ use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
+use SineMacula\Laravel\Mfa\Proofs\ProviderEvidence;
 use SineMacula\Laravel\Sso\Evidence\AcceptedEvidence;
 
 /**
@@ -185,6 +186,7 @@ final readonly class ExternalEvidencePolicyAdapter implements ExternalEvidencePo
             $evidence->authenticatedAt,
             new ProofBinding($identity->type, $identity->key, $subject->application, SignIn::UNNAMED, Purpose::SIGN_IN),
             self::GENERATION,
+            evidence: new ProviderEvidence($evidence->methods, $evidence->context),
         );
     }
 
