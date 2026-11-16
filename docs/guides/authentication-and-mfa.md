@@ -144,7 +144,9 @@ While an MFA application offers the `passkey` type, MFA's passkey ceremonies run
 passkeys, so a passkey registered with an enrolment binding becomes a confirmed passkey factor. The passkey factor gate
 is bound whatever the types say: removing a passkey through `laravel-authentication` takes its factor and association
 with it, even once `passkey` is no longer offered. Configure `laravel-authentication`'s relying party
-(`authentication.passkeys.relying_party`) before you offer the type.
+(`authentication.passkeys.relying_party`, or the guard's `passkeys` block) before you offer the type: `iam:check` fails
+while an MFA application offers it on a guard whose relying party is invalid, even a guard that signs in with a password
+only.
 
 ## The context MFA reads
 

@@ -155,6 +155,10 @@ The members' settings agree with each other.
   that holds sessions.*: an MFA application is a `jwt` guard of `laravel-authentication`'s, the one driver that holds
   sessions, and every MFA call for one on another driver (`api_key` or `session`, say) is refused at runtime. Name the
   MFA application after a `jwt` guard, or remove it.
+- *Passkey relying party `...` for guard [...] must be ...*: an MFA application offers the `passkey` type while
+  `iam.adapters.mfa` is on, so its passkey factors run on its guard's relying party, which is missing or invalid. Set
+  `authentication.passkeys.relying_party` or the guard's `passkeys` block, even on a guard that signs in with a password
+  only.
 - *...'s freshness operations [...] are not declared for guard [...] under `authentication.freshness` or the guard's
   `freshness`.*: declare MFA's `mfa.*` operations for every MFA application's guard, and, while SSO is in use, SSO's
   `sso.*` operations for every SSO application's guard, under `authentication.freshness` or the guard's own `freshness`
