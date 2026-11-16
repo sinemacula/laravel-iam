@@ -15,10 +15,10 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * Integration tests for the identities the context adapters read (IAM-3.12): a
- * person is active until the test clears the flag, and keeps a phone number in
- * its normal form; a machine is `laravel-authentication`'s machine identity,
- * though MFA's own defaults would take it for a person that may hold factors.
+ * Integration tests for the identities the context adapters read: a person is
+ * active until the test clears the flag, and keeps a phone number in its normal
+ * form; a machine is `laravel-authentication`'s machine identity, though MFA's
+ * own defaults would take it for a person that may hold factors.
  *
  * They run against the members' own defaults, so they show the fixtures work
  * whatever state this package's adapters are in.

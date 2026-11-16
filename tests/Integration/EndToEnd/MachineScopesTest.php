@@ -23,16 +23,16 @@ use Tests\Fixtures\Authorization\UnmarkedServiceAccount;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of a machine caller's scopes bounding its policy (IAM-6.5),
- * with every adapter of this package's bound: a service account granted every
- * report permission, calling with an API key `laravel-authentication` issued,
- * is allowed only what the key's scopes cover, through
- * `laravel-authorization`'s manager and Laravel's Gate alike; a key with no
- * scopes allows nothing; a scope the scope map names covers what it stands for,
- * yet grants nothing the account does not hold; another account named by the
- * caller is no credential's, so a machine is allowed nothing, one the
- * application has not marked as `laravel-authorization`'s machine among them;
- * and a key is never issued a scope naming no permission.
+ * End-to-end tests of a machine caller's scopes bounding its policy, with every
+ * adapter of this package's bound: a service account granted every report
+ * permission, calling with an API key `laravel-authentication` issued, is
+ * allowed only what the key's scopes cover, through `laravel-authorization`'s
+ * manager and Laravel's Gate alike; a key with no scopes allows nothing; a
+ * scope the scope map names covers what it stands for, yet grants nothing the
+ * account does not hold; another account named by the caller is no
+ * credential's, so a machine is allowed nothing, one the application has not
+ * marked as `laravel-authorization`'s machine among them; and a key is never
+ * issued a scope naming no permission.
  *
  * The keys are authenticated on a route served by the `api_key` guard, as an
  * application serves its machine callers. Everything runs on every engine, and

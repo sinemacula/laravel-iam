@@ -29,11 +29,11 @@ use SineMacula\Laravel\Sso\Freshness\Enums\FreshnessOperation;
  * Checks the configuration that spans authentication, MFA, SSO and
  * authorization.
  *
- * Every MFA application is a `jwt` guard; one offering passkeys has a valid
- * relying party; MFA's and SSO's operations are declared in each guard's
- * freshness; the tenant resolver is bound off its default wherever a member
- * resolves tenants, and noted while authorization may; and a default resource
- * tenant resolver is noted while people act in tenants.
+ * Every MFA and SSO application is a `jwt` guard; an MFA application offering
+ * passkeys has a valid relying party; MFA's and SSO's operations are declared
+ * in each guard's freshness; the tenant resolver is bound off its default
+ * wherever a member resolves tenants, and noted while authorization may; and a
+ * default resource tenant resolver is noted while people act in tenants.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -54,11 +54,11 @@ final readonly class CrossMemberConfigurationCheck implements Check
     /** @var string The key of laravel-authentication's freshness operations. */
     private const string FRESHNESS = 'authentication.freshness';
 
-    /** @var string The failure for an MFA application naming no guard. */
-    private const string NO_GUARD = '`%s.%s` names no guard in `%s`: MFA\'s application is the guard of the same name.';
+    /** @var string The failure for an application naming no guard. */
+    private const string NO_GUARD = '`%s.%s` names no guard in `%s`: %s\'s application is the guard of the same name.';
 
-    /** @var string The failure for an MFA application on a guard of another driver. */
-    private const string NOT_SESSION_GUARD = '`%s.%s` names a guard in `%s` whose driver is not `jwt`: MFA\'s application is a guard that holds sessions.';
+    /** @var string The failure for an application on a guard of another driver. */
+    private const string NOT_SESSION_GUARD = '`%s.%s` names a guard in `%s` whose driver is not `jwt`: %s\'s application is a guard that holds sessions.';
 
     /** @var string The failure for a tenant resolver still on its default. */
     private const string NO_TENANT_RESOLVER = '%s is still bound to %s while SSO\'s enforcement is on, MFA\'s tenant requirement is bound,'
@@ -140,7 +140,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
         }
 
         foreach (self::names($this->config->get(self::MFA_APPLICATIONS)) as $application) {
-            $checks[] = fn () => $this->assertGuard($application);
+            $checks[] = fn () => $this->assertGuard(self::MFA_APPLICATIONS, $application, 'MFA');
             $checks[] = fn () => $this->assertDeclared($application, array_column(Operation::cases(), 'value'), 'MFA');
 
             if (!MfaSeams::isOn($this->config) || !PasskeySeams::isOfferedBy($this->config, $application)) {
@@ -153,6 +153,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
         $ssoApplications = SsoSeams::isInUse($this->config) ? self::names($this->config->get(self::SSO_APPLICATIONS)) : [];
 
         foreach ($ssoApplications as $application) {
+            $checks[] = fn () => $this->assertGuard(self::SSO_APPLICATIONS, $application, 'SSO');
             $checks[] = fn () => $this->assertDeclared($application, array_column(FreshnessOperation::cases(), 'value'), 'SSO');
         }
 
@@ -218,14 +219,16 @@ final readonly class CrossMemberConfigurationCheck implements Check
     }
 
     /**
-     * Refuse an MFA application that names no `jwt` guard.
+     * Refuse a member's application that names no `jwt` guard.
      *
+     * @param  string  $key
      * @param  string  $application
+     * @param  string  $member
      * @return void
      *
      * @throws \LogicException
      */
-    private function assertGuard(string $application): void
+    private function assertGuard(string $key, string $application, string $member): void
     {
         if (in_array($application, Auth::sessionGuards(), true)) {
             return;
@@ -233,7 +236,7 @@ final readonly class CrossMemberConfigurationCheck implements Check
 
         $reason = is_array($this->config->get(self::GUARDS . '.' . $application)) ? self::NOT_SESSION_GUARD : self::NO_GUARD;
 
-        throw new \LogicException(sprintf($reason, self::MFA_APPLICATIONS, $application, self::GUARDS));
+        throw new \LogicException(sprintf($reason, $key, $application, self::GUARDS, $member));
     }
 
     /**

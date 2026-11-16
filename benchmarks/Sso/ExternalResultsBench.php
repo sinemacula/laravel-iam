@@ -11,9 +11,9 @@ use PhpBench\Attributes\Warmup;
 
 /**
  * PHPBench suite for building `laravel-authentication`'s external result from a
- * redemption SSO admitted (IAM-4.1, IAM-4.2): the one piece of each redemption
- * this package computes itself, inside the redemption's transaction and under
- * SSO's locks, so its cost is held while the locks are.
+ * redemption SSO admitted: the one piece of each redemption this package
+ * computes itself, inside the redemption's transaction and under SSO's locks,
+ * so its cost is held while the locks are.
  *
  * Builds a sign-in's result, with its evidence and the captured provenance as
  * the provider context, and a re-authentication's, with the renewal's time and

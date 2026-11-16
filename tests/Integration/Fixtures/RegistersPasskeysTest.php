@@ -15,10 +15,10 @@ use Tests\TestCase;
 
 /**
  * Integration tests for the passkey fixtures the adapters of passkeys as
- * factors start from (IAM-3.10): the MFA application offers passkeys, and a
- * passkey registers through `laravel-authentication`'s public passkey service
- * with the virtual authenticator, under a random credential id or the one the
- * test names.
+ * factors start from: the MFA application offers passkeys, and a passkey
+ * registers through `laravel-authentication`'s public passkey service with the
+ * virtual authenticator, under a random credential id or the one the test
+ * names.
  *
  * MFA refuses to boot while it offers passkeys with no passkey gateway of its
  * own, so this package's adapters stay bound; the passkey factor gate is bound

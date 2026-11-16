@@ -16,8 +16,8 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * It is MFA's identity too, through MFA's own trait, whose defaults say every
  * identity may hold factors and is active, as an application's machine model
  * would say until it is told otherwise: so only the machine identity contract
- * tells it apart from a person, which is what this package reads (IAM-3.12). It
- * lives on the default connection, the tests' shared storage connection.
+ * tells it apart from a person, which is what this package reads. It lives on
+ * the default connection, the tests' shared storage connection.
  *
  * @property int $id
  * @property string $name
