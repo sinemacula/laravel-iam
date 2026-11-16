@@ -10,9 +10,9 @@ use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 
 /**
- * PHPBench suite for mapping the members' events into audit-log's records
- * (IAM-9.1, IAM-9.4): the work this package adds to every event a member
- * dispatches, synchronously, inside the flow that dispatched it.
+ * PHPBench suite for mapping the members' events into audit-log's records: the
+ * work this package adds to every event a member dispatches, synchronously,
+ * inside the flow that dispatched it.
  *
  * Maps a sign-in under audit-log's own code, a refused sign-in for a concealed
  * reason with its identifier and challenge, an MFA step-up's verification

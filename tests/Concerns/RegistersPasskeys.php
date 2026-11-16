@@ -20,9 +20,9 @@ use Tests\Fixtures\Passkeys\VirtualAuthenticator;
  *
  * Using it offers `passkey` as a factor type of the MFA application people sign
  * in on, and allows the `passkey` sign-in method on its guard, both before any
- * provider registers, so the binding rule binds the passkey adapters
- * (IAM-3.10). The relying party is the one the base test case configures. The
- * tables come from `MigratesMembers`.
+ * provider registers, so the binding rule binds the passkey adapters. The
+ * relying party is the one the base test case configures. The tables come from
+ * `MigratesMembers`.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

@@ -45,8 +45,8 @@ use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of a passkey as an MFA factor (IAM-3.10, IAM-3.12), driven
- * through `laravel-authentication`'s passkey service and MFA's public API as an
+ * End-to-end tests of a passkey as an MFA factor, driven through
+ * `laravel-authentication`'s passkey service and MFA's public API as an
  * application's routes drive them, with every adapter of this package's bound
  * by the binding rule while the MFA application offers the `passkey` type.
  *
