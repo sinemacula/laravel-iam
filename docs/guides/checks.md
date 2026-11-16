@@ -118,6 +118,11 @@ Applies only while SSO is in use (`sso.features.saml2` or `sso.features.oidc` on
   refused, never handed off.*: set it to `false`, and bind a provisioner instead
   ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 - Every mandatory seam of SSO and tenancy, with the messages under [seams](#seams).
+- Note: *`sso.rate_limits.connection` leaves SSO's attempt counters on `iam.storage.connection`: ...*: a redemption
+  refused inside the package's transaction rolls its attempt back, so the attempt is never counted. Name a connection
+  of their own and create the counters' table on it (see
+  [The storage connection](installation.md#the-storage-connection)). Not noted while you bind SSO's `AttemptLimiter`
+  yourself.
 
 ## context
 
