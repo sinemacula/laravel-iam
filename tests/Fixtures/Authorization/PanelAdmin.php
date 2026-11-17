@@ -6,7 +6,7 @@ namespace Tests\Fixtures\Authorization;
 
 use Illuminate\Foundation\Auth\User;
 use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
-use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizableGrantee;
 
 /**
  * An admin panel user with grants who is not an authentication identity.
@@ -20,7 +20,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
  *
  * @internal
  */
-final class PanelAdmin extends User implements AuthorizableIdentity
+final class PanelAdmin extends User implements AuthorizableGrantee
 {
     use HasAuthorization;
 

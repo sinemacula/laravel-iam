@@ -9,7 +9,7 @@ use SineMacula\Laravel\Authentication\Concerns\ActsAsPrincipal;
 use SineMacula\Laravel\Authentication\Contracts\MachineIdentity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
-use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizableGrantee;
 use SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine;
 
 /**
@@ -23,7 +23,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizableMachine;
  *
  * @internal
  */
-final class ServiceAccount extends User implements AuthorizableIdentity, AuthorizableMachine, MachineIdentity, Principal
+final class ServiceAccount extends User implements AuthorizableGrantee, AuthorizableMachine, MachineIdentity, Principal
 {
     use ActsAsPrincipal, HasAuthorization;
 

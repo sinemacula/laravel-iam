@@ -7,7 +7,7 @@ namespace Tests\Fixtures\Authorization;
 use Illuminate\Foundation\Auth\User;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
-use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizableGrantee;
 
 /**
  * A person who is an identity and grantee but no principal.
@@ -21,7 +21,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
  *
  * @internal
  */
-final class Staff extends User implements AuthorizableIdentity, Identity
+final class Staff extends User implements AuthorizableGrantee, Identity
 {
     use HasAuthorization;
 
