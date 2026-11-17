@@ -6,6 +6,8 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Contracts\Session;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
+use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProofTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\ProviderTrust;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
@@ -62,6 +64,31 @@ final readonly class SignInProofs
         }
 
         return $proofs;
+    }
+
+    /**
+     * A session's proofs, oldest first, at most `MAX_LIMIT` of each kind.
+     *
+     * @param  \Closure(?list<\SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind>, int): list<\SineMacula\Laravel\Authentication\Proofs\RecordedProof>  $read
+     * @return list<\SineMacula\Laravel\Authentication\Proofs\RecordedProof>
+     */
+    public static function history(\Closure $read): array
+    {
+        $recorded = $read(null, RequirementSubject::MAX_LIMIT);
+
+        // A full read may have crowded out older proofs of another kind.
+        if (count($recorded) === RequirementSubject::MAX_LIMIT) {
+            $recorded = [];
+
+            // Last kind first, so same-instant proofs read in kind order.
+            foreach (array_reverse(ProofKind::cases()) as $kind) {
+                $recorded = [...$recorded, ...$read([$kind], RequirementSubject::MAX_LIMIT)];
+            }
+
+            usort($recorded, static fn (RecordedProof $left, RecordedProof $right): int => $right->authenticatedAt <=> $left->authenticatedAt);
+        }
+
+        return array_reverse($recorded);
     }
 
     /**

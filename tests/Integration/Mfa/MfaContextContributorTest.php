@@ -303,6 +303,45 @@ final class MfaContextContributorTest extends TestCase
     }
 
     /**
+     * More reauthentications than a read takes crowd out no factor.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testMoreReauthenticationsThanAReadTakesCrowdOutNoFactor(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $person  = $this->createPerson();
+        $session = $this->signInAndActOnSession($person);
+
+        $this->actingOnVerifiedSession($session);
+
+        $first    = Arr::except((array) (DB::table(self::PROOFS)->where('kind', 'first_factor')->first() ?? self::fail('No first factor was recorded.')), 'sequence');
+        $verified = CarbonImmutable::now()->startOfSecond();
+
+        for ($copy = 1; $copy <= RequirementSubject::MAX_LIMIT; $copy++) {
+            DB::table(self::PROOFS)->insert([
+                ...$first,
+                'id'               => (string) Str::uuid(),
+                'kind'             => 'first_factor_reauthentication',
+                'purpose'          => 'reauthenticate',
+                'authenticated_at' => $verified->addSeconds($copy),
+            ]);
+        }
+
+        CarbonImmutable::setTestNow($verified->addSeconds(RequirementSubject::MAX_LIMIT));
+
+        $keys = $this->contributed($person, $session);
+
+        self::assertTrue($keys['accepted']);
+        self::assertSame(['totp'], $keys['factor_types']);
+    }
+
+    /**
      * A session whose first factor no longer counts reports no evidence.
      *
      * @param  ?string  $level

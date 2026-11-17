@@ -47,9 +47,10 @@ removed factor would leave the identity's other sessions standing.
   sign-in's own first factor; further proofs arrive through `stepUp()` and `satisfy()`. So rebinding `StepUp` or
   `PendingCompletion` back to MFA's `ProofStoreCompletion` refuses every verification: rebind both or neither.
   `begin()`, `forget()` and `forgetFactor()` write nothing, since authentication starts, ends and voids sessions.
-- The proof store reads a session's newest 200 proofs, and the newest 200 of each kind once that read comes back full,
-  so frequent reauthentications cannot crowd out a step-up. 200 later proofs of one kind still crowd out an earlier one,
-  and proofs of different kinds made in the same instant then read in kind order rather than as recorded.
+- The proof store and the `mfa` context contributor read a session's newest 200 proofs, and the newest 200 of each kind
+  once that read comes back full, so frequent reauthentications cannot crowd out a step-up. 200 later proofs of one kind
+  still crowd out an earlier one, and proofs of different kinds made in the same instant then read in kind order rather
+  than as recorded.
 - A recorded proof is accepted, and multifactor only when `VerificationResult::$refreshesMultifactor` says the proof
   itself refreshes that evidence. Authentication's configured freshness times multifactor by the newest flagged proof,
   and MFA's whole-session evaluation would flag a fresh email code because of an authenticator app code proved hours
