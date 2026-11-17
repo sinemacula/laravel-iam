@@ -9,9 +9,10 @@ return [
     | Storage
     |---------------------------------------------------------------------------
     |
-    | `connection`: the one connection every member's tables live on, `null` for
-    | the default. It fills each member's unset `storage.connection`; a member
-    | naming another connection refuses boot.
+    | `connection`: the one connection the tables of authentication,
+    | authorization, MFA and SSO live on, `null` for the default. It fills each
+    | of those members' unset connection key; one naming another connection
+    | refuses boot. Audit-log may keep its own, which `iam:check` notes.
     |
     */
 

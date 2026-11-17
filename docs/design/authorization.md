@@ -97,8 +97,8 @@ Declared in `Authorization\AuthorizationSeams` and switched by `iam.adapters.aut
   committed savepoint of its enclosing transaction's rollback. Its listener for `laravel-authentication`'s
   `Reauthenticated` forgets them once any reauthentication, a password's included, commits; the event carries no
   identity model, so it names only the session.
-- `authorization.connection` is aligned with the storage connection like every member's, so a grant commits with a
-  change that spans members and SSO's widening finds its transaction open.
+- `authorization.connection` is aligned with the storage connection like authentication's, MFA's and SSO's, so a
+  grant commits with a change that spans members and SSO's widening finds its transaction open.
 - `authorization:prune` and `authorization:usage-prune` are scheduled daily by `Iam::schedule()` whatever the switch
   says, `authorization:usage-heartbeat` while `authorization.usage.enabled` is true, and `authorization:check` runs
   inside `iam:check`.
