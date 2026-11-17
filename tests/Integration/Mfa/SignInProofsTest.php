@@ -4,11 +4,13 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Mfa;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\EloquentSession;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
 use SineMacula\Laravel\Authentication\Proofs\RecordedProof;
+use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Iam\Testing\Concerns\InteractsWithIam;
@@ -47,6 +49,61 @@ final class SignInProofsTest extends TestCase
         $proofs = $this->signInProofs()->of($person, self::GUARD, $session, [$this->furtherOf($session), $this->firstOf($session)]);
 
         self::assertSame([$this->factorOf($person), null], array_map(static fn (Proof $proof): ?string => $proof->reference, $proofs));
+    }
+
+    /**
+     * A read short of the limit is taken whole, oldest first.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAReadShortOfTheLimitIsTakenWholeOldestFirst(): void
+    {
+        $session = $this->verifiedSessionOf($this->createPerson());
+        $first   = $this->firstOf($session);
+        $further = $this->furtherOf($session);
+        $reads   = [];
+
+        $history = SignInProofs::history(static function (?array $kinds, int $limit) use (&$reads, $first, $further): array {
+            $reads[] = [$kinds, $limit];
+
+            return [$further, $first];
+        });
+
+        self::assertSame([$first, $further], $history);
+        self::assertSame([[null, RequirementSubject::MAX_LIMIT]], $reads);
+    }
+
+    /**
+     * A full read is taken again kind by kind, oldest first.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAFullReadIsTakenAgainKindByKind(): void
+    {
+        $session = $this->verifiedSessionOf($this->createPerson());
+        $first   = $this->firstOf($session);
+        $further = self::madeAt($this->furtherOf($session), $first->authenticatedAt->subSecond());
+        $reads   = [];
+
+        $history = SignInProofs::history(static function (?array $kinds, int $limit) use (&$reads, $first, $further): array {
+            $reads[] = [$kinds, $limit];
+
+            return match ($kinds) {
+                null                           => array_fill(0, RequirementSubject::MAX_LIMIT, $first),
+                [ProofKind::FIRST_FACTOR]      => [$first],
+                [ProofKind::ADDITIONAL_FACTOR] => [$further],
+                default                        => [],
+            };
+        });
+
+        $kinds = array_map(static fn (ProofKind $kind): array => [[$kind], RequirementSubject::MAX_LIMIT], array_reverse(ProofKind::cases()));
+
+        self::assertSame([$further, $first], $history);
+        self::assertSame([[null, RequirementSubject::MAX_LIMIT], ...$kinds], $reads);
     }
 
     /**
@@ -108,6 +165,30 @@ final class SignInProofsTest extends TestCase
         }
 
         self::fail('No further proof was recorded.');
+    }
+
+    /**
+     * The proof as if made at the given time.
+     *
+     * @param  \SineMacula\Laravel\Authentication\Proofs\RecordedProof  $proof
+     * @param  \Carbon\CarbonImmutable  $at
+     * @return \SineMacula\Laravel\Authentication\Proofs\RecordedProof
+     */
+    private static function madeAt(RecordedProof $proof, CarbonImmutable $at): RecordedProof
+    {
+        return new RecordedProof(
+            $proof->id,
+            $proof->kind,
+            $proof->purpose,
+            $proof->method,
+            $proof->channel,
+            $proof->factor,
+            $proof->observed,
+            $proof->evaluation,
+            $proof->methods,
+            $at,
+            $proof->evidence,
+        );
     }
 
     /**

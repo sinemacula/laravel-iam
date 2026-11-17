@@ -6,7 +6,6 @@ namespace SineMacula\Laravel\Iam\Mfa;
 
 use SineMacula\Laravel\Authentication\Context\ContributionSubject;
 use SineMacula\Laravel\Authentication\Contracts\AuthenticationContextContributor;
-use SineMacula\Laravel\Authentication\Requirements\RequirementSubject;
 use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Context\AuthenticationContextContributor as MfaContributor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
@@ -59,7 +58,7 @@ final readonly class MfaContextContributor implements AuthenticationContextContr
             return MfaContributor::neutral();
         }
 
-        $recorded = array_reverse($subject->proofs(limit: RequirementSubject::MAX_LIMIT));
+        $recorded = SignInProofs::history(static fn (?array $kinds, int $limit): array => $subject->proofs(kinds: $kinds, limit: $limit));
 
         if ($recorded === []) {
             return MfaContributor::neutral();
