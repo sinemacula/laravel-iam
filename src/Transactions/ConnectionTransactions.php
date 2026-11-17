@@ -20,11 +20,6 @@ use Illuminate\Database\DatabaseTransactionRecord;
 final class ConnectionTransactions
 {
     /**
-     * Disallow instantiation; utility container only.
-     */
-    private function __construct() {}
-
-    /**
      * The connection's open transactions, outermost first.
      *
      * Read on each call, since the testing traits swap the manager; it still
