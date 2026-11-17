@@ -67,6 +67,8 @@ composer test:mutation        # Mutation gate scoped to your diff against master
 composer test:mutation:full   # Full mutation run, no threshold
 ```
 
+CI fails a pull request whose coverage run leaves any line of `src/` uncovered.
+
 Individual suites:
 
 ```bash
