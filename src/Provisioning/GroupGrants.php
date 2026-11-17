@@ -63,11 +63,8 @@ final readonly class GroupGrants
         $reaches = self::reaches($instructions);
         $grantee = self::grantee($identity);
         $tenant  = $this->tenants->toReference($tenantId);
-        $service = $this->container->make(GrantService::class);
 
-        foreach ($reaches as $reach) {
-            $service->grantRole($grantee, $reach->role, tenant: $tenant, includeSubtree: $reach->includeSubtree);
-        }
+        $this->container->make(GrantService::class)->grantRoles($grantee, $reaches, tenant: $tenant);
     }
 
     /**
@@ -106,23 +103,13 @@ final readonly class GroupGrants
     }
 
     /**
-     * Each instruction's role with its reach, refusing a role given both.
+     * Each instruction's role with its reach.
      *
      * @param  list<\SineMacula\Laravel\Iam\Provisioning\GrantInstruction>  $instructions
      * @return list<\SineMacula\Laravel\Authorization\Support\RoleReach>
-     *
-     * @throws \InvalidArgumentException
      */
     private static function reaches(array $instructions): array
     {
-        $seen = [];
-
-        foreach ($instructions as $instruction) {
-            if (($seen[$instruction->role] ??= $instruction->includeSubtree) !== $instruction->includeSubtree) {
-                throw new \InvalidArgumentException(sprintf('The groups grant the role [%s] with both reaches.', $instruction->role));
-            }
-        }
-
         return array_map(static fn (GrantInstruction $instruction): RoleReach => RoleReach::of($instruction->role, $instruction->includeSubtree), $instructions);
     }
 

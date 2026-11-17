@@ -15,10 +15,10 @@ use Tests\Fixtures\Mfa\Codes\Concerns\ArrangesDeliveredFactors;
 use Tests\TestCase;
 
 /**
- * Integration tests for the delivered factors code challenges are sent for
- * (IAM-3.9): a confirmed SMS factor goes to the fixtures' number, a pending
- * email factor to the person's own address, and either to a destination the
- * test names, all on the application people sign in on.
+ * Integration tests for the delivered factors code challenges are sent for: a
+ * confirmed SMS factor goes to the fixtures' number, a pending email factor to
+ * the person's own address, and either to a destination the test names, all on
+ * the application people sign in on.
  *
  * They run against the members' own defaults, so they show the fixtures work
  * whatever state this package's adapters are in.

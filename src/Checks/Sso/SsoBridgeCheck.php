@@ -4,20 +4,24 @@ declare(strict_types = 1);
 
 namespace SineMacula\Laravel\Iam\Checks\Sso;
 
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Container\Container;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationPolicy;
 use SineMacula\Laravel\Authentication\Sessions\SignInMethodManager;
 use SineMacula\Laravel\Iam\Bindings\Contracts\ProvidesSeams;
 use SineMacula\Laravel\Iam\Checks\Contracts\Check;
 use SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck;
 use SineMacula\Laravel\Iam\Sso\SsoSeams;
+use SineMacula\Laravel\Iam\Storage\StorageConnection;
 use SineMacula\Laravel\Iam\Tenancy\TenancySeams;
+use SineMacula\Laravel\Sso\Contracts\AttemptLimiter;
+use SineMacula\Laravel\Sso\SsoServiceProvider;
 
 /**
  * Checks, while SSO is in use, that each SSO application allows
- * `external_provider` and keeps `unlinked_handoffs` off, and that SSO's
- * mandatory seams are bound.
+ * `external_provider` and keeps `unlinked_handoffs` off and that SSO's
+ * mandatory seams are bound; notes SSO's attempt counters on the storage
+ * connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -35,13 +39,20 @@ final readonly class SsoBridgeCheck implements Check
     /** @var string The failure for a guard that does not allow external sign-in. */
     private const string NO_EXTERNAL_SIGN_IN = '`%s.%s` is served by SSO, but its guard does not list `%s` among laravel-authentication\'s sign-in methods.';
 
+    /** @var string The key of SSO's attempt counters' connection. */
+    private const string RATE_LIMITS = 'sso.rate_limits.connection';
+
+    /** @var string The note for SSO's attempt counters on the storage connection. */
+    private const string COUNTERS_ON_STORAGE = '`%s` leaves SSO\'s attempt counters on `%s`: a refused redemption rolls its attempt back;'
+        . ' give them a connection of their own and create their table on it.';
+
     /** @var list<mixed> The values SSO reads a switch as off from. */
     private const array OFF = [null, false, 0, '0', 'false'];
 
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @param  \Illuminate\Container\Container  $container
      * @param  \Illuminate\Contracts\Config\Repository  $config
      * @param  \SineMacula\Laravel\Iam\Checks\MandatorySeamsCheck  $seams
      */
@@ -80,7 +91,8 @@ final readonly class SsoBridgeCheck implements Check
     }
 
     /**
-     * Each application's sign-in method and handoffs, then the mandatory seams.
+     * Each application's sign-in method and handoffs, the mandatory seams and
+     * the counters' connection.
      *
      * @return list<\Closure(): mixed>
      *
@@ -98,7 +110,7 @@ final readonly class SsoBridgeCheck implements Check
 
         $capabilities = array_map(fn (string $capability): ProvidesSeams => $this->container->make($capability), self::CAPABILITIES);
 
-        return [...$checks, ...$this->seams->checksFor(...$capabilities)];
+        return [...$checks, ...$this->seams->checksFor(...$capabilities), fn (): ?string => $this->countersNote()];
     }
 
     /**
@@ -135,6 +147,25 @@ final readonly class SsoBridgeCheck implements Check
         }
 
         throw new \LogicException(sprintf('`%s` must stay off under laravel-iam: an unlinked result is provisioned or refused, never handed off.', $key));
+    }
+
+    /**
+     * A note while SSO's own limiter counts on the storage connection.
+     *
+     * @return ?string
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function countersNote(): ?string
+    {
+        $counters = $this->config->get(self::RATE_LIMITS);
+        $storage  = (new StorageConnection($this->config))->name() ?? $this->config->get('database.default');
+
+        if (!in_array($counters, [null, '', $storage], true) || !SsoServiceProvider::isPackageDefault($this->container, AttemptLimiter::class)) {
+            return null;
+        }
+
+        return sprintf(self::COUNTERS_ON_STORAGE, self::RATE_LIMITS, StorageConnection::KEY);
     }
 
     /**

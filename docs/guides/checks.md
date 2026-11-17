@@ -61,6 +61,10 @@ that is not registered is reported as
 `<command> is not registered.` and fails the run too: every member is required. What each member checks, and how to fix
 it, is in that member's guides.
 
+`sso:check` reports a missing PHP extension only while `sso.features.saml2` or `sso.features.oidc` is not off, and
+SSO's Composer plugin not installed or its files not linked only while `sso.features.saml2` is not off (see
+[Installation](installation.md#requirements)). A switch set to a value SSO cannot read counts as on.
+
 ## storage
 
 The storage connection is one connection (see [Configuration](configuration.md#storage)). Boot refuses a mismatch,
@@ -118,6 +122,11 @@ Applies only while SSO is in use (`sso.features.saml2` or `sso.features.oidc` on
   refused, never handed off.*: set it to `false`, and bind a provisioner instead
   ([Provisioning and tenancy](provisioning-and-tenancy.md)).
 - Every mandatory seam of SSO and tenancy, with the messages under [seams](#seams).
+- Note: *`sso.rate_limits.connection` leaves SSO's attempt counters on `iam.storage.connection`: ...*: a redemption
+  refused inside the package's transaction rolls its attempt back, so the attempt is never counted. Name a connection
+  of their own and create the counters' table on it (see
+  [The storage connection](installation.md#the-storage-connection)). Not noted while you bind SSO's `AttemptLimiter`
+  yourself.
 
 ## context
 
@@ -156,6 +165,14 @@ The members' settings agree with each other.
   that holds sessions.*: an MFA application is a `jwt` guard of `laravel-authentication`'s, the one driver that holds
   sessions, and every MFA call for one on another driver (`api_key` or `session`, say) is refused at runtime. Name the
   MFA application after a `jwt` guard, or remove it.
+- *Passkey relying party `...` for guard [...] must be ...*: an MFA application offers the `passkey` type while
+  `iam.adapters.mfa` is on, so its passkey factors run on its guard's relying party, which is missing or invalid. Set
+  `authentication.passkeys.relying_party` or the guard's `passkeys` block, even on a guard that signs in with a password
+  only.
+- *`sso.applications.<name>` names no guard in `auth.guards`: SSO's application is the guard of the same name.* and
+  *`sso.applications.<name>` names a guard in `auth.guards` whose driver is not `jwt`: SSO's application is a guard
+  that holds sessions.*: checked while SSO is in use. An SSO application is a `jwt` guard too, and every redemption for
+  one that is not is refused at runtime. Name the SSO application after a `jwt` guard, or remove it.
 - *...'s freshness operations [...] are not declared for guard [...] under `authentication.freshness` or the guard's
   `freshness`.*: declare MFA's `mfa.*` operations for every MFA application's guard, and, while SSO is in use, SSO's
   `sso.*` operations for every SSO application's guard, under `authentication.freshness` or the guard's own `freshness`
@@ -218,10 +235,12 @@ Applies while `iam.adapters.mfa` is on.
 Reports a note only, since something no check can see may start a run.
 
 - Note: *Runs [...] are not on the schedule; call `Iam::schedule($schedule)` from the application's `withSchedule()`.*:
-  `mfa:prune` and `authorization:prune`, and `audit-log:drain --until-empty` while `audit-log.delivery.mode` is
-  `outbox`, are not on the schedule. Register the scheduled work ([Operations](operations.md)).
+  `mfa:prune`, `authorization:prune` and `authorization:usage-prune`, `authorization:usage-heartbeat` while
+  `authorization.usage.enabled` is true, each SSO task whose `sso.operations.cadence.*` is set while SSO is in use, and
+  `audit-log:drain --until-empty` while `audit-log.delivery.mode` is `outbox`, are not on the schedule. Register the
+  scheduled work ([Operations](operations.md)).
 
 A malformed `sso.operations.cadence.*` value is named by `sso:check`, which `iam:check` runs; SSO leaves that task
-off the schedule.
+off the schedule and this check does not note it.
 
 [authentication-configuration]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/configuration.md

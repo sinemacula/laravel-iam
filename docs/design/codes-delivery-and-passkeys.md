@@ -48,9 +48,10 @@ All rows are transient, replace only their member's default, and are on while `i
   are `expired`; `locked` and `rate_limited` are `locked`. A send that is `rate_limited` or `deliveries_exhausted` is
   `sending_capped`. A wrong code that caused a lockout is answered locked until it ends.
 - Delivery: MFA's SMS and email senders forward each `CodeMessage` to the application's `OneTimeCodeSender` as a
-  `OneTimeCodeMessage` with purpose `enrollment` or `mfa`, MFA's purpose as the proof purpose and the factor's id. The
-  package composes no text and queues nothing. MFA's configuration check builds its senders, so a request or a worker
-  is refused, and `iam:check` fails, until a `OneTimeCodeSender` is bound.
+  `OneTimeCodeMessage` with purpose `enrollment` or `mfa`, the factor's driver's channel kind (`sms` or `email`) as the
+  type, MFA's purpose as the proof purpose and the factor's id. The package composes no text and queues nothing.
+  MFA's configuration check builds its senders, so a request or a worker is refused, and `iam:check` fails, until a
+  `OneTimeCodeSender` is bound.
 - Passkey ceremonies run through `laravel-authentication`'s `factorOptions()` and `verifyFactor()` on the binding's
   guard. A request allowing none of the identity's passkeys is refused, since the browser would offer any credential it
   holds. `passkey_challenge_used` is `replayed`, `passkey_challenge_expired` and `passkey_challenge_invalid` are
@@ -62,8 +63,8 @@ All rows are transient, replace only their member's default, and are on while `i
 - Context resolvers read what MFA hands them, or the guard's validated session, never `Auth::caller()`, a request or a
   claim:
   - the application is the guard MFA names, else the default guard;
-  - the active tenant is the validated session's `tenant_id`, and none before the session exists, since authentication
-    asks MFA's requirement during sign-in;
+  - the active tenant is the validated session's `tenant_id`, only for the identity that session serves, and none
+    before the session exists, since authentication asks MFA's requirement during sign-in;
   - an event's context names the session, principal and tenant only when the sign-in MFA names is the identity's on
     that guard, and never throws;
   - a `MachineIdentity` is never a person;

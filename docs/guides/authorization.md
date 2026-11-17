@@ -9,9 +9,8 @@ SSO's principal scope, hands it your tenant tree's changes, forgets the decision
 that decision read changes, answers audit-log's access policy from its grants, offers a catalogue of the members'
 administrative permissions, maps its events into the audit trail, and keeps its tables on the storage connection.
 
-`laravel-authorization` has no separate guides yet; everything below that is its own is in its
-[README][authorization-readme]. How each binding is made, and what replacing it risks, is in
-[Bindings](bindings.md#authorization).
+`laravel-authorization`'s own behaviour is in its [guides][authorization-guides]. How each binding is made, and what
+replacing it risks, is in [Bindings](bindings.md#authorization).
 
 - [What is bound](#what-is-bound)
 - [The subject](#the-subject)
@@ -352,13 +351,13 @@ those, call `Authorization::forgetDecisionsFor($sessionId, $user)` yourself once
   of the audit trail. This package ships a catalogue of their permissions,
   `SineMacula\Laravel\Iam\Authorization\PermissionCatalogue`, which you opt into by naming it in
   `authorization.permission_providers` and running `authorization:sync`. Its names are
-  `SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation`'s cases: SSO's own operation names where SSO
-  has one (`sso.connection.trust`, `sso.domain.verify`, `sso.link.remove` and the rest), and names of this package's
-  where neither member names one (`sso.connection.create`, `sso.keys.trust_certificate`, `sso.link.remove_others`,
-  `mfa.identity.reset`, `mfa.factor.unlock`, `mfa.factor.enable`, `mfa.identity.erase`, and `mfa.requirements.manage`
-  for your own screens over your requirement contracts). Removing someone else's link is a permission of its own.
-  Re-enabling a factor disabled at its ceiling (`SineMacula\Laravel\Mfa\Facades\Mfa::enableFactor()`, which names
-  its actor) is `mfa.factor.enable`.
+  `SineMacula\Laravel\Iam\Authorization\Enums\AdministrativeOperation`'s cases. Every `sso.*` name is SSO's own,
+  from `SineMacula\Laravel\Sso\Administration\Enums\AdministrativeOperation` (`sso.connection.trust`,
+  `sso.connection.refresh_metadata`, `sso.link.remove_others` and the rest). Only the `mfa.*` names are this package's,
+  since MFA names none (`mfa.identity.reset`, `mfa.identity.unlock`, `mfa.factor.unlock`, `mfa.factor.enable`,
+  `mfa.identity.erase`, and `mfa.requirements.manage` for your own screens over your requirement contracts).
+  Removing someone else's link is a permission of its own. Re-enabling a factor disabled at its ceiling
+  (`SineMacula\Laravel\Mfa\Facades\Mfa::enableFactor()`, which names its actor) is `mfa.factor.enable`.
 - **Checking one.** Before the call, check it with
   `SineMacula\Laravel\Iam\Authorization\AdministrativeCheck::authorize()`, handing it the subject, the operation and
   the member's object: its type, its id (`null` for an operation on the type, such as creating a connection) and its
@@ -416,6 +415,10 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - `Iam::schedule()` registers `authorization:prune` daily, which removes expired grants and those of grantees and
   records that are gone (see [Operations](operations.md#the-schedule)). An expired grant stops counting at its expiry
   either way.
+- It registers `authorization:usage-prune` daily too and, while `authorization.usage.enabled` is true,
+  `authorization:usage-heartbeat` at least once an `authorization.usage.interval`, so a quiet site's unused grants read
+  `unused` rather than `unknown`. The `RecordGrantUsage` jobs need a queue worker (see
+  [Operations](operations.md#queues)).
 - `iam:check` runs `authorization:check`, which reports `laravel-authorization`'s settings, seams, grant hooks and
   connection, and fails the run when it refuses a setting (exit `1`) or could not complete its report (exit `3`) (see
   [Checks](checks.md#the-members-checks)). The worker reset forgets its request state between units of work (see
@@ -434,6 +437,6 @@ on the same connection (see [Configuration](configuration.md#storage)).
 - [Provisioning and tenancy](provisioning-and-tenancy.md#principal-scope): the principal scope's two halves.
 - [The install and check design note](../design/install-and-check.md#checks): what the checks cover.
 
-[authorization-readme]: https://github.com/sinemacula/laravel-authorization/blob/master/README.md
+[authorization-guides]: https://github.com/sinemacula/laravel-authorization/tree/master/docs/guides
 [authentication-extending]: https://github.com/sinemacula/laravel-authentication/blob/master/docs/guides/extending.md
 [mfa-middleware-answering]: https://github.com/sinemacula/laravel-mfa/blob/master/docs/guides/middleware.md#answering

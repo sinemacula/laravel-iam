@@ -45,19 +45,19 @@ use Tests\Fixtures\Sso\Handoff;
 use Tests\TestCase;
 
 /**
- * End-to-end tests for a provider's groups mapped to grants (IAM-7.2), through
- * SSO's whole flow against a fake OpenID provider, provisioning and this
- * package's sign-in redemption: a first sign-in reporting groups is provisioned
- * a person granted, in the connection's tenant, the roles the mapping answers
- * for them, in the provisioning's one transaction; a mapping that refuses, or
- * names a role that does not exist, rolls the person, the membership and the
- * link back with it; with the application's opt-in, a later sign-in re-syncs
- * the person's roles in the tenant to the groups then reported, granting the
- * roles of a group added and revoking those of a group removed, never one the
- * mapping does not answer and never one of another tenant; a re-sync runs once
- * the sign-in has committed, never under SSO's redemption locks, so one that
- * refuses grants and revokes nothing and hands out no credential, the code
- * spent; and with no re-sync bound a later sign-in changes nothing.
+ * End-to-end tests for a provider's groups mapped to grants, through SSO's
+ * whole flow against a fake OpenID provider, provisioning and this package's
+ * sign-in redemption: a first sign-in reporting groups is provisioned a person
+ * granted, in the connection's tenant, the roles the mapping answers for them,
+ * in the provisioning's one transaction; a mapping that refuses, or names a
+ * role that does not exist, rolls the person, the membership and the link back
+ * with it; with the application's opt-in, a later sign-in re-syncs the person's
+ * roles in the tenant to the groups then reported, granting the roles of a
+ * group added and revoking those of a group removed, never one the mapping does
+ * not answer and never one of another tenant; a re-sync runs once the sign-in
+ * has committed, never under SSO's redemption locks, so one that refuses grants
+ * and revokes nothing and hands out no credential, the code spent; and with no
+ * re-sync bound a later sign-in changes nothing.
  *
  * Each flow that commits runs at the connection's own level on every engine,
  * then at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.

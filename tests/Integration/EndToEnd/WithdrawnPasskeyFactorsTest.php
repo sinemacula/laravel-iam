@@ -37,12 +37,11 @@ use Tests\TestCase;
 /**
  * End-to-end tests of a passkey factor enrolled while the MFA application
  * offered the `passkey` type, once the application has withdrawn the type and
- * redeployed (IAM-3.10): MFA's passkey gateway is back on MFA's own default, so
- * no ceremony runs, but the passkey factor gate stays bound, so a passkey that
- * is still a factor is never removed leaving its factor and association
- * standing, and a removal MFA refuses rolls back whole. They run on every
- * database, and also at READ COMMITTED and REPEATABLE READ on MySQL and
- * PostgreSQL.
+ * redeployed: MFA's passkey gateway is back on MFA's own default, so no
+ * ceremony runs, but the passkey factor gate stays bound, so a passkey that is
+ * still a factor is never removed leaving its factor and association standing,
+ * and a removal MFA refuses rolls back whole. They run on every database, and
+ * also at READ COMMITTED and REPEATABLE READ on MySQL and PostgreSQL.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

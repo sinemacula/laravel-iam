@@ -97,8 +97,7 @@ final class GroupGrantsTest extends TestCase
     }
 
     /**
-     * A role given both reaches is refused before anything is written, with no
-     * transaction to roll a write back.
+     * The roles are written as one operation.
      *
      * @param  string  $method
      * @return void
@@ -106,19 +105,58 @@ final class GroupGrantsTest extends TestCase
      * @throws \Throwable
      */
     #[DataProvider('provideWrites')]
-    public function testARoleGivenBothReachesIsRefused(string $method): void
+    public function testTheRolesAreWrittenAsOneOperation(string $method): void
     {
+        $person   = $this->person();
+        $assigned = $this->recordAssignments();
+
+        $this->write($method, $person, [GrantInstruction::role(self::VIEWER), GrantInstruction::roleWithSubtree(self::APPROVER)]);
+
+        self::assertCount(2, $assigned->operations);
+        self::assertCount(1, array_unique($assigned->operations));
+    }
+
+    /**
+     * Rows of `[method, name]`, each way the groups' roles are written, with
+     * the name the other reach is given under.
+     *
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function provideBothReaches(): iterable
+    {
+        foreach (self::provideWrites() as $write => [$method]) {
+            yield $write => [$method, self::VIEWER];
+
+            yield "{$write}, under a name the collation folds" => [$method, strtoupper(self::VIEWER)];
+        }
+    }
+
+    /**
+     * A role given both reaches, compared by the role each name resolves to, is
+     * refused before anything is written.
+     *
+     * @param  string  $method
+     * @param  string  $name
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideBothReaches')]
+    public function testARoleGivenBothReachesIsRefused(string $method, string $name): void
+    {
+        if (!Role::query()->where('name', $name)->exists()) {
+            self::markTestSkipped('The collation tells the names apart.');
+        }
+
         $person = $this->person();
 
         try {
-            $this->apply($method, $person, [GrantInstruction::role(self::VIEWER), GrantInstruction::roleWithSubtree(self::VIEWER)]);
+            $this->apply($method, $person, [GrantInstruction::role(self::VIEWER), GrantInstruction::roleWithSubtree($name)]);
 
             self::fail('A role given both reaches was written.');
-        } catch (\InvalidArgumentException $exception) {
-            self::assertSame(sprintf('The groups grant the role [%s] with both reaches.', self::VIEWER), $exception->getMessage());
+        } catch (\InvalidArgumentException) {
+            self::assertSame([], $this->rolesOf($person));
         }
-
-        self::assertSame([], $this->rolesOf($person));
     }
 
     /**
@@ -239,19 +277,24 @@ final class GroupGrantsTest extends TestCase
     }
 
     /**
-     * Record the name of each role assigned from now on, in order.
+     * Record the name and operation id of each role assigned from now on, in
+     * order.
      *
-     * @return object{names: list<string>}
+     * @return object{names: list<string>, operations: list<string>}
      */
     private function recordAssignments(): object
     {
         $assigned = new class {
             /** @var list<string> The name of each role assigned, in order. */
             public array $names = [];
+
+            /** @var list<string> The operation id of each assignment, in order. */
+            public array $operations = [];
         };
 
         Event::listen(RoleAssigned::class, static function (RoleAssigned $event) use ($assigned): void {
-            $assigned->names[] = $event->name;
+            $assigned->names[]      = $event->name;
+            $assigned->operations[] = $event->operation->id;
         });
 
         return $assigned;

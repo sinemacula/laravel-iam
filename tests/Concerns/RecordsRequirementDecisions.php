@@ -11,7 +11,7 @@ use SineMacula\Laravel\Authorization\Facades\Authorization;
  * Leaves the request holding a decision through `laravel-authorization`'s
  * facade, by making a check, and reads the last decision back through it, so a
  * test of a change to an identity's authentication can show the change has the
- * request's decisions forgotten (IAM-6.11).
+ * request's decisions forgotten.
  *
  * The check is a guest's, which `laravel-authorization` refuses as
  * `subject_unresolved` without reading a table, so the test needs none of its
