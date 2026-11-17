@@ -16,7 +16,7 @@ use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
-use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizableGrantee;
 use SineMacula\Laravel\Mfa\Concerns\HasFactors;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 
@@ -34,7 +34,7 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  *
  * @internal
  */
-final class Member extends User implements AuthorizableIdentity, CanBeActive, HasSessions, Identity, MultiFactorAuthenticatable, Principal
+final class Member extends User implements AuthorizableGrantee, CanBeActive, HasSessions, Identity, MultiFactorAuthenticatable, Principal
 {
     use ActsAsPrincipal, Authenticatable, HasAuthorization, HasFactors, ProvidesActiveState;
 

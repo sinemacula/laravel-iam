@@ -9,7 +9,7 @@ use SineMacula\Laravel\Authentication\Concerns\ActsAsPrincipal;
 use SineMacula\Laravel\Authentication\Contracts\MachineIdentity;
 use SineMacula\Laravel\Authentication\Contracts\Principal;
 use SineMacula\Laravel\Authorization\Concerns\HasAuthorization;
-use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
+use SineMacula\Laravel\Authorization\Contracts\AuthorizableGrantee;
 
 /**
  * A service account not marked as authorization's machine.
@@ -22,7 +22,7 @@ use SineMacula\Laravel\Authorization\Contracts\AuthorizableIdentity;
  *
  * @internal
  */
-final class UnmarkedServiceAccount extends User implements AuthorizableIdentity, MachineIdentity, Principal
+final class UnmarkedServiceAccount extends User implements AuthorizableGrantee, MachineIdentity, Principal
 {
     use ActsAsPrincipal, HasAuthorization;
 
