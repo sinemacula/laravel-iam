@@ -79,10 +79,11 @@ registered, so memberships bound in an application provider's `register()` count
   in one call. So an admission holding an identity guard, or under `REPEATABLE READ` reading the tree with a locking
   read, can deadlock against the move, and the loser retries.
 - With a tree it then reports every identity granted within the moved tenant to SSO's widening (while the authorization
-  and SSO adapters are both on), sparing the moved subtree and its new ancestors as the tree answers them after the
-  write, so links stay active there and are suspended in every other tenant, an old ancestor included. Then it calls
-  `Authorization::treeChanged()`. It judges the subtree only while SSO's enforcement is on or MFA's tenant requirement
-  is bound. A removal is reported as the move of each child, after the restructure is written.
+  and SSO adapters are both on), a grantee a global scope hides included since it keeps its grants, sparing the moved
+  subtree and its new ancestors as the tree answers them after the write, so links stay active there and are suspended
+  in every other tenant, an old ancestor included. Then it calls `Authorization::treeChanged()`. It judges the subtree
+  only while SSO's enforcement is on or MFA's tenant requirement is bound. A removal is reported as the move of each
+  child, after the restructure is written.
 - A `GrantInstruction` is a role and whether it reaches the tenants below, granted to the identity in the connection's
   tenant, so a connection's groups never grant beyond its tenant. `GroupSettings` finds the bound mapping, or
   `ConfiguredGroupMapping` while `iam.provisioning.groups.map` maps a group. `GroupGrants` grants in one `grantRoles()`

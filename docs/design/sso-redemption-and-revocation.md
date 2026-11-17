@@ -101,18 +101,22 @@ The provider's evidence passes two gates, and neither is the other.
 `SessionRevocationAdapter` maps each of SSO's scopes to the `laravel-authentication` helper that ends exactly those
 sessions, on every guard, as a savepoint of SSO's transaction:
 
-| Scope kind (reason)                    | Helper                                    | Switch                     |
-| -------------------------------------- | ----------------------------------------- | -------------------------- |
-| `tenant` (`enforcement_changed`)       | `tenantPolicyChanged()`, twice            | none                       |
-| `connection` (`connection_disabled`)   | `connectionDisabled()`                    | `laravel-authentication`'s |
-| `connection` (`connection_deleted`)    | `connectionDeleted()`                     | `laravel-authentication`'s |
-| `identity_connection` (`link_removed`) | `linkRemoved()`                           | `laravel-authentication`'s |
-| `identity_link` (`scope_widened`)      | `linkScopeWidened()`, never `linkRemoved` | none                       |
+| Scope kind (reason)                    | Helper                          | Switch                     |
+| -------------------------------------- | ------------------------------- | -------------------------- |
+| `tenant` (`enforcement_changed`)       | `tenantPolicyChanged()`, twice  | none                       |
+| `connection` (`connection_disabled`)   | `connectionDisabled()`          | `laravel-authentication`'s |
+| `connection` (`connection_deleted`)    | `connectionDeleted()`           | `laravel-authentication`'s |
+| `identity_connection` (`link_removed`) | `linkRemovedByReference()`      | `laravel-authentication`'s |
+| `identity_link` (`scope_widened`)      | `linkScopeWidenedByReference()` | none, not `link_removed`   |
 
 - An enforcement change judges the enforcing tenant and every tenant below it in the application's tree
   (`Tenancy\SubtreePolicyChanges`), inside SSO's transaction and again after it commits, so a session that entered the
   tenant meanwhile is caught.
-- An unresolved identity or tenant, an incomplete scope or an unknown reason throws, rolling SSO's change back.
+- A removed link or widened scope names the identity by SSO's reference and reads no identity, so the sessions of one
+  soft-deleted, outside a global scope or no longer stored end too.
+- An unresolved tenant, an identity reference whose type is not an Eloquent identity model's morph class or whose id
+  lacks its key's shape (`InvalidArgumentException`), an incomplete scope or an unknown reason throws, rolling SSO's
+  change back.
 
 ## References and locks
 

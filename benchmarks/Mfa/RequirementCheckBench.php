@@ -11,9 +11,8 @@ use PhpBench\Attributes\Warmup;
 
 /**
  * PHPBench suite for `laravel-authentication`'s requirement check answered by
- * MFA's (IAM-3.2), the hottest path of the adapters between the two members: it
- * is asked on every sign-in, every pending action and every judgement of a
- * session.
+ * MFA's, the hottest path of the adapters between the two members: it is asked
+ * on every sign-in, every pending action and every judgement of a session.
  *
  * Judges a sign-in holding one further proof, and one holding as many as one
  * read returns, through the adapter: the requirement and every proof translated

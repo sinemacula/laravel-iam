@@ -49,12 +49,12 @@ use Tests\Fixtures\Resolvers\OpenTenancy;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of an MFA email factor and an SMS factor (IAM-3.9, IAM-3.12,
- * IAM-3.13), driven through MFA's public API with every adapter of this
- * package's bound: each code reaches the application's `laravel-authentication`
- * one-time code sender, whether `laravel-authentication` issues it or MFA's own
- * challenge gateway does. Everything runs on MySQL and PostgreSQL at READ
- * COMMITTED and REPEATABLE READ.
+ * End-to-end tests of an MFA email factor and an SMS factor, driven through
+ * MFA's public API with every adapter of this package's bound: each code
+ * reaches the application's `laravel-authentication` one-time code sender,
+ * whether `laravel-authentication` issues it or MFA's own challenge gateway
+ * does. Everything runs on MySQL and PostgreSQL at READ COMMITTED and
+ * REPEATABLE READ.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

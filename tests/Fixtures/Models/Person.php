@@ -26,7 +26,7 @@ use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
  * sessions, and MFA's identity, with factors.
  *
  * It lives on the default connection, which the tests keep as the shared
- * storage connection with every member's tables, as IAM-2.3 asks of an
+ * storage connection with every member's tables, as this package asks of an
  * application's identity models, and signs in with its email address and
  * password. It is active until a test clears its `is_active` flag, which
  * `laravel-authentication` reads as its active state, and MFA reads the same

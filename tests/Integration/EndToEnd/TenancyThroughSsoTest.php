@@ -43,19 +43,19 @@ use Tests\TestCase;
 
 /**
  * End-to-end tests for SSO's linking judgements answered from the application's
- * memberships (IAM-7.4, IAM-6.8), through SSO's own flows and this package's
- * redemptions, against SSO's acceptance scenarios: a `link`, redeemed
- * standalone with the authenticated caller and writing no session, links a
- * member of the connection's tenant and refuses anyone else as
- * `link_ineligible`; and a first sign-in by a verified email of the tenant's
- * verified domain reserves a link that the sign-in's redemption activates, for
- * a member who accepted before the domain's verification, once the grant half
- * of the principal scope answers `within_tenant` too, while the grant half with
- * the authorization switch off (`UnknownGrantScope`), a membership accepted
- * since or never, and a person reaching beyond the tenant reserve nothing, the
- * sign-in going on as `unlinked`; and a verified domain link whose person comes
- * to hold another tenant's membership is latched suspended at its next sign-in,
- * its session revoked.
+ * memberships, through SSO's own flows and this package's redemptions, against
+ * SSO's acceptance scenarios: a `link`, redeemed standalone with the
+ * authenticated caller and writing no session, links a member of the
+ * connection's tenant and refuses anyone else as `link_ineligible`; and a first
+ * sign-in by a verified email of the tenant's verified domain reserves a link
+ * that the sign-in's redemption activates, for a member who accepted before the
+ * domain's verification, once the grant half of the principal scope answers
+ * `within_tenant` too, while the grant half with the authorization switch off
+ * (`UnknownGrantScope`), a membership accepted since or never, and a person
+ * reaching beyond the tenant reserve nothing, the sign-in going on as
+ * `unlinked`; and a verified domain link whose person comes to hold another
+ * tenant's membership is latched suspended at its next sign-in, its session
+ * revoked.
  *
  * The grant half is `laravel-authorization`'s grant scope query as this package
  * binds it (`GrantScopeAdapter`): a member who holds no grant beyond the tenant

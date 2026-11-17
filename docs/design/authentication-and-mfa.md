@@ -34,9 +34,15 @@ removed factor would leave the identity's other sessions standing.
   key as a string (`Translation\SignIn`). `Mfa\CurrentSession` resolves both for every adapter, so every adapter
   refuses a misconfiguration the same way.
 - Adapters act on the values MFA hands them (`CallerContext`, the application, the sign-in), never the request the
-  container holds or the guard's current user. Where MFA names the sign-in (a factor change, a transition, a removal),
-  the adapter reads it by key whatever the guard holds, so a change from a job or console acts on the right session.
-  Only `PendingSessionResolverAdapter::fromRequest()` reads a request.
+  container holds. Where MFA names the sign-in (a factor change, a transition, a removal), the adapter reads it by key
+  whatever the guard holds, so a change from a job or console acts on the right session. Only
+  `PendingSessionResolverAdapter::fromRequest()` reads a request directly; the guard reads its own bearer token.
+- MFA names an active caller's sign-in only through `ProofStore::currentSession()`, so the proof store's
+  `currentSession()`, `proofs()` and `firstFactor()`, the freshness gate and the reauthenticator answer from the guard's
+  current session, and only while it serves the identity MFA passed (`CurrentSession::held()`). `proofs()` answers
+  nothing for another sign-in, and `record()` accepts a proof only for the guard's current sign-in. Off a request,
+  unless a command or job signs in on the guard itself, there is no current sign-in: the proof store answers none, the
+  freshness gate finds nothing fresh and the reauthenticator throws `UnresolvedReferenceException`.
 - `laravel-authentication` is the only writer of a session's proofs. The proof store reads them and accepts only the
   sign-in's own first factor; further proofs arrive through `stepUp()` and `satisfy()`. So rebinding `StepUp` or
   `PendingCompletion` back to MFA's `ProofStoreCompletion` refuses every verification: rebind both or neither.
@@ -74,8 +80,6 @@ removed factor would leave the identity's other sessions standing.
 - `MfaContextContributor` fills the `mfa` namespace with MFA's own `contributeFor()`, from the contribution subject's
   session and its newest proofs, so the keys match `Mfa::authenticationContext()` for that session. It is registered
   only while the switch is on and nothing else holds `mfa`.
-- MFA names a caller's sign-in only through `ProofStore::currentSession()`, so the proof store, the freshness gate and
-  the reauthenticator all answer it from the guard's current session.
 - `laravel-authentication` writes a session's proofs only alongside its own token issuance, under the session's row
   lock, so the proof store records and forgets nothing.
 

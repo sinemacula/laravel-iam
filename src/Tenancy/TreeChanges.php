@@ -165,7 +165,9 @@ final readonly class TreeChanges
         }
 
         $blank = new $class;
-        $found = WriteConnection::during($blank, static fn (): ?Model => WriteConnection::query($blank->newQuery())->find($grantee->id));
+
+        // A soft-deleted or otherwise scoped-out grantee keeps its grants.
+        $found = WriteConnection::during($blank, static fn (): ?Model => WriteConnection::query($blank->newQuery()->withoutGlobalScopes())->find($grantee->id));
 
         return match (true) {
             $found instanceof Principal => $found->getIdentity(),

@@ -19,9 +19,9 @@ next boot: a deploy, or a restart of every worker (see [Operations](operations.m
 
 ## Storage
 
-| Key                      | Default | Environment              | What it does                                                                        |
-|--------------------------|---------|--------------------------|-------------------------------------------------------------------------------------|
-| `iam.storage.connection` | `null`  | `IAM_STORAGE_CONNECTION` | The one connection every member's tables live on; `null` is the default connection. |
+| Key                      | Default | Environment              | What it does                                                                                                |
+|--------------------------|---------|--------------------------|-------------------------------------------------------------------------------------------------------------|
+| `iam.storage.connection` | `null`  | `IAM_STORAGE_CONNECTION` | The one connection the tables of authentication, authorization, MFA and SSO live on; `null` is the default. |
 
 The connection is written into `authentication.storage.connection`, `mfa.storage.connection`,
 `sso.storage.connection` and `laravel-authorization`'s `authorization.connection` (`AUTHORIZATION_DB_CONNECTION`)
