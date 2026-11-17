@@ -40,6 +40,8 @@ use Tests\Concerns\SignsInThroughLinks;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
+use Tests\Fixtures\Sso\DepartingPerson;
+use Tests\Fixtures\Sso\PlainIdentity;
 use Tests\Fixtures\Tenancy\ExemptsIdentities;
 use Tests\Fixtures\Tenancy\StoredTenantTree;
 use Tests\TestCase;
@@ -534,25 +536,119 @@ final class SessionRevocationAdapterTest extends TestCase
     }
 
     /**
-     * An unresolved identity throws and nothing is revoked.
+     * Rows of `[scope]`: a removed link's and a widened scope's.
      *
+     * @return iterable<string, list<\Closure(string, string, \SineMacula\Laravel\Sso\Identities\IdentityReference, string): \SineMacula\Laravel\Sso\Revocation\RevocationScope>>
+     */
+    public static function provideLinkScopes(): iterable
+    {
+        yield 'a removed link' => [RevocationScope::identityInConnection(...)];
+
+        yield 'a widened scope' => [RevocationScope::identityLink(...)];
+    }
+
+    /**
+     * A soft-deleted identity's link ends its sessions for good.
+     *
+     * @param  \Closure(string, string, \SineMacula\Laravel\Sso\Identities\IdentityReference, string): \SineMacula\Laravel\Sso\Revocation\RevocationScope  $scope
      * @return void
      *
      * @throws \Throwable
      */
-    public function testAnUnresolvedIdentityThrows(): void
+    #[DataProvider('provideLinkScopes')]
+    public function testASoftDeletedIdentitysLinkEndsItsSessions(\Closure $scope): void
     {
-        $session  = $this->signInThrough($this->createPerson());
-        $stranger = new IdentityReference(Person::class, '987654');
+        $ada       = $this->createPerson();
+        $revoked   = $this->signInThrough($ada);
+        $kept      = $this->signInThrough($ada, linkId: self::OTHER_LINK);
+        $departed  = DepartingPerson::query()->findOrFail($ada->id);
+        $reference = new IdentityReference($departed->getMorphClass(), self::keyOf($departed));
+        $owner     = $revoked->authenticatable()->getMorphType();
+
+        $revoked->newQuery()->whereKey([self::keyOf($revoked), self::keyOf($kept)])->update([$owner => $reference->type]);
+        $departed->delete();
+
+        $this->revokeInTransaction($scope(self::SSO_TENANT, self::SSO_CONNECTION, $reference, self::LINK));
+
+        DepartingPerson::withTrashed()->whereKey($departed->id)->restore();
+
+        self::assertNotNull(DepartingPerson::query()->find($departed->id));
+        $this->assertRevoked([$revoked]);
+        $this->assertStanding([$kept]);
+    }
+
+    /**
+     * The link of an identity no longer stored ends its sessions and commits.
+     *
+     * @param  \Closure(string, string, \SineMacula\Laravel\Sso\Identities\IdentityReference, string): \SineMacula\Laravel\Sso\Revocation\RevocationScope  $scope
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideLinkScopes')]
+    public function testTheLinkOfAnIdentityNoLongerStoredCommits(\Closure $scope): void
+    {
+        [$ada, $grace] = [$this->createPerson(), $this->createPerson()];
+
+        $session   = $this->signInThrough($ada);
+        $reference = self::referenceOf($ada);
+
+        $ada->delete();
+
+        DB::connection(StorageConnection::name())->transaction(function () use ($grace, $scope, $reference): void {
+
+            $grace->forceFill(['name' => 'Changed in the transaction'])->save();
+
+            $this->adapter()->revoke($scope(self::SSO_TENANT, self::SSO_CONNECTION, $reference, self::LINK));
+        });
+
+        self::assertSame('Changed in the transaction', $grace->refresh()->getAttribute('name'));
+        $this->assertRevoked([$session]);
+    }
+
+    /**
+     * Rows of `[reference]`: each reference naming no identity's key.
+     *
+     * @return iterable<string, array{0: \SineMacula\Laravel\Sso\Identities\IdentityReference}>
+     */
+    public static function provideRefusedReferences(): iterable
+    {
+        yield 'a type that is no Eloquent model' => [new IdentityReference(PlainIdentity::class, '1')];
+
+        yield 'a type that names no class' => [new IdentityReference('person', '1')];
+
+        yield 'a key without the key\'s shape' => [new IdentityReference(Person::class, 'not-a-key')];
+    }
+
+    /**
+     * A reference naming no identity's key is refused and rolls back.
+     *
+     * @param  \SineMacula\Laravel\Sso\Identities\IdentityReference  $reference
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideRefusedReferences')]
+    public function testARefusedReferenceRollsTheChangeBack(IdentityReference $reference): void
+    {
+        $ada     = $this->createPerson();
+        $session = $this->signInThrough($ada);
 
         foreach ([RevocationScope::identityInConnection(...), RevocationScope::identityLink(...)] as $scope) {
             try {
-                $this->revokeInTransaction($scope(self::SSO_TENANT, self::SSO_CONNECTION, $stranger, self::LINK));
+                DB::connection(StorageConnection::name())->transaction(function () use ($ada, $scope, $reference): void {
 
-                self::fail('An unresolved identity was revoked for.');
-            } catch (UnresolvedReferenceException $exception) {
-                self::assertSame(ReferenceKind::IDENTITY, $exception->kind);
+                    $ada->forceFill(['name' => 'Changed in the transaction'])->save();
+
+                    $this->adapter()->revoke($scope(self::SSO_TENANT, self::SSO_CONNECTION, $reference, self::LINK));
+                });
+
+                self::fail('A refused reference was revoked for.');
+            } catch (\InvalidArgumentException $exception) {
+                self::assertStringContainsString('identity reference', $exception->getMessage());
             }
+
+            self::assertSame('Ada Lovelace', $ada->refresh()->getAttribute('name'));
         }
 
         $this->assertStanding([$session]);
