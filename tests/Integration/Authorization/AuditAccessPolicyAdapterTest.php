@@ -229,6 +229,26 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
+     * An own-activity grant beside a full read does not widen the scope.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnOwnActivityGrantBesideAFullReadDoesNotWidenTheScope(): void
+    {
+        $viewer = $this->viewer();
+
+        $this->grant($viewer, 'audit-log.read', self::FIRST);
+        $this->grant($viewer, 'audit-log.read.own', self::SECOND);
+
+        $scope = self::scope($viewer);
+
+        self::assertSame([self::tenant(self::FIRST)], self::tenants($scope));
+        self::assertNull($scope->toArray()['about']);
+    }
+
+    /**
      * A permission whose decision reads a requirement is not held.
      *
      * @return void
