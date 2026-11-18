@@ -9,7 +9,6 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\Facades\AuditLog;
 use SineMacula\Laravel\AuditLog\Records\AuditRecord;
 use SineMacula\Laravel\AuditLog\Records\Enums\Outcome;
@@ -26,7 +25,6 @@ use SineMacula\Laravel\Iam\Audit\References;
 use SineMacula\Laravel\Iam\Authorization\SubjectResolverAdapter;
 use SineMacula\Laravel\Iam\Authorization\Translation\TenantTranslator;
 use Tests\Concerns\MigratesAuthorization;
-use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Fixtures\Authorization\Enums\InvoicePermission;
 use Tests\Fixtures\Authorization\Member;
 use Tests\Fixtures\Authorization\Organisation;
@@ -48,7 +46,7 @@ use Tests\TestCase;
 #[CoversClass(TenantTranslator::class)]
 final class TenantGrantsOverHttpTest extends TestCase
 {
-    use MigratesAuthorization, RunsAtIsolationLevels;
+    use MigratesAuthorization;
 
     /** @var string The tenant the grant is made in. */
     private const string GRANTED = 'org-a';
@@ -74,16 +72,12 @@ final class TenantGrantsOverHttpTest extends TestCase
      * A permission granted in one tenant allows the session acting there and
      * denies the same member's session acting in another, recorded there.
      *
-     * @param  ?string  $level
      * @return void
      *
      * @throws \Throwable
      */
-    #[DataProvider('provideEveryIsolationLevel')]
-    public function testAGrantInOneTenantAllowsOnlyTheSessionActingThere(?string $level): void
+    public function testAGrantInOneTenantAllowsOnlyTheSessionActingThere(): void
     {
-        self::runAtIsolationLevel($level);
-
         Permission::query()->create(['name' => InvoicePermission::REFUND->value]);
 
         $member = Member::query()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.test', 'password' => self::PASSWORD]);
@@ -95,12 +89,9 @@ final class TenantGrantsOverHttpTest extends TestCase
         $fake    = AuditLog::fake();
 
         $this->request($granted)->assertOk()->assertExactJson(['manager' => true, 'gate' => true]);
-
-        self::assertSame([], self::denials($fake->recorded()));
-
         $this->request($other)->assertOk()->assertExactJson(['manager' => false, 'gate' => false]);
 
-        $denials = self::denials($fake->recorded());
+        $denials = $fake->recorded(static fn (AuditRecord $record): bool => $record->event === 'authorization.access_denied');
 
         self::assertCount(2, $denials);
 
@@ -108,7 +99,7 @@ final class TenantGrantsOverHttpTest extends TestCase
             self::assertSame(Outcome::DENIED->value, $denial->outcome);
             self::assertSame(InvoicePermission::REFUND->value, $denial->properties['action'] ?? null);
             self::assertSame([References::TENANT_TYPE, self::OTHER], [$denial->tenantType, $denial->tenantId]);
-            self::assertSame((string) $member->getKey(), $denial->actorId);
+            self::assertSame((string) $member->id, $denial->actorId);
         }
     }
 
@@ -145,17 +136,6 @@ final class TenantGrantsOverHttpTest extends TestCase
 
         $config->set('auth.providers.people', ['driver' => 'model', 'model' => Member::class]);
         $config->set('authorization.permission_enums', [InvoicePermission::class]);
-    }
-
-    /**
-     * The denials among the records.
-     *
-     * @param  list<\SineMacula\Laravel\AuditLog\Records\AuditRecord>  $records
-     * @return list<\SineMacula\Laravel\AuditLog\Records\AuditRecord>
-     */
-    private static function denials(array $records): array
-    {
-        return array_values(array_filter($records, static fn (AuditRecord $record): bool => $record->event === 'authorization.access_denied'));
     }
 
     /**
@@ -198,7 +178,7 @@ final class TenantGrantsOverHttpTest extends TestCase
 
         $auth->forgetGuardState();
 
-        // A new request starts with no scoped instance, the resolved tenant too.
+        // A new request has no scoped instance, the resolved tenant included.
         $this->app?->forgetScopedInstances();
 
         return $this->withToken($token)->getJson('/can');

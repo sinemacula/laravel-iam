@@ -43,8 +43,8 @@ use Tests\TestCase;
 /**
  * End-to-end tests of the roles a provider's groups map to over HTTP: a first
  * SSO sign-in into the connection's tenant is provisioned a member whose new
- * session is allowed the mapped role's action, and once a later sign-in
- * without the group re-syncs the roles, every session of theirs is refused it.
+ * session is allowed the mapped role's action, and once a later sign-in without
+ * the group re-syncs the roles, every session of theirs is refused it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -62,7 +62,7 @@ final class GroupRolesOverHttpTest extends TestCase
 
     /**
      * Arrange SSO, store the approver role allowed a refund, provision members,
-     * map the group, re-sync it, and open every tenant to anyone.
+     * map the group, and open every tenant to anyone.
      *
      * @return void
      */
@@ -81,14 +81,13 @@ final class GroupRolesOverHttpTest extends TestCase
         $this->app?->instance(TenantResolver::class, new OrganisationTenancy);
         $this->app?->instance(TenantAccess::class, new OrganisationTenancy);
         $this->app?->instance(Provisioner::class, self::provisionsMembers());
-        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
 
         FakeGroupMapping::fake($this->app)->map('finance-ops', self::APPROVER);
     }
 
     /**
-     * A first sign-in's mapped role allows its session the role's action in
-     * the connection's tenant, and a re-sync without the group refuses it.
+     * A first sign-in's mapped role allows its session the role's action in the
+     * connection's tenant, and a re-sync without the group refuses it.
      *
      * @param  ?string  $level
      * @return void
@@ -103,6 +102,8 @@ final class GroupRolesOverHttpTest extends TestCase
         $first = $this->signInWith(['finance-ops']);
 
         $this->request($first)->assertOk()->assertExactJson(['manager' => true, 'gate' => true]);
+
+        $this->app?->bind(GroupResync::class, MappedGroupResync::class);
 
         $later = $this->signInWith(['engineering']);
 
@@ -155,17 +156,15 @@ final class GroupRolesOverHttpTest extends TestCase
     {
         return new class implements Provisioner {
             /**
-             * A new member, under an email address no other member has.
+             * A new member, under an address only one member may hold.
              *
              * @param  \SineMacula\Laravel\Sso\Results\VerifiedResult  $result
              * @return \Tests\Fixtures\Authorization\Member
-             *
-             * @throws \Random\RandomException
              */
             #[\Override]
             public function createIdentity(#[\SensitiveParameter] VerifiedResult $result): Identity
             {
-                return Member::query()->create(['name' => 'Provisioned member', 'email' => sprintf('provisioned-%s@people.test', bin2hex(random_bytes(8)))]);
+                return Member::query()->create(['name' => 'Provisioned member', 'email' => 'provisioned@people.test']);
             }
 
             /**
@@ -223,7 +222,7 @@ final class GroupRolesOverHttpTest extends TestCase
 
         $auth->forgetGuardState();
 
-        // A new request starts with no scoped instance, the resolved tenant too.
+        // A new request has no scoped instance, the resolved tenant included.
         $this->app?->forgetScopedInstances();
 
         return $this->withToken($token)->getJson('/can');
