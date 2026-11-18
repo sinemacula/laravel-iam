@@ -112,6 +112,10 @@ final class TenantSwitchTest extends TestCase
         self::assertSame('pending', $this->stored($signedIn)->status);
 
         $credential = $switched->credential?->reveal() ?? self::fail('The pending switch carries no credential.');
+
+        // A person answers after the second the switch returned to pending.
+        $this->travel(1)->seconds();
+
         $request    = Request::create('/mfa/verify', 'POST', ['pending_credential' => $credential]);
         $result     = Mfa::verify(CallerContext::fromRequest($request), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
         $completion = $result->completion();
@@ -122,6 +126,10 @@ final class TenantSwitchTest extends TestCase
         self::assertSame('active', $this->stored($signedIn)->status);
         self::assertSame(self::FACTOR_TENANT, $this->stored($signedIn)->tenant_id);
         self::assertSame(self::FACTOR_TENANT, $completion->session?->record->getTenantId());
+
+        $this->request('/tenants', $completion->session->tokens->accessToken->reveal())
+            ->assertOk()
+            ->assertExactJson(['authorization' => self::FACTOR_TENANT, 'mfa' => self::FACTOR_TENANT]);
     }
 
     /**
