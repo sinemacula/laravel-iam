@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Audit;
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Orchestra\Testbench\Attributes\WithConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -29,13 +30,15 @@ use Tests\Concerns\MigratesSso;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\RunsSsoFlows;
 use Tests\Concerns\SignsInPeople;
+use Tests\Fixtures\Mfa\Codes\Concerns\ArrangesDeliveredFactors;
+use Tests\Fixtures\Mfa\Codes\Concerns\DeliversFactorCodes;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
  * Contract tests for the whole record sequence of a password sign-in, an MFA
- * step-up and an SSO sign-in.
+ * step-up, a sign-in that waits on MFA and an SSO sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -51,7 +54,7 @@ use Tests\TestCase;
 #[WithConfig('audit-log.definitions.require_registered', true)]
 final class RecordSequencesTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
+    use ArrangesDeliveredFactors, ArrangesFactorChanges, DeliversFactorCodes, MigratesSso, RunsAtIsolationLevels, RunsSsoFlows, SignsInPeople;
 
     /** @var string The guard's own identity type, as the morph map names the fixture. */
     private const string PERSON = Person::class;
@@ -228,6 +231,76 @@ final class RecordSequencesTest extends TestCase
     }
 
     /**
+     * A pending sign-in completed with a delivered code after a wrong one
+     * shares the challenge across MFA's records and the refused code.
+     *
+     * @param  ?string  $level
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    #[DataProvider('provideEveryIsolationLevel')]
+    public function testAPendingSignInCompletedWithADeliveredCode(?string $level): void
+    {
+        self::runAtIsolationLevel($level);
+
+        $this->fakeFactorCodeDelivery();
+
+        $expiry = $this->freezeSecond()->addSeconds(300)->toJSON();
+        $person = $this->createPerson();
+        $factor = $this->deliveredFactor($person);
+        $fake   = AuditLog::fake();
+        $result = $this->attemptSignIn($person);
+
+        self::assertTrue($result->isPending(), (string) $result->reason?->value);
+        self::assertNotNull($result->credential);
+
+        $server = ['REMOTE_ADDR' => self::CLIENT_IP, 'HTTP_USER_AGENT' => self::CLIENT_AGENT];
+        $caller = self::servedCaller(Request::create('/mfa/verify', 'POST', ['pending_credential' => $result->credential->reveal()], server: $server));
+        $sent   = Mfa::sendCode($caller, $factor->id, Purpose::SIGN_IN);
+
+        self::assertTrue($sent->wasSent(), (string) $sent->reason?->value);
+
+        $code = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+
+        self::assertFalse(Mfa::verify($caller, Submission::challenge($factor->id, (string) $sent->challengeId, self::wrong($code)), Purpose::SIGN_IN)->isVerified());
+        self::assertTrue(Mfa::verify($caller, Submission::challenge($factor->id, (string) $sent->challengeId, $code), Purpose::SIGN_IN)->isVerified());
+
+        $session   = self::keyOf($person->sessions()->sole());
+        $challenge = Correlation::mfaChallenge($sent->challengeId);
+        $id        = [self::PERSON, self::keyOf($person)];
+        $own       = self::own(self::keyOf($person), $session, Correlation::session($session));
+        $sentOwn   = self::own(self::keyOf($person), $session, $challenge);
+        $client    = [self::CLIENT_IP, self::CLIENT_AGENT];
+        $mfa       = ['application' => self::GUARD, 'purpose' => 'sign_in', 'factor_id' => $factor->id, 'factor_type' => 'sms'];
+
+        self::assertNotNull($challenge);
+        self::assertSame([
+            ['session.pending', ...$own, ['method' => 'password', 'requires' => ['mfa'], 'expires_at' => $expiry]],
+            ['mfa.code_sent', ...$sentOwn, $mfa],
+            ['authentication.factor_code_failed', 'failure', 'invalid_credentials', null, $id, null, null, self::GUARD, $session, $challenge, $client, null],
+            ['mfa.verification_failed', 'failure', 'invalid_code', null, $id, $id, null, self::GUARD, $session, $challenge, $client, [...$mfa, 'type' => 'sms']],
+            ['session.created', ...$own, ['method' => 'password']],
+            ['authentication.signed_in', ...$own, null],
+            ['mfa.verification_passed', ...$sentOwn, [...$mfa, 'type' => 'sms']],
+        ], self::sequence($fake));
+    }
+
+    /**
+     * Bind the fake one-time code sender.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    #[\Override]
+    protected function defineEnvironment(mixed $app): void
+    {
+        parent::defineEnvironment($app);
+
+        $this->defineFactorCodes($app);
+    }
+
+    /**
      * What a record of the person's own action holds after its code.
      *
      * @param  string  $person
@@ -277,5 +350,18 @@ final class RecordSequencesTest extends TestCase
     private static function pair(?string $type, ?string $id): ?array
     {
         return $type === null || $id === null ? null : [$type, $id];
+    }
+
+    /**
+     * A code of the same length that is not the code.
+     *
+     * @param  string  $code
+     * @return string
+     */
+    private static function wrong(#[\SensitiveParameter] string $code): string
+    {
+        $zeros = str_repeat('0', strlen($code));
+
+        return $code === $zeros ? str_repeat('1', strlen($code)) : $zeros;
     }
 }

@@ -67,7 +67,10 @@ Route::middleware(['auth:api', 'mfa'])->group(static function (): void {
 - **Public.** A sign-in and the SSO sign-in redemption take no session: a password, or a handoff code and its verifier,
   authenticates them.
 - **The pending credential.** `authentication.pending:<action>,api` declares that the route authenticates with a
-  pending session's credential for that one action, so a pending sign-in reaches only the further factor.
+  pending session's credential, which `auth:api` never accepts, so a pending sign-in reaches only the further factor.
+  The declared action is checked only where the route reads its caller with `Auth::caller()`: `Mfa::sendCode()` and
+  `Mfa::verify()` read the credential from the body themselves and allow whatever the pending session allows, so
+  each pending route accepts the credential whatever action the route declares.
 - **The caller's own.** Everything else is behind `auth:api`, then MFA's gate, `mfa`. The step-up route itself is
   exempt from the gate (`mfa.exempt`), since it is how the requirement is met.
 - **MFA's gate before `laravel-authorization`'s middleware.** `mfa` comes after authentication and before
