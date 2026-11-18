@@ -23,7 +23,10 @@ use SineMacula\Laravel\Authentication\Contracts\ContextualGuard;
 use SineMacula\Laravel\Authentication\Contracts\Identity;
 use SineMacula\Laravel\Authentication\Exceptions\TenantUnavailableException;
 use SineMacula\Laravel\Iam\Audit\AuthenticationActorReader;
+use SineMacula\Laravel\Iam\Audit\Enums\MfaActivity;
 use SineMacula\Laravel\Iam\Audit\References;
+use SineMacula\Laravel\Mfa\Events\Actor;
+use SineMacula\Laravel\Mfa\Facades\Mfa;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Audit\RecordsInAJob;
@@ -110,6 +113,41 @@ final class AuthenticationActorReaderTest extends TestCase
         AuditLog::event(self::CODE)->by(Reference::to($person))->record();
 
         self::assertCaller(self::only($fake), $person, $session, null);
+    }
+
+    /**
+     * An operator's record gains the caller's principal, tenant and session
+     * only when the operator is the caller.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnOperatorsRecordGainsTheRestOnlyForTheCaller(): void
+    {
+        $fake    = AuditLog::fake();
+        $caller  = $this->createPerson();
+        $session = $this->signInActingInTenant($caller);
+        $other   = $this->createPerson('grace@example.test');
+        $third   = $this->createPerson('alan@example.test');
+
+        Mfa::resetIdentity($other, Actor::of($caller), 'Lost the phone the factor was on.');
+        Mfa::resetIdentity($other, Actor::of($third), 'Lost the phone the factor was on.');
+
+        $resets = $fake->recorded(static fn (AuditRecord $record): bool => $record->event === MfaActivity::FACTORS_RESET->value);
+
+        self::assertCount(2, $resets);
+        self::assertCaller($resets[0], $caller, $session, null);
+
+        self::assertSame($third->getMorphClass(), $resets[1]->actorType);
+        self::assertSame(self::keyOf($third), $resets[1]->actorId);
+        self::assertNull($resets[1]->principalId);
+        self::assertNull($resets[1]->tenantId);
+        self::assertNull($resets[1]->sessionId);
+
+        foreach ($resets as $reset) {
+            self::assertSame(self::keyOf($other), $reset->subjectId);
+        }
     }
 
     /**

@@ -229,6 +229,26 @@ final class AuditAccessPolicyAdapterTest extends TestCase
     }
 
     /**
+     * An own-activity grant beside a full read does not widen the scope.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAnOwnActivityGrantBesideAFullReadDoesNotWidenTheScope(): void
+    {
+        $viewer = $this->viewer();
+
+        $this->grant($viewer, 'audit-log.read', self::FIRST);
+        $this->grant($viewer, 'audit-log.read.own', self::SECOND);
+
+        $scope = self::scope($viewer);
+
+        self::assertSame([self::tenant(self::FIRST)], self::tenants($scope));
+        self::assertNull($scope->toArray()['about']);
+    }
+
+    /**
      * A permission whose decision reads a requirement is not held.
      *
      * @return void
@@ -365,6 +385,31 @@ final class AuditAccessPolicyAdapterTest extends TestCase
 
         self::assertSame([self::tenant(self::SECOND)], self::tenants(self::scope(AuditReference::to($sibling), ReadPurpose::EXPORT)));
         self::assertTrue(self::scope(AuditReference::to($caller), ReadPurpose::EXPORT)->isDenied());
+    }
+
+    /**
+     * A grant seen in more tenants than a scope holds refuses the read.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAGrantSeenInMoreTenantsThanAScopeHoldsRefusesTheRead(): void
+    {
+        $viewer = $this->viewer();
+
+        foreach (range(1, AccessScope::MAX_TENANTS) as $tenant) {
+            $this->grant($viewer, 'audit-log.read', 'org-' . $tenant);
+        }
+
+        self::assertCount(AccessScope::MAX_TENANTS, self::tenants(self::scope($viewer)));
+
+        $this->grant($viewer, 'audit-log.read', 'org-' . (AccessScope::MAX_TENANTS + 1));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage(sprintf('An access scope holds at most %d tenants.', AccessScope::MAX_TENANTS));
+
+        self::scope($viewer);
     }
 
     /**
