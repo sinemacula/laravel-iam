@@ -90,7 +90,7 @@ final class BootstrapEnrolmentTest extends TestCase
 
         $session = $completion->session->record ?? self::fail('No session was signed in.');
 
-        self::assertSame($pending->pending?->session->getKey(), $session->getKey());
+        self::assertSame($pending->pending?->session->getSessionIdentifier(), $session->getSessionIdentifier());
         self::assertSame(self::TENANT, $session->getTenantId());
 
         $proofs = array_map(static fn (RecordedProof $proof): array => [$proof->kind, $proof->factor, $proof->purpose], $this->proofsOf($session));

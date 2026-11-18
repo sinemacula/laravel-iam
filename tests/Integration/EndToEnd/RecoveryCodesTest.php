@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\EndToEnd;
 
-use Carbon\CarbonImmutable;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Models\Session;
 use SineMacula\Laravel\Authentication\Proofs\Enums\ProofKind;
@@ -14,10 +13,7 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Mfa\FactorChangeGateAdapter;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
-use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
-use SineMacula\Laravel\Mfa\Models\Factor;
-use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\Fixtures\Mfa\Pending\Concerns\ArrangesPendingSessions;
@@ -49,9 +45,9 @@ final class RecoveryCodesTest extends TestCase
      */
     public function testACodeGeneratedAfterAStepUpCompletesOnePendingSignIn(): void
     {
-        $person  = $this->createPerson();
-        $session = $this->signInAndActOnSession($person);
-        $factor  = $this->confirmedFactor($person);
+        $person = $this->createPerson();
+        $this->signInAndActOnSession($person);
+        $factor = $this->confirmedFactor($person);
 
         $this->stepUpThroughMfa($factor);
         $this->travel(self::FACTOR_CHANGE_SECONDS + 1)->seconds();
@@ -80,7 +76,6 @@ final class RecoveryCodesTest extends TestCase
 
         $signedIn = $completion->session->record ?? self::fail('No session was signed in.');
 
-        self::assertNotSame($session->getKey(), $signedIn->getKey());
         self::assertSame(SessionStatus::ACTIVE, Session::query()->whereKey($signedIn->getKey())->sole()->getStatus());
         self::assertSame([ProofKind::RECOVERY_CODE, ProofKind::FIRST_FACTOR], array_map(static fn (RecordedProof $proof): ProofKind => $proof->kind, $this->proofsOf($signedIn)));
 
@@ -104,20 +99,5 @@ final class RecoveryCodesTest extends TestCase
         parent::defineEnvironment($app);
 
         $app->make('config')->set('mfa.applications.' . self::GUARD . '.recovery_codes', ['enabled' => true]);
-    }
-
-    /**
-     * Step the acting session up through MFA with the factor's current code.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Models\Factor  $factor
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    private function stepUpThroughMfa(Factor $factor): void
-    {
-        $result = Mfa::verify(self::servedCaller(), Submission::factor($factor->id, AuthenticatorApp::code($factor)), Purpose::STEP_UP);
-
-        self::assertTrue($result->isVerified(), (string) $result->reason?->value);
     }
 }

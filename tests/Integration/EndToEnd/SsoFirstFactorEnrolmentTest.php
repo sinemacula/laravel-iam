@@ -31,8 +31,7 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of a first factor enrolled by a person who signed in
- * through SSO.
+ * End-to-end tests of a first factor enrolled after an SSO sign-in.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited

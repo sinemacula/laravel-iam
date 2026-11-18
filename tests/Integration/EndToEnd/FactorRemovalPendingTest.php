@@ -16,15 +16,12 @@ use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Iam\Mfa\PendingCompletionAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
-use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
-use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
-use SineMacula\Laravel\Mfa\Models\Factor;
-use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
 use Tests\Fixtures\Mfa\Pending\Concerns\ArrangesPendingSessions;
+use Tests\Fixtures\Mfa\RequiresARecentFurtherFactor;
 use Tests\TestCase;
 
 /**
@@ -56,7 +53,7 @@ final class FactorRemovalPendingTest extends TestCase
      */
     public function testTheKeptFactorReactivatesTheSessionARemovalLeftPending(): void
     {
-        $this->requireARecentFurtherFactor();
+        $this->app?->instance(IdentityRequirement::class, new RequiresARecentFurtherFactor(self::MAX_AGE));
 
         $person   = $this->createPerson();
         $signedIn = $this->signIn($person);
@@ -100,16 +97,6 @@ final class FactorRemovalPendingTest extends TestCase
     }
 
     /**
-     * How old a further factor may be, in seconds.
-     *
-     * @return int
-     */
-    public static function maxAge(): int
-    {
-        return self::MAX_AGE;
-    }
-
-    /**
      * Define the route the guard and MFA's gate both guard.
      *
      * @param  mixed  $router
@@ -122,44 +109,6 @@ final class FactorRemovalPendingTest extends TestCase
 
         $router->get(self::GATED_ROUTE, static fn (): JsonResponse => new JsonResponse(['reached' => true]))
             ->middleware(['auth:' . self::GUARD, 'mfa']);
-    }
-
-    /**
-     * Have MFA ask an identity holding a factor for a recent further factor.
-     *
-     * @return void
-     */
-    private function requireARecentFurtherFactor(): void
-    {
-        $this->app?->instance(IdentityRequirement::class, new class implements IdentityRequirement {
-            /**
-             * Ask an identity holding a factor for a recent further factor.
-             *
-             * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-             * @param  string  $application
-             * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
-             */
-            #[\Override]
-            public function requirementFor(MultiFactorAuthenticatable $identity, string $application): Requirement
-            {
-                return $identity->isMfaEnabled() ? Requirement::none()->withAdditionalVerification(FactorRemovalPendingTest::maxAge()) : Requirement::none();
-            }
-        });
-    }
-
-    /**
-     * Step the acting session up through MFA with the factor's current code.
-     *
-     * @param  \SineMacula\Laravel\Mfa\Models\Factor  $factor
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    private function stepUpThroughMfa(Factor $factor): void
-    {
-        $result = Mfa::verify(self::servedCaller(), Submission::factor($factor->id, AuthenticatorApp::code($factor)), Purpose::STEP_UP);
-
-        self::assertTrue($result->isVerified(), (string) $result->reason?->value);
     }
 
     /**
