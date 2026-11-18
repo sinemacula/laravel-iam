@@ -91,6 +91,22 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
+     * A grant where the subject acts does not reach an object in another tenant.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAGrantWhereTheSubjectActsDoesNotReachAnotherTenantsObject(): void
+    {
+        $staff = $this->administrator(AdministrativeOperation::SSO_CONNECTION_TRUST->value, new Reference(Organisation::TYPE, self::TENANT));
+
+        $this->expectException(AuthorizationException::class);
+
+        $this->check()->authorize(self::actingIn($staff, self::TENANT), AdministrativeOperation::SSO_CONNECTION_TRUST, 'sso_connection', 'connection-2', self::OTHER);
+    }
+
+    /**
      * A denial throws before the operation and is recorded once.
      *
      * @return void
