@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\EndToEnd;
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
@@ -11,7 +12,6 @@ use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\Authentication\AuthManager;
-use SineMacula\Laravel\Authentication\Codes\Enums\CodePurpose;
 use SineMacula\Laravel\Authentication\Facades\Auth;
 use SineMacula\Laravel\Authentication\Secrets\SecretResponse;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
@@ -31,8 +31,8 @@ use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
 /**
- * End-to-end tests of the example application's pending routes, laid out as
- * its guide lays them out, with every adapter of this package's bound.
+ * End-to-end tests of the example application's pending routes, laid out as its
+ * guide lays them out, with every adapter of this package's bound.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
@@ -87,18 +87,20 @@ final class ExamplePendingRoutesTest extends TestCase
         $factor     = $this->deliveredFactor($person, 'email');
         $credential = $this->signInPending($person);
 
-        $verified = $this->complete($credential, (string) $factor->id, $person->email);
+        $verified = $this->complete($credential, $factor->id, $person->email);
 
         $verified->assertHeader('Cache-Control', 'no-store, private');
 
-        $token = (string) $verified->json('access_token');
+        $token = $verified->json('access_token');
+
+        self::assertIsString($token);
 
         $this->send(self::PROFILE, [], $token)->assertOk()->assertExactJson(['id' => $person->getKey()]);
     }
 
     /**
-     * The pending credential never reaches the caller's own routes, as a bearer
-     * token or in the body, before the sign-in completes or after.
+     * The pending credential is refused as a bearer token on the caller's own
+     * routes before the sign-in completes and after.
      *
      * @param  ?string  $level
      * @return void
@@ -114,13 +116,11 @@ final class ExamplePendingRoutesTest extends TestCase
         $factor     = $this->deliveredFactor($person, 'email');
         $credential = $this->signInPending($person);
 
-        $this->send(self::PROFILE, [], $credential)->assertUnauthorized();
-        $this->send(self::PROFILE, ['pending_credential' => $credential])->assertUnauthorized();
+        $this->assertUnauthenticated($this->send(self::PROFILE, [], $credential));
 
-        $this->complete($credential, (string) $factor->id, $person->email);
+        $this->complete($credential, $factor->id, $person->email);
 
-        $this->send(self::PROFILE, [], $credential)->assertUnauthorized();
-        $this->send(self::PROFILE, ['pending_credential' => $credential])->assertUnauthorized();
+        $this->assertUnauthenticated($this->send(self::PROFILE, [], $credential));
     }
 
     /**
@@ -142,7 +142,7 @@ final class ExamplePendingRoutesTest extends TestCase
         $factor     = $this->deliveredFactor($person, 'email');
         $credential = $this->signInPending($person);
 
-        $this->complete($credential, (string) $factor->id, $person->email);
+        $this->complete($credential, $factor->id, $person->email);
 
         $sent = $this->send(self::CODES, ['pending_credential' => $credential, 'factor' => $factor->id]);
 
@@ -234,7 +234,11 @@ final class ExamplePendingRoutesTest extends TestCase
 
         $signIn->assertOk()->assertJsonPath('status', 'pending')->assertJsonMissingPath('access_token');
 
-        return (string) $signIn->json('pending_credential');
+        $credential = $signIn->json('pending_credential');
+
+        self::assertIsString($credential);
+
+        return $credential;
     }
 
     /**
@@ -252,14 +256,29 @@ final class ExamplePendingRoutesTest extends TestCase
     {
         $sent = $this->send(self::CODES, ['pending_credential' => $credential, 'factor' => $factor]);
 
-        $sent->assertOk();
+        $challenge = $sent->assertOk()->json('challenge');
+
+        self::assertIsString($challenge);
 
         return $this->send(self::VERIFICATIONS, [
             'pending_credential' => $credential,
             'factor'             => $factor,
-            'challenge'          => (string) $sent->json('challenge'),
+            'challenge'          => $challenge,
             'code'               => $this->deliveredCodeTo($destination),
         ])->assertOk();
+    }
+
+    /**
+     * Assert the request was refused by authentication, not by MFA's step-up.
+     *
+     * @param  \Illuminate\Testing\TestResponse<\Symfony\Component\HttpFoundation\Response>  $response
+     * @return void
+     */
+    private function assertUnauthenticated(TestResponse $response): void
+    {
+        $response->assertUnauthorized();
+
+        self::assertInstanceOf(AuthenticationException::class, $response->exception);
     }
 
     /**
