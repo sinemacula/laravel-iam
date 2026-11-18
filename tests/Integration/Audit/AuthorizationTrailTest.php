@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Laravel\AuditLog\AuditLogServiceProvider;
 use SineMacula\Laravel\AuditLog\Facades\AuditLog;
+use SineMacula\Laravel\AuditLog\Querying\TrailEntry;
 use SineMacula\Laravel\Authentication\AuthenticationServiceProvider;
 use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authorization\AuthorizationServiceProvider;
@@ -104,6 +105,31 @@ final class AuthorizationTrailTest extends TestCase
 
         self::assertSame(2, AuditLog::trail()->forEvent(self::VIEWED)->visibleTo($viewer)->count());
         self::assertSame(0, AuditLog::trail()->forEvent(self::VIEWED)->visibleTo($nobody)->count());
+    }
+
+    /**
+     * A tenant read only for own activity shows no one else's activity.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testATenantReadOnlyForOwnActivityShowsNoOneElses(): void
+    {
+        $viewer = Staff::query()->create(['name' => 'Ada Lovelace', 'email' => 'ada@example.test']);
+        $other  = Staff::query()->create(['name' => 'Grace Hopper', 'email' => 'grace@example.test']);
+
+        $viewer->givePermission('audit-log.read', tenant: new Reference(Organisation::TYPE, 'org-1'));
+        $viewer->givePermission('audit-log.read.own', tenant: new Reference(Organisation::TYPE, 'org-2'));
+
+        foreach ([[$other, 'org-1'], [$other, 'org-2'], [$viewer, 'org-2']] as [$actor, $tenantId]) {
+            AuditLog::event(self::VIEWED)->by($actor)->forTenant(References::tenant($tenantId))->record();
+        }
+
+        $entries = AuditLog::trail()->forEvent(self::VIEWED)->visibleTo($viewer)->cursorPaginate()->entries;
+        $shown   = array_map(static fn (TrailEntry $entry): array => [$entry->actor?->id, $entry->tenant?->id], $entries);
+
+        self::assertSame([[(string) $other->id, 'org-1']], $shown);
     }
 
     /**
