@@ -33,10 +33,13 @@ use SineMacula\Laravel\Mfa\Contracts\SessionRevoker;
 use SineMacula\Laravel\Mfa\Contracts\SessionTransition;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enums\FactorStatus;
+use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
+use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Factors\FactorSummary;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
+use SineMacula\Laravel\Mfa\Verification\Submission;
 use Tests\Fixtures\Models\Person;
 
 /**
@@ -94,6 +97,21 @@ trait ArrangesFactorChanges
             CarbonImmutable::now(),
             new ProofBinding($person, self::GUARD, $session->getSessionIdentifier(), Purpose::STEP_UP),
         ), self::client());
+    }
+
+    /**
+     * Step the acting session up through MFA with the factor's current code.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Models\Factor  $factor
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function stepUpThroughMfa(Factor $factor): void
+    {
+        $result = Mfa::verify(self::servedCaller(), Submission::factor($factor->id, AuthenticatorApp::code($factor)), MfaPurpose::STEP_UP);
+
+        self::assertTrue($result->isVerified(), (string) $result->reason?->value);
     }
 
     /**

@@ -13,17 +13,16 @@ use SineMacula\Laravel\Iam\Mfa\ProofStoreAdapter;
 use SineMacula\Laravel\Iam\Mfa\SessionRevokerAdapter;
 use SineMacula\Laravel\Iam\Mfa\SignInProofs;
 use SineMacula\Laravel\Mfa\Contracts\IdentityRequirement;
-use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\RequirementPart;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Lifecycle\FactorRemovalResult;
 use SineMacula\Laravel\Mfa\Models\Factor;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
-use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use Tests\Concerns\MigratesMembers;
 use Tests\Concerns\RunsAtIsolationLevels;
 use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
+use Tests\Fixtures\Mfa\RequiresARecentFurtherFactor;
 use Tests\Fixtures\Models\Person;
 use Tests\TestCase;
 
@@ -44,16 +43,6 @@ final class FactorRemovalTest extends TestCase
 
     /** @var int How old a further factor may be for the identity's requirement, in seconds. */
     private const int MAX_AGE = 300;
-
-    /**
-     * How old a further factor may be, in seconds.
-     *
-     * @return int
-     */
-    public static function maxAge(): int
-    {
-        return self::MAX_AGE;
-    }
 
     /**
      * Rows of `[seconds between the two step-ups, whether the session is left short of its requirement]`.
@@ -138,7 +127,7 @@ final class FactorRemovalTest extends TestCase
      */
     private function removeAfterSteppingUp(int $gap): array
     {
-        $this->requireARecentFurtherFactor();
+        $this->app?->instance(IdentityRequirement::class, new RequiresARecentFurtherFactor(self::MAX_AGE));
 
         $person  = $this->createPerson();
         $session = $this->signInAndActOnSession($person);
@@ -153,29 +142,6 @@ final class FactorRemovalTest extends TestCase
         $this->stepUpWith($person, $session, $removed->id);
 
         return [$session, $removed, Mfa::removeFactor(self::servedCaller(), $removed->id)];
-    }
-
-    /**
-     * Have MFA ask for a further factor made within `MAX_AGE`.
-     *
-     * @return void
-     */
-    private function requireARecentFurtherFactor(): void
-    {
-        $this->app?->instance(IdentityRequirement::class, new class implements IdentityRequirement {
-            /**
-             * Ask an identity holding a factor for a recent further factor.
-             *
-             * @param  \SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable  $identity
-             * @param  string  $application
-             * @return \SineMacula\Laravel\Mfa\Requirements\Requirement
-             */
-            #[\Override]
-            public function requirementFor(MultiFactorAuthenticatable $identity, string $application): Requirement
-            {
-                return $identity->isMfaEnabled() ? Requirement::none()->withAdditionalVerification(FactorRemovalTest::maxAge()) : Requirement::none();
-            }
-        });
     }
 
     /**
