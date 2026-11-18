@@ -5,11 +5,10 @@ declare(strict_types = 1);
 namespace Tests\Integration\EndToEnd;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Debug\ExceptionHandler;
-use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\AuthManager;
@@ -63,19 +62,13 @@ final class StepUpRefreshTest extends TestCase
      * Render MFA's step-up exception as its RFC 9470 challenge.
      *
      * @return void
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     #[\Override]
     protected function setUp(): void
     {
         parent::setUp();
 
-        $handler = $this->app?->make(ExceptionHandler::class);
-
-        assert($handler instanceof Handler);
-
-        $handler->renderable(static fn (StepUp $exception): JsonResponse => new JsonResponse($exception->toArray(), 401, ['WWW-Authenticate' => $exception->wwwAuthenticate()]));
+        Exceptions::renderable(static fn (StepUp $exception): JsonResponse => new JsonResponse($exception->toArray(), 401, ['WWW-Authenticate' => $exception->wwwAuthenticate()]));
     }
 
     /**
@@ -90,6 +83,7 @@ final class StepUpRefreshTest extends TestCase
         $member   = $this->member();
         $signedIn = $this->signIn($member);
         $factor   = $this->confirmedFactor($member);
+        $other    = $this->confirmedFactor($member);
         $token    = $signedIn->tokens->accessToken->reveal();
 
         $this->request('GET', '/aal2', $token)->assertUnauthorized()->assertJsonPath('error', StepUp::ERROR);
@@ -108,7 +102,10 @@ final class StepUpRefreshTest extends TestCase
         // A factor never authorises its own removal, so step up with another.
         $this->stepUpWithAnEmailCode($member, $signedIn);
 
+        $this->request('POST', '/remove', $refreshed, ['factor' => $other->getKey()])->assertOk()->assertExactJson(['refusal' => null]);
+
         $this->request('GET', '/aal2', $refreshed)->assertOk();
+        $this->request('POST', '/refund', $refreshed)->assertOk();
         $this->request('POST', '/remove', $refreshed, ['factor' => $factor->getKey()])->assertOk()->assertExactJson(['refusal' => null]);
 
         $this->request('GET', '/aal2', $refreshed)->assertUnauthorized()->assertJsonPath('error', StepUp::ERROR);
@@ -225,9 +222,9 @@ final class StepUpRefreshTest extends TestCase
         $presented = PresentedRefreshToken::fromBody($signedIn->tokens->refreshToken ?? self::fail('The session has no refresh token.'));
         $result    = $this->auth()->sessions(self::GUARD)->refresh($presented, self::client());
 
-        self::assertTrue($result?->isRefreshed() ?? false, (string) $result?->reason?->value);
+        self::assertTrue($result->isRefreshed(), (string) $result->reason?->value);
 
-        return $result?->session?->tokens->accessToken->reveal() ?? self::fail('The refresh issued no access token.');
+        return $result->session?->tokens->accessToken->reveal() ?? self::fail('The refresh issued no access token.');
     }
 
     /**

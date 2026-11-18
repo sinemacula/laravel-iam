@@ -19,6 +19,7 @@ use SineMacula\Laravel\Authentication\Events\Enums\FailureReason;
 use SineMacula\Laravel\Authentication\Http\PresentedRefreshToken;
 use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
+use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Sessions\SwitchResult;
 use SineMacula\Laravel\Authentication\Sessions\SwitchTarget;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
@@ -60,6 +61,9 @@ final class TenantSwitchTest extends TestCase
 
     /** @var string A tenant that requires sign-in through its connection. */
     private const string SSO_TENANT = 'tenant-3';
+
+    /** @var string A tenant that asks for nothing further. */
+    private const string OPEN_TENANT = 'tenant-4';
 
     /** @var ?\Tests\Fixtures\Tenancy\ScriptedTenantRequirement MFA's tenant requirement. */
     private ?ScriptedTenantRequirement $requirements = null;
@@ -110,15 +114,19 @@ final class TenantSwitchTest extends TestCase
         $credential = $switched->credential?->reveal() ?? self::fail('The pending switch carries no credential.');
         $request    = Request::create('/mfa/verify', 'POST', ['pending_credential' => $credential]);
         $result     = Mfa::verify(CallerContext::fromRequest($request), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
+        $completion = $result->completion();
 
         self::assertTrue($result->isVerified());
+        self::assertInstanceOf(SignInResult::class, $completion);
+        self::assertTrue($completion->isSignedIn(), (string) $completion->reason?->value);
         self::assertSame('active', $this->stored($signedIn)->status);
         self::assertSame(self::FACTOR_TENANT, $this->stored($signedIn)->tenant_id);
+        self::assertSame(self::FACTOR_TENANT, $completion->session?->record->getTenantId());
     }
 
     /**
      * A password session cannot switch into a tenant that enforces SSO, and
-     * stays in its own tenant.
+     * still acts in its own tenant.
      *
      * @return void
      *
@@ -134,7 +142,12 @@ final class TenantSwitchTest extends TestCase
         self::assertTrue($switched->isFailed());
         self::assertSame(FailureReason::SSO_REQUIRED, $switched->reason);
         self::assertNull($switched->session);
+        self::assertSame('active', $this->stored($signedIn)->status);
         self::assertSame(self::TENANT, $this->stored($signedIn)->tenant_id);
+
+        $this->request('/tenants', $signedIn->tokens->accessToken->reveal())
+            ->assertOk()
+            ->assertExactJson(['authorization' => self::TENANT, 'mfa' => self::TENANT]);
     }
 
     /**
@@ -146,25 +159,23 @@ final class TenantSwitchTest extends TestCase
      */
     public function testAnAllowedSwitchMovesAuthorizationAndMfaToTheNewTenant(): void
     {
-        $this->enforceSsoIn(self::SSO_TENANT);
-
         $signedIn = $this->signInTo($this->createPerson(), self::TENANT);
 
         $this->request('/tenants', $signedIn->tokens->accessToken->reveal())
             ->assertOk()
             ->assertExactJson(['authorization' => self::TENANT, 'mfa' => self::TENANT]);
 
-        $switched = $this->switchTo($signedIn, self::FACTOR_TENANT);
+        $switched = $this->switchTo($signedIn, self::OPEN_TENANT);
 
         self::assertTrue($switched->isSwitched(), (string) $switched->reason?->value);
+        self::assertContains(['tenant' => self::OPEN_TENANT, 'application' => self::GUARD], $this->requirements()->asked());
 
         $token = $switched->session?->tokens->accessToken->reveal() ?? self::fail('The switch issued no access token.');
 
         $this->request('/tenants', $token)
             ->assertOk()
-            ->assertExactJson(['authorization' => self::FACTOR_TENANT, 'mfa' => self::FACTOR_TENANT]);
-        self::assertSame(self::FACTOR_TENANT, $this->stored($signedIn)->tenant_id);
-        self::assertContains(['tenant' => self::FACTOR_TENANT, 'application' => self::GUARD], $this->requirements()->asked());
+            ->assertExactJson(['authorization' => self::OPEN_TENANT, 'mfa' => self::OPEN_TENANT]);
+        self::assertSame(self::OPEN_TENANT, $this->stored($signedIn)->tenant_id);
     }
 
     /**

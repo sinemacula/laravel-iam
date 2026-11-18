@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Integration\Tenancy;
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -17,6 +16,7 @@ use SineMacula\Laravel\Authentication\Http\PresentedRefreshToken;
 use SineMacula\Laravel\Authentication\Sessions\RefreshResult;
 use SineMacula\Laravel\Authentication\Sessions\SignedInSession;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
+use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authentication\Tenancy\TenantSelection;
 use SineMacula\Laravel\Iam\Tenancy\TenantAuthenticationPolicyAdapter;
 use SineMacula\Laravel\Iam\Tenancy\TenantPolicyVersion;
@@ -26,9 +26,8 @@ use SineMacula\Laravel\Mfa\Requirements\Requirement;
 use SineMacula\Laravel\Mfa\Testing\AuthenticatorApp;
 use SineMacula\Laravel\Mfa\Verification\Submission;
 use SineMacula\Laravel\Sso\Contracts\Enforcement;
-use Tests\Concerns\MigratesMembers;
-use Tests\Concerns\SignsInPeople;
 use Tests\Fixtures\Mfa\FactorChanges\Concerns\ArrangesFactorChanges;
+use Tests\Fixtures\Mfa\Pending\Concerns\ArrangesPendingSessions;
 use Tests\Fixtures\Models\Person;
 use Tests\Fixtures\Resolvers\ClaimedTenant;
 use Tests\Fixtures\Resolvers\OpenTenancy;
@@ -49,7 +48,7 @@ use Tests\TestCase;
 #[CoversClass(TenantPolicyVersion::class)]
 final class TenantPolicyRefreshTest extends TestCase
 {
-    use ArrangesFactorChanges, MigratesMembers, SignsInPeople;
+    use ArrangesFactorChanges, ArrangesPendingSessions;
 
     /** @var string The tenant the session acts in. */
     private const string TENANT = 'tenant-1';
@@ -104,11 +103,14 @@ final class TenantPolicyRefreshTest extends TestCase
         self::assertSame('pending', $this->stored($signedIn)->status);
 
         $credential = $pending->credential?->reveal() ?? self::fail('The pending refresh carries no credential.');
-        $request    = Request::create('/mfa/verify', 'POST', ['pending_credential' => $credential]);
-        $result     = Mfa::verify(CallerContext::fromRequest($request), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
+        $result     = Mfa::verify(CallerContext::fromRequest(self::requestCarrying($credential)), Submission::factor($factor->getKey(), AuthenticatorApp::code($factor)));
+        $completion = $result->completion();
         $current    = $this->currentVersionFor($person);
 
         self::assertTrue($result->isVerified());
+        self::assertInstanceOf(SignInResult::class, $completion);
+        self::assertTrue($completion->isSignedIn(), (string) $completion->reason?->value);
+        self::assertSame(self::TENANT, $completion->session?->record->getTenantId());
         self::assertSame('active', $this->stored($signedIn)->status);
         self::assertNotSame($before, $current);
         self::assertSame($current, $this->stored($signedIn)->tenant_policy_version);
@@ -166,7 +168,7 @@ final class TenantPolicyRefreshTest extends TestCase
     {
         $presented = PresentedRefreshToken::fromBody($signedIn->tokens->refreshToken ?? self::fail('The session has no refresh token.'));
 
-        return $this->sessions()->refresh($presented, self::client()) ?? self::fail('No refresh token was presented.');
+        return $this->sessions()->refresh($presented, self::client());
     }
 
     /**
