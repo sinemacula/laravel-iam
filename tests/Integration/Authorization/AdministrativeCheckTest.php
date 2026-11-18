@@ -91,7 +91,7 @@ final class AdministrativeCheckTest extends TestCase
     }
 
     /**
-     * A grant where the subject acts does not reach an object in another tenant.
+     * A grant where the subject acts does not reach another tenant's object.
      *
      * @return void
      *
@@ -100,10 +100,13 @@ final class AdministrativeCheckTest extends TestCase
     public function testAGrantWhereTheSubjectActsDoesNotReachAnotherTenantsObject(): void
     {
         $staff = $this->administrator(AdministrativeOperation::SSO_CONNECTION_TRUST->value, new Reference(Organisation::TYPE, self::TENANT));
+        $check = $this->check();
+
+        $check->authorize(self::actingIn($staff, self::TENANT), AdministrativeOperation::SSO_CONNECTION_TRUST, 'sso_connection', 'connection-1', self::TENANT);
 
         $this->expectException(AuthorizationException::class);
 
-        $this->check()->authorize(self::actingIn($staff, self::TENANT), AdministrativeOperation::SSO_CONNECTION_TRUST, 'sso_connection', 'connection-2', self::OTHER);
+        $check->authorize(self::actingIn($staff, self::TENANT), AdministrativeOperation::SSO_CONNECTION_TRUST, 'sso_connection', 'connection-2', self::OTHER);
     }
 
     /**

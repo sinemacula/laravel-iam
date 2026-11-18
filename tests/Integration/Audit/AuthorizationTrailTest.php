@@ -129,7 +129,7 @@ final class AuthorizationTrailTest extends TestCase
         $entries = AuditLog::trail()->forEvent(self::VIEWED)->visibleTo($viewer)->cursorPaginate()->entries;
         $shown   = array_map(static fn (TrailEntry $entry): array => [$entry->actor?->id, $entry->tenant?->id], $entries);
 
-        self::assertSame([[(string) $other->getKey(), 'org-1']], $shown);
+        self::assertSame([[(string) $other->id, 'org-1']], $shown);
     }
 
     /**

@@ -396,12 +396,18 @@ final class AuditAccessPolicyAdapterTest extends TestCase
      */
     public function testAGrantSeenInMoreTenantsThanAScopeHoldsRefusesTheRead(): void
     {
-        $viewer = $this->viewer('audit-log.read');
+        $viewer = $this->viewer();
 
-        $this->member($viewer, ...array_map(static fn (int $tenant): string => 'org-' . $tenant, range(1, AccessScope::MAX_TENANTS + 1)));
+        foreach (range(1, AccessScope::MAX_TENANTS) as $tenant) {
+            $this->grant($viewer, 'audit-log.read', 'org-' . $tenant);
+        }
+
+        self::assertCount(AccessScope::MAX_TENANTS, self::tenants(self::scope($viewer)));
+
+        $this->grant($viewer, 'audit-log.read', 'org-' . (AccessScope::MAX_TENANTS + 1));
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('An access scope holds at most 100 tenants.');
+        $this->expectExceptionMessage(sprintf('An access scope holds at most %d tenants.', AccessScope::MAX_TENANTS));
 
         self::scope($viewer);
     }
