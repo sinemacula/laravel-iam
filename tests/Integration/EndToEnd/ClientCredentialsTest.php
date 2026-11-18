@@ -69,7 +69,7 @@ final class ClientCredentialsTest extends TestCase
     {
         parent::setUp();
 
-        $handler = $this->app?->make(ExceptionHandler::class);
+        $handler = $this->resolved(ExceptionHandler::class);
 
         assert($handler instanceof Handler);
 
@@ -113,7 +113,17 @@ final class ClientCredentialsTest extends TestCase
                 'gate'    => ['reports:read' => true, 'reports:export' => false, 'reports:delete' => false],
             ]);
 
-        $this->request('DELETE', '/reports', $token)->assertForbidden();
+        $denied = static fn (AuditRecord $record): bool => $record->event === 'authorization.access_denied';
+        $before = count($fake->recorded($denied));
+
+        $this->request('DELETE', '/reports', $token)
+            ->assertForbidden()
+            ->assertHeaderMissing('WWW-Authenticate');
+
+        $denials = $fake->recorded($denied);
+
+        self::assertCount($before + 1, $denials);
+        self::assertSame('insufficient_authentication', $denials[$before]->reason);
 
         $records = $fake->recorded(static fn (AuditRecord $record): bool => $record->event === 'authentication.client_credentials_granted');
 
@@ -236,5 +246,19 @@ final class ClientCredentialsTest extends TestCase
         $auth->forgetGuardState();
 
         return $this->withToken($token)->json($method, $uri);
+    }
+
+    /**
+     * Resolve the abstract from the application under test, as anything that
+     * asks for it does.
+     *
+     * @param  string  $abstract
+     * @return mixed
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    private function resolved(string $abstract): mixed
+    {
+        return $this->app?->make($abstract);
     }
 }

@@ -112,10 +112,10 @@ final class ApiKeyLifecycleTest extends TestCase
             [self::VIEWED, 'success', null, ...$used, $first['id'], self::KEYS, null],
             ['authentication.api_key_rotated', 'success', null, ...$caller, ['scopes' => $scopes, 'previous_key_id' => $first['id'], 'key_id' => $second['id'], ...$owner]],
             [self::VIEWED, 'success', null, ...$used, $first['id'], self::KEYS, null],
-            ['authentication.api_key_rejected', 'failure', 'credential_expired', null, null, $first['id'], self::KEYS, ['method' => 'api_key']],
+            ['authentication.api_key_rejected', 'failure', 'credential_expired', [null, null], [null, null], $first['id'], self::KEYS, ['method' => 'api_key']],
             [self::VIEWED, 'success', null, ...$used, $second['id'], self::KEYS, null],
             ['authentication.api_key_revoked', 'success', null, ...$caller, ['scopes' => $scopes, 'key_id' => $second['id'], ...$owner]],
-            ['authentication.api_key_rejected', 'failure', 'credential_revoked', null, null, $second['id'], self::KEYS, ['method' => 'api_key']],
+            ['authentication.api_key_rejected', 'failure', 'credential_revoked', [null, null], [null, null], $second['id'], self::KEYS, ['method' => 'api_key']],
         ], self::sequence($fake));
     }
 
@@ -221,7 +221,7 @@ final class ApiKeyLifecycleTest extends TestCase
     /**
      * A model's type and key, as a record names it.
      *
-     * @param  \Tests\Fixtures\Models\Person|\Tests\Fixtures\Authorization\ServiceAccount  $model
+     * @param  \Tests\Fixtures\Authorization\ServiceAccount|\Tests\Fixtures\Models\Person  $model
      * @return list<string>
      */
     private static function pair(Person|ServiceAccount $model): array
@@ -242,8 +242,8 @@ final class ApiKeyLifecycleTest extends TestCase
             $record->event,
             $record->outcome,
             $record->reason,
-            $record->actorId === null ? null : [$record->actorType, $record->actorId],
-            $record->principalId === null ? null : [$record->principalType, $record->principalId],
+            [$record->actorType, $record->actorId],
+            [$record->principalType, $record->principalId],
             $record->credentialId,
             $record->guard,
             $record->properties,
