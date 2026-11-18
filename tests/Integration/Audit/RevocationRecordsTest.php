@@ -34,6 +34,7 @@ use Tests\TestCase;
 /**
  * Integration tests for the records left when another member ends sessions.
  *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
@@ -64,7 +65,8 @@ final class RevocationRecordsTest extends TestCase
     }
 
     /**
-     * A disabled connection records each session it ends, by no one.
+     * A disabled connection records each session it ends, by the caller who
+     * disabled it.
      *
      * @return void
      *
@@ -76,15 +78,17 @@ final class RevocationRecordsTest extends TestCase
 
         $person   = $this->createPerson();
         $sessions = [$this->inTenant($this->signInThrough($person, $this->connectionId)), $this->inTenant($this->signInThrough($person, $this->connectionId, 'link-2'))];
+        $operator = $this->actAsOperator();
         $fake     = AuditLog::fake();
 
         self::assertTrue($this->app?->make(ConnectionLifecycle::class)->disable(self::TENANT, $this->connectionId, self::ssoClient())->isSucceeded());
 
-        self::assertSame(self::expected($sessions, 'connection_disabled', $person, null), self::revocations($fake));
+        self::assertSame(self::expected($sessions, 'connection_disabled', $person, $operator), self::revocations($fake));
     }
 
     /**
-     * A tenant's new sign-in rule records each session it ends, by no one.
+     * A tenant's new sign-in rule records each session it ends, by the caller
+     * who changed it.
      *
      * @return void
      *
@@ -100,15 +104,12 @@ final class RevocationRecordsTest extends TestCase
 
         $person   = $this->createPerson();
         $sessions = [$this->inTenant($this->signIn($person)->record), $this->inTenant($this->signIn($person)->record)];
+        $operator = $this->actAsOperator();
         $fake     = AuditLog::fake();
-
-        // The sign-ins leave the person on the guard; no one makes the change.
-        $this->app?->make('auth')->forgetGuards();
-
-        $result = $this->app?->make(EnforcementService::class)->update(self::TENANT, true, [$this->connectionId], self::ssoClient());
+        $result   = $this->app?->make(EnforcementService::class)->update(self::TENANT, true, [$this->connectionId], self::ssoClient());
 
         self::assertTrue($result?->isChanged());
-        self::assertSame(self::expected($sessions, 'tenant_policy_changed', $person, null), self::revocations($fake));
+        self::assertSame(self::expected($sessions, 'tenant_policy_changed', $person, $operator), self::revocations($fake));
     }
 
     /**
@@ -147,14 +148,9 @@ final class RevocationRecordsTest extends TestCase
     public function testAnOperatorsResetRecordsEachSessionItEnds(): void
     {
         $person   = $this->createPerson();
-        $operator = $this->createPerson('operator@example.test');
         $sessions = [$this->inTenant($this->signIn($person)->record), $this->inTenant($this->signIn($person)->record)];
+        $operator = $this->actAsOperator();
 
-        $acting = $this->signIn($operator)->record;
-
-        $acting->forceFill([$acting->getTenantIdName() => 'tenant-2'])->save();
-
-        $this->actingOnSession($acting, self::GUARD);
         $this->confirmedFactor($person);
 
         $fake = AuditLog::fake();
@@ -162,6 +158,25 @@ final class RevocationRecordsTest extends TestCase
         Mfa::resetIdentity($person, Actor::of($operator), 'Lost the phone the factor was on.');
 
         self::assertSame(self::expected($sessions, 'factor_reset', $person, $operator), self::revocations($fake));
+    }
+
+    /**
+     * Sign an operator in to another tenant and act on its session.
+     *
+     * @return \Tests\Fixtures\Models\Person
+     *
+     * @throws \Throwable
+     */
+    private function actAsOperator(): Person
+    {
+        $operator = $this->createPerson('operator@example.test');
+        $session  = $this->signIn($operator)->record;
+
+        $session->forceFill([$session->getTenantIdName() => 'tenant-2'])->save();
+
+        $this->actingOnSession($session, self::GUARD);
+
+        return $operator;
     }
 
     /**
@@ -198,17 +213,17 @@ final class RevocationRecordsTest extends TestCase
 
     /**
      * What each session's revocation holds: the person's, in the tests' tenant,
-     * by the actor acting as itself, or by no one.
+     * by the actor acting as itself.
      *
      * @param  list<\Illuminate\Database\Eloquent\Model&\SineMacula\Laravel\Authentication\Contracts\EloquentSession>  $sessions
      * @param  string  $reason
      * @param  \Tests\Fixtures\Models\Person  $person
-     * @param  ?\Tests\Fixtures\Models\Person  $actor
+     * @param  \Tests\Fixtures\Models\Person  $actor
      * @return list<list<mixed>>
      */
-    private static function expected(array $sessions, string $reason, Person $person, ?Person $actor): array
+    private static function expected(array $sessions, string $reason, Person $person, Person $actor): array
     {
-        $by = $actor === null ? [null, null] : [Person::class, self::keyOf($actor)];
+        $by = [Person::class, self::keyOf($actor)];
 
         return array_map(static fn (Model $session): array => [
             self::keyOf($session),

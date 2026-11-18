@@ -36,6 +36,7 @@ use Tests\TestCase;
  * Integration test for the members' records of a session acting in a tenant,
  * read by that tenant's viewers.
  *
+ * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited
  *
  * @internal
@@ -128,8 +129,8 @@ final class TenantTrailTest extends TestCase
     }
 
     /**
-     * Sign a person in to the tenant and step the session up with a factor,
-     * and return the person's key.
+     * Sign a person in to the tenant, step the session up with a factor and
+     * return the person's key.
      *
      * @param  string  $tenant
      * @param  string  $email
