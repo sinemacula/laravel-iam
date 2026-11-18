@@ -8,17 +8,26 @@ use Illuminate\Auth\SessionGuard;
 use Illuminate\Support\Facades\Auth;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Laravel\Authentication\Contracts\ApplicationAccess;
+use SineMacula\Laravel\Authentication\Contracts\Identity;
+use SineMacula\Laravel\Authentication\Contracts\Principal;
+use SineMacula\Laravel\Authentication\Contracts\PrincipalResolver;
+use SineMacula\Laravel\Authentication\Contracts\TenantResolver;
 use SineMacula\Laravel\Authentication\Events\Enums\FailureReason;
 use SineMacula\Laravel\Authentication\Http\ClientContext;
 use SineMacula\Laravel\Authentication\Http\PresentedRefreshToken;
 use SineMacula\Laravel\Authentication\Sessions\SignInContext;
 use SineMacula\Laravel\Authentication\Sessions\SignInResult;
 use SineMacula\Laravel\Authorization\Models\Permission;
+use SineMacula\Laravel\Authorization\Support\AuthorizationScope;
+use SineMacula\Laravel\Authorization\Support\Reference;
 use SineMacula\Laravel\Iam\Authorization\AccessMandates;
 use SineMacula\Laravel\Iam\Authorization\ApplicationAccessAdapter;
 use Tests\Concerns\MigratesAuthorization;
 use Tests\Fixtures\Authorization\Enums\ReportPermission;
+use Tests\Fixtures\Authorization\GrantedSeat;
 use Tests\Fixtures\Authorization\Member;
+use Tests\Fixtures\Authorization\Organisation;
+use Tests\Fixtures\Authorization\OrganisationTenancy;
 use Tests\Fixtures\Authorization\Seat;
 use Tests\Fixtures\Authorization\ServiceAccount;
 use Tests\Fixtures\Authorization\Staff;
@@ -39,6 +48,12 @@ final class ApplicationAccessAdapterTest extends TestCase
 
     /** @var string The permission to use the application people sign in on. */
     private const string USE = 'api:use';
+
+    /** @var string The tenant a seat acts in. */
+    private const string OWN = 'org-1';
+
+    /** @var string Another tenant. */
+    private const string OTHER = 'org-2';
 
     /**
      * Sign members in on the people guard and declare the permission.
@@ -165,6 +180,50 @@ final class ApplicationAccessAdapterTest extends TestCase
         $staff->revokePermission(self::USE);
 
         self::assertFalse($this->access()->mayUse(self::GUARD, $seat));
+    }
+
+    /**
+     * A principal in a tenant is admitted only on a grant in its own tenant.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPrincipalInATenantIsAdmittedOnlyOnAGrantInItsOwnTenant(): void
+    {
+        $this->app?->singleton(TenantResolver::class, OrganisationTenancy::class);
+        $this->app?->instance(PrincipalResolver::class, new class implements PrincipalResolver {
+            /**
+             * The person's seat.
+             *
+             * @param  \SineMacula\Laravel\Authentication\Contracts\Identity  $identity
+             * @param  mixed  $hint
+             * @return ?\SineMacula\Laravel\Authentication\Contracts\Principal
+             */
+            #[\Override]
+            public function resolve(Identity $identity, mixed $hint = null): ?Principal
+            {
+                return GrantedSeat::query()->where('person_id', $identity->getAuthIdentifier())->first();
+            }
+        });
+
+        $member = $this->createMember();
+        $seat   = GrantedSeat::query()->create(['person_id' => $member->id, 'tenant_id' => self::OWN]);
+        $other  = AuthorizationScope::tenant(new Reference(Organisation::TYPE, self::OTHER));
+
+        $seat->givePermission(self::USE, tenant: new Reference(Organisation::TYPE, self::OTHER));
+
+        self::assertFalse($this->access()->mayUse(self::GUARD, $seat));
+        self::assertFalse($other->within(fn (): bool => $this->access()->mayUse(self::GUARD, $seat)));
+        self::assertSame(FailureReason::PRINCIPAL_INELIGIBLE, $this->attempt($member)->reason);
+
+        $seat->givePermission(self::USE, tenant: new Reference(Organisation::TYPE, self::OWN));
+
+        $signedIn = $this->attempt($member);
+
+        self::assertTrue($this->access()->mayUse(self::GUARD, $seat));
+        self::assertTrue($signedIn->isSignedIn());
+        self::assertSame([$seat->getPrincipalIdentifier(), self::OWN], [$signedIn->session?->record->getPrincipalId(), $signedIn->session?->record->getTenantId()]);
     }
 
     /**
