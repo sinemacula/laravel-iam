@@ -654,6 +654,32 @@ final class PendingSessionResolverAdapterTest extends TestCase
     }
 
     /**
+     * A request carrying a pending session's credential, for MFA's contract
+     * kit.
+     *
+     * @return \Illuminate\Http\Request
+     *
+     * @throws \Throwable
+     */
+    protected function requestWithPendingCredential(): Request
+    {
+        return self::requestCarrying($this->signInPending($this->createPerson()));
+    }
+
+    /**
+     * End the pending session by discarding it, for MFA's contract kit.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\PendingContext  $pending
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    protected function endPendingSession(PendingContext $pending): void
+    {
+        $this->sessions()->discard($pending->credential() ?? self::fail('The pending context carries no credential.'), self::client());
+    }
+
+    /**
      * The proof of a further factor verified now for the pending session.
      *
      * @param  \Tests\Fixtures\Models\Person  $person

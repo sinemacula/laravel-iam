@@ -34,6 +34,9 @@ All rows are transient, replace only their member's default, and are on while `i
 - Codes for every factor whose driver's channel kind is `sms` or `email` are sent and checked through
   `Auth::codes()`'s factor codes; any other kind, and a `reauthenticate` binding, is `not_accepted`. An application that
   wants MFA's own challenges rebinds `ChallengeGateway`.
+- A send or check for a binding that is not the caller's own (another application, identity or sign-in, a caller who
+  is nobody, or a pending caller whose session does not allow the action) is `not_found` and uncounted before
+  authentication is asked, as MFA's own gateway answers it.
 - The factor code binding names the factor by id and its own channel and destination. An enrolment's grant is the
   pending factor's id, since MFA never hands its grant out.
 - `FactorCodeCountersAdapter` answers authentication's counters with MFA's `ChallengeCounters`, inside

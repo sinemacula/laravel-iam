@@ -11,6 +11,7 @@ use SineMacula\Laravel\Authentication\Codes\FactorCodeBinding;
 use SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException;
 use SineMacula\Laravel\Iam\Mfa\Translation\ClientTranslator;
 use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
+use SineMacula\Laravel\Iam\Mfa\Translation\SignIn;
 use SineMacula\Laravel\Mfa\Attempts\ChallengeOutcome;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
@@ -20,8 +21,8 @@ use SineMacula\Laravel\Mfa\Contracts\Factor;
 use SineMacula\Laravel\Mfa\Contracts\MultiFactorAuthenticatable;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
+use SineMacula\Laravel\Mfa\Enums\PendingAction;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
-use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Proofs\ProofBinding;
 use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
@@ -40,8 +41,8 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     /** @var string The detail of a check refused for a factor that is not the binding's identity's. */
     public const string NOT_FOUND = 'The factor is not one of the binding\'s identity\'s stored factors.';
 
-    /** @var string The detail of a send or check refused for a binding of another application than the caller's. */
-    public const string ANOTHER_APPLICATION = 'The binding names another application than the caller\'s.';
+    /** @var string The detail of a check refused for a binding that is not the caller's own. */
+    public const string NOT_THE_CALLERS = 'The binding does not name the identity the caller is.';
 
     /** @var string The detail of a check refused for a reauthentication. */
     public const string REAUTHENTICATION = 'A reauthentication proves the first factor, so no factor code answers one.';
@@ -83,21 +84,19 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      * @throws \InvalidArgumentException
      * @throws \LogicException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      * @throws \Throwable
      */
     #[\Override]
     public function send(CallerContext $caller, Factor $factor, ProofBinding $binding): SendResult
     {
-        self::assertIsTheCallersApplication($caller, $binding);
-
-        $codes = $this->service($binding->application);
         $owner = self::owner($factor, $binding);
-        $kind  = self::kind($factor);
 
-        if ($owner === null) {
+        if ($owner === null || !$this->isTheCallers($caller, $binding, self::actionOf($binding, PendingAction::SEND_CODE, PendingAction::START_BOOTSTRAP_ENROLLMENT))) {
             return SendResult::refused(FailureReason::NOT_FOUND);
         }
+
+        $codes = $this->service($binding->application);
+        $kind  = self::kind($factor);
 
         if ($kind === null || $binding->purpose === Purpose::REAUTHENTICATE) {
             return SendResult::refused(FailureReason::NOT_ACCEPTED);
@@ -120,21 +119,19 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
      *
      * @throws \InvalidArgumentException
      * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
      * @throws \Throwable
      */
     #[\Override]
     public function verify(CallerContext $caller, Factor $factor, ProofBinding $binding, string $challengeId, #[\SensitiveParameter] string $code): ChallengeOutcome
     {
-        self::assertIsTheCallersApplication($caller, $binding);
+        $owner = self::owner($factor, $binding);
+
+        if ($owner === null || !$this->isTheCallers($caller, $binding, self::actionOf($binding, PendingAction::VERIFY, PendingAction::CONFIRM_BOOTSTRAP_ENROLLMENT))) {
+            return ChallengeOutcome::refused(FailureReason::NOT_FOUND, $owner === null ? self::NOT_FOUND : self::NOT_THE_CALLERS);
+        }
 
         $codes = $this->service($binding->application);
-        $owner = self::owner($factor, $binding);
         $kind  = self::kind($factor);
-
-        if ($owner === null) {
-            return ChallengeOutcome::refused(FailureReason::NOT_FOUND, self::NOT_FOUND);
-        }
 
         if ($kind === null || $binding->purpose === Purpose::REAUTHENTICATE) {
             return ChallengeOutcome::refused(FailureReason::NOT_ACCEPTED, $kind === null ? self::NOT_A_CODE_CHANNEL : self::REAUTHENTICATION);
@@ -146,19 +143,44 @@ final readonly class ChallengeGatewayAdapter implements ChallengeGateway
     }
 
     /**
-     * Refuse a binding of another application than the caller's.
+     * Whether the binding is the caller's own: its identity, application and
+     * sign-in, by a pending caller only for an action its session allows.
      *
      * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
      * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
-     * @return void
+     * @param  \SineMacula\Laravel\Mfa\Enums\PendingAction  $action
+     * @return bool
      *
-     * @throws \SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException
+     * @throws \SineMacula\Laravel\Iam\Exceptions\UnresolvedReferenceException
+     * @throws \SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException
      */
-    private static function assertIsTheCallersApplication(CallerContext $caller, ProofBinding $binding): void
+    private function isTheCallers(CallerContext $caller, ProofBinding $binding, PendingAction $action): bool
     {
-        if ($caller->application !== $binding->application) {
-            throw new OperationRefusedException(FailureReason::NOT_ACCEPTED, self::ANOTHER_APPLICATION);
+        $identity = $caller->identity;
+
+        if ($identity === null || $caller->application !== $binding->application || $caller->pending?->allows($action) === false) {
+            return false;
         }
+
+        $held    = $caller->pending === null ? $this->sessions->held($identity, $caller->application) : null;
+        $session = $caller->pending->sessionId ?? ($held === null ? null : SignIn::reference($held, $caller->application));
+        $owner   = ProofOwner::of($identity);
+
+        return $session !== null && (new ProofBinding($owner->type, $owner->key, $binding->application, $session, $binding->purpose))->toArray() === $binding->toArray();
+    }
+
+    /**
+     * The pending action a send or check needs: the bootstrap enrolment's for
+     * an enrolment binding.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Proofs\ProofBinding  $binding
+     * @param  \SineMacula\Laravel\Mfa\Enums\PendingAction  $action
+     * @param  \SineMacula\Laravel\Mfa\Enums\PendingAction  $enrolling
+     * @return \SineMacula\Laravel\Mfa\Enums\PendingAction
+     */
+    private static function actionOf(ProofBinding $binding, PendingAction $action, PendingAction $enrolling): PendingAction
+    {
+        return $binding->purpose === Purpose::ENROLLMENT ? $enrolling : $action;
     }
 
     /**
