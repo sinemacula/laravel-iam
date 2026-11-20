@@ -52,6 +52,7 @@ use SineMacula\Laravel\Mfa\Enums\ProofKind as MfaProofKind;
 use SineMacula\Laravel\Mfa\Enums\Purpose as MfaPurpose;
 use SineMacula\Laravel\Mfa\Exceptions\UnsupportedIdentifierException;
 use SineMacula\Laravel\Mfa\Proofs\Proof;
+use SineMacula\Laravel\Mfa\Proofs\ProofOwner;
 use SineMacula\Laravel\Mfa\Proofs\VerificationGeneration;
 use SineMacula\Laravel\Mfa\Requirements\ProofRequirementCheck;
 use SineMacula\Laravel\Mfa\Requirements\Requirement as MfaRequirement;
@@ -867,9 +868,9 @@ final class RequirementCheckAdapterTest extends TestCase
     {
         foreach (['mfa_identity_states', 'mfa_factors'] as $table) {
 
-            $statement = $other->prepare('select * from ' . $table . ' where authenticatable_type = ? and authenticatable_id = ? for update');
+            $statement = $other->prepare('select * from ' . $table . ' where owner_hash = ? for update');
 
-            $statement->execute([$person->getMorphClass(), $person->getKey()]);
+            $statement->execute([ProofOwner::of($person)->hash()]);
         }
 
         DB::statement(DB::connection()->getDriverName() === 'pgsql'
