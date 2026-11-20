@@ -445,9 +445,10 @@ final class FactorChangeGateAdapterTest extends TestCase
 
         $start = Mfa::startEnrollment(self::servedCaller(), EnrollmentRequest::totp('ada@example.test'));
 
+        // The generation is re-read under a lock this transaction holds.
         $locks = array_values(array_filter(
             array_column(DB::getQueryLog(), 'query'),
-            static fn (string $query): bool => str_contains($query, 'for update'),
+            static fn (string $query): bool => str_contains($query, 'for update') && !str_contains($query, 'verification_generation'),
         ));
 
         $sessions = array_keys(array_filter($locks, static fn (string $query): bool => str_contains($query, 'authentication_sessions')));

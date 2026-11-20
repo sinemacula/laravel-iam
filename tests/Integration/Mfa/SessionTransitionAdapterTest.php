@@ -250,9 +250,10 @@ final class SessionTransitionAdapterTest extends TestCase
 
         $confirmation = Mfa::confirmEnrollment(self::servedCaller(), $start->grant, AuthenticatorApp::code($factor));
 
+        // The generation is re-read under a lock this transaction holds.
         $locks = array_values(array_filter(
             array_column(DB::getQueryLog(), 'query'),
-            static fn (string $query): bool => str_contains($query, 'for update'),
+            static fn (string $query): bool => str_contains($query, 'for update') && !str_contains($query, 'verification_generation'),
         ));
 
         self::assertTrue($confirmation->isConfirmed());
