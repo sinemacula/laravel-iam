@@ -28,14 +28,15 @@ use SineMacula\Laravel\Iam\Mfa\Translation\CodeTranslator;
 use SineMacula\Laravel\Mfa\Codes\SendResult;
 use SineMacula\Laravel\Mfa\Context\CallerContext;
 use SineMacula\Laravel\Mfa\Context\ClientContext as MfaClientContext;
+use SineMacula\Laravel\Mfa\Context\PendingContext;
 use SineMacula\Laravel\Mfa\Contracts\ChallengeGateway;
 use SineMacula\Laravel\Mfa\Database\StorageConnection;
 use SineMacula\Laravel\Mfa\Enrollment\EnrollmentRequest;
 use SineMacula\Laravel\Mfa\Enums\ChannelKind;
 use SineMacula\Laravel\Mfa\Enums\FailureReason;
+use SineMacula\Laravel\Mfa\Enums\PendingAction;
 use SineMacula\Laravel\Mfa\Enums\Purpose;
 use SineMacula\Laravel\Mfa\Events\LockoutApplied;
-use SineMacula\Laravel\Mfa\Exceptions\OperationRefusedException;
 use SineMacula\Laravel\Mfa\Facades\Mfa;
 use SineMacula\Laravel\Mfa\Models\Enrollment;
 use SineMacula\Laravel\Mfa\Models\Factor as FactorModel;
@@ -257,72 +258,91 @@ final class ChallengeGatewayAdapterTest extends TestCase
     }
 
     /**
-     * A caller that is nobody is refused by throwing.
+     * A caller that is nobody is not found, uncounted.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testACallerThatIsNobodyIsRefusedByThrowing(): void
+    public function testACallerThatIsNobodyIsNotFound(): void
     {
-        $challenge = $this->sentChallenge();
-        $code      = $this->deliveredCode($challenge);
-        $factor    = $this->challengedFactor();
-        $binding   = $this->challengeBinding();
-        $nobody    = CallerContext::nobody(self::GUARD, new MfaClientContext(self::CLIENT_IP, self::CLIENT_AGENT));
-
-        $calls = [
-            fn (): mixed => $this->challengeGateway()->send($nobody, $factor, $binding),
-            fn (): mixed => $this->challengeGateway()->verify($nobody, $factor, $binding, $challenge, $code),
-        ];
-
-        foreach ($calls as $call) {
-            $refusal = self::thrownBy($call);
-
-            self::assertInstanceOf(\InvalidArgumentException::class, $refusal);
-            self::assertSame('Challenge counters are kept for an identity, and the caller is nobody.', $refusal->getMessage());
-            self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
-        }
-
-        self::assertSame(1, OneTimeCode::query()->count());
-        self::assertSame(0, $this->queuedDeliveries());
-        self::assertSame(0, $this->failures());
-        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+        $this->assertNotFoundFor(CallerContext::nobody(self::GUARD, new MfaClientContext(self::CLIENT_IP, self::CLIENT_AGENT)));
     }
 
     /**
-     * A binding of another application is refused as `not_accepted`.
+     * A caller in another application than the binding's is not found,
+     * uncounted.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testABindingOfAnotherApplicationThanTheCallersIsRefusedByThrowing(): void
+    public function testACallerInAnotherApplicationIsNotFound(): void
     {
-        $challenge = $this->sentChallenge();
-        $code      = $this->deliveredCode($challenge);
-        $factor    = $this->challengedFactor();
-        $binding   = $this->challengeBinding();
-        $elsewhere = self::callerOf($this->person(), 'admin');
+        $this->assertNotFoundFor(self::callerOf($this->person(), 'admin'));
+    }
 
-        $calls = [
-            fn (): mixed => $this->challengeGateway()->send($elsewhere, $factor, $binding),
-            fn (): mixed => $this->challengeGateway()->verify($elsewhere, $factor, $binding, $challenge, $code),
-        ];
+    /**
+     * A binding of another sign-in than the caller's is not found, uncounted.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testABindingOfAnotherSignInIsNotFound(): void
+    {
+        $binding = $this->challengeBinding();
+        $other   = new ProofBinding($binding->identityType, $binding->identityKey, $binding->application, 'another-sign-in', $binding->purpose);
 
-        foreach ($calls as $call) {
-            $refusal = self::thrownBy($call);
+        $this->assertNotFoundFor($this->challengeCaller(), $other);
+    }
 
-            self::assertInstanceOf(OperationRefusedException::class, $refusal);
-            self::assertSame(FailureReason::NOT_ACCEPTED, $refusal->reason);
-            self::assertSame(ChallengeGatewayAdapter::ANOTHER_APPLICATION, $refusal->getMessage());
-            self::assertSame(0, DB::connection(StorageConnection::name())->transactionLevel());
-        }
+    /**
+     * A pending caller is not found for an action its session does not allow.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testAPendingCallerIsNotFoundForAnActionItsSessionDoesNotAllow(): void
+    {
+        $person = $this->createPerson();
+        $factor = $this->deliveredFactor($person);
+        $result = $this->attemptSignIn($person);
 
-        self::assertSame(1, OneTimeCode::query()->count());
-        self::assertSame(0, $this->queuedDeliveries());
-        self::assertSame(0, $this->failures());
-        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
+        self::assertNotNull($result->credential);
+
+        $caller = self::servedCaller(Request::create('/mfa/verify', 'POST', ['pending_credential' => $result->credential->reveal()]));
+
+        $this->bindStrayRequest();
+
+        $pending = $caller->pending ?? self::fail('The sign-in is not pending.');
+        $owner   = ProofOwner::of($person);
+        $binding = new ProofBinding($owner->type, $owner->key, $pending->application, $pending->sessionId, Purpose::SIGN_IN);
+        $actions = [PendingAction::LIST_FACTORS, PendingAction::START_BOOTSTRAP_ENROLLMENT, PendingAction::CONFIRM_BOOTSTRAP_ENROLLMENT];
+        $listing = new PendingContext(
+            $pending->identity,
+            $pending->application,
+            $pending->sessionId,
+            $pending->firstFactor,
+            $pending->requirement,
+            $actions,
+            $pending->expiresAt,
+            $pending->proofs,
+            $pending->credential(),
+        );
+        $barred = CallerContext::forPending($listing, $caller->client);
+
+        self::assertSame(FailureReason::NOT_FOUND, $this->challengeGateway()->send($barred, $factor, $binding)->reason);
+
+        $challenge = $this->challengeGateway()->send($caller, $factor, $binding)->challengeId ?? self::fail('No code was sent.');
+        $code      = $this->deliveredCodeTo(self::DELIVERED_PHONE);
+        $outcome   = $this->challengeGateway()->verify($barred, $factor, $binding, $challenge, $code);
+
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertSame(ChallengeGatewayAdapter::NOT_THE_CALLERS, $outcome->detail);
+        self::assertFalse($outcome->counted);
+        self::assertTrue($this->challengeGateway()->verify($caller, $factor, $binding, $challenge, $code)->hasPassed());
     }
 
     /**
@@ -345,6 +365,7 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $outcome = $this->challengeGateway()->verify($stranger, $factor, $binding, $challenge, self::wrong($code));
 
         self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertSame(ChallengeGatewayAdapter::NOT_THE_CALLERS, $outcome->detail);
         self::assertFalse($outcome->counted);
         self::assertSame(1, OneTimeCode::query()->count());
         self::assertSame(0, $this->failures());
@@ -1117,6 +1138,36 @@ final class ChallengeGatewayAdapterTest extends TestCase
         $zeros = str_repeat('0', strlen($code));
 
         return $code === $zeros ? str_repeat('1', strlen($code)) : $zeros;
+    }
+
+    /**
+     * Assert a send and a check by the caller for the binding asked, by default
+     * the challenge's, are not found, uncounted, and leave the code to answer
+     * its own caller.
+     *
+     * @param  \SineMacula\Laravel\Mfa\Context\CallerContext  $caller
+     * @param  ?\SineMacula\Laravel\Mfa\Proofs\ProofBinding  $asked
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    private function assertNotFoundFor(CallerContext $caller, ?ProofBinding $asked = null): void
+    {
+        $challenge = $this->sentChallenge();
+        $code      = $this->deliveredCode($challenge);
+        $factor    = $this->challengedFactor();
+        $binding   = $this->challengeBinding();
+        $sent      = $this->challengeGateway()->send($caller, $factor, $asked ?? $binding);
+        $outcome   = $this->challengeGateway()->verify($caller, $factor, $asked ?? $binding, $challenge, $code);
+
+        self::assertSame(FailureReason::NOT_FOUND, $sent->reason);
+        self::assertSame(FailureReason::NOT_FOUND, $outcome->reason);
+        self::assertSame(ChallengeGatewayAdapter::NOT_THE_CALLERS, $outcome->detail);
+        self::assertFalse($outcome->counted);
+        self::assertSame(1, OneTimeCode::query()->count());
+        self::assertSame(0, $this->queuedDeliveries());
+        self::assertSame(0, $this->failures());
+        self::assertTrue($this->challengeGateway()->verify($this->challengeCaller(), $factor, $binding, $challenge, $code)->hasPassed());
     }
 
     /**
