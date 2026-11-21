@@ -1,0 +1,77 @@
+# Changelog
+
+## 0.1.0 (2026-11-21)
+
+
+### Features
+
+* act as a caller across the suite in one call, and write the guides ([#18](https://github.com/sinemacula/laravel-iam/issues/18)) ([4cd8b01](https://github.com/sinemacula/laravel-iam/commit/4cd8b01a5530b7d8a0d0ea1f676096f428c10a1f))
+* add the foundation: binding rule, storage connection, retries and worker reset ([#5](https://github.com/sinemacula/laravel-iam/issues/5)) ([03eb15f](https://github.com/sinemacula/laravel-iam/commit/03eb15f483924207f2f76af75f5b63b3be43db9f))
+* answer the tenant authentication policy and SSO's evidence, freshness and link judgements ([#14](https://github.com/sinemacula/laravel-iam/issues/14)) ([dca83d1](https://github.com/sinemacula/laravel-iam/commit/dca83d16cf69255e81d96d7b2779dc534a3ce0da))
+* audit laravel-authorization's role exclusion changes ([#69](https://github.com/sinemacula/laravel-iam/issues/69)) ([20eff91](https://github.com/sinemacula/laravel-iam/commit/20eff91143834d4e1f6f0d252f8822a389571c0f))
+* **audit:** record allowed checks of sensitive actions ([#79](https://github.com/sinemacula/laravel-iam/issues/79)) ([b651bc4](https://github.com/sinemacula/laravel-iam/commit/b651bc4cdd1224f02ce3fc86708a3ba34d1d0748))
+* **audit:** record the break-glass lifecycle ([#89](https://github.com/sinemacula/laravel-iam/issues/89)) ([87433b8](https://github.com/sinemacula/laravel-iam/commit/87433b8e38fcd506f625eeb8f7e46f1cd92d7cce))
+* **audit:** record the link id on SSO link events ([#142](https://github.com/sinemacula/laravel-iam/issues/142)) ([1e174a8](https://github.com/sinemacula/laravel-iam/commit/1e174a84c1547c328e9019963a9f86826c3296f9))
+* bind laravel-mfa's session seams to laravel-authentication ([#7](https://github.com/sinemacula/laravel-iam/issues/7)) ([6634957](https://github.com/sinemacula/laravel-iam/commit/6634957c6b6b7c806833237aede4b6bdddedc489))
+* **checks:** refuse a machine identity without laravel-authorization's machine marker ([#109](https://github.com/sinemacula/laravel-iam/issues/109)) ([069a5eb](https://github.com/sinemacula/laravel-iam/commit/069a5eb777bb08409e2666fa27fdb32d7ef6d0c6))
+* close the member gaps laravel-mfa and laravel-authentication answered ([#12](https://github.com/sinemacula/laravel-iam/issues/12)) ([4f2928b](https://github.com/sinemacula/laravel-iam/commit/4f2928b0f7fd126f24f78c32370a18137770ee14))
+* contribute the mfa context, confirm SSO links from proofs, and share proof translation ([#19](https://github.com/sinemacula/laravel-iam/issues/19)) ([18ef216](https://github.com/sinemacula/laravel-iam/commit/18ef216c460770d016e62b4ba19ab4eda382dd43))
+* decide authorization for the suite's caller, its proofs and its scopes ([#20](https://github.com/sinemacula/laravel-iam/issues/20)) ([616e01e](https://github.com/sinemacula/laravel-iam/commit/616e01eb2f1530c8e69cd887d4fa39ba20890f16))
+* declare iam:check to laravel-authorization as composing its check ([#39](https://github.com/sinemacula/laravel-iam/issues/39)) ([4513d8c](https://github.com/sinemacula/laravel-iam/commit/4513d8c9672197ef5e2029c92f5358d6c7e8e6fa))
+* declare the adapters bound over laravel-authorization's contracts to authorization:check ([#38](https://github.com/sinemacula/laravel-iam/issues/38)) ([7161714](https://github.com/sinemacula/laravel-iam/commit/716171444cacc11dfe38019e0f80adba7d41ca8c))
+* declare the suite's assurance keys to authorization and drop the binding workarounds ([#22](https://github.com/sinemacula/laravel-iam/issues/22)) ([c2f0d54](https://github.com/sinemacula/laravel-iam/commit/c2f0d547c988354cdee19d7638f7c5f348a1d842))
+* deliver codes through shared gateways and bind MFA's challenges, passkeys and resolvers ([#10](https://github.com/sinemacula/laravel-iam/issues/10)) ([04a3751](https://github.com/sinemacula/laravel-iam/commit/04a3751e2f6b2a883f4f21dcdea45a423f321a72))
+* grant, scope, tree, group mapping, catalogue, audit access and invalidation for authorization ([#29](https://github.com/sinemacula/laravel-iam/issues/29)) ([f42cefb](https://github.com/sinemacula/laravel-iam/commit/f42cefb98b57ca26ec4b8c614e8f59f67883db07))
+* hand SSO the caller and drop the caller scope ([#23](https://github.com/sinemacula/laravel-iam/issues/23)) ([6f85c7d](https://github.com/sinemacula/laravel-iam/commit/6f85c7dbeee99bc3548d78a2b72dc775d12a5cef))
+* hand the proof store the identity and the sign-in it reads ([#21](https://github.com/sinemacula/laravel-iam/issues/21)) ([cf566c2](https://github.com/sinemacula/laravel-iam/commit/cf566c2cabbe874ed22413e9c3598857dcf39b19))
+* install the suite, check it across members, and schedule its work ([#17](https://github.com/sinemacula/laravel-iam/issues/17)) ([77a086f](https://github.com/sinemacula/laravel-iam/commit/77a086ff5bc088213d86a21d76a897f03fe29f7f))
+* **mfa:** credit trusted provider evidence in the requirement check ([#162](https://github.com/sinemacula/laravel-iam/issues/162)) ([143aeda](https://github.com/sinemacula/laravel-iam/commit/143aeda9f5fb6318466c25076c774a5320b8cf1c))
+* **mfa:** hand the code sender the code's proof purpose and factor ([#107](https://github.com/sinemacula/laravel-iam/issues/107)) ([af10b6a](https://github.com/sinemacula/laravel-iam/commit/af10b6ae8928164a1f6fe8c2cdeed0b3a1be9633))
+* **mfa:** hand the factor-change gate the whole requirement ([#116](https://github.com/sinemacula/laravel-iam/issues/116)) ([11b3f19](https://github.com/sinemacula/laravel-iam/commit/11b3f194eacc0bf47ca2053ca92ed4d29234ee25))
+* provision people from SSO, and answer memberships, principal scope and the tenant tree ([#15](https://github.com/sinemacula/laravel-iam/issues/15)) ([5f888e9](https://github.com/sinemacula/laravel-iam/commit/5f888e939cfa41ff321c8770376cd707713de5e1))
+* recognise authorization's defaults through isPackageDefault and leave configured classes to it ([#28](https://github.com/sinemacula/laravel-iam/issues/28)) ([e4fd1d4](https://github.com/sinemacula/laravel-iam/commit/e4fd1d49dd7260ed4fc78066c247ca85a55db247))
+* record the audit trail of laravel-authentication, laravel-mfa and laravel-sso ([#16](https://github.com/sinemacula/laravel-iam/issues/16)) ([b597d0a](https://github.com/sinemacula/laravel-iam/commit/b597d0a77fd4854c64206e55feac0f23e95a5a59))
+* redeem SSO's handoffs through laravel-authentication, and bind its links and session revocation ([#13](https://github.com/sinemacula/laravel-iam/issues/13)) ([103c021](https://github.com/sinemacula/laravel-iam/commit/103c021154f8a30ee08e084dc35543825d5a541f))
+* report the suite's authentication findings in authentication:check ([#33](https://github.com/sinemacula/laravel-iam/issues/33)) ([b547a4c](https://github.com/sinemacula/laravel-iam/commit/b547a4c3e3bc76966e4e9c06b4b07566469db551))
+* start sessions with a first factor and confirm links from recovery sessions ([#24](https://github.com/sinemacula/laravel-iam/issues/24)) ([12bc666](https://github.com/sinemacula/laravel-iam/commit/12bc666f356ea2174772762bf214ceb104c14329))
+* **testing:** record actingAsVerified() sign-ins through laravel-authentication ([#34](https://github.com/sinemacula/laravel-iam/issues/34)) ([b4818b7](https://github.com/sinemacula/laravel-iam/commit/b4818b70a7ff64bdb463e726a76c075503d32a90))
+
+
+### Bug Fixes
+
+* adopt what audit-log, authorization and authentication have merged and drop the stop-gaps ([#36](https://github.com/sinemacula/laravel-iam/issues/36)) ([bc2a69b](https://github.com/sinemacula/laravel-iam/commit/bc2a69bf8606e207ab327a8800e4ae026a379fc2))
+* **audit:** cap the audit access policy by the caller's credential scopes ([#148](https://github.com/sinemacula/laravel-iam/issues/148)) ([b27b3d5](https://github.com/sinemacula/laravel-iam/commit/b27b3d51154f5634a865a0822690168b5990eac1))
+* **audit:** keep an application's held actor reader ([#156](https://github.com/sinemacula/laravel-iam/issues/156)) ([0bfcc1c](https://github.com/sinemacula/laravel-iam/commit/0bfcc1c016c36090878c0eec07298735b353d969))
+* **audit:** keep the impersonator of an authorization change ([#150](https://github.com/sinemacula/laravel-iam/issues/150)) ([907015e](https://github.com/sinemacula/laravel-iam/commit/907015e7f922866c948f3e659e452ad1531a390d))
+* **authorization:** answer no scopes for a principal with no identity ([#153](https://github.com/sinemacula/laravel-iam/issues/153)) ([1662b36](https://github.com/sinemacula/laravel-iam/commit/1662b3684a29fdc106d00785d3e9c4ac269ec514))
+* **authorization:** forget decisions once a reauthentication commits ([#155](https://github.com/sinemacula/laravel-iam/issues/155)) ([e4900b5](https://github.com/sinemacula/laravel-iam/commit/e4900b50c940a29eeb0a46dd29583f9898c6b0d8))
+* **authorization:** name every SSO operation by SSO's own enum ([#177](https://github.com/sinemacula/laravel-iam/issues/177)) ([14f67ef](https://github.com/sinemacula/laravel-iam/commit/14f67ef353e377ea9045054f228603ff01efda63))
+* **checks:** check the relying party wherever passkeys are an MFA factor ([#178](https://github.com/sinemacula/laravel-iam/issues/178)) ([7246469](https://github.com/sinemacula/laravel-iam/commit/724646905441a6bc7c03bfc6bbbe82a9aadcdbf5))
+* **checks:** note SSO's attempt counters on the storage connection ([#159](https://github.com/sinemacula/laravel-iam/issues/159)) ([9e62d77](https://github.com/sinemacula/laravel-iam/commit/9e62d770c2137c500f6f6071037d938a73d8e769))
+* **checks:** note SSO's scheduled runs while SSO is in use ([#158](https://github.com/sinemacula/laravel-iam/issues/158)) ([50d7e92](https://github.com/sinemacula/laravel-iam/commit/50d7e92593dbde87e86bd7cc274ac0bf7ef11269))
+* **checks:** refuse a jwt identity model MFA cannot hold factors for ([#151](https://github.com/sinemacula/laravel-iam/issues/151)) ([48fe915](https://github.com/sinemacula/laravel-iam/commit/48fe9154e0b7c1c3d72d8070a488844152cd1971))
+* **checks:** refuse an SSO application whose guard is not a jwt guard ([#179](https://github.com/sinemacula/laravel-iam/issues/179)) ([ba860bb](https://github.com/sinemacula/laravel-iam/commit/ba860bbb58133c1b8faae6eefa2ccb8dcb620b4c))
+* **checks:** require the tenant resolver for audit reads under authorization ([#149](https://github.com/sinemacula/laravel-iam/issues/149)) ([f9ed05b](https://github.com/sinemacula/laravel-iam/commit/f9ed05b36ada1f37f21f2156847b0cf850bafd7c))
+* clear the qlty findings and drop configuration the shared source provides ([#32](https://github.com/sinemacula/laravel-iam/issues/32)) ([999d543](https://github.com/sinemacula/laravel-iam/commit/999d543d1e9f7b0b3c377a794df97a851df0d709))
+* forget every decision the request remembers through laravel-authorization when its proofs change ([#41](https://github.com/sinemacula/laravel-iam/issues/41)) ([e74bff8](https://github.com/sinemacula/laravel-iam/commit/e74bff8b7713b07a5dc6dd4945c7ed71744d616b))
+* **install:** prefix authorization's tables by the names it ships ([#31](https://github.com/sinemacula/laravel-iam/issues/31)) ([f2e4599](https://github.com/sinemacula/laravel-iam/commit/f2e4599268e12378c4cb76d648b78dfd586d85f6))
+* **mfa:** hand OneTimeCodeSender the channel kind from MFA's senders ([#180](https://github.com/sinemacula/laravel-iam/issues/180)) ([5f12889](https://github.com/sinemacula/laravel-iam/commit/5f1288919c891efa754832c433947594d7996083))
+* **mfa:** read each proof kind once a session's proofs fill a read ([#152](https://github.com/sinemacula/laravel-iam/issues/152)) ([2baf90c](https://github.com/sinemacula/laravel-iam/commit/2baf90c6143f97e590e50f16032a2eb0f96ec87b))
+* **mfa:** read the sign-in's proofs by kind in the mfa context contributor ([#190](https://github.com/sinemacula/laravel-iam/issues/190)) ([8bd688a](https://github.com/sinemacula/laravel-iam/commit/8bd688ab7055229581c74a8e3e97a0918b0b7261))
+* **mfa:** translate a recovery channel as MFA's recovery ([#141](https://github.com/sinemacula/laravel-iam/issues/141)) ([da766e5](https://github.com/sinemacula/laravel-iam/commit/da766e553ad448202c3d884d429d73acfb1f6e21))
+* **provisioning:** drop the planning id from the existing identity message ([#157](https://github.com/sinemacula/laravel-iam/issues/157)) ([de2b8ea](https://github.com/sinemacula/laravel-iam/commit/de2b8ea27b0dcc336976e973e4bc9a1d449f4812))
+* **provisioning:** grant a person's group roles in one batch ([#163](https://github.com/sinemacula/laravel-iam/issues/163)) ([6d08a09](https://github.com/sinemacula/laravel-iam/commit/6d08a09330266bd45151aa7be5932c0a9a69689a))
+* **provisioning:** re-sync group roles in one sync with each role's reach ([#154](https://github.com/sinemacula/laravel-iam/issues/154)) ([19856ef](https://github.com/sinemacula/laravel-iam/commit/19856ef28347c1e897c8b8b88b8743e9b3b22fd1))
+* read freshness current and record MFA's own multifactor evidence ([#8](https://github.com/sinemacula/laravel-iam/issues/8)) ([f8df382](https://github.com/sinemacula/laravel-iam/commit/f8df382f526ace9eb3de5a6f053d1eb9aefb16fb))
+* refuse a challenge for a binding that is not the caller's own as not found ([#218](https://github.com/sinemacula/laravel-iam/issues/218)) ([3607555](https://github.com/sinemacula/laravel-iam/commit/36075556e811d77cb54406559b122b47dc9c8203))
+* **scheduling:** schedule laravel-authorization's usage heartbeat and prune ([#176](https://github.com/sinemacula/laravel-iam/issues/176)) ([7f97e76](https://github.com/sinemacula/laravel-iam/commit/7f97e76a34c42a7281f642042c7c227c19308c57))
+* **sso:** end a deleted identity's link sessions by its reference ([#184](https://github.com/sinemacula/laravel-iam/issues/184)) ([c990721](https://github.com/sinemacula/laravel-iam/commit/c9907217d8cb10f845efd1a0d34ac3cb824af750))
+* **sso:** hand MFA the provider's evidence on the sign-in's first factor ([#147](https://github.com/sinemacula/laravel-iam/issues/147)) ([427620b](https://github.com/sinemacula/laravel-iam/commit/427620b16da3aebd172aaa6b8e12fafc408913aa))
+* **tenancy:** carry a tenant's MFA requirement to sign-in without SSO ([#175](https://github.com/sinemacula/laravel-iam/issues/175)) ([4f5f4ec](https://github.com/sinemacula/laravel-iam/commit/4f5f4ec05379615f3f9b1a588091dc221a992b2f))
+* **tenancy:** report grantees a global scope hides on a tree move ([#181](https://github.com/sinemacula/laravel-iam/issues/181)) ([c447e05](https://github.com/sinemacula/laravel-iam/commit/c447e05bec3133c9915d00607838d16134af65e0))
+* **tenancy:** spare the moved subtree and its new ancestors on a tree move ([#145](https://github.com/sinemacula/laravel-iam/issues/145)) ([1656b42](https://github.com/sinemacula/laravel-iam/commit/1656b42323be31214af27ddccff93e34df966f8b))
+
+
+### Build System
+
+* require the members at their 0.1 releases ([#225](https://github.com/sinemacula/laravel-iam/issues/225)) ([e77c104](https://github.com/sinemacula/laravel-iam/commit/e77c10485a3fd89f1f0640a0d41353fe78b22bed))
